@@ -3,9 +3,10 @@
 #include "PCGPin.h"
 #include "Data/PCGDynamicMeshData.h"
 #include "DynamicMesh/DynamicMesh3.h"
-#include "DynamicMesh/DynamicMeshAttributeSet.h"  // FDynamicMeshColorOverlay
+#include "UDynamicMesh.h"
+#include "DynamicMesh/DynamicMeshAttributeSet.h"
 
-#include "Algo/Sort.h"
+#define LOCTEXT_NAMESPACE "PCGMergeByDistanceElement"
 
 using namespace UE::Geometry;
 
@@ -16,14 +17,14 @@ using namespace UE::Geometry;
 TArray<FPCGPinProperties> UPCGMergeByDistanceSettings::InputPinProperties() const
 {
 	TArray<FPCGPinProperties> Props;
-	Props.Emplace(PCGPinConstants::DefaultInputLabel, EPCGDataType::DynamicMesh);
+	Props.Emplace_GetRef(PCGPinConstants::DefaultInputLabel, EPCGDataType::DynamicMesh, false, false).SetRequiredPin();
 	return Props;
 }
 
 TArray<FPCGPinProperties> UPCGMergeByDistanceSettings::OutputPinProperties() const
 {
 	TArray<FPCGPinProperties> Props;
-	Props.Emplace(PCGPinConstants::DefaultOutputLabel, EPCGDataType::DynamicMesh);
+	Props.Emplace(PCGPinConstants::DefaultOutputLabel, EPCGDataType::DynamicMesh, false, false);
 	return Props;
 }
 
@@ -46,7 +47,6 @@ FVertexUnionFind::FVertexUnionFind(int32 N)
 
 int32 FVertexUnionFind::Find(int32 X)
 {
-	// Path-compressed find
 	while (Parent[X] != X)
 	{
 		Parent[X] = Parent[Parent[X]]; // path halving
@@ -60,8 +60,6 @@ void FVertexUnionFind::Union(int32 A, int32 B)
 	A = Find(A);
 	B = Find(B);
 	if (A == B) { return; }
-
-	// Union by rank — lower-VID wins ties so results are deterministic
 	if (Rank[A] < Rank[B]) { Swap(A, B); }
 	Parent[B] = A;
 	if (Rank[A] == Rank[B]) { ++Rank[A]; }
@@ -69,7 +67,7 @@ void FVertexUnionFind::Union(int32 A, int32 B)
 
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Core geometry operation
+// Core geometry operation (no UObject deps — safe off game thread)
 // ─────────────────────────────────────────────────────────────────────────────
 
 int32 GeomUtil_MergeByDistance(
@@ -78,33 +76,35 @@ int32 GeomUtil_MergeByDistance(
 	bool           bAveragePos,
 	bool           bAverageColors)
 {
-	// ── 0. Early-out ──────────────────────────────────────────────────────────
-
 	if (Mesh.VertexCount() < 2) { return 0; }
 
-	// ── 1. Build a dense VID list (mesh may have gaps from prior removals) ────
+	// ── 0. Strip all attribute overlays except Primary Colors ────────────────
+	// We re-append triangles during the merge, which orphans overlay elements on
+	// the old TIDs. UVs and normals would be corrupted anyway on a welded mesh.
+	// Flat-color materials don't need UVs — clear them to avoid visual artifacts.
+	if (Mesh.HasAttributes())
+	{
+		Mesh.Attributes()->SetNumUVLayers(0);
+		// Leave Primary Colors intact — we re-build them in step 7
+	}
+
+	// ── 1. Dense VID list ─────────────────────────────────────────────────────
 
 	TArray<int32> VIDs;
 	VIDs.Reserve(Mesh.VertexCount());
 	for (int32 VID : Mesh.VertexIndicesItr()) { VIDs.Add(VID); }
-
 	const int32 N = VIDs.Num();
 
-	// Map from sparse VID -> dense index for union-find
-	// MaxVID can be large; use a TMap for safety
 	TMap<int32, int32> VIDtoDense;
 	VIDtoDense.Reserve(N);
 	for (int32 i = 0; i < N; ++i) { VIDtoDense.Add(VIDs[i], i); }
 
 	FVertexUnionFind UF(N);
 
-	// ── 2. Color overlay (read path) ─────────────────────────────────────────
-
-	// Primary Color overlay uses per-triangle-corner element IDs, not per-vertex.
-	// We precompute a vertex-ID -> averaged overlay color map before modifying anything.
+	// ── 2. Pre-sample color overlay ───────────────────────────────────────────
 
 	FDynamicMeshColorOverlay* ColorOverlay = nullptr;
-	TMap<int32, FVector4f>    VertexColorMap; // VID -> color
+	TMap<int32, FVector4f> VertexColorMap;
 
 	const bool bHasColors = bAverageColors
 		&& Mesh.HasAttributes()
@@ -113,20 +113,17 @@ int32 GeomUtil_MergeByDistance(
 	if (bHasColors)
 	{
 		ColorOverlay = Mesh.Attributes()->PrimaryColors();
-
-		// Accumulate: one vertex may be referenced by multiple triangles, average them
 		TMap<int32, int32> VertexColorCount;
 
 		for (int32 TID : Mesh.TriangleIndicesItr())
 		{
 			FIndex3i TriVerts = Mesh.GetTriangle(TID);
-			FIndex3i TriElems = ColorOverlay->GetTriangle(TID); // overlay element IDs
+			FIndex3i TriElems = ColorOverlay->GetTriangle(TID);
 
 			for (int32 Corner = 0; Corner < 3; ++Corner)
 			{
 				int32 VID = TriVerts[Corner];
 				int32 EID = TriElems[Corner];
-
 				if (!ColorOverlay->IsElement(EID)) { continue; }
 
 				FVector4f Col;
@@ -145,7 +142,6 @@ int32 GeomUtil_MergeByDistance(
 			}
 		}
 
-		// Normalize accumulated colors
 		for (auto& KV : VertexColorMap)
 		{
 			int32 Count = VertexColorCount[KV.Key];
@@ -153,27 +149,24 @@ int32 GeomUtil_MergeByDistance(
 		}
 	}
 
-	// ── 3. O(n²) proximity search — fine for low-poly (<10k verts) ───────────
+	// ── 3. O(n²) proximity — fine for low-poly ────────────────────────────────
 
 	const double DistSq = static_cast<double>(MergeDistance) * static_cast<double>(MergeDistance);
 
 	for (int32 i = 0; i < N; ++i)
 	{
 		const FVector3d PosA = Mesh.GetVertex(VIDs[i]);
-
 		for (int32 j = i + 1; j < N; ++j)
 		{
-			const FVector3d PosB = Mesh.GetVertex(VIDs[j]);
-			if (DistanceSquared(PosA, PosB) <= DistSq)
+			if (DistanceSquared(PosA, Mesh.GetVertex(VIDs[j])) <= DistSq)
 			{
 				UF.Union(i, j);
 			}
 		}
 	}
 
-	// ── 4. Compute per-cluster averaged position (and color) ─────────────────
+	// ── 4. Compute cluster averaged positions and colors ──────────────────────
 
-	// cluster root (dense idx) -> accumulated position + count
 	TMap<int32, TPair<FVector3d, int32>> ClusterPos;
 	TMap<int32, TPair<FVector4f, int32>> ClusterCol;
 
@@ -181,154 +174,177 @@ int32 GeomUtil_MergeByDistance(
 	{
 		int32 Root = UF.Find(i);
 
-		// Position accumulation
-		{
-			FVector3d P = Mesh.GetVertex(VIDs[i]);
-			if (auto* Entry = ClusterPos.Find(Root))
-			{
-				Entry->Key += P;
-				Entry->Value++;
-			}
-			else
-			{
-				ClusterPos.Add(Root, { P, 1 });
-			}
-		}
+		FVector3d P = Mesh.GetVertex(VIDs[i]);
+		if (auto* Entry = ClusterPos.Find(Root)) { Entry->Key += P; Entry->Value++; }
+		else ClusterPos.Add(Root, { P, 1 });
 
-		// Color accumulation
 		if (bHasColors)
 		{
 			if (FVector4f* Col = VertexColorMap.Find(VIDs[i]))
 			{
-				if (auto* Entry = ClusterCol.Find(Root))
-				{
-					Entry->Key += *Col;
-					Entry->Value++;
-				}
-				else
-				{
-					ClusterCol.Add(Root, { *Col, 1 });
-				}
+				if (auto* Entry = ClusterCol.Find(Root)) { Entry->Key += *Col; Entry->Value++; }
+				else ClusterCol.Add(Root, { *Col, 1 });
 			}
 		}
 	}
 
-	// Finalise cluster positions
 	TMap<int32, FVector3d> ClusterFinalPos;
 	TMap<int32, FVector4f> ClusterFinalCol;
 
 	for (auto& KV : ClusterPos)
 	{
-		FVector3d Avg = bAveragePos
+		ClusterFinalPos.Add(KV.Key,
+			bAveragePos
 			? KV.Value.Key / static_cast<double>(KV.Value.Value)
-			: Mesh.GetVertex(VIDs[KV.Key]); // root vertex position (no averaging)
-		ClusterFinalPos.Add(KV.Key, Avg);
+			: Mesh.GetVertex(VIDs[KV.Key]));
 	}
-
 	if (bHasColors)
 	{
 		for (auto& KV : ClusterCol)
 		{
-			FVector4f Avg = KV.Value.Key / static_cast<float>(KV.Value.Value);
-			ClusterFinalCol.Add(KV.Key, Avg);
+			ClusterFinalCol.Add(KV.Key, KV.Value.Key / static_cast<float>(KV.Value.Value));
 		}
 	}
 
-	// ── 5. Move root vertices to cluster positions, update their colors ───────
+	// ── 5. Move root vertices to cluster positions ────────────────────────────
 
 	for (auto& KV : ClusterFinalPos)
 	{
-		int32 RootVID = VIDs[KV.Key];
-		Mesh.SetVertex(RootVID, KV.Value);
+		Mesh.SetVertex(VIDs[KV.Key], KV.Value);
 	}
 
-	// We'll update colors via the overlay after triangle remapping (step 6)
+	// ── 6. Build remap table and patch triangles ──────────────────────────────
 
-	// ── 6. Remap triangle vertex indices and remove orphaned verts ────────────
-
-	// Build: dense-root-index -> VID of root vertex
-	// Build: VID-to-remap (non-root VIDs that need remapping to their root VID)
-	TMap<int32, int32> RemapVID; // non-root VID -> root VID
-
+	TMap<int32, int32> RemapVID;
 	for (int32 i = 0; i < N; ++i)
 	{
 		int32 Root = UF.Find(i);
-		if (Root != i)
-		{
-			RemapVID.Add(VIDs[i], VIDs[Root]);
-		}
+		if (Root != i) { RemapVID.Add(VIDs[i], VIDs[Root]); }
 	}
 
-	if (RemapVID.IsEmpty())
+	if (RemapVID.IsEmpty()) { return 0; }
+
+	// The correct removal scope is ALL one-ring triangles of every non-root vertex,
+	// not just the ones whose VIDs directly appear in RemapVID.
+	//
+	// Why: after we remove tri A (which has a remapped vert), its edge to neighbor tri B
+	// is freed. But tri B still holds the other endpoint. When we try to AppendTriangle
+	// the remapped version of A, it creates an edge that tri B already owns from its
+	// side — making a third triangle on that edge = NonManifoldID = skip = hole.
+	//
+	// Solution: collect the entire one-ring of every merged-away vertex, pull ALL of
+	// those triangles out first (all edges freed), then re-append with remapped verts.
+
+	struct FTriRemap { FIndex3i NewTri; int32 GroupID; };
+	TMap<int32, FTriRemap> ToRemap;   // keyed by original TID to dedup
+	TSet<int32> DegenerateTIDs;
+
+	for (auto& KV : RemapVID)
 	{
-		// Nothing to merge
-		return 0;
-	}
+		int32 OldVID = KV.Key;
+		TArray<int32> OneRing;
+		Mesh.GetVtxTriangles(OldVID, OneRing);
 
-	// Remap triangles.
-	// FDynamicMesh3 doesn't have a bulk "replace vertex" call, so we iterate triangles.
-	// We replace the triangle with a new one pointing to root VIDs.
-	// Degenerate triangles (two or more corners collapse to the same VID) are removed.
-
-	TArray<int32> DegenerateTIDs;
-
-	for (int32 TID : Mesh.TriangleIndicesItr())
-	{
-		FIndex3i Tri = Mesh.GetTriangle(TID);
-		FIndex3i NewTri = Tri;
-
-		for (int32 Corner = 0; Corner < 3; ++Corner)
+		for (int32 TID : OneRing)
 		{
-			if (int32* Remapped = RemapVID.Find(Tri[Corner]))
+			if (ToRemap.Contains(TID) || DegenerateTIDs.Contains(TID)) { continue; }
+
+			FIndex3i Tri = Mesh.GetTriangle(TID);
+			FIndex3i NewTri = Tri;
+			for (int32 Corner = 0; Corner < 3; ++Corner)
 			{
-				NewTri[Corner] = *Remapped;
+				if (int32* Remapped = RemapVID.Find(Tri[Corner]))
+				{
+					NewTri[Corner] = *Remapped;
+				}
+			}
+
+			if (NewTri.A == NewTri.B || NewTri.B == NewTri.C || NewTri.A == NewTri.C)
+			{
+				DegenerateTIDs.Add(TID);
+			}
+			else
+			{
+				ToRemap.Add(TID, { NewTri, Mesh.GetTriangleGroup(TID) });
 			}
 		}
-
-		if (NewTri == Tri) { continue; } // no change
-
-		// Check for degenerate (two corners same VID)
-		if (NewTri.A == NewTri.B || NewTri.B == NewTri.C || NewTri.A == NewTri.C)
-		{
-			DegenerateTIDs.Add(TID);
-			continue;
-		}
-
-		// SetTriangle rewires connectivity in-place — no remove+add needed
-		Mesh.SetTriangle(TID, NewTri, false /*bRemoveIsolatedVertices — we do this ourselves*/);
 	}
 
+	// Remove entire affected set first — all edges freed before any re-append
+	for (auto& KV : ToRemap)
+	{
+		Mesh.RemoveTriangle(KV.Key, false, false);
+	}
 	for (int32 TID : DegenerateTIDs)
 	{
 		Mesh.RemoveTriangle(TID, false, false);
 	}
 
-	// ── 7. Update color overlay on root vertices ──────────────────────────────
+	// Re-append — all previously conflicting edges are now gone
+	for (auto& KV : ToRemap)
+	{
+		int32 NewTID = Mesh.AppendTriangle(KV.Value.NewTri, KV.Value.GroupID);
+		if (NewTID < 0)
+		{
+			UE_LOG(LogTemp, Warning, TEXT("MergeByDistance: AppendTriangle failed (result=%d) — duplicate tri, skipping."), NewTID);
+		}
+	}
+
+	// ── 7. Update color overlay ───────────────────────────────────────────────
+	// Re-appended triangles have no overlay elements yet — we must create them.
+	// Existing triangles that weren't remapped may still reference merged VIDs
+	// in the color map, so we update those too.
 
 	if (bHasColors && ColorOverlay)
 	{
-		// After triangle remapping, iterate the (rebuilt) triangles and set
-		// each corner's overlay element to the cluster-averaged color of that VID.
-
 		for (int32 TID : Mesh.TriangleIndicesItr())
 		{
 			FIndex3i TriVerts = Mesh.GetTriangle(TID);
 			FIndex3i TriElems = ColorOverlay->GetTriangle(TID);
+			bool bTriHasOverlay = ColorOverlay->IsSetTriangle(TID);
 
-			for (int32 Corner = 0; Corner < 3; ++Corner)
+			if (!bTriHasOverlay)
 			{
-				int32 VID = TriVerts[Corner];
-				int32 EID = TriElems[Corner];
-
-				// Find which dense index this VID is (may now be a root)
-				if (const int32* DenseIdx = VIDtoDense.Find(VID))
+				// Re-appended triangle — allocate fresh overlay elements
+				FIndex3i NewElems;
+				for (int32 Corner = 0; Corner < 3; ++Corner)
 				{
-					int32 Root = UF.Find(*DenseIdx);
-					if (const FVector4f* FinalColor = ClusterFinalCol.Find(Root))
+					int32 VID = TriVerts[Corner];
+					FVector4f Color(1.f, 1.f, 1.f, 1.f);
+
+					if (const int32* DenseIdx = VIDtoDense.Find(VID))
 					{
-						if (ColorOverlay->IsElement(EID))
+						int32 Root = UF.Find(*DenseIdx);
+						if (const FVector4f* FinalColor = ClusterFinalCol.Find(Root))
 						{
-							ColorOverlay->SetElement(EID, *FinalColor);
+							Color = *FinalColor;
+						}
+						else if (const FVector4f* OrigColor = VertexColorMap.Find(VID))
+						{
+							Color = *OrigColor;
+						}
+					}
+					NewElems[Corner] = ColorOverlay->AppendElement(Color);
+				}
+				ColorOverlay->SetTriangle(TID, NewElems);
+			}
+			else
+			{
+				// Existing triangle — update element colors for any merged vertices
+				for (int32 Corner = 0; Corner < 3; ++Corner)
+				{
+					int32 VID = TriVerts[Corner];
+					int32 EID = TriElems[Corner];
+
+					if (const int32* DenseIdx = VIDtoDense.Find(VID))
+					{
+						int32 Root = UF.Find(*DenseIdx);
+						if (const FVector4f* FinalColor = ClusterFinalCol.Find(Root))
+						{
+							if (ColorOverlay->IsElement(EID))
+							{
+								ColorOverlay->SetElement(EID, *FinalColor);
+							}
 						}
 					}
 				}
@@ -336,19 +352,14 @@ int32 GeomUtil_MergeByDistance(
 		}
 	}
 
-	// ── 8. Remove non-root (orphaned) vertices ────────────────────────────────
+	// ── 8. Remove orphaned vertices ───────────────────────────────────────────
 
 	int32 RemovedCount = 0;
 	for (auto& KV : RemapVID)
 	{
-		int32 OrphanVID = KV.Key;
-		if (Mesh.IsVertex(OrphanVID))
+		if (Mesh.IsVertex(KV.Key))
 		{
-			// Vertex should have no triangles now; safe to remove
-			if (Mesh.RemoveVertex(OrphanVID) == EMeshResult::Ok)
-			{
-				++RemovedCount;
-			}
+			if (Mesh.RemoveVertex(KV.Key) == EMeshResult::Ok) { ++RemovedCount; }
 		}
 	}
 
@@ -357,60 +368,87 @@ int32 GeomUtil_MergeByDistance(
 
 
 // ─────────────────────────────────────────────────────────────────────────────
-// PCG Element
+// Element — mirrors AppendMeshesFromPoints pattern exactly
 // ─────────────────────────────────────────────────────────────────────────────
 
-bool FPCGMergeByDistanceElement::ExecuteInternal(FPCGContext* Context) const
+bool FPCGMergeByDistanceElement::CanExecuteOnlyOnMainThread(FPCGContext* Context) const
+{
+	// No async loading needed; always safe to run on worker thread during Execute.
+	// Return false unconditionally so we never block the game thread.
+	return false;
+}
+
+FPCGContext* FPCGMergeByDistanceElement::CreateContext()
+{
+	return new FPCGMergeByDistanceContext();
+}
+
+bool FPCGMergeByDistanceElement::PrepareDataInternal(FPCGContext* InContext) const
+{
+	// No asset loading required — nothing to do in PrepareData.
+	return true;
+}
+
+bool FPCGMergeByDistanceElement::ExecuteInternal(FPCGContext* InContext) const
 {
 	TRACE_CPUPROFILER_EVENT_SCOPE(FPCGMergeByDistanceElement::ExecuteInternal);
 
-	const UPCGMergeByDistanceSettings* Settings = Context->GetInputSettings<UPCGMergeByDistanceSettings>();
+	FPCGMergeByDistanceContext* Context = static_cast<FPCGMergeByDistanceContext*>(InContext);
+	check(Context);
+
+	const UPCGMergeByDistanceSettings* Settings = InContext->GetInputSettings<UPCGMergeByDistanceSettings>();
 	check(Settings);
 
-	// Grab all DynamicMesh inputs
-	TArray<FPCGTaggedData> Inputs = Context->InputData.GetInputsByPin(PCGPinConstants::DefaultInputLabel);
-	TArray<FPCGTaggedData>& Outputs = Context->OutputData.TaggedData;
+	TArray<FPCGTaggedData> Inputs = InContext->InputData.GetInputsByPin(PCGPinConstants::DefaultInputLabel);
 
-	for (const FPCGTaggedData& Input : Inputs)
+	if (Inputs.IsEmpty())
 	{
-		const UPCGDynamicMeshData* InMeshData = Cast<UPCGDynamicMeshData>(Input.Data);
-		if (!InMeshData || !InMeshData->GetDynamicMesh())
+		PCGE_LOG(Warning, GraphAndLog, LOCTEXT("NoInput", "MergeByDistance: no input data."));
+		return true;
+	}
+
+	for (FPCGTaggedData& InputTaggedData : Inputs)
+	{
+		const UPCGDynamicMeshData* InMeshData = Cast<const UPCGDynamicMeshData>(InputTaggedData.Data);
+		if (!InMeshData)
 		{
-			PCGE_LOG(Warning, GraphAndLog, NSLOCTEXT("PCGUtils", "MBD_NullMesh", "MergeByDistance: skipping null/invalid DynamicMesh input."));
+			PCGE_LOG(Warning, GraphAndLog, LOCTEXT("BadInput", "MergeByDistance: input is not DynamicMesh data, skipping."));
 			continue;
 		}
 
-		// Duplicate the data so we don't mutate upstream nodes
-		UPCGDynamicMeshData* OutMeshData = NewObject<UPCGDynamicMeshData>(GetTransientPackage());
-		OutMeshData->InitializeFromData(InMeshData);
-
-		// GetDynamicMesh() is const on UPCGDynamicMeshData — go through EditMesh for mutable access
-		UDynamicMesh* DynMesh = const_cast<UDynamicMesh*>(OutMeshData->GetDynamicMesh());
-		if (!DynMesh)
+		// CopyOrSteal: gives us a mutable UPCGDynamicMeshData without touching global state.
+		// If this is the last consumer of the data it steals (zero-copy), otherwise deep copies.
+		UPCGDynamicMeshData* OutMeshData = CopyOrSteal(InputTaggedData, InContext);
+		if (!OutMeshData)
 		{
+			PCGE_LOG(Warning, GraphAndLog, LOCTEXT("CopyFailed", "MergeByDistance: CopyOrSteal failed, skipping."));
 			continue;
 		}
 
-		int32 RemovedVerts = 0;
+		// GetMeshPtr() gives direct raw FDynamicMesh3* — no EditMesh lambda, no thread issues.
+		FDynamicMesh3* RawMesh = OutMeshData->GetMutableDynamicMesh()->GetMeshPtr();
+		if (!RawMesh)
+		{
+			PCGE_LOG(Warning, GraphAndLog, LOCTEXT("NullMesh", "MergeByDistance: raw mesh pointer is null, skipping."));
+			continue;
+		}
 
-		DynMesh->EditMesh([&](FDynamicMesh3& RawMesh)
-			{
-				RemovedVerts = GeomUtil_MergeByDistance(
-					RawMesh,
-					Settings->MergeDistance,
-					Settings->bAveragePosition,
-					Settings->bAverageColors);
-			}, EDynamicMeshChangeType::GeneralEdit, EDynamicMeshAttributeChangeFlags::Unknown, /*bDeferChangeNotifications=*/false);
+		const int32 RemovedVerts = GeomUtil_MergeByDistance(
+			*RawMesh,
+			Settings->MergeDistance,
+			Settings->bAveragePosition,
+			Settings->bAverageColors);
 
 		PCGE_LOG(Verbose, GraphAndLog,
-			FText::Format(
-				NSLOCTEXT("PCGUtils", "MBD_Result", "MergeByDistance: merged {0} vertices (threshold={1})."),
+			FText::Format(LOCTEXT("Result", "MergeByDistance: removed {0} vertices (threshold={1})."),
 				FText::AsNumber(RemovedVerts),
 				FText::AsNumber(Settings->MergeDistance)));
 
-		FPCGTaggedData& Output = Outputs.Add_GetRef(Input);
+		FPCGTaggedData& Output = InContext->OutputData.TaggedData.Emplace_GetRef(InputTaggedData);
 		Output.Data = OutMeshData;
 	}
 
 	return true;
 }
+
+#undef LOCTEXT_NAMESPACE
