@@ -19,6 +19,7 @@ class PCGUTILS_API UPCGMergeByDistanceSettings : public UPCGDynamicMeshBaseSetti
 	GENERATED_BODY()
 
 public:
+#if WITH_EDITOR
 	virtual FName GetDefaultNodeName() const override { return FName(TEXT("MergeByDistance")); }
 	virtual FText GetDefaultNodeTitle() const override { return NSLOCTEXT("PCGUtils", "MergeByDistance_Title", "Merge By Distance"); }
 	virtual FText GetNodeTooltipText() const override
@@ -27,6 +28,8 @@ public:
 			"Welds nearby vertices on a DynamicMesh within a given distance threshold.\n"
 			"Equivalent to Blender's 'Merge by Distance'.");
 	}
+
+#endif // WITH_EDITOR
 
 	virtual EPCGDataType GetCurrentPinTypes(const UPCGPin* InPin) const override { return EPCGDataType::DynamicMesh; }
 	virtual TArray<FPCGPinProperties> InputPinProperties() const override;
