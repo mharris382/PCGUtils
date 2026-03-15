@@ -8,12 +8,16 @@
 class UPCGGraphInterface;
 
 UCLASS(ClassGroup = "PCG", meta = (BlueprintSpawnableComponent), BlueprintType, Blueprintable)
-class PCGUTILS_API UPCGSplineComponent : public USplineComponent
+class PCGUTILS_API UPCGSplineComponent : public USplineComponent,
+                                          public IPCGOverrideGraphProvider
 {
     GENERATED_BODY()
 
 public:
     UPCGSplineComponent();
+
+    // IPCGOverrideGraphProvider
+    virtual TArray<FPCGNamedOverrideGraph> GetOverrideGraphEntries_Implementation() const override;
 
 	UFUNCTION(BlueprintNativeEvent, Category = "PCG|Spline")
     void OnUpdatedSpline();

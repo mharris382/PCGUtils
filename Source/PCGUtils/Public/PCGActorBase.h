@@ -43,8 +43,7 @@ private:
 
 public:
 
-    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "PCG")
-    TObjectPtr<UPCGGenDataAsset> PCGGenDataAsset;
+
 
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "PCG")
     int32 Seed = 0;

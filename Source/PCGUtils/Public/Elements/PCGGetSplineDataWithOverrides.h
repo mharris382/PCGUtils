@@ -33,11 +33,19 @@ class PCGUTILS_API UPCGGetSplineDataWithOverridesSettings : public UPCGGetSpline
 public:
     UPCGGetSplineDataWithOverridesSettings();
 
-    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Settings", meta = (Bitmask, BitmaskEnum = "/Script/PCGUtils.EPCGSplineOverrideGraphUsageFlags"))
-    EPCGSplineOverrideGraphUsageFlags OverrideGraphUsageFlags =
-        EPCGSplineOverrideGraphUsageFlags::PreProcessSpline |
-        EPCGSplineOverrideGraphUsageFlags::PreBake |
-        EPCGSplineOverrideGraphUsageFlags::PostSpawn;
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Override Extraction")
+    bool bExtractPreProcessSpline = true;
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Override Extraction")
+    bool bExtractPostSpawn = true;
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Override Extraction")
+    bool bExtractPreBake = true;
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Override Extraction")
+    bool bExtractPostBake = false;
+    
 
 #if WITH_EDITOR
     virtual FName GetDefaultNodeName() const override
@@ -48,7 +56,9 @@ public:
     {
         return NSLOCTEXT("PCGUtils|GetSplineData", "NodeTitle", "Get Spline Data With Overrides");
     }
-    virtual FText GetNodeTooltipText() const override;
+    virtual FText GetNodeTooltipText() const override { 
+        return NSLOCTEXT("PCGUtils|GetSplineData", "NodeTooltip", "Extends Get Spline Data to detect UPCGSplineComponents and stamp any active override graphs into the @Data domain as attributes, enabling priority-based override resolution downstream without per-point attribute overhead. Use Override Extraction settings to limit which overrides are stamped — only stamp what this node's downstream graphs actually consume.");
+	}
 #endif
 
 protected:
