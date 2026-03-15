@@ -92,4 +92,9 @@ protected:
 	virtual FPCGContext* CreateContext() override;
 	virtual bool PrepareDataInternal(FPCGContext* InContext) const override { return true; }
 	virtual bool ExecuteInternal(FPCGContext* InContext) const override;
+
+
+	bool ProcessSinglePair(FPCGContext* InContext, const FPCGTaggedData& MeshTaggedData,
+		const FPCGTaggedData& PointTaggedData,
+		const UPCGApplyPointsToDynamicMeshSettings* Settings) const;
 };

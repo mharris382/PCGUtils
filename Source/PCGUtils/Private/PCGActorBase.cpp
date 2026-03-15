@@ -1,5 +1,6 @@
 #include "PCGActorBase.h"
 #include "Components/BoxComponent.h"
+#include "Components/SceneComponent.h"
 #include "UObject/ConstructorHelpers.h"
 #include "Interfaces/IPCGOutputDataConsumer.h"
 #include "PCGGraph.h"
@@ -8,13 +9,15 @@
 APCGActorBase::APCGActorBase()
 {
     PrimaryActorTick.bCanEverTick = false;
+	USceneComponent* Root = CreateDefaultSubobject<USceneComponent>(TEXT("Root"));
+	SetRootComponent(Root);
 
     BoundsBox = CreateDefaultSubobject<UBoxComponent>(TEXT("BoundsBox"));
     BoundsBox->SetCollisionEnabled(ECollisionEnabled::NoCollision);
     BoundsBox->SetCollisionResponseToAllChannels(ECR_Ignore);
     BoundsBox->SetLineThickness(0.0f);
     
-    SetRootComponent(BoundsBox);
+	BoundsBox->SetupAttachment(RootComponent);
     ///PCGUtils/PCG/Templates/Template_PostBake_DynMesh.Template_PostBake_DynMesh
     ///PCGUtils/PCG/Templates/Template_PreBake_DynMesh.Template_PreBake_DynMesh
 	
@@ -26,7 +29,7 @@ void APCGActorBase::OnConstruction(const FTransform& Transform)
     Super::OnConstruction(Transform);
     ApplyBoundsToBox();
     
-    
+    BakedAssetSaveName = GetAssetSaveGroupName() + TEXT("_") + GetActorGuid().ToString();
 	EmitPCGOutputDataToConsumers(true);
 }
 
@@ -87,6 +90,8 @@ void APCGActorBase::EmitPCGOutputDataToConsumers(bool isConstructor)
         }
     }
 }
+
+
 
 
 
