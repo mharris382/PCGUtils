@@ -1,38 +1,43 @@
 {
-	"FileVersion": 3,
-	"Version": 1,
-	"VersionName": "1.0",
-	"FriendlyName": "PCGUtils",
-	"Description": "",
-	"Category": "Other",
-	"CreatedBy": "Max Harris",
-	"CreatedByURL": "",
-	"DocsURL": "",
-	"MarketplaceURL": "",
-	"SupportURL": "",
-	"CanContainContent": true,
-	"IsBetaVersion": false,
-	"IsExperimentalVersion": false,
-	"Installed": true,
-	"Modules": [
-	{
-		"Name": "PCGUtils",
-		"Type": "Runtime",
-		"LoadingPhase": "Default"
-	}
-	],
-	"Plugins": [
-		{
-			"Name": "PCG",
-			"Enabled": true
-		},
-		{
-			"Name": "GeometryScripting",
-			"Enabled": true
-		},
-		{
-			"Name": "PCGGeometryScriptInterop",
-			"Enabled": true
-		}
-	]
+    "FileVersion": 3,
+    "Version": 1,
+    "VersionName": "1.0",
+    "FriendlyName": "PCGUtils",
+    "Description": "",
+    "Category": "Other",
+    "CreatedBy": "Max Harris",
+    "CreatedByURL": "",
+    "DocsURL": "",
+    "MarketplaceURL": "",
+    "SupportURL": "",
+    "CanContainContent": true,
+    "IsBetaVersion": false,
+    "IsExperimentalVersion": false,
+    "Installed": true,
+    "Modules": [
+        {
+            "Name": "PCGUtils",
+            "Type": "Runtime",
+            "LoadingPhase": "Default"
+        },
+        {
+            "Name": "PCGUtilsEditor",
+            "Type": "UncookedOnly",
+            "LoadingPhase": "Default"
+        }
+    ],
+    "Plugins": [
+        {
+            "Name": "PCG",
+            "Enabled": true
+        },
+        {
+            "Name": "GeometryScripting",
+            "Enabled": true
+        },
+        {
+            "Name": "PCGGeometryScriptInterop",
+            "Enabled": true
+        }
+    ]
 }
