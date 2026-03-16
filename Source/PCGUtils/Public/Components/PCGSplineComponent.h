@@ -14,7 +14,7 @@ class PCGUTILS_API UPCGSplineComponent : public USplineComponent,
     GENERATED_BODY()
 
 public:
-    UPCGSplineComponent();
+    UPCGSplineComponent(const FObjectInitializer& ObjectInitializer);
 
     // IPCGOverrideGraphProvider
     virtual TArray<FPCGNamedOverrideGraph> GetOverrideGraphEntries_Implementation() const override;

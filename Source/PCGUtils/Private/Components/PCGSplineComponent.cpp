@@ -1,6 +1,6 @@
 #include "Components/PCGSplineComponent.h"
 
-UPCGSplineComponent::UPCGSplineComponent()
+UPCGSplineComponent::UPCGSplineComponent(const FObjectInitializer& ObjectInitializer) : Super(ObjectInitializer)
 {
     ComponentTags.Add(TEXT("pcg_spline"));
 }
