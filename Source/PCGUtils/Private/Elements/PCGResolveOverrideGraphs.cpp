@@ -76,7 +76,7 @@ bool FPCGResolveOverrideGraphsElement::ExecuteInternal(FPCGContext* Context) con
     {
         RequestedContracts.Add(FName(S.TrimStartAndEnd()));
     }
-
+    
     // Build fallback entries once — same for all incoming data.
     TArray<FPCGNamedOverrideGraph> FallbackEntries;
     if (Settings->bUseFallback)

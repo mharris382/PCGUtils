@@ -1,10 +1,14 @@
 ﻿#include "Customizations/PCGOverrideGraphCustomization.h"
 
 #include "OverrideGraphs.h"
+#include "DetailLayoutBuilder.h"
 #include "DetailWidgetRow.h"
 #include "IDetailChildrenBuilder.h"
-#include "PropertyHandle.h"
+#include "PropertyCustomizationHelpers.h"
+#include "Widgets/SBoxPanel.h"
+#include "Widgets/Input/SCheckBox.h"
 #include "Widgets/Text/STextBlock.h"
+#include "Widgets/Layout/SBox.h"
 
 #define LOCTEXT_NAMESPACE "PCGOverrideGraphCustomization"
 
@@ -18,52 +22,26 @@ void FPCGOverrideGraphCustomization::CustomizeHeader(
     FDetailWidgetRow& HeaderRow,
     IPropertyTypeCustomizationUtils& StructCustomizationUtils)
 {
-    // Get the two child property handles.
-    TSharedPtr<IPropertyHandle> UseGraphHandle =
-        StructPropertyHandle->GetChildHandle(
-            GET_MEMBER_NAME_CHECKED(FPCGOverrideGraph, bUseGraph));
-    TSharedPtr<IPropertyHandle> GraphHandle =
-        StructPropertyHandle->GetChildHandle(
-            GET_MEMBER_NAME_CHECKED(FPCGOverrideGraph, Graph));
+    FOverrideGraphControlHandles Handles;
+    Handles.EnabledHandle    = StructPropertyHandle->GetChildHandle(GET_MEMBER_NAME_CHECKED(FPCGOverrideGraph, bUseGraph));
+    Handles.GraphHandle      = StructPropertyHandle->GetChildHandle(GET_MEMBER_NAME_CHECKED(FPCGOverrideGraph, Graph));
+    Handles.ParentDisplayName = StructPropertyHandle->GetPropertyDisplayName();
+    Handles.ParentTooltip    = StructPropertyHandle->GetToolTipText();
 
-    // The parent property name becomes the label (e.g. "PostSpawnGraph").
-    // This replaces the default "Graph" child label.
-    const FText ParentDisplayName = StructPropertyHandle->GetPropertyDisplayName();
-
-    // Forward the parent tooltip to the graph picker row so hovering the
-    // label shows any Tooltip meta set on the owning property.
-    const FText ParentTooltip = StructPropertyHandle->GetToolTipText();
+    if (!Handles.IsValid())
+    {
+        HeaderRow
+            .NameContent()  [ StructPropertyHandle->CreatePropertyNameWidget() ]
+            .ValueContent() [ StructPropertyHandle->CreatePropertyValueWidget() ];
+        return;
+    }
 
     HeaderRow
         .NameContent()
-        [
-            SNew(SHorizontalBox)
-
-            // Toggle checkbox — inline edit condition toggle.
-            + SHorizontalBox::Slot()
-            .AutoWidth()
-            .VAlign(VAlign_Center)
-            .Padding(0.f, 0.f, 4.f, 0.f)
-            [
-                UseGraphHandle->CreatePropertyValueWidget()
-            ]
-
-            // Parent property name as label (e.g. "PostSpawnGraph").
-            + SHorizontalBox::Slot()
-            .VAlign(VAlign_Center)
-            .FillWidth(1.f)
-            [
-                SNew(STextBlock)
-                .Text(ParentDisplayName)
-                .ToolTipText(ParentTooltip)
-                .Font(IPropertyTypeCustomizationUtils::GetRegularFont())
-            ]
-        ]
+        [ CreateHeaderNameWidget(StructPropertyHandle, HeaderRow, Handles) ]
         .ValueContent()
         .MinDesiredWidth(250.f)
-        [
-            GraphHandle->CreatePropertyValueWidget()
-        ];
+        [ CreateHeaderValueWidget(StructPropertyHandle, HeaderRow, Handles) ];
 }
 
 void FPCGOverrideGraphCustomization::CustomizeChildren(
@@ -72,9 +50,57 @@ void FPCGOverrideGraphCustomization::CustomizeChildren(
     IPropertyTypeCustomizationUtils& StructCustomizationUtils)
 {
     // Intentionally empty — both fields are surfaced in the header row.
-    // Suppressing children prevents "Graph" and "bUseGraph" from appearing
-    // again below the header.
+}
+
+TSharedRef<SWidget> FPCGOverrideGraphCustomization::CreateHeaderNameWidget(
+    const TSharedRef<IPropertyHandle>& StructHandle,
+    FDetailWidgetRow& HeaderRow,
+    const FOverrideGraphControlHandles& ControlHandles)
+{
+    return SNew(SHorizontalBox)
+
+        // Toggle checkbox
+        + SHorizontalBox::Slot()
+        .AutoWidth()
+        .VAlign(VAlign_Center)
+        .Padding(0.f, 0.f, 4.f, 0.f)
+        [
+            GetPropertyWidgetSafe(ControlHandles.EnabledHandle)
+        ]
+
+        // Parent property name as label e.g. "PostSpawnGraph"
+        + SHorizontalBox::Slot()
+        .VAlign(VAlign_Center)
+        .FillWidth(1.f)
+        [
+            SNew(STextBlock)
+            .Text(ControlHandles.ParentDisplayName)
+            .ToolTipText(ControlHandles.ParentTooltip)
+            .Font(IDetailLayoutBuilder::GetDetailFont())
+        ];
+}
+
+TSharedRef<SWidget> FPCGOverrideGraphCustomization::CreateHeaderValueWidget(
+    const TSharedRef<IPropertyHandle>& StructHandle,
+    FDetailWidgetRow& HeaderRow,
+    const FOverrideGraphControlHandles& ControlHandles)
+{
+    return SNew(SBox)
+        .IsEnabled_Lambda([ControlHandles]()
+        {
+            return ControlHandles.IsEnabled();
+        })
+        [
+            CreateAssetSelectorWidget(StructHandle, HeaderRow, ControlHandles)
+        ];
+}
+
+TSharedRef<SWidget> FPCGOverrideGraphCustomization::CreateAssetSelectorWidget(
+    const TSharedRef<IPropertyHandle>& StructHandle,
+    FDetailWidgetRow& HeaderRow,
+    const FOverrideGraphControlHandles& ControlHandles)
+{
+    return GetPropertyWidgetSafe(ControlHandles.GraphHandle);
 }
 
 #undef LOCTEXT_NAMESPACE
-

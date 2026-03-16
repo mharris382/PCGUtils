@@ -19,11 +19,10 @@ struct PCGUTILS_API FPCGOverrideGraph
 {
     GENERATED_BODY()
 
-    UPROPERTY(EditAnywhere, BlueprintReadWrite, meta = (InlineEditConditionToggle))
+    UPROPERTY(EditAnywhere, BlueprintReadWrite)
     bool bUseGraph = false;
 
-    UPROPERTY(EditAnywhere, BlueprintReadWrite,
-        meta = (EditCondition = "bUseGraph"))
+    UPROPERTY(EditAnywhere, BlueprintReadWrite)
     TObjectPtr<UPCGGraphInterface> Graph = nullptr;
 
     bool IsActive() const { return bUseGraph ; }
