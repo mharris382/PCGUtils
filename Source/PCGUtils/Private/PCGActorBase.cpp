@@ -5,10 +5,12 @@
 #include "Interfaces/IPCGOutputDataConsumer.h"
 #include "PCGGraph.h"
 #include "PCGComponent.h"
+#include "PCGUtilsHelpers.h"
 
 APCGActorBase::APCGActorBase()
 {
-    PrimaryActorTick.bCanEverTick = false;
+    PrimaryActorTick.bCanEverTick = true;
+	PrimaryActorTick.bStartWithTickEnabled = false;
 	USceneComponent* Root = CreateDefaultSubobject<USceneComponent>(TEXT("Root"));
 	SetRootComponent(Root);
 
@@ -27,10 +29,10 @@ APCGActorBase::APCGActorBase()
 void APCGActorBase::OnConstruction(const FTransform& Transform)
 {
     Super::OnConstruction(Transform);
+#if WITH_EDITOR
     ApplyBoundsToBox();
-    
     BakedAssetSaveName = GetAssetSaveGroupName() + TEXT("_") + GetActorGuid().ToString();
-	EmitPCGOutputDataToConsumers(true);
+#endif
 }
 
 void APCGActorBase::ComputeLocalBounds_Implementation(FVector& OutMin, FVector& OutMax) const
@@ -41,68 +43,28 @@ void APCGActorBase::ComputeLocalBounds_Implementation(FVector& OutMin, FVector& 
 
 void APCGActorBase::ApplyBoundsToBox()
 {
+	if (!BoundsBox)
+		return;
+
+    // Base bounds from the virtual/BP-overridable hook.
     FVector LocalMin, LocalMax;
     ComputeLocalBounds(LocalMin, LocalMax);  // polymorphic — calls BP override if present
+    FBox CombinedBox(LocalMin, LocalMax);
+
+    // Expand by any spline components attached to this actor (local space).
+    const FBox SplineBox = UPCGUtilsHelpers::ComputeActorSplineBoundingBox(this, /*bLocalSpace=*/true);
+    if (SplineBox.IsValid)
+    {
+        CombinedBox += SplineBox;
+    }
 
     const FVector Padding(BoundsPadding);
-    LocalMin -= Padding;
-    LocalMax += Padding;
+    CombinedBox.Min -= Padding;
+    CombinedBox.Max += Padding;
 
-    const FVector Center  = (LocalMin + LocalMax) * 0.5f;
-    const FVector HalfExt = (LocalMax - LocalMin) * 0.5f;
+    const FVector Center  = CombinedBox.GetCenter();
+    const FVector HalfExt = CombinedBox.GetExtent();
 
     BoundsBox->SetRelativeLocation(Center);
     BoundsBox->SetBoxExtent(HalfExt, /*bUpdateOverlaps=*/false);
-}
-
-
-void APCGActorBase::BeginPlay()
-{
-    Super::BeginPlay();
-    EmitPCGOutputDataToConsumers(false);
-}
-
-void APCGActorBase::EmitPCGOutputDataToConsumers(bool isConstructor)
-{
-    const TArray<UObject*> targets = ResolveAllPCGOutputDataConsumers();
-    if(targets.IsEmpty())
-    {
-        return;
-    }
-    //TODO get PCG output data
-	for (const TObjectPtr<UObject>& Target : targets)
-    {
-        if(Target)
-        {
-            if (Target->GetClass()->ImplementsInterface(UPCGOutputDataConsumer::StaticClass()))
-            {
-                TArray<FString> ConsumerTargetPins = IPCGOutputDataConsumer::Execute_GetTargetDataPins(Target);
-                if (ConsumerTargetPins.IsEmpty())
-                {
-                    //TOOD: emit all PCG data to consumer
-                }
-                else
-                {
-					//TODO: selectively emit PCG data based on pin names
-
-                }
-            }
-        }
-    }
-}
-
-
-
-
-
-
-const TArray<UObject*> APCGActorBase::ResolveAllPCGOutputDataConsumers_Implementation() const
-{
-    TArray<UObject*> consumers;
-    TArray<UActorComponent*> Components =  GetComponentsByInterface(UPCGOutputDataConsumer::StaticClass());
-    for (UActorComponent* Comp : Components)
-    {
-		consumers.Add(Comp);
-    }
-    return consumers;
 }

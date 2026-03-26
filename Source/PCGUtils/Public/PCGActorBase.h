@@ -2,6 +2,7 @@
 
 #include "CoreMinimal.h"
 #include "GameFramework/Actor.h"
+#include "OverrideGraphs.h"
 #include "PCGActorBase.generated.h"
 
 class UBoxComponent;
@@ -18,7 +19,7 @@ public:
     APCGActorBase();
 
 protected:
-    virtual void BeginPlay() override;
+    
     virtual void OnConstruction(const FTransform& Transform) override;
 
     // Override in child classes to return local-space AABB.
@@ -26,11 +27,6 @@ protected:
     UFUNCTION(BlueprintNativeEvent, Category = "PCG|Bounds")
     void ComputeLocalBounds(FVector& OutMin, FVector& OutMax) const;
     virtual void ComputeLocalBounds_Implementation(FVector& OutMin, FVector& OutMax) const;
-
-
-    UFUNCTION(BlueprintNativeEvent, Category = "PCG|OutputData")
-    const TArray<UObject*> ResolveAllPCGOutputDataConsumers() const;
-    const TArray<UObject*> ResolveAllPCGOutputDataConsumers_Implementation() const;
 
 
     UFUNCTION(BlueprintNativeEvent, Category = "PCG|Bake")
@@ -52,9 +48,6 @@ public:
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "PCG|Bounds", meta = (ClampMin = "0.0"))
     float BoundsPadding = 0.f;
 
-
-
-
     UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "PCG|Bake")
     FString BakedAssetSaveName;
 
@@ -62,29 +55,18 @@ public:
     UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "PCG|Bake", meta = (ContentDir))
     FDirectoryPath BakedAssetSavePath;
 
-
-    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "PCG|Bake", meta = (InlineEditConditionToggle))
-	bool bUsePreBakeGraph = false;
-
-    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "PCG|Bake", meta = (EditCondition = "bUsePreBakeGraph", Tooltip = "Executes directy before baking occurs.  The output data will be baked"))
-    TObjectPtr<UPCGGraphInterface> PreBakeGraph;
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "PCG|Bake")
+    FPCGOverrideGraph PreBakeGraph;
     
-    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "PCG|Bake", meta = (InlineEditConditionToggle))
-    bool bUsePostBakeGraph = false;
-
-    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "PCG|Bake", meta = (EditCondition = "bUsePostBakeGraph", Tooltip = "Executes directy before baking occurs. Input will be a save path"))
-    TObjectPtr<UPCGGraphInterface> PostBakeGraph;
-
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "PCG|Bake")
+    FPCGOverrideGraph PostBakeGraph;
+    
 
     UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "PCG", AdvancedDisplay)
     TObjectPtr<UBoxComponent> BoundsBox;
 
     UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "PCG")
     TObjectPtr<UPCGComponent> PCGComponent;
-
-private:
-
-    void EmitPCGOutputDataToConsumers(bool isConstructor);
 
     
 };
