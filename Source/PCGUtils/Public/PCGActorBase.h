@@ -33,13 +33,12 @@ protected:
 	FString GetAssetSaveGroupName() const;
 	FString GetAssetSaveGroupName_Implementation() const { return TEXT("DefaultGroup"); }
 
-
+    FBox GetPCGBounds() const;
+    
 private:
     void ApplyBoundsToBox();
 
 public:
-
-
 
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "PCG")
     int32 Seed = 0;

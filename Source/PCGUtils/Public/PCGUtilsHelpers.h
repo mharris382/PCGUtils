@@ -61,4 +61,7 @@ public:
 		const AActor* Actor,
 		bool bLocalSpace = true,
 		int32 SampleSubdivisionCount = 1);
+	
+	
+	//static UStaticMesh* GetBakedStaticMeshFromPCGData(UPCGDataCollection* )
 };

@@ -41,6 +41,15 @@ void APCGActorBase::ComputeLocalBounds_Implementation(FVector& OutMin, FVector& 
     OutMax = FVector( 50.f);
 }
 
+FBox APCGActorBase::GetPCGBounds() const
+{
+	if (!BoundsBox)
+		return FBox();
+	FVector extents = BoundsBox->GetScaledBoxExtent();
+	FVector origin = BoundsBox->GetComponentLocation();
+	return FBox(origin, extents);
+}
+
 void APCGActorBase::ApplyBoundsToBox()
 {
 	if (!BoundsBox)
