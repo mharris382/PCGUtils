@@ -55,8 +55,7 @@ FPCGElementPtr UPCGAssignMaterialToDynMeshSettings::CreateElement() const
 
 bool FPCGAssignMaterialToDynMeshElement::CanExecuteOnlyOnMainThread(FPCGContext* Context) const
 {
-	// No async loading — safe to run off game thread
-	return false;
+	return true;
 }
 
 FPCGContext* FPCGAssignMaterialToDynMeshElement::CreateContext()
