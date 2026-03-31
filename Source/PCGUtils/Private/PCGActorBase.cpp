@@ -25,6 +25,7 @@ APCGActorBase::APCGActorBase()
     BoundsBox->SetLineThickness(0.0f);
     
 	BoundsBox->SetupAttachment(RootComponent);
+    
     ///PCGUtils/PCG/Templates/Template_PostBake_DynMesh.Template_PostBake_DynMesh
     ///PCGUtils/PCG/Templates/Template_PreBake_DynMesh.Template_PreBake_DynMesh
 	
@@ -35,8 +36,10 @@ void APCGActorBase::OnConstruction(const FTransform& Transform)
 {
     Super::OnConstruction(Transform);
 #if WITH_EDITOR
+    BoundsBox->ShapeColor = GetBoxEditorColor();
     ApplyBoundsToBox();
     BakedAssetSaveName = GetAssetSaveGroupName() + TEXT("_") + GetActorGuid().ToString();
+    
 #endif
 }
 

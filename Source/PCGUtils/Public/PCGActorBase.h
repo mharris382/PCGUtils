@@ -44,6 +44,9 @@ protected:
 
     FBox GetPCGBounds() const;
 
+    UFUNCTION(BlueprintNativeEvent, Category = "PCG|Editor")
+    FColor GetBoxEditorColor() const;
+    FColor GetBoxEditorColor_Implementation() const    {  return FColor::White.WithAlpha(1.f);   }
     /**
      * Called by RecenterActorToBounds before the actor pivot moves.
      * LocalDeltaTransform is the transform that must be applied to any local-space
