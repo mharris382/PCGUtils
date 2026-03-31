@@ -31,10 +31,13 @@ FBox UPCGUtilsHelpers::ComputeSplineBoundingBox(
 	}
 
 	// Helper: convert a world-space position to the desired output space.
-	const FTransform& ComponentTransform = SplineComponent->GetComponentTransform();
+	// When bLocalSpace is true we want actor-local space, not spline-component-local space,
+	// so that the bounding box accounts for the spline component's RelativeTransform offset.
+	const AActor* Owner = SplineComponent->GetOwner();
+	const FTransform LocalSpaceTransform = Owner ? Owner->GetActorTransform() : SplineComponent->GetComponentTransform();
 	auto ToOutputSpace = [&](const FVector& WorldPos) -> FVector
 	{
-		return bLocalSpace ? ComponentTransform.InverseTransformPosition(WorldPos) : WorldPos;
+		return bLocalSpace ? LocalSpaceTransform.InverseTransformPosition(WorldPos) : WorldPos;
 	};
 
 	// ── Control points ────────────────────────────────────────────────────────
