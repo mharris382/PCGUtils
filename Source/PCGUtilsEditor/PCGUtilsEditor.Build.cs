@@ -25,6 +25,7 @@ public class PCGUtilsEditor : ModuleRules
                 "RenderCore",
                 "RHI",
                 "ModelingOperators",
+                "UnrealEd"
             }
         );
 
@@ -74,8 +75,10 @@ public class PCGUtilsEditor : ModuleRules
                 "TypedElementRuntime",
 				
                 "LevelEditor",
-                "SceneOutliner", 
-                "AdvancedPreviewScene"
+                "SceneOutliner",
+                "AdvancedPreviewScene",
+
+                "ComponentVisualizers"
             }
         );
     }
