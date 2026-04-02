@@ -1,6 +1,31 @@
 #include "Components/PCGSplineComponent.h"
 #include "Components/BoxComponent.h"
 
+#if WITH_EDITOR
+void UPCGSplineComponent::PostEditChangeProperty(FPropertyChangedEvent& PropertyChangedEvent)
+{
+    Super::PostEditChangeProperty(PropertyChangedEvent);
+    FLinearColor selectedColor;
+    FLinearColor unselectedColor;
+    FLinearColor tangentColor;
+    GetSplineEditorColors(selectedColor, unselectedColor, tangentColor);
+#if WITH_EDITORONLY_DATA
+    EditorUnselectedSplineSegmentColor = unselectedColor;
+    EditorSelectedSplineSegmentColor = selectedColor;
+    EditorTangentColor = tangentColor;
+#endif
+}
+#endif
+
+
+void UPCGSplineComponent::GetSplineEditorColors_Implementation(FLinearColor& UnselectedColor,
+    FLinearColor& SelectedColor, FLinearColor& TangentColor) const
+{
+    UnselectedColor =FLinearColor(0.1f, 0.8f, 0.1f, 1.f);
+    SelectedColor  = FLinearColor(1.0f, 0.9f, 0.1f, 1.f);
+    TangentColor = FLinearColor(1.0f, 0.9f, 0.1f, 1.f);
+}
+
 
 UPCGSplineComponent::UPCGSplineComponent(const FObjectInitializer& ObjectInitializer) : Super(ObjectInitializer)
 {

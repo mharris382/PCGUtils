@@ -91,8 +91,53 @@ class PCGUTILS_API UPCGSplineComponent : public USplineComponent,
     GENERATED_BODY()
 
 public:
+	
+#if WITH_EDITOR
+	virtual void PostEditChangeProperty(FPropertyChangedEvent& PropertyChangedEvent) override;
+#endif
+	
+	UFUNCTION(BlueprintNativeEvent, Category="CourseSpline|Editor")
+	void GetSplineEditorColors(FLinearColor& UnselectedColor, FLinearColor& SelectedColor, FLinearColor& TangentColor) const;
+	void GetSplineEditorColors_Implementation(FLinearColor& UnselectedColor, FLinearColor& SelectedColor, FLinearColor& TangentColor) const;
+	
     UPCGSplineComponent(const FObjectInitializer& ObjectInitializer);
 
+	UFUNCTION(BlueprintNativeEvent, Category = "PCG|Spline")
+	void OnUpdatedSpline();
+	void OnUpdatedSpline_Implementation() { }
+
+    
+    virtual TArray<FPCGNamedOverrideGraph> GetOverrideGraphEntries_Implementation() const override;
+
+public:
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "PCG")
+    float Height = 0.0f;
+
+    // -------------------------------------------------------------------------
+// PCG|Bake overrides
+// -------------------------------------------------------------------------
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "PCG|Overrides")
+    FPCGOverrideGraph PreBakeGraph;
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "PCG|Overrides")
+    FPCGOverrideGraph PostBakeGraph;
+
+    // -------------------------------------------------------------------------
+    // PCG|Spline overrides
+    // -------------------------------------------------------------------------
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "PCG|Overrides")
+    FPCGOverrideGraph PreProcessSplineGraph;
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "PCG|Overrides")
+    FPCGOverrideGraph PostSpawnGraph;
+	
+
+	
+	
+public:
+	
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="PCG|Snap")
     EPCGSplineSnapMode SnapMode = EPCGSplineSnapMode::None;
     
@@ -137,53 +182,22 @@ public:
 	TArray<FSnappedSplinePoint> SnappedSplinePoints;
     
     TArray<USplineComponent*> GetSnapTargets() const;
-    
-    // IPCGOverrideGraphProvider
-    virtual TArray<FPCGNamedOverrideGraph> GetOverrideGraphEntries_Implementation() const override;
-
-	UFUNCTION(BlueprintNativeEvent, Category = "PCG|Spline")
-    void OnUpdatedSpline();
-    void OnUpdatedSpline_Implementation() { }
-
-    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "PCG")
-    float Height = 0.0f;
-
-    // -------------------------------------------------------------------------
-// PCG|Bake overrides
-// -------------------------------------------------------------------------
-
-    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "PCG|Overrides")
-    FPCGOverrideGraph PreBakeGraph;
-
-    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "PCG|Overrides")
-    FPCGOverrideGraph PostBakeGraph;
-
-    // -------------------------------------------------------------------------
-    // PCG|Spline overrides
-    // -------------------------------------------------------------------------
-
-    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "PCG|Overrides")
-    FPCGOverrideGraph PreProcessSplineGraph;
-
-    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "PCG|Overrides")
-    FPCGOverrideGraph PostSpawnGraph;
 	
 	UFUNCTION(BlueprintCallable, Category = "PCG|Spline")
 	void RefreshSnappedSplinePoints();
-
-
-
+	
+		
 	FSplinePoint FindSnappedSplinePointFor(const int splinePointIndex, const TArray<USplineComponent*> targets) const;
-	
-	
 	
 	UFUNCTION(BlueprintNativeEvent, CallInEditor, Category = "PCG|Snap")
 	FSplinePoint PostProcessSnappedSplinePoint(const int splinePointIndex, const FSplinePoint& SnappedSplinePoint, const USplineComponent* SnappedSpline, float SnappedTime) const;
 	FSplinePoint PostProcessSnappedSplinePoint_Implementation(const int splinePointIndex, const FSplinePoint& SnappedSplinePoint, const USplineComponent* SnappedSpline, float SnappedTime) const { return SnappedSplinePoint; }
-    // -------------------------------------------------------------------------
+	// -------------------------------------------------------------------------
 	
 private:
 	FSplinePoint GetSnappedSplinePoint(const int splinePointIndex, const FSplinePoint& SplinePoint, const TArray<USplineComponent*>& TargetSplines) const;
+
+
     // PCG|Bake overrides
     // -------------------------------------------------------------------------
 
