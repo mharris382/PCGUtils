@@ -1,5 +1,6 @@
 #include "Components/PCGSplineComponent.h"
 #include "Components/BoxComponent.h"
+#include  "PCGActorBase.h"
 
 #if WITH_EDITOR
 void UPCGSplineComponent::PostEditChangeProperty(FPropertyChangedEvent& PropertyChangedEvent)
@@ -14,6 +15,14 @@ void UPCGSplineComponent::PostEditChangeProperty(FPropertyChangedEvent& Property
     EditorSelectedSplineSegmentColor = selectedColor;
     EditorTangentColor = tangentColor;
 #endif
+    
+    if (bRegeneratePCGOnSplineEdits)
+    {
+        APCGActorBase* actor = Cast<APCGActorBase>(GetOwner());
+        if (!actor)
+            return;
+        actor->TriggerRegeneratePCGOnSplineEdits();
+    }
 }
 #endif
 

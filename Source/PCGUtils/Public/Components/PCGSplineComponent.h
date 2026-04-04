@@ -113,6 +113,10 @@ public:
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "PCG")
     float Height = 0.0f;
 
+	
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "PCG")
+	bool bRegeneratePCGOnSplineEdits = true;
+	
     // -------------------------------------------------------------------------
 // PCG|Bake overrides
 // -------------------------------------------------------------------------

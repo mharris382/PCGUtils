@@ -58,6 +58,20 @@ FBox APCGActorBase::GetPCGBounds() const
 	return FBox(origin, extents);
 }
 
+void APCGActorBase::TriggerRegeneratePCGOnSplineEdits()
+{   
+    if (PCGComponent && bAllowSplineEditsToTriggerGeneration)
+    {
+        RegeneratePCGOnSplineEdits(bAllowSplineEditsToForceGenerate);
+    }
+    
+}
+
+void APCGActorBase::RegeneratePCGOnSplineEdits_Implementation(bool bForceGen)
+{
+    PCGComponent->GenerateLocal(bForceGen);
+}
+
 void APCGActorBase::ApplyBoundsToBox()
 {
 	if (!BoundsBox)
@@ -184,6 +198,8 @@ void APCGActorBase::RecenterActorToBounds()
     MarkPackageDirty();
 #endif
 }
+
+
 
 void APCGActorBase::OnLocalSpaceDataRemapped_Implementation(const FTransform& LocalDeltaTransform)
 {

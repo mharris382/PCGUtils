@@ -27,7 +27,15 @@ public:
     UFUNCTION(CallInEditor, Category = "PCG|Utilities")
     void RecenterActorToBounds();
 
+    void TriggerRegeneratePCGOnSplineEdits();
+    
+    
 protected:
+    UFUNCTION(BlueprintNativeEvent, Category = "PCG|Utilities")
+    void RegeneratePCGOnSplineEdits(bool bForceGen);
+    void RegeneratePCGOnSplineEdits_Implementation(bool bForceGen);
+    
+
 
     virtual void OnConstruction(const FTransform& Transform) override;
 
@@ -59,6 +67,7 @@ protected:
     void OnLocalSpaceDataRemapped(const FTransform& LocalDeltaTransform);
     virtual void OnLocalSpaceDataRemapped_Implementation(const FTransform& LocalDeltaTransform);
 
+    
 private:
     void ApplyBoundsToBox();
 
@@ -66,7 +75,13 @@ public:
 
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "PCG")
     int32 Seed = 0;
+    
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "PCG|Editor" ,AdvancedDisplay)
+    bool bAllowSplineEditsToTriggerGeneration = true;
 
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "PCG|Editor" ,AdvancedDisplay, meta = (EditCondition="bAllowSplineEditsToTriggerGeneration"))
+    bool bAllowSplineEditsToForceGenerate = true;
+    
     // Symmetric padding added to each side of the computed bounds.
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "PCG|Bounds", meta = (ClampMin = "0.0"))
     float BoundsPadding = 0.f;
