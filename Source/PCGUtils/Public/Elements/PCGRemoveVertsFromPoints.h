@@ -4,23 +4,27 @@
 #include "PCGSettings.h"
 #include "PCGContext.h"
 #include "Elements/PCGDynamicMeshBaseElement.h"
-#include "Metadata/PCGAttributePropertySelector.h"
 
 #include "PCGRemoveVertsFromPoints.generated.h"
 
 // ─────────────────────────────────────────────────────────────────────────────
 // What this node does
 // ─────────────────────────────────────────────────────────────────────────────
-// Removes vertices from a DynamicMesh using vertex IDs sourced from a PCG
-// PointData attribute.  Each point contributes one int32 vertex ID; the node
-// removes those vertices together with all triangles that reference them.
-// Any adjacent vertex that becomes isolated as a result is also removed.
+// Removes vertices (and their adjacent triangles) from a DynamicMesh based on
+// a filtered PCG PointData set.
 //
-// Intended use: round-trip with PCG point ops to identify and cull unwanted
-// vertices (e.g. clip overhangs, remove interior verts after a flatten pass).
+// Intended round-trip pattern:
+//   DynamicMesh → [To Points] → [PCG filter / select nodes]
+//                             → [This node] → DynamicMesh with verts removed
 //
-// Unlike PCGApplyPointsToDynamicMesh, point count does NOT need to match
-// vertex count — the point set is treated as an unordered bag of VIDs.
+// Each input point is matched back to a mesh vertex by POSITION. This works
+// naturally because the points were originally generated from the mesh vertices,
+// so their positions are identical (as float3 values). No explicit vertex-index
+// attribute is required.
+//
+// After all matched triangles are removed, any vertex that becomes isolated
+// (including the matched vertices themselves and any adjacent-only neighbours)
+// is also cleaned up automatically.
 //
 // Inputs are paired 1:1 (mesh[i] is processed with points[i]).
 // ─────────────────────────────────────────────────────────────────────────────
@@ -47,9 +51,10 @@ public:
 	{
 		return NSLOCTEXT("PCGUtils", "RemoveVertsFromPoints_Tooltip",
 			"Removes vertices (and their adjacent triangles) from a Dynamic Mesh.\n"
-			"Each point in the input set must carry an int32 attribute specifying the vertex ID to remove.\n"
-			"Any vertex that becomes isolated as a side-effect of triangle removal is also cleaned up.\n"
-			"Point count does not need to match vertex count.");
+			"Each input point is matched to a mesh vertex by position.\n"
+			"Use the PCG 'To Points' node to convert the mesh, filter the points, then feed "
+			"the filtered set into this node to remove the corresponding vertices.\n"
+			"Any vertex that becomes isolated after triangle removal is also cleaned up.");
 	}
 #endif // WITH_EDITOR
 
@@ -61,19 +66,13 @@ protected:
 
 public:
 	/**
-	 * Point attribute that holds the vertex ID (int32) to remove.
-	 * Must resolve to an int32 value (broadcast from other integer types is supported).
+	 * Log a warning for each input point that could not be matched to a mesh vertex.
+	 * This can happen if the point positions were modified between the To Points
+	 * conversion and this node, or if a point set from a different source is used.
+	 * Disabled by default to keep the log quiet during iterative authoring.
 	 */
 	UPROPERTY(BlueprintReadWrite, EditAnywhere, Category = "Settings", meta = (PCG_Overridable))
-	FPCGAttributePropertyInputSelector VertexIndexAttribute;
-
-	/**
-	 * Log a warning when a point's vertex ID doesn't correspond to a valid vertex
-	 * in the mesh (out of range, already removed, or never existed).
-	 * Disable to silence noise when duplicate or stale IDs are expected.
-	 */
-	UPROPERTY(BlueprintReadWrite, EditAnywhere, Category = "Settings", meta = (PCG_Overridable))
-	bool bWarnOnInvalidIndex = false;
+	bool bWarnOnUnmatchedPoints = false;
 };
 
 

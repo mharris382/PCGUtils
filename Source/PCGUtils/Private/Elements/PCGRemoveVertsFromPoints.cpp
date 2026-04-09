@@ -3,7 +3,6 @@
 #include "PCGPin.h"
 #include "Data/PCGDynamicMeshData.h"
 #include "Data/PCGBasePointData.h"
-#include "Metadata/Accessors/PCGAttributeAccessorHelpers.h"
 
 #include "UDynamicMesh.h"
 #include "DynamicMesh/DynamicMesh3.h"
@@ -71,18 +70,22 @@ bool FPCGRemoveVertsFromPointsElement::ProcessSinglePair(
 		return false;
 	}
 
-	// ── Build VID accessor ────────────────────────────────────────────────────
+	// ── Build float-position → VID lookup ────────────────────────────────────
+	//
+	// PCG stores point positions as float. DynamicMesh3 stores vertex positions
+	// as double. When "To Points" converts the mesh, it downcasts double→float.
+	// We do the same downcast here so the comparison is exact.
+	//
+	// Using FVector3f as the map key (bitwise equality). This is safe because
+	// both sides perform the same double→float truncation.
 
-	const FPCGAttributePropertyInputSelector Fixed = Settings->VertexIndexAttribute.CopyAndFixLast(InPointData);
-	TUniquePtr<const IPCGAttributeAccessor>     Accessor = PCGAttributeAccessorHelpers::CreateConstAccessor(InPointData, Fixed);
-	TUniquePtr<const IPCGAttributeAccessorKeys> Keys     = PCGAttributeAccessorHelpers::CreateConstKeys(InPointData, Fixed);
+	TMap<FVector3f, int32> PosToVID;
+	PosToVID.Reserve(SrcRaw->VertexCount());
 
-	if (!Accessor || !Keys)
+	for (int32 VID : SrcRaw->VertexIndicesItr())
 	{
-		PCGLog::Metadata::LogFailToCreateAccessorError(Fixed, InContext);
-		// Pass mesh through unchanged so the graph doesn't go dark
-		InContext->OutputData.TaggedData.Add(MeshTaggedData);
-		return true;
+		const FVector3d V = SrcRaw->GetVertex(VID);
+		PosToVID.Add(FVector3f((float)V.X, (float)V.Y, (float)V.Z), VID);
 	}
 
 	// ── CopyOrSteal mutable mesh ──────────────────────────────────────────────
@@ -99,25 +102,31 @@ bool FPCGRemoveVertsFromPointsElement::ProcessSinglePair(
 	if (!RawMesh)
 		return false;
 
-	// ── Collect VIDs and adjacent TIDs ───────────────────────────────────────
+	// ── Match points → VIDs, collect adjacent TIDs ───────────────────────────
 
 	const int32 PointCount = InPointData->GetNumPoints();
+	const TConstPCGValueRange<FTransform> TransformRange = InPointData->GetConstTransformValueRange();
 
 	TSet<int32> TIDsToRemove;
-	TIDsToRemove.Reserve(PointCount * 6); // rough guess: ~6 tris per vert on average
+	TIDsToRemove.Reserve(PointCount * 6);
 
-	int32 InvalidCount = 0;
+	int32 UnmatchedCount = 0;
 
 	for (int32 i = 0; i < PointCount; ++i)
 	{
-		int32 VID = INDEX_NONE;
-		Accessor->Get<int32>(VID, i, *Keys, EPCGAttributeAccessorFlags::AllowBroadcastAndConstructible);
+		const FVector Loc = TransformRange[i].GetLocation();
+		const FVector3f Locf((float)Loc.X, (float)Loc.Y, (float)Loc.Z);
 
-		if (!RawMesh->IsVertex(VID))
+		const int32* VIDPtr = PosToVID.Find(Locf);
+		if (!VIDPtr)
 		{
-			++InvalidCount;
+			++UnmatchedCount;
 			continue;
 		}
+
+		const int32 VID = *VIDPtr;
+		if (!RawMesh->IsVertex(VID))
+			continue;
 
 		RawMesh->EnumerateVertexTriangles(VID, [&](int32 TID)
 		{
@@ -125,19 +134,20 @@ bool FPCGRemoveVertsFromPointsElement::ProcessSinglePair(
 		});
 	}
 
-	if (Settings->bWarnOnInvalidIndex && InvalidCount > 0)
+	if (Settings->bWarnOnUnmatchedPoints && UnmatchedCount > 0)
 	{
 		PCGLog::LogWarningOnGraph(FText::Format(
-			LOCTEXT("InvalidVIDs", "RemoveVertsFromPoints: {0} point(s) contained invalid vertex IDs and were skipped."),
-			FText::AsNumber(InvalidCount)), InContext);
+			LOCTEXT("UnmatchedPoints",
+				"RemoveVertsFromPoints: {0} point(s) did not match any mesh vertex by position and were skipped. "
+				"Ensure point positions were not modified between the To Points conversion and this node."),
+			FText::AsNumber(UnmatchedCount)), InContext);
 	}
 
 	// ── Remove triangles (with isolated-vertex cleanup) ───────────────────────
 	//
-	// bRemoveIsolatedVertices = true: after each triangle is removed, any of
-	// its three vertices that now have zero adjacent triangles are also deleted.
-	// This covers both the explicitly-targeted VIDs and any boundary vertices
-	// that become dangling as a side-effect.
+	// bRemoveIsolatedVertices = true: after each triangle is removed, any vertex
+	// of that triangle that now has zero adjacent triangles is also deleted.
+	// This covers the target VIDs and any boundary vertices that become dangling.
 
 	for (int32 TID : TIDsToRemove)
 	{
