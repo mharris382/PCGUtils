@@ -34,12 +34,11 @@ APCGActorBase::APCGActorBase()
 
 void APCGActorBase::OnConstruction(const FTransform& Transform)
 {
-    Super::OnConstruction(Transform);
 #if WITH_EDITOR
+    Super::OnConstruction(Transform);
     BoundsBox->ShapeColor = GetBoxEditorColor();
     ApplyBoundsToBox();
     BakedAssetSaveName = GetAssetSaveGroupName() + TEXT("_") + GetActorGuid().ToString();
-    
 #endif
 }
 
@@ -60,11 +59,12 @@ FBox APCGActorBase::GetPCGBounds() const
 
 void APCGActorBase::TriggerRegeneratePCGOnSplineEdits()
 {   
+#if WITH_EDITOR
     if (PCGComponent && bAllowSplineEditsToTriggerGeneration)
     {
         RegeneratePCGOnSplineEdits(bAllowSplineEditsToForceGenerate);
     }
-    
+#endif
 }
 
 void APCGActorBase::RegeneratePCGOnSplineEdits_Implementation(bool bForceGen)
@@ -74,6 +74,7 @@ void APCGActorBase::RegeneratePCGOnSplineEdits_Implementation(bool bForceGen)
 
 void APCGActorBase::ApplyBoundsToBox()
 {
+#if WITH_EDITOR
 	if (!BoundsBox)
 		return;
 
@@ -98,6 +99,7 @@ void APCGActorBase::ApplyBoundsToBox()
 
     BoundsBox->SetRelativeLocation(Center);
     BoundsBox->SetBoxExtent(HalfExt, /*bUpdateOverlaps=*/false);
+#endif
 }
 
 void APCGActorBase::RecenterActorToBounds()

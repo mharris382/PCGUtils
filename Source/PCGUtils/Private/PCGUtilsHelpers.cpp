@@ -16,14 +16,14 @@ FBox UPCGUtilsHelpers::ComputeSplineBoundingBox(
 {
 	if (!SplineComponent)
 	{
-		return FBox(EForceInit::ForceInit);
+		return FBox(EForceInit::ForceInit).ExpandBy(1.0f);
 	}
 
 	// Clamp to the documented minimum of 0.
 	const int32 Subdivisions = FMath::Max(0, SampleSubdivisionCount);
 
 	FBox Result(EForceInit::ForceInit);
-
+	Result = Result.ExpandBy(1.0);
 	const int32 NumPoints = SplineComponent->GetNumberOfSplinePoints();
 	if (NumPoints == 0)
 	{
@@ -48,7 +48,8 @@ FBox UPCGUtilsHelpers::ComputeSplineBoundingBox(
 	}
 
 	// ── Intra-segment samples ─────────────────────────────────────────────────
-	if (Subdivisions > 0)
+	const float SplineLength = SplineComponent->GetSplineLength();
+	if (Subdivisions > 0 && SplineLength > KINDA_SMALL_NUMBER)
 	{
 		const bool bIsClosed   = SplineComponent->IsClosedLoop();
 		const int32 NumSegments = bIsClosed ? NumPoints : NumPoints - 1;
@@ -64,7 +65,6 @@ FBox UPCGUtilsHelpers::ComputeSplineBoundingBox(
 				(SegIndex + 1) % NumPoints);
 
 			// Handle wrap-around on closed loops where end < start.
-			const float SplineLength  = SplineComponent->GetSplineLength();
 			const float EffectiveEnd  = (SegEndDist > SegStartDist)
 				? SegEndDist
 				: SegEndDist + SplineLength;
@@ -82,7 +82,7 @@ FBox UPCGUtilsHelpers::ComputeSplineBoundingBox(
 		}
 	}
 
-	return Result;
+	return Result.ExpandBy(1.0f);
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -96,10 +96,11 @@ FBox UPCGUtilsHelpers::ComputeActorSplineBoundingBox(
 {
 	if (!Actor)
 	{
-		return FBox(EForceInit::ForceInit);
+		return FBox(EForceInit::ForceInit).ExpandBy(1.0f);
 	}
-
 	FBox Result(EForceInit::ForceInit);
+	Result = Result.ExpandBy(1.0);
+#if WITH_EDITOR
 
 	TArray<USplineComponent*> SplineComponents;
 	Actor->GetComponents<USplineComponent>(SplineComponents);
@@ -112,6 +113,6 @@ FBox UPCGUtilsHelpers::ComputeActorSplineBoundingBox(
 			Result += SplineBox;
 		}
 	}
-
+#endif
 	return Result;
 }
