@@ -10,6 +10,17 @@ void UPCGSplineComponent::PostEditChangeProperty(FPropertyChangedEvent& Property
     FLinearColor unselectedColor;
     FLinearColor tangentColor;
     GetSplineEditorColors(selectedColor, unselectedColor, tangentColor);
+
+    switch (GetSplineLoopMode()) {
+    default:
+        break;
+    case ESplineLoopMode::ClosedLoopOnly:
+        SetClosedLoop(true, true);
+        break;
+    case ESplineLoopMode::OpenLoopOnly:
+        SetClosedLoop(false, false);
+        break;
+    }
 #if WITH_EDITORONLY_DATA
     EditorUnselectedSplineSegmentColor = unselectedColor;
     EditorSelectedSplineSegmentColor = selectedColor;

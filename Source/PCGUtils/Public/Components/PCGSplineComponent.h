@@ -17,6 +17,14 @@ enum class EPCGSplineSnapMode : uint8
     AllPoints
 };
 
+
+enum class ESplineLoopMode : uint8
+{
+	UserControlled,
+	ClosedLoopOnly,
+	OpenLoopOnly
+};
+
 UENUM(BlueprintType)
 enum class EPCGSplineSnapTargetMode : uint8
 {
@@ -196,7 +204,10 @@ public:
 	UFUNCTION(BlueprintNativeEvent, CallInEditor, Category = "PCG|Snap")
 	FSplinePoint PostProcessSnappedSplinePoint(const int splinePointIndex, const FSplinePoint& SnappedSplinePoint, const USplineComponent* SnappedSpline, float SnappedTime) const;
 	FSplinePoint PostProcessSnappedSplinePoint_Implementation(const int splinePointIndex, const FSplinePoint& SnappedSplinePoint, const USplineComponent* SnappedSpline, float SnappedTime) const { return SnappedSplinePoint; }
+	
 	// -------------------------------------------------------------------------
+protected:
+	virtual ESplineLoopMode GetSplineLoopMode() { return  ESplineLoopMode::UserControlled; }
 	
 private:
 	FSplinePoint GetSnappedSplinePoint(const int splinePointIndex, const FSplinePoint& SplinePoint, const TArray<USplineComponent*>& TargetSplines) const;
