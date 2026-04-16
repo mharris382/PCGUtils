@@ -32,7 +32,7 @@ void UPCGSplineComponent::PostEditChangeProperty(FPropertyChangedEvent& Property
         APCGActorBase* actor = Cast<APCGActorBase>(GetOwner());
         if (!actor)
             return;
-        actor->TriggerRegeneratePCGOnSplineEdits();
+        actor->TriggerRegeneratePCGOnComponentEdits(this);
     }
 }
 #endif

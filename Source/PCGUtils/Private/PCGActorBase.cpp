@@ -57,10 +57,10 @@ FBox APCGActorBase::GetPCGBounds() const
 	return FBox(origin, extents);
 }
 
-void APCGActorBase::TriggerRegeneratePCGOnSplineEdits()
-{   
+void APCGActorBase::TriggerRegeneratePCGOnComponentEdits(UActorComponent* TriggeringComponent)
+{
 #if WITH_EDITOR
-    if (PCGComponent && bAllowSplineEditsToTriggerGeneration)
+    if (PCGComponent && bAllowComponentEditsToTriggerGeneration)
     {
         RegeneratePCGOnSplineEdits(bAllowSplineEditsToForceGenerate);
     }

@@ -5,6 +5,7 @@
 #include "OverrideGraphs.h"
 #include "PCGActorBase.generated.h"
 
+class UActorComponent;
 class UBoxComponent;
 class UPCGComponent;
 class UPCGGenDataAsset;
@@ -27,7 +28,7 @@ public:
     UFUNCTION(CallInEditor, Category = "PCG|Utilities")
     void RecenterActorToBounds();
 
-    void TriggerRegeneratePCGOnSplineEdits();
+    virtual void TriggerRegeneratePCGOnComponentEdits(UActorComponent* TriggeringComponent = nullptr);
     
     
 protected:
@@ -77,9 +78,9 @@ public:
     int32 Seed = 0;
     
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "PCG|Editor" ,AdvancedDisplay)
-    bool bAllowSplineEditsToTriggerGeneration = true;
+    bool bAllowComponentEditsToTriggerGeneration = true;
 
-    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "PCG|Editor" ,AdvancedDisplay, meta = (EditCondition="bAllowSplineEditsToTriggerGeneration"))
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "PCG|Editor" ,AdvancedDisplay, meta = (EditCondition="bAllowComponentEditsToTriggerGeneration"))
     bool bAllowSplineEditsToForceGenerate = true;
     
     // Symmetric padding added to each side of the computed bounds.
