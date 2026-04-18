@@ -1,5 +1,5 @@
 #include "ShapePath/ShapePathComponent.h"
-
+#include "PCGActorBase.h"
 UShapePathComponent::UShapePathComponent()
 {
 	Generator = CreateDefaultSubobject<UCircleGenerator>(TEXT("DefaultGenerator"));
@@ -44,11 +44,33 @@ FTransform UShapePathComponent::GetPathTransform() const
 	return GetComponentTransform();
 }
 
+FVector UShapePathComponent::GetPathPoint(int32 PointIndex) const
+{
+	if (!CachedPoints.IsValidIndex(PointIndex))
+	{
+		return  FVector(0.0f, 0.0f, 0.0f);
+	}
+	return CachedPoints[PointIndex];
+}
+
 #if WITH_EDITOR
 void UShapePathComponent::PostEditChangeChainProperty(FPropertyChangedChainEvent& PropertyChangedEvent)
 {
 	Super::PostEditChangeChainProperty(PropertyChangedEvent);
 	RebuildPoints();
 	MarkRenderStateDirty();
+	if (APCGActorBase* actor = Cast<APCGActorBase>(GetOwner()))
+	{
+		actor->TriggerRegeneratePCGOnComponentEdits(this);
+	}
+}
+
+void UShapePathComponent::PostEditChangeProperty(FPropertyChangedEvent& PropertyChangedEvent)
+{
+	Super::PostEditChangeProperty(PropertyChangedEvent);
+	if (APCGActorBase* actor = Cast<APCGActorBase>(GetOwner()))
+	{
+		actor->TriggerRegeneratePCGOnComponentEdits(this);
+	}
 }
 #endif

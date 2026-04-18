@@ -9,6 +9,35 @@
 // ComputeSplineBoundingBox
 // ─────────────────────────────────────────────────────────────────────────────
 
+FBox UPCGUtilsHelpers::ComputePathBoundingBox(UShapePathComponent* PathComponent, bool bLocalSpace)
+{
+	if (!PathComponent)
+	{
+		return FBox(EForceInit::ForceInit).ExpandBy(1.0f);
+	}
+	FBox Result(EForceInit::ForceInit);
+	PathComponent->RebuildPoints();
+	const int32 NumPoints =PathComponent->GetNumPoints();
+	if (NumPoints == 0)
+	{
+		return Result;
+	}
+	
+	const AActor* Owner = PathComponent->GetOwner();
+	const FTransform LocalSpaceTransform = Owner ? Owner->GetActorTransform() : PathComponent->GetComponentTransform();
+	auto ToOutputSpace = [&](const FVector& WorldPos) -> FVector
+	{
+		return bLocalSpace ? LocalSpaceTransform.InverseTransformPosition(WorldPos) : WorldPos;
+	};
+	
+	for (int32 PointIndex = 0; PointIndex < NumPoints; ++PointIndex)
+	{
+		const FVector WorldPos =  PathComponent->GetPathPoint(PointIndex);
+		Result += ToOutputSpace(WorldPos);
+	}
+	return Result.ExpandBy(1.0f);
+}
+
 FBox UPCGUtilsHelpers::ComputeSplineBoundingBox(
 	const USplineComponent* SplineComponent,
 	bool bLocalSpace,
@@ -89,7 +118,7 @@ FBox UPCGUtilsHelpers::ComputeSplineBoundingBox(
 // ComputeActorSplineBoundingBox
 // ─────────────────────────────────────────────────────────────────────────────
 
-FBox UPCGUtilsHelpers::ComputeActorSplineBoundingBox(
+FBox UPCGUtilsHelpers::ComputeActorPCGBoundingBox(
 	const AActor* Actor,
 	bool bLocalSpace,
 	int32 SampleSubdivisionCount)
@@ -111,6 +140,17 @@ FBox UPCGUtilsHelpers::ComputeActorSplineBoundingBox(
 		if (SplineBox.IsValid)
 		{
 			Result += SplineBox;
+		}
+	}
+	
+	TArray<UShapePathComponent*> ShapePathComponents;
+	Actor->GetComponents<UShapePathComponent>(ShapePathComponents);
+	for (UShapePathComponent* ShapePathComponent : ShapePathComponents)
+	{
+		const FBox PathBox = ComputePathBoundingBox(ShapePathComponent, bLocalSpace);
+		if (PathBox.IsValid)
+		{
+			Result += PathBox;
 		}
 	}
 #endif

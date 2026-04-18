@@ -4,6 +4,7 @@
 
 #include "CoreMinimal.h"
 #include "Kismet/BlueprintFunctionLibrary.h"
+#include "ShapePath/ShapePathComponent.h"
 #include "PCGUtilsHelpers.generated.h"
 
 class USplineComponent;
@@ -18,6 +19,12 @@ class PCGUTILS_API UPCGUtilsHelpers : public UBlueprintFunctionLibrary
 
 public:
 
+	UFUNCTION(BlueprintCallable, BlueprintPure, Category = "PCGUtils|Spline",
+		meta = (Keywords = "spline bounds bounding box AABB"))
+	static FBox ComputePathBoundingBox(
+		UShapePathComponent* PathComponent,
+		bool bLocalSpace = true);
+	
 	/**
 	 * Computes a bounding box that fits around the given spline component.
 	 *
@@ -57,7 +64,7 @@ public:
 	 */
 	UFUNCTION(BlueprintCallable, BlueprintPure, Category = "PCGUtils|Spline",
 		meta = (Keywords = "spline bounds bounding box AABB actor"))
-	static FBox ComputeActorSplineBoundingBox(
+	static FBox ComputeActorPCGBoundingBox(
 		const AActor* Actor,
 		bool bLocalSpace = true,
 		int32 SampleSubdivisionCount = 1);

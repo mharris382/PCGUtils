@@ -1,6 +1,10 @@
 #include "Visualizers/ShapePathComponentVisualizer.h"
 #include "ShapePath/ShapePathComponent.h"
 #include "SceneManagement.h"
+#include "EditorViewportClient.h"
+#include "Editor.h"
+
+IMPLEMENT_HIT_PROXY(HShapePathProxy, HComponentVisProxy)
 
 void FShapePathComponentVisualizer::DrawVisualization(
 	const UActorComponent* Component,
@@ -31,8 +35,53 @@ void FShapePathComponentVisualizer::DrawVisualization(
 		PDI->DrawLine(WorldA, WorldB, FLinearColor::Green, SDPG_Foreground);
 	}
 
+	PDI->SetHitProxy(new HShapePathProxy(ShapeComp));
 	for (int32 i = 0; i < NumPoints; ++i)
 	{
 		PDI->DrawPoint(CompTransform.TransformPosition(Points[i]), FLinearColor::Yellow, 8.f, SDPG_Foreground);
 	}
+	PDI->SetHitProxy(nullptr);
+}
+
+bool FShapePathComponentVisualizer::VisProxyHandleClick(
+	FEditorViewportClient* InViewportClient,
+	HComponentVisProxy* VisProxy,
+	const FViewportClick& Click)
+{
+	if (!VisProxy || !VisProxy->IsA(HShapePathProxy::StaticGetType()))
+	{
+		return false;
+	}
+
+	UShapePathComponent* Comp = const_cast<UShapePathComponent*>(
+		Cast<UShapePathComponent>(VisProxy->Component.Get()));
+	if (!Comp)
+	{
+		return false;
+	}
+
+	EditedComponent = Comp;
+
+	if (GEditor)
+	{
+		// Clear all actor and component selections, then select only this component's owner.
+		GEditor->SelectNone(false, true, false);
+		if (AActor* Owner = Comp->GetOwner())
+		{
+			GEditor->SelectActor(Owner, /*bInSelected=*/true, /*bNotify=*/false, /*bSelectEvenIfHidden=*/true);
+		}
+		GEditor->SelectComponent(Comp, /*bInSelected=*/true, /*bNotify=*/true, /*bSelectEvenIfHidden=*/false);
+	}
+
+	return true;
+}
+
+void FShapePathComponentVisualizer::EndEditing()
+{
+	EditedComponent.Reset();
+}
+
+UActorComponent* FShapePathComponentVisualizer::GetEditedComponent() const
+{
+	return EditedComponent.Get();
 }

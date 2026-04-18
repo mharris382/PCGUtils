@@ -84,7 +84,7 @@ void APCGActorBase::ApplyBoundsToBox()
     FBox CombinedBox(LocalMin, LocalMax);
 
     // Expand by any spline components attached to this actor (local space).
-    const FBox SplineBox = UPCGUtilsHelpers::ComputeActorSplineBoundingBox(this, /*bLocalSpace=*/true);
+    const FBox SplineBox = UPCGUtilsHelpers::ComputeActorPCGBoundingBox(this, /*bLocalSpace=*/true);
     if (SplineBox.IsValid)
     {
         CombinedBox += SplineBox;
@@ -110,7 +110,7 @@ void APCGActorBase::RecenterActorToBounds()
     ComputeLocalBounds(LocalMin, LocalMax);
     FBox CombinedBox(LocalMin, LocalMax);
 
-    const FBox SplineBox = UPCGUtilsHelpers::ComputeActorSplineBoundingBox(this, /*bLocalSpace=*/true);
+    const FBox SplineBox = UPCGUtilsHelpers::ComputeActorPCGBoundingBox(this, /*bLocalSpace=*/true);
     if (SplineBox.IsValid)
     {
         CombinedBox += SplineBox;

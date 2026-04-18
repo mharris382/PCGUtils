@@ -24,6 +24,9 @@ public:
 	virtual int32 GetNumPoints() const override;
 	virtual bool GetIsClosedLoop() const override;
 	virtual FTransform GetPathTransform() const override;
+	
+	
+	FVector GetPathPoint(int32 PointIndex) const;
 
 	/** Cached output — public so the visualizer can access it directly. */
 	UPROPERTY(Transient)
@@ -33,8 +36,13 @@ public:
 
 protected:
 	virtual void OnRegister() override;
-
+	
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Shape Path" ,AdvancedDisplay)
+	bool bAllowRegeneratePCGOnEdits = true;
+	
 #if WITH_EDITOR
 	virtual void PostEditChangeChainProperty(FPropertyChangedChainEvent& PropertyChangedEvent) override;
+	
+	virtual void PostEditChangeProperty(FPropertyChangedEvent& PropertyChangedEvent) override;
 #endif
 };
