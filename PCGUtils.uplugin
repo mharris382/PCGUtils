@@ -23,6 +23,11 @@
         {
             "Name": "PCGUtilsEditor",
             "Type": "UncookedOnly",
+            "LoadingPhase": "PostEngineInit"
+        },
+        {
+            "Name": "PCGGrammarUtils",
+            "Type": "Runtime",
             "LoadingPhase": "Default"
         }
     ],

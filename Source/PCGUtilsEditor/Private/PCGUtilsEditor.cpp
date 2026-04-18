@@ -1,7 +1,9 @@
 #include "PCGUtilsEditor.h"
 #include "Customizations/PluginCustomizations.h"
 #include "Visualizers/PCGSplineComponentVisualizer.h"
+#include "Visualizers/ShapePathComponentVisualizer.h"
 #include "Components/PCGSplineComponent.h"
+#include "ShapePath/ShapePathComponent.h"
 #include "Editor/UnrealEdEngine.h"
 #include "UnrealEdGlobals.h"
 
@@ -13,9 +15,13 @@ void FPCGUtilsEditor::StartupModule()
 
 	if (GUnrealEd)
 	{
-		GUnrealEd->RegisterComponentVisualizer(
-			UPCGSplineComponent::StaticClass()->GetFName(),
-			MakeShareable(new FPCGSplineComponentVisualizer));
+		//GUnrealEd->RegisterComponentVisualizer(
+		//	UPCGSplineComponent::StaticClass()->GetFName(),
+		//	MakeShareable(new FPCGSplineComponentVisualizer));
+
+		TSharedPtr<FShapePathComponentVisualizer> ShapeVis = MakeShared<FShapePathComponentVisualizer>();
+		GUnrealEd->RegisterComponentVisualizer(UShapePathComponent::StaticClass()->GetFName(), ShapeVis);
+		ShapeVis->OnRegister();
 	}
 }
 
@@ -26,6 +32,7 @@ void FPCGUtilsEditor::ShutdownModule()
 	if (GUnrealEd)
 	{
 		GUnrealEd->UnregisterComponentVisualizer(UPCGSplineComponent::StaticClass()->GetFName());
+		GUnrealEd->UnregisterComponentVisualizer(UShapePathComponent::StaticClass()->GetFName());
 	}
 }
 
