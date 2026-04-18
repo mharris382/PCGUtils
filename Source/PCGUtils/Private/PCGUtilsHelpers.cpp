@@ -32,7 +32,7 @@ FBox UPCGUtilsHelpers::ComputePathBoundingBox(UShapePathComponent* PathComponent
 	
 	for (int32 PointIndex = 0; PointIndex < NumPoints; ++PointIndex)
 	{
-		const FVector WorldPos =  PathComponent->GetPathPoint(PointIndex);
+		const FVector WorldPos =  PathComponent->GetComponentTransform().TransformPosition(PathComponent->GetPathPoint(PointIndex));
 		Result += ToOutputSpace(WorldPos);
 	}
 	return Result.ExpandBy(1.0f);
