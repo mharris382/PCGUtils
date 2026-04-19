@@ -6,10 +6,7 @@
 void UPCGSplineComponent::PostEditChangeProperty(FPropertyChangedEvent& PropertyChangedEvent)
 {
     Super::PostEditChangeProperty(PropertyChangedEvent);
-    FLinearColor selectedColor;
-    FLinearColor unselectedColor;
-    FLinearColor tangentColor;
-    GetSplineEditorColors(selectedColor, unselectedColor, tangentColor);
+ 
 
     switch (GetSplineLoopMode()) {
     default:
@@ -22,9 +19,17 @@ void UPCGSplineComponent::PostEditChangeProperty(FPropertyChangedEvent& Property
         break;
     }
 #if WITH_EDITORONLY_DATA
-    EditorUnselectedSplineSegmentColor = unselectedColor;
-    EditorSelectedSplineSegmentColor = selectedColor;
-    EditorTangentColor = tangentColor;
+    if (bAutoSetSplineColors)
+    {
+        FLinearColor selectedColor;
+        FLinearColor unselectedColor;
+        FLinearColor tangentColor;
+        GetSplineEditorColors(selectedColor, unselectedColor, tangentColor);
+        EditorUnselectedSplineSegmentColor = unselectedColor;
+        EditorSelectedSplineSegmentColor = selectedColor;
+        EditorTangentColor = tangentColor;
+    }
+    
 #endif
     
     if (bRegeneratePCGOnSplineEdits)

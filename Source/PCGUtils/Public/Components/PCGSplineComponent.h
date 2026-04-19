@@ -146,7 +146,10 @@ public:
     FPCGOverrideGraph PostSpawnGraph;
 	
 
-	
+#if WITH_EDITORONLY_DATA
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Editor", AdvancedDisplay)
+	bool bAutoSetSplineColors = false;
+#endif
 	
 public:
 	

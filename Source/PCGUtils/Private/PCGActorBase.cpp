@@ -30,6 +30,7 @@ APCGActorBase::APCGActorBase()
     ///PCGUtils/PCG/Templates/Template_PreBake_DynMesh.Template_PreBake_DynMesh
 	
     PCGComponent = CreateDefaultSubobject<UPCGComponent>(TEXT("PCGComponent"));
+    BakedAssetSavePath = FDirectoryPath(TEXT("/Game/_Generated"));
 }
 
 void APCGActorBase::OnConstruction(const FTransform& Transform)
