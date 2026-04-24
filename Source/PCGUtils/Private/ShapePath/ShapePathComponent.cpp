@@ -65,6 +65,18 @@ void UShapePathComponent::PostEditChangeChainProperty(FPropertyChangedChainEvent
 	}
 }
 
+void UShapePathComponent::PostEditComponentMove(bool bFinished)
+{
+	Super::PostEditComponentMove(bFinished);
+	if (bFinished)
+	{
+		if (APCGActorBase* actor = Cast<APCGActorBase>(GetOwner()))
+		{
+			actor->TriggerRegeneratePCGOnComponentEdits(this);
+		}
+	}
+}
+
 void UShapePathComponent::PostEditChangeProperty(FPropertyChangedEvent& PropertyChangedEvent)
 {
 	Super::PostEditChangeProperty(PropertyChangedEvent);
