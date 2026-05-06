@@ -176,7 +176,7 @@ public:
 	 * Draws ProcessingMaterial into OutputRenderTarget with InputRenderTarget bound to the named
 	 * texture parameter. Use this for post-capture processing (masking, blurring, remapping, etc.).
 	 */
-	UFUNCTION(BlueprintCallable, Category = "PCGUtils|Capture Baking", meta = (WorldContext = "WorldContextObject"))
+ 	UFUNCTION(BlueprintCallable, Category = "PCGUtils|Capture Baking", meta = (WorldContext = "WorldContextObject"))
 	static FPCGUtilsRenderTargetProcessResult ProcessRenderTargetWithMaterial(
 		UObject* WorldContextObject,
 		const FPCGUtilsRenderTargetProcessRequest& Request);
