@@ -105,8 +105,9 @@ public:
 #endif
 	
 	UFUNCTION(BlueprintNativeEvent, Category="CourseSpline|Editor")
-	void GetSplineEditorColors(FLinearColor& UnselectedColor, FLinearColor& SelectedColor, FLinearColor& TangentColor) const;
-	virtual void GetSplineEditorColors_Implementation(FLinearColor& UnselectedColor, FLinearColor& SelectedColor, FLinearColor& TangentColor) const;
+	void GetSplineEditorColors(bool& hasScriptedEditorColors, FLinearColor& UnselectedColor, FLinearColor& SelectedColor, FLinearColor& TangentColor) const;
+	virtual void GetSplineEditorColors_Implementation(bool& hasScriptedEditorColors,  FLinearColor& UnselectedColor, FLinearColor& SelectedColor, FLinearColor& TangentColor) const;
+
 	
     UPCGSplineComponent(const FObjectInitializer& ObjectInitializer);
 

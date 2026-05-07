@@ -19,12 +19,15 @@ void UPCGSplineComponent::PostEditChangeProperty(FPropertyChangedEvent& Property
         break;
     }
 #if WITH_EDITORONLY_DATA
-    if (bAutoSetSplineColors)
-    {
+    bool hasScriptedEditorColors = false;
+
         FLinearColor selectedColor;
         FLinearColor unselectedColor;
         FLinearColor tangentColor;
-        GetSplineEditorColors(selectedColor, unselectedColor, tangentColor);
+        
+        GetSplineEditorColors(hasScriptedEditorColors, selectedColor, unselectedColor, tangentColor);
+    if (hasScriptedEditorColors)
+    {
         EditorUnselectedSplineSegmentColor = unselectedColor;
         EditorSelectedSplineSegmentColor = selectedColor;
         EditorTangentColor = tangentColor;
@@ -43,9 +46,10 @@ void UPCGSplineComponent::PostEditChangeProperty(FPropertyChangedEvent& Property
 #endif
 
 
-void UPCGSplineComponent::GetSplineEditorColors_Implementation(FLinearColor& UnselectedColor,
+void UPCGSplineComponent::GetSplineEditorColors_Implementation(bool& hasScriptedEditorColors, FLinearColor& UnselectedColor,
     FLinearColor& SelectedColor, FLinearColor& TangentColor) const
 {
+    hasScriptedEditorColors = false;
     UnselectedColor =FLinearColor(0.1f, 0.8f, 0.1f, 1.f);
     SelectedColor  = FLinearColor(1.0f, 0.9f, 0.1f, 1.f);
     TangentColor = FLinearColor(1.0f, 0.9f, 0.1f, 1.f);
