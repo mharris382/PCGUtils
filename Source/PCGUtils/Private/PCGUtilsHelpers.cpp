@@ -2,6 +2,7 @@
 
 #include "PCGUtilsHelpers.h"
 
+#include "Components/PCGMarkerComponent.h"
 #include "Components/SplineComponent.h"
 #include "GameFramework/Actor.h"
 
@@ -151,6 +152,31 @@ FBox UPCGUtilsHelpers::ComputeActorPCGBoundingBox(
 		if (PathBox.IsValid)
 		{
 			Result += PathBox;
+		}
+	}
+
+	TArray<UPCGMarkerComponent*> MarkerComponents;
+	Actor->GetComponents<UPCGMarkerComponent>(MarkerComponents);
+	const FTransform ActorTransform = Actor->GetActorTransform();
+	for (const UPCGMarkerComponent* MarkerComponent : MarkerComponents)
+	{
+		if (!MarkerComponent)
+		{
+			continue;
+		}
+
+		FBox LocalMarkerBox(EForceInit::ForceInit);
+		LocalMarkerBox += MarkerComponent->BoundsMin;
+		LocalMarkerBox += MarkerComponent->BoundsMax;
+
+		const FTransform MarkerToOutputTransform = bLocalSpace
+			? MarkerComponent->GetComponentTransform().GetRelativeTransform(ActorTransform)
+			: MarkerComponent->GetComponentTransform();
+		const FBox MarkerBox = LocalMarkerBox.TransformBy(MarkerToOutputTransform);
+
+		if (MarkerBox.IsValid)
+		{
+			Result += MarkerBox;
 		}
 	}
 #endif

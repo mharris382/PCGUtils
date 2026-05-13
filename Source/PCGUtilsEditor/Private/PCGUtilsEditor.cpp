@@ -1,7 +1,9 @@
 #include "PCGUtilsEditor.h"
 #include "Customizations/PluginCustomizations.h"
+#include "Visualizers/PCGMarkerComponentVisualizer.h"
 #include "Visualizers/PCGSplineComponentVisualizer.h"
 #include "Visualizers/ShapePathComponentVisualizer.h"
+#include "Components/PCGMarkerComponent.h"
 #include "Components/PCGSplineComponent.h"
 #include "ShapePath/ShapePathComponent.h"
 #include "Editor/UnrealEdEngine.h"
@@ -19,6 +21,10 @@ void FPCGUtilsEditor::StartupModule()
 		//	UPCGSplineComponent::StaticClass()->GetFName(),
 		//	MakeShareable(new FPCGSplineComponentVisualizer));
 
+		TSharedPtr<FPCGMarkerComponentVisualizer> MarkerVis = MakeShared<FPCGMarkerComponentVisualizer>();
+		GUnrealEd->RegisterComponentVisualizer(UPCGMarkerComponent::StaticClass()->GetFName(), MarkerVis);
+		MarkerVis->OnRegister();
+
 		TSharedPtr<FShapePathComponentVisualizer> ShapeVis = MakeShared<FShapePathComponentVisualizer>();
 		GUnrealEd->RegisterComponentVisualizer(UShapePathComponent::StaticClass()->GetFName(), ShapeVis);
 		ShapeVis->OnRegister();
@@ -31,6 +37,7 @@ void FPCGUtilsEditor::ShutdownModule()
 
 	if (GUnrealEd)
 	{
+		GUnrealEd->UnregisterComponentVisualizer(UPCGMarkerComponent::StaticClass()->GetFName());
 		GUnrealEd->UnregisterComponentVisualizer(UPCGSplineComponent::StaticClass()->GetFName());
 		GUnrealEd->UnregisterComponentVisualizer(UShapePathComponent::StaticClass()->GetFName());
 	}
