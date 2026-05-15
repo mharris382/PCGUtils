@@ -4,14 +4,14 @@
 
 class UPCGMarkerComponent;
 
-struct HPCGMarkerProxy : public HComponentVisProxy
+struct PCGUTILSEDITOR_API HPCGMarkerProxy : public HComponentVisProxy
 {
 	DECLARE_HIT_PROXY()
 	explicit HPCGMarkerProxy(const UActorComponent* InComponent)
 		: HComponentVisProxy(InComponent, HPP_Wireframe) {}
 };
 
-class FPCGMarkerComponentVisualizer : public FComponentVisualizer
+class PCGUTILSEDITOR_API FPCGMarkerComponentVisualizer : public FComponentVisualizer
 {
 public:
 	virtual void DrawVisualization(

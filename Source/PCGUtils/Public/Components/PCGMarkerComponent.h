@@ -15,7 +15,7 @@ class PCGUTILS_API UPCGMarkerComponent : public USceneComponent
 
 public:
 	// Sets default values for this component's properties
-	UPCGMarkerComponent();
+	UPCGMarkerComponent(const FObjectInitializer& ObjectInitializer);
 	
 public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category= "Marker")

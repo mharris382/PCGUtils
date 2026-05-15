@@ -5,7 +5,7 @@
 
 
 // Sets default values for this component's properties
-UPCGMarkerComponent::UPCGMarkerComponent()
+UPCGMarkerComponent::UPCGMarkerComponent(const FObjectInitializer& ObjectInitializer) : Super(ObjectInitializer)
 {
 	PrimaryComponentTick.bCanEverTick = false;
 }
