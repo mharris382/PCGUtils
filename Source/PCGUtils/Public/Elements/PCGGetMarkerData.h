@@ -6,6 +6,8 @@
 #include "Elements/PCGDataFromActor.h"
 #include "PCGGetMarkerData.generated.h"
 
+class UPCGMarkerComponent;
+
 /**
  * 
  */
@@ -67,4 +69,12 @@ protected:
 		FPCGContext* Context,
 		const UPCGDataFromActorSettings* Settings,
 		AActor* FoundActor) const override;
+	
+	virtual void AddMetadataFromMarker(FPCGContext* context, 
+		const UPCGGetMarkerDataSettings* settings,
+		const  AActor* actor,
+		const UPCGMarkerComponent* marker, 
+		UPCGMetadata* mutableMetadata) const;
+	
+	virtual bool ShouldFilterMarker(const UPCGGetMarkerDataSettings* settings, const UPCGMarkerComponent* marker ) const { return true; }
 };

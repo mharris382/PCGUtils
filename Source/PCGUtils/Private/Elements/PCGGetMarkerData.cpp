@@ -64,7 +64,7 @@ void FPCGGetMarkerDataElement::ProcessActor(
 	FoundActor->GetComponents(ShapeComps);
 	for (UPCGMarkerComponent* ShapeComp : ShapeComps)
 	{
-		if (!ShapeComp || !IsValid(ShapeComp))
+		if (!ShapeComp || !IsValid(ShapeComp) || !ShouldFilterMarker(ShapeSettings, ShapeComp))
 		{
 			continue;
 		}
@@ -117,6 +117,8 @@ void FPCGGetMarkerDataElement::ProcessActor(
 					ShapeComp->PointOverrideGraph.bUseGraph ? ShapeComp->PointOverrideGraph.Graph : FSoftObjectPath() ,
 					false, false, false);
 			}
+			
+			AddMetadataFromMarker(Context, ShapeSettings, FoundActor, ShapeComp, Meta);
 		}
 		
 		FPCGTaggedData& TaggedData = Context->OutputData.TaggedData.Emplace_GetRef();
@@ -125,5 +127,16 @@ void FPCGGetMarkerDataElement::ProcessActor(
 		TaggedData.Tags.Append(ActorTags);
 	}
 }
+
+void FPCGGetMarkerDataElement::AddMetadataFromMarker(
+	FPCGContext* context,
+	const UPCGGetMarkerDataSettings* settings,
+	const AActor* actor,
+	const UPCGMarkerComponent* marker,
+	UPCGMetadata* mutableMetadata) const
+{
+}
+
+
 
 #undef LOCTEXT_NAMESPACE
