@@ -5,6 +5,10 @@
 #include "Components/PCGMarkerComponent.h"
 #include "Components/SplineComponent.h"
 #include "GameFramework/Actor.h"
+#include "Metadata/PCGMetadata.h"
+#include "Metadata/PCGMetadataAttributeTpl.h"
+#include "PCGParamData.h"
+#include "Engine/StaticMesh.h"
 
 // ─────────────────────────────────────────────────────────────────────────────
 // ComputeSplineBoundingBox
@@ -181,4 +185,59 @@ FBox UPCGUtilsHelpers::ComputeActorPCGBoundingBox(
 	}
 #endif
 	return Result;
+}
+
+UStaticMesh* UPCGUtilsHelpers::ResolveStaticMeshFromData(
+	const FPCGDataCollection& Collection,
+	FName PinName,
+	FName AttributeName,
+	FString Tag)
+{
+	for (const FPCGTaggedData& TaggedData : Collection.GetAllInputs())
+	{
+		if (TaggedData.Pin != PinName)
+		{
+			continue;
+		}
+
+		if (!Tag.IsEmpty() && !TaggedData.Tags.Contains(Tag))
+		{
+			continue;
+		}
+
+		const UPCGParamData* ParamData = Cast<UPCGParamData>(TaggedData.Data);
+		if (!ParamData)
+		{
+			continue;
+		}
+
+		const UPCGMetadata* Metadata = ParamData->ConstMetadata();
+		if (!Metadata)
+		{
+			continue;
+		}
+
+		const FPCGMetadataAttribute<FSoftObjectPath>* Attribute =
+			Metadata->GetConstTypedAttribute<FSoftObjectPath>(AttributeName);
+		if (!Attribute)
+		{
+			continue;
+		}
+
+		const FSoftObjectPath AssetPath = Attribute->GetValueFromItemKey(PCGFirstEntryKey);
+		if (AssetPath.IsNull())
+		{
+			continue;
+		}
+
+		const FSoftObjectPtr SoftObjectReference(AssetPath);
+		UObject* Object = SoftObjectReference.Get();
+
+		if (UStaticMesh* Mesh = Cast<UStaticMesh>(Object))
+		{
+			return Mesh;
+		}
+	}
+
+	return nullptr;
 }

@@ -4,10 +4,12 @@
 
 #include "CoreMinimal.h"
 #include "Kismet/BlueprintFunctionLibrary.h"
+#include "PCGData.h"
 #include "ShapePath/ShapePathComponent.h"
 #include "PCGUtilsHelpers.generated.h"
 
 class USplineComponent;
+class UStaticMesh;
 
 /**
  * Blueprint function library providing spline-related geometry utilities for PCG workflows.
@@ -68,6 +70,14 @@ public:
 		const AActor* Actor,
 		bool bLocalSpace = true,
 		int32 SampleSubdivisionCount = 1);
+
+	UFUNCTION(BlueprintCallable, BlueprintPure, Category = "PCGUtils|PCG",
+		meta = (Keywords = "PCG param data static mesh soft object path asset path"))
+	static UStaticMesh* ResolveStaticMeshFromData(
+		const FPCGDataCollection& Collection,
+		FName PinName = TEXT("Mesh"),
+		FName AttributeName = TEXT("AssetPath"),
+		FString Tag = TEXT(""));
 	
 	
 	//static UStaticMesh* GetBakedStaticMeshFromPCGData(UPCGDataCollection* )
