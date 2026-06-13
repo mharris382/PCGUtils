@@ -26,6 +26,11 @@
             "LoadingPhase": "PostEngineInit"
         },
         {
+            "Name": "PCGUtilsDynMesh",
+            "Type": "UncookedOnly",
+            "LoadingPhase": "Default"
+        },
+        {
             "Name": "PCGGrammarUtils",
             "Type": "Runtime",
             "LoadingPhase": "Default"
