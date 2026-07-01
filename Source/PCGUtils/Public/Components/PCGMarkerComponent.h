@@ -16,6 +16,9 @@ class PCGUTILS_API UPCGMarkerComponent : public USceneComponent
 public:
 	// Sets default values for this component's properties
 	UPCGMarkerComponent(const FObjectInitializer& ObjectInitializer);
+
+	UFUNCTION(CallInEditor, Category = "Marker")
+	void SetPivotToBottom();
 	
 public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category= "Marker")
@@ -41,6 +44,9 @@ public:
 	
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category= "Marker", AdvancedDisplay)
 	FPCGOverrideGraph PointOverrideGraph;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Marker|PCG")
+	bool bRegeneratePCGOnMarkerEdits = true;
 	
 #if WITH_EDITORONLY_DATA
 	
@@ -60,11 +66,16 @@ public:
 
 #if WITH_EDITOR
 	virtual void PostEditChangeProperty(FPropertyChangedEvent& PropertyChangedEvent) override;
+	virtual void PostEditComponentMove(bool bFinished) override;
 #endif
 
 protected:
 	UFUNCTION(BlueprintNativeEvent, Category="Editor")
 	void GetEditorColors(bool& hasScriptedEditorColors, FLinearColor& UnselectedColor, FLinearColor& SelectedColor) const;
 	virtual void GetEditorColors_Implementation(bool& hasScriptedEditorColors,  FLinearColor& UnselectedColor, FLinearColor& SelectedColor) const;
+
+#if WITH_EDITOR
+	void TriggerRegeneratePCGOnMarkerEdits();
+#endif
 
 };
