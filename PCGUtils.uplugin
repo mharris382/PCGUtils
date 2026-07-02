@@ -11,6 +11,7 @@
     "MarketplaceURL": "",
     "SupportURL": "",
     "CanContainContent": true,
+    "EngineVersion": "5.7.0",
     "IsBetaVersion": false,
     "IsExperimentalVersion": false,
     "Installed": true,
