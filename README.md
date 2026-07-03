@@ -30,11 +30,18 @@ There is a subgraph called that can be used to bake a dynamic mesh to a static m
 # Components
 There are several utility components in PCGUtils that are helpful when working with PCG.  Each of these components has an editor flag **bRegeneratePCGOnEdits** which causes the component to trigger pcg regeneration of it's parent actor when the component is editted, regardless of whether the pcg component is set to regenerate in editor.  This feature only works when the component is on a `PCGActorBase`
 
+
+
 ## PCGMarkerComponent
+
 This component is a designer positioned box that PCG can query.  It is intended as a replacement for actors with a box component when designers need a way to manually mark regions for PCG.  
 To access Markers from PCG use the **GetMarkerData** node. The component is data only and has no geometry. You can add as many of these as you want to a single actor and retrieve them directly as point data in PCG.
+![](https://i.imgur.com/usURBXv.png)
+
 
 ## ShapePathComponent
+
+
 There are cases when you may want a path of points, like a spline, but want a *perfect* shape rather than manually editing spline points.    The shape path component effectively does this.  There are a number of different shape factories implemented, each provides a path in a specific shape with settings for that shape.   PCG can retrieve point data from this component as an ordered path and use it interchangebly with data from a pcg spline component.
 ShapePaths: 
 - Circle
@@ -43,9 +50,14 @@ ShapePaths:
 - Polygon
 - Star
 
+![](https://i.imgur.com/utLnXaE.png)
+
 ## PCGSplineComponent
 This is a subclass of the spline component which just adds a few pcg specific quality of life improvements.   you have the option to supply a path processor override graph, providing a standardized way to make paths extensible from editor assigned PCG graph objects.  
 
+## Retrieving Component Data inside PCG
+the following nodes allow you to access the PCG Util Components
+![](https://i.imgur.com/f2wDGJI.png)
 
 # Dynamic Mesh Node library
 
