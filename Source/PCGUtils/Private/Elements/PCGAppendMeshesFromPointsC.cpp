@@ -386,8 +386,11 @@ bool FPCGAppendMeshesFromPointsCElement::ExecuteInternal(FPCGContext* InContext)
 			}
 
 			// Get color for this point
-			FLinearColor PointColor(1.0f, 1.0f, 1.0f, 1.0f); // Default white
-			ColorAccessor->Get<FLinearColor>(PointColor, PointIndex, *ColorKeys, EPCGAttributeAccessorFlags::AllowBroadcastAndConstructible);
+			
+			FVector4 color = FVector4(1.0f, 1.0f, 1.0f, 1.0f);
+		
+			ColorAccessor->Get<FVector4>(color, PointIndex, *ColorKeys, EPCGAttributeAccessorFlags::AllowBroadcastAndConstructible);
+			FLinearColor PointColor = FLinearColor(color.X, color.Y, color.Z, color.W);
 			FVector4f VertexColor(PointColor.R, PointColor.G, PointColor.B, PointColor.A);
 
 			UE::Geometry::FDynamicMeshColorOverlay* ColorOverlay = OutMesh->Attributes()->PrimaryColors();
