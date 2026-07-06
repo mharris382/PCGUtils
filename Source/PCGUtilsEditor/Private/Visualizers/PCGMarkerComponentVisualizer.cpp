@@ -1,5 +1,5 @@
 #include "Visualizers/PCGMarkerComponentVisualizer.h"
-
+#include "Materials/Material.h"
 #include "Components/PCGMarkerComponent.h"
 #include "Editor.h"
 #include "EditorModes.h"
@@ -61,7 +61,7 @@ void FPCGMarkerComponentVisualizer::DrawVisualization(
 
 	PDI->SetHitProxy(new HPCGMarkerProxy(MarkerComp));
 
-	if (FillColor.A > 0.0f && GEngine && GEngine->GeomMaterial)
+	if (FillColor.A > 0.0f && GEngine && GEngine->WireframeMaterial)
 	{
 		const FVector LocalCenter = LocalBox.GetCenter();
 		const FVector LocalExtent = LocalBox.GetExtent();
@@ -71,7 +71,7 @@ void FPCGMarkerComponentVisualizer::DrawVisualization(
 			ComponentTransform.GetScale3D());
 
 		FDynamicColoredMaterialRenderProxy* MaterialProxy =
-			new FDynamicColoredMaterialRenderProxy(GEngine->GeomMaterial->GetRenderProxy(), FillColor);
+			new FDynamicColoredMaterialRenderProxy(GEngine->WireframeMaterial->GetRenderProxy(), FillColor);
 		PDI->RegisterDynamicResource(MaterialProxy);
 		DrawBox(PDI, BoxTransform.ToMatrixWithScale(), LocalExtent, MaterialProxy, SDPG_World);
 	}
