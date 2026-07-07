@@ -3,7 +3,7 @@
 #include "Components/SceneComponent.h"
 #include "Components/SplineComponent.h"
 #include "UObject/ConstructorHelpers.h"
-#include "Interfaces/IPCGOutputDataConsumer.h"
+
 #include "PCGGraph.h"
 #include "PCGComponent.h"
 #include "PCGUtilsHelpers.h"

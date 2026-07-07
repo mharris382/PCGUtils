@@ -36,6 +36,24 @@ public:
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Settings", meta=(DisplayName="Output Component Reference"))
 	bool bOutputComponentReference = false;
+	
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Settings", meta=(InlineEditConditionToggle))
+	bool bExtractPreProcessPathGraph = true;
+	
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Settings", meta=(EditCondition = "bExtractPreProcessPathGraph"))
+	FString PreProcessPathGraphAttributeName = TEXT("ProcessPathGraph");
+	
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Settings", meta=(InlineEditConditionToggle))
+	bool bExtractPathHeight = false;
+	
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Settings", meta=(EditCondition = "bExtractPathHeight"))
+	FString PathHeightAttributeName = TEXT("PathHeight");
+	
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Settings", meta=(InlineEditConditionToggle))
+	bool bExtractGroup = false;
+	
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Settings", meta=(EditCondition = "bExtractGroup"))
+	FString GroupAttributeName = TEXT("PathGroup");
 
 protected:
 #if WITH_EDITOR

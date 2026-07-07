@@ -53,6 +53,7 @@ void FPCGGetShapePathElement::ProcessActor(
 	{
 		return;
 	}
+	const UPCGGetShapePathSettings* ShapeSettings = CastChecked<UPCGGetShapePathSettings>(Settings);
 
 	auto NameToString = [](const FName& N) { return N.ToString(); };
 	TSet<FString> ActorTags;
@@ -112,7 +113,7 @@ void FPCGGetShapePathElement::ProcessActor(
 					/*bOverwriteIfTypeMismatch=*/false);
 			}
 
-			const UPCGGetShapePathSettings* ShapeSettings = CastChecked<UPCGGetShapePathSettings>(Settings);
+			
 
 			if (ShapeSettings->bOutputActorReference)
 			{
@@ -133,6 +134,23 @@ void FPCGGetShapePathElement::ProcessActor(
 					/*bOverrideParent=*/false,
 					/*bOverwriteIfTypeMismatch=*/false);
 			}
+			
+			if (ShapeSettings ->bExtractPathHeight )
+			{
+				Meta->FindOrCreateAttribute<float>(
+					FPCGAttributeIdentifier(FName(ShapeSettings->PathHeightAttributeName), PCGMetadataDomainID::Data),
+					ShapeComp->PathHeight, 
+					false, false);
+			}
+			
+			if (ShapeSettings ->bExtractPreProcessPathGraph )
+			{
+				Meta->FindOrCreateAttribute<FSoftObjectPath>(
+					FPCGAttributeIdentifier(FName(ShapeSettings->PreProcessPathGraphAttributeName), PCGMetadataDomainID::Data),
+					ShapeComp->PreProcessShapePath.GetOverrideGraphInterface(),
+					false, false);
+			}
+			
 		}
 
 		FPCGTaggedData& TaggedData = Context->OutputData.TaggedData.Emplace_GetRef();

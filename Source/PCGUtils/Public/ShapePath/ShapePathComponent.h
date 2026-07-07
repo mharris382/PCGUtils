@@ -13,11 +13,17 @@ class PCGUTILS_API UShapePathComponent : public USceneComponent, public IPathPro
 public:
 	UShapePathComponent();
 
-	UPROPERTY(EditAnywhere, Instanced, Category="Shape Path")
+	UPROPERTY(EditAnywhere, Instanced, Category="PCG")
 	TObjectPtr<UShapePathGenerator> Generator;
 
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Shape Path|PCG")
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="PCG")
 	FPCGOverrideGraph PreProcessShapePath;
+	
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="PCG")
+	float PathHeight = 0;
+	
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="PCG", meta = (ToolTip = "General Purpose path ID. intended use case is to make it easy to union grouped path into single path"))
+	int32 GroupID = 0;
 
 	// IPathProvider
 	virtual const TArray<FVector>& GetPathPoints() override;
