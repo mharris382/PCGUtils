@@ -54,6 +54,10 @@ public:
 	
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Settings", meta=(DisplayName="Override Graph Attribute Name", EditCondition = "bOutputOverrideGraph"))
 	FName OverrideOutputGraphName = FName(TEXT("OverrideGraph"));
+
+	
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Settings", meta=(DisplayName="Output Override Graph"))
+	bool bMergeByOverrideGraph = false;
 	
 protected:
 #if WITH_EDITOR
