@@ -16,7 +16,6 @@ public class PCGUtilsEditor : ModuleRules
                 "Engine",
                 "GameplayTags",
                 "PCGUtils",
-                "PCGGrammarUtils",
                 "PCG",
                 "SlateCore",
                 "Slate",

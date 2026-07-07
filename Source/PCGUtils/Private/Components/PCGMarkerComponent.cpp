@@ -15,25 +15,6 @@ UPCGMarkerComponent::UPCGMarkerComponent(const FObjectInitializer& ObjectInitial
 	PrimaryComponentTick.bCanEverTick = false;
 }
 
-void UPCGMarkerComponent::SetPivotToBottom()
-{
-#if WITH_EDITOR
-	const FScopedTransaction Transaction(NSLOCTEXT("PCGUtils", "SetMarkerPivotToBottom", "Set Marker Pivot To Bottom"));
-	Modify();
-
-	const FVector OldBoundsMin = BoundsMin;
-	const FVector OldBoundsMax = BoundsMax;
-	const FVector BoundsSize = OldBoundsMax - OldBoundsMin;
-	const FVector NewWorldLocation = GetComponentTransform().TransformPosition(OldBoundsMin);
-
-	BoundsMin = FVector::ZeroVector;
-	BoundsMax = BoundsSize;
-	SetWorldLocation(NewWorldLocation);
-
-	TriggerRegeneratePCGOnMarkerEdits();
-#endif
-}
-
 
 #if WITH_EDITOR
 

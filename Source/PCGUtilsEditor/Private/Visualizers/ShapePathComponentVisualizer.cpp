@@ -61,17 +61,52 @@ bool FShapePathComponentVisualizer::VisProxyHandleClick(
 	}
 
 	EditedComponent = Comp;
-
+	const bool bAddToSelection = Click.IsControlDown() || Click.IsShiftDown();
+	const bool bToggleSelection = Click.IsControlDown();
+	const bool bWasSelected = Comp->IsSelectedInEditor();
+	const bool bShouldSelectComponent = !(bToggleSelection && bWasSelected);
+	
 	if (GEditor)
 	{
-		// Clear all actor and component selections, then select only this component's owner.
-		GEditor->SelectNone(false, true, false);
-		if (AActor* Owner = Comp->GetOwner())
+		if (!bAddToSelection)
 		{
-			GEditor->SelectActor(Owner, /*bInSelected=*/true, /*bNotify=*/false, /*bSelectEvenIfHidden=*/true);
+			GEditor->SelectNone(
+				/*bNoteSelectionChange=*/false,
+				/*bDeselectBSPSurfs=*/true,
+				/*WarnAboutManyActors=*/false);
 		}
-		GEditor->SelectComponent(Comp, /*bInSelected=*/true, /*bNotify=*/true, /*bSelectEvenIfHidden=*/false);
+
+		if (bShouldSelectComponent)
+		{
+			if (AActor* Owner = Comp->GetOwner())
+			{
+				GEditor->SelectActor(
+					Owner,
+					/*bInSelected=*/true,
+					/*bNotify=*/false,
+					/*bSelectEvenIfHidden=*/true);
+			}
+		}
+
+		GEditor->SelectComponent(
+			Comp,
+			/*bInSelected=*/bShouldSelectComponent,
+			/*bNotify=*/false,
+			/*bSelectEvenIfHidden=*/false);
+
+		GEditor->NoteSelectionChange();
 	}
+	
+	// if (GEditor)
+	// {
+	// 	// Clear all actor and component selections, then select only this component's owner.
+	// 	GEditor->SelectNone(false, true, false);
+	// 	if (AActor* Owner = Comp->GetOwner())
+	// 	{
+	// 		GEditor->SelectActor(Owner, /*bInSelected=*/true, /*bNotify=*/false, /*bSelectEvenIfHidden=*/true);
+	// 	}
+	// 	GEditor->SelectComponent(Comp, /*bInSelected=*/true, /*bNotify=*/true, /*bSelectEvenIfHidden=*/false);
+	// }
 
 	return true;
 }

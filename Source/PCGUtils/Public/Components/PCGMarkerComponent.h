@@ -17,8 +17,6 @@ public:
 	// Sets default values for this component's properties
 	UPCGMarkerComponent(const FObjectInitializer& ObjectInitializer);
 
-	UFUNCTION(CallInEditor, Category = "Marker")
-	void SetPivotToBottom();
 	
 public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category= "Marker")
@@ -45,21 +43,27 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category= "Marker", AdvancedDisplay)
 	FPCGOverrideGraph PointOverrideGraph;
 
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Marker|PCG")
-	bool bRegeneratePCGOnMarkerEdits = true;
 	
 #if WITH_EDITORONLY_DATA
 	
-	UPROPERTY(EditAnywhere, Category = Editor, meta = (DisplayName="Editor Selected Color"))
-	FLinearColor EditorSelectedMarkerColor = FLinearColor::White;
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Marker|Editor")
+	bool bRegeneratePCGOnMarkerEdits = true;
 	
-	UPROPERTY(EditAnywhere, Category = Editor, meta = (DisplayName="Editor Unselected Color"))
+	UPROPERTY(EditAnywhere, Category =  "Marker|Editor", meta = (DisplayName="Editor Selected Color"))
+	FLinearColor EditorSelectedMarkerColor = FLinearColor::White;
+	UPROPERTY(EditAnywhere, Category = "Marker|Editor")
+	bool bDrawSelectedAsWireframe = false;	
+	
+	UPROPERTY(EditAnywhere, Category =  "Marker|Editor", meta = (DisplayName="Editor Unselected Color"))
 	FLinearColor EditorUnselectedMarkerColor = FLinearColor::Gray;
 	
-	UPROPERTY(EditAnywhere, Category = Editor, meta = (DisplayName="Fill Opacity", UIMin=0, UIMax=1))
+	UPROPERTY(EditAnywhere, Category = "Marker|Editor")
+	bool bDrawUnselectedAsWireframe = true;	
+	
+	UPROPERTY(EditAnywhere, Category =  "Marker|Editor", meta = (DisplayName="Fill Opacity", UIMin=0, UIMax=1))
 	float EditorFillOpacity = .1f;
 	
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category= Editor, meta = (DisplayName="Use Point Color As Fill Color", ToolTip="If bSetPointColor=true then the editor fill color will be the same as the assigned point color"))
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category=  "Marker|Editor", meta = (DisplayName="Use Point Color As Fill Color", ToolTip="If bSetPointColor=true then the editor fill color will be the same as the assigned point color"))
 	bool bUsePointColorAsEditorColor = true;
 	
 #endif

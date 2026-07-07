@@ -19,10 +19,10 @@ struct PCGUTILS_API FPCGOverrideGraph
 {
     GENERATED_BODY()
 
-    UPROPERTY(EditAnywhere, BlueprintReadWrite)
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "OverrideGraph")
     bool bUseGraph = false;
 
-    UPROPERTY(EditAnywhere, BlueprintReadWrite)
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "OverrideGraph")
     TObjectPtr<UPCGGraphInterface> Graph = nullptr;
 
     bool IsActive() const { return bUseGraph ; }
@@ -44,10 +44,10 @@ struct PCGUTILS_API FPCGNamedOverrideGraph
 {
     GENERATED_BODY()
 
-    UPROPERTY(EditAnywhere, BlueprintReadWrite)
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "OverrideGraph")
     FName ContractName = NAME_None;
 
-    UPROPERTY(EditAnywhere, BlueprintReadWrite)
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "OverrideGraph")
     FPCGOverrideGraph Override;
 
     bool IsValid() const { return ContractName != NAME_None; }
@@ -62,7 +62,7 @@ struct PCGUTILS_API FPCGOverrideGraphTableRow : public FTableRowBase
 {
     GENERATED_BODY()
 
-    UPROPERTY(EditAnywhere, BlueprintReadWrite)
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "OverrideGraph")
     FPCGOverrideGraph Override;
 };
 

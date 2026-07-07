@@ -49,13 +49,14 @@ protected:
 
     UFUNCTION(BlueprintNativeEvent, Category = "PCG|Bake")
 	FString GetAssetSaveGroupName() const;
-	FString GetAssetSaveGroupName_Implementation() const { return TEXT("DefaultGroup"); }
+	FString GetAssetSaveGroupName_Implementation() const { return BakedAssetGroupLabel; }
 
     FBox GetPCGBounds() const;
 
     UFUNCTION(BlueprintNativeEvent, Category = "PCG|Editor")
     FColor GetBoxEditorColor() const;
     FColor GetBoxEditorColor_Implementation() const    {  return FColor::White.WithAlpha(1.f);   }
+    
     /**
      * Called by RecenterActorToBounds before the actor pivot moves.
      * LocalDeltaTransform is the transform that must be applied to any local-space
@@ -94,6 +95,9 @@ public:
     UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "PCG|Bake", meta = (ContentDir))
     FDirectoryPath BakedAssetSavePath;
 
+    UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "PCG|Bake")
+    FString BakedAssetGroupLabel = TEXT("DefaultGroup");
+    
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "PCG|Bake")
     FPCGOverrideGraph PreBakeGraph;
     
