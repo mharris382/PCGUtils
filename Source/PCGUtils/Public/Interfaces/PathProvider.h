@@ -12,6 +12,6 @@ class PCGUTILS_API IPathProvider
 public:
 	virtual const TArray<FVector>& GetPathPoints() = 0;
 	virtual int32 GetNumPoints() const = 0;
-	virtual bool GetIsClosedLoop() const = 0;
+	virtual bool IsClosedLoop() const = 0;
 	virtual FTransform GetPathTransform() const = 0;
 };

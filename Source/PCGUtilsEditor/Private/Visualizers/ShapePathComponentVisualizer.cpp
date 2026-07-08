@@ -24,7 +24,7 @@ void FShapePathComponentVisualizer::DrawVisualization(
 	}
 
 	const FTransform& CompTransform = ShapeComp->GetComponentTransform();
-	const bool bClosed = ShapeComp->GetIsClosedLoop();
+	const bool bClosed = ShapeComp->IsClosedLoop();
 	const int32 NumPoints = Points.Num();
 	const int32 SegmentCount = bClosed ? NumPoints : NumPoints - 1;
 

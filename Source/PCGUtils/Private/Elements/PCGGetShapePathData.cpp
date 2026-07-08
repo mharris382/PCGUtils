@@ -53,7 +53,7 @@ void FPCGGetShapePathElement::ProcessActor(
 	{
 		return;
 	}
-	const UPCGGetShapePathSettings* ShapeSettings = CastChecked<UPCGGetShapePathSettings>(Settings);
+	const UPCGGetShapePathSettings* GetSettings = CastChecked<UPCGGetShapePathSettings>(Settings);
 
 	auto NameToString = [](const FName& N) { return N.ToString(); };
 	TSet<FString> ActorTags;
@@ -62,20 +62,20 @@ void FPCGGetShapePathElement::ProcessActor(
 	TInlineComponentArray<UShapePathComponent*, 4> ShapeComps;
 	FoundActor->GetComponents(ShapeComps);
 
-	for (UShapePathComponent* ShapeComp : ShapeComps)
+	for (UShapePathComponent* Comp : ShapeComps)
 	{
-		if (!ShapeComp || !IsValid(ShapeComp))
+		if (!Comp || !IsValid(Comp))
 		{
 			continue;
 		}
 
-		const TArray<FVector>& LocalPoints = ShapeComp->GetPathPoints();
+		const TArray<FVector>& LocalPoints = Comp->GetPathPoints();
 		if (LocalPoints.IsEmpty())
 		{
 			continue;
 		}
 
-		const FTransform CompTransform = ShapeComp->GetComponentTransform();
+		const FTransform CompTransform = Comp->GetComponentTransform();
 
 		UPCGPointData* PointData = NewObject<UPCGPointData>();
 		TArray<FPCGPoint>& PCGPoints = PointData->GetMutablePoints();
@@ -96,26 +96,36 @@ void FPCGGetShapePathElement::ProcessActor(
 		{
 			// isClosed mirrors $isClosed on spline data — always written so graphs can
 			// filter open vs. closed without a missing-attribute fallback.
-			Meta->FindOrCreateAttribute<bool>(
-				FPCGAttributeIdentifier(FName("isClosed"), PCGMetadataDomainID::Data),
-				ShapeComp->GetIsClosedLoop(),
-				/*bAllowsInterpolation=*/false,
-				/*bOverrideParent=*/false,
-				/*bOverwriteIfTypeMismatch=*/false);
-
-			if (ShapeComp->PreProcessShapePath.IsActive())
+			
+			if (FPCGMetadataAttribute<bool>* IsClosedAttribute =
+								Meta->FindOrCreateAttribute<bool>(
+									FPCGAttributeIdentifier(FName("IsClosed"), PCGMetadataDomainID::Data),
+									Comp->IsClosedLoop(),
+									/*bAllowsInterpolation=*/false,
+									/*bOverrideParent=*/false,
+									/*bOverwriteIfTypeMismatch=*/true))
 			{
-				Meta->FindOrCreateAttribute<FSoftObjectPath>(
-					FPCGAttributeIdentifier(FName("PreProcessShapePath"), PCGMetadataDomainID::Data),
-					FSoftObjectPath(ShapeComp->PreProcessShapePath.Graph),
-					/*bAllowsInterpolation=*/false,
-					/*bOverrideParent=*/false,
-					/*bOverwriteIfTypeMismatch=*/false);
+				IsClosedAttribute->SetValue(PCGInvalidEntryKey, Comp->IsClosedLoop());
 			}
-
+			
+			if (GetSettings->bExtractPreProcessPathGraph && !GetSettings->PreProcessPathGraphAttributeName.IsEmpty())
+			{
+				if (FPCGMetadataAttribute<FSoftObjectPath>* GraphAttribute =
+					Meta->FindOrCreateAttribute<FSoftObjectPath>(
+						FPCGAttributeIdentifier(FName(*GetSettings->PreProcessPathGraphAttributeName), PCGMetadataDomainID::Data),
+						Comp->PreProcessShapePath.GetOverrideGraphInterface(),
+						/*bAllowsInterpolation=*/false,
+						/*bOverrideParent=*/false,
+						/*bOverwriteIfTypeMismatch=*/true))
+				{
+					GraphAttribute->SetValue(PCGInvalidEntryKey, Comp->PreProcessShapePath.GetOverrideGraphInterface());
+				}
+			}
+			
+		
 			
 
-			if (ShapeSettings->bOutputActorReference)
+			if (GetSettings->bOutputActorReference)
 			{
 				Meta->FindOrCreateAttribute<FSoftObjectPath>(
 					FPCGAttributeIdentifier(PCGPointDataConstants::ActorReferenceAttribute, PCGMetadataDomainID::Data),
@@ -125,37 +135,49 @@ void FPCGGetShapePathElement::ProcessActor(
 					/*bOverwriteIfTypeMismatch=*/false);
 			}
 
-			if (ShapeSettings->bOutputComponentReference)
+			if (GetSettings->bOutputComponentReference)
 			{
 				Meta->FindOrCreateAttribute<FSoftObjectPath>(
 					FPCGAttributeIdentifier(FName("ComponentReference"), PCGMetadataDomainID::Data),
-					FSoftObjectPath(ShapeComp),
+					FSoftObjectPath(Comp),
 					/*bAllowsInterpolation=*/false,
 					/*bOverrideParent=*/false,
 					/*bOverwriteIfTypeMismatch=*/false);
 			}
 			
-			if (ShapeSettings ->bExtractPathHeight )
+			if (GetSettings->bExtractPathHeight && !GetSettings->PathHeightAttributeName.IsEmpty())
 			{
-				Meta->FindOrCreateAttribute<float>(
-					FPCGAttributeIdentifier(FName(ShapeSettings->PathHeightAttributeName), PCGMetadataDomainID::Data),
-					ShapeComp->PathHeight, 
-					false, false);
+				if (FPCGMetadataAttribute<float>* HeightAttribute =
+					Meta->FindOrCreateAttribute<float>(
+						FPCGAttributeIdentifier(FName(*GetSettings->PathHeightAttributeName), PCGMetadataDomainID::Data),
+						0.0f,
+						/*bAllowsInterpolation=*/false,
+						/*bOverrideParent=*/false,
+						/*bOverwriteIfTypeMismatch=*/true))
+				{
+					HeightAttribute->SetValue(PCGInvalidEntryKey, Comp->PathHeight);
+				}
 			}
 			
-			if (ShapeSettings ->bExtractPreProcessPathGraph )
-			{
-				Meta->FindOrCreateAttribute<FSoftObjectPath>(
-					FPCGAttributeIdentifier(FName(ShapeSettings->PreProcessPathGraphAttributeName), PCGMetadataDomainID::Data),
-					ShapeComp->PreProcessShapePath.GetOverrideGraphInterface(),
-					false, false);
-			}
 			
+			if (GetSettings -> bExtractPathGroup && !GetSettings->PathGroupAttributeName.IsEmpty())
+			{
+				if (FPCGMetadataAttribute<int32>* GroupAttribute =
+					Meta->FindOrCreateAttribute<int32>(
+						FPCGAttributeIdentifier(FName(*GetSettings->PathGroupAttributeName), PCGMetadataDomainID::Data),
+						Comp->GroupID,
+						/*bAllowsInterpolation=*/false,
+						/*bOverrideParent=*/false,
+						/*bOverwriteIfTypeMismatch=*/true))
+				{
+					GroupAttribute->SetValue(PCGInvalidEntryKey, Comp->GroupID);
+				}
+			}
 		}
 
 		FPCGTaggedData& TaggedData = Context->OutputData.TaggedData.Emplace_GetRef();
 		TaggedData.Data = PointData;
-		Algo::Transform(ShapeComp->ComponentTags, TaggedData.Tags, NameToString);
+		Algo::Transform(Comp->ComponentTags, TaggedData.Tags, NameToString);
 		TaggedData.Tags.Append(ActorTags);
 	}
 }

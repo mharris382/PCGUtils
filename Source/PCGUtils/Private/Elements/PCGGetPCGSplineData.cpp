@@ -44,7 +44,7 @@ void FPCGGetPCGSplineDataElement::ProcessActor(
 		return;
 	}
 
-	const UPCGGetPCGSplineDataSettings* SplineSettings = CastChecked<UPCGGetPCGSplineDataSettings>(Settings);
+	const UPCGGetPCGSplineDataSettings* GetSettings = CastChecked<UPCGGetPCGSplineDataSettings>(Settings);
 
 	auto NameTagsToStringTags = [](const FName& InName) { return InName.ToString(); };
 	TSet<FString> ActorTags;
@@ -69,11 +69,22 @@ void FPCGGetPCGSplineDataElement::ProcessActor(
 
 		if (Comp && SplineData->Metadata)
 		{
-			if (SplineSettings->bExtractHeight && !SplineSettings->HeightAttributeName.IsEmpty())
+			if (FPCGMetadataAttribute<bool>* IsClosedAttribute =
+					SplineData->Metadata->FindOrCreateAttribute<bool>(
+						FPCGAttributeIdentifier(FName("IsClosed"), PCGMetadataDomainID::Data),
+						Comp->IsClosedLoop(),
+						/*bAllowsInterpolation=*/false,
+						/*bOverrideParent=*/false,
+						/*bOverwriteIfTypeMismatch=*/true))
+			{
+				IsClosedAttribute->SetValue(PCGInvalidEntryKey, Comp->IsClosedLoop());
+			}
+			
+			if (GetSettings->bExtractHeight && !GetSettings->HeightAttributeName.IsEmpty())
 			{
 				if (FPCGMetadataAttribute<float>* HeightAttribute =
 					SplineData->Metadata->FindOrCreateAttribute<float>(
-						FPCGAttributeIdentifier(FName(*SplineSettings->HeightAttributeName), PCGMetadataDomainID::Data),
+						FPCGAttributeIdentifier(FName(*GetSettings->HeightAttributeName), PCGMetadataDomainID::Data),
 						0.0f,
 						/*bAllowsInterpolation=*/false,
 						/*bOverrideParent=*/false,
@@ -83,11 +94,11 @@ void FPCGGetPCGSplineDataElement::ProcessActor(
 				}
 			}
 
-			if (SplineSettings->bExtractPreProcessSplineGraph && !SplineSettings->PreProcessSplineGraphAttributeName.IsEmpty())
+			if (GetSettings->bExtractPreProcessSplineGraph && !GetSettings->PreProcessSplineGraphAttributeName.IsEmpty())
 			{
 				if (FPCGMetadataAttribute<FSoftObjectPath>* GraphAttribute =
 					SplineData->Metadata->FindOrCreateAttribute<FSoftObjectPath>(
-						FPCGAttributeIdentifier(FName(*SplineSettings->PreProcessSplineGraphAttributeName), PCGMetadataDomainID::Data),
+						FPCGAttributeIdentifier(FName(*GetSettings->PreProcessSplineGraphAttributeName), PCGMetadataDomainID::Data),
 						Comp->PreProcessSplineGraph.GetOverrideGraphInterface(),
 						/*bAllowsInterpolation=*/false,
 						/*bOverrideParent=*/false,
@@ -97,11 +108,11 @@ void FPCGGetPCGSplineDataElement::ProcessActor(
 				}
 			}
 			
-			if (SplineSettings -> bExtractGroup && !SplineSettings->GroupAttributeName.IsEmpty())
+			if (GetSettings -> bExtractGroup && !GetSettings->GroupAttributeName.IsEmpty())
 			{
 				if (FPCGMetadataAttribute<int32>* GroupAttribute =
 					SplineData->Metadata->FindOrCreateAttribute<int32>(
-						FPCGAttributeIdentifier(FName(*SplineSettings->GroupAttributeName), PCGMetadataDomainID::Data),
+						FPCGAttributeIdentifier(FName(*GetSettings->GroupAttributeName), PCGMetadataDomainID::Data),
 						Comp->GroupID,
 						/*bAllowsInterpolation=*/false,
 						/*bOverrideParent=*/false,

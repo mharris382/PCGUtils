@@ -28,7 +28,7 @@ public:
 	// IPathProvider
 	virtual const TArray<FVector>& GetPathPoints() override;
 	virtual int32 GetNumPoints() const override;
-	virtual bool GetIsClosedLoop() const override;
+	virtual bool IsClosedLoop() const override;
 	virtual FTransform GetPathTransform() const override;
 	
 	
@@ -38,6 +38,8 @@ public:
 	UPROPERTY(Transient)
 	TArray<FVector> CachedPoints;
 
+	
+	
 	void RebuildPoints();
 
 protected:

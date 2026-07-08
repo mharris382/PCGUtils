@@ -34,7 +34,7 @@ int32 UShapePathComponent::GetNumPoints() const
 	return CachedPoints.Num();
 }
 
-bool UShapePathComponent::GetIsClosedLoop() const
+bool UShapePathComponent::IsClosedLoop() const
 {
 	return Generator ? Generator->IsClosedLoop() : false;
 }

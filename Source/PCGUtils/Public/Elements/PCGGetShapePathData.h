@@ -50,10 +50,10 @@ public:
 	FString PathHeightAttributeName = TEXT("PathHeight");
 	
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Settings", meta=(InlineEditConditionToggle))
-	bool bExtractGroup = false;
+	bool bExtractPathGroup = false;
 	
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Settings", meta=(EditCondition = "bExtractGroup"))
-	FString GroupAttributeName = TEXT("PathGroup");
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Settings", meta=(EditCondition = "bExtractPathGroup"))
+	FString PathGroupAttributeName = TEXT("PathGroup");
 
 protected:
 #if WITH_EDITOR
