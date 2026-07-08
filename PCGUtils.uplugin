@@ -26,6 +26,12 @@
 			"Type": "UncookedOnly",
 			"LoadingPhase": "PostEngineInit"
 		}
+		,
+		{
+			"Name": "PCGUtilsDynMesh",
+			"Type": "Runtime",
+			"LoadingPhase": "Default"
+		}
 	],
 	"Plugins": [
 		{
