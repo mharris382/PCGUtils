@@ -34,11 +34,11 @@ struct PCGUTILS_API FPCGOverrideGraph
         return Higher.IsActive() ? Higher : Lower;
     }
     
-    TObjectPtr<UPCGGraphInterface> GetOverrideGraphInterface()
+    TObjectPtr<UPCGGraphInterface> GetOverrideGraphInterface() const
     {
         return  bUseGraph ? Graph : nullptr;
     }
-    FSoftObjectPath GetOverrideGraphSoft()
+    FSoftObjectPath GetOverrideGraphSoft() const
     {
         return  FSoftObjectPath(GetOverrideGraphInterface());
     }

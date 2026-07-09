@@ -41,7 +41,17 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "PCG")
 	FPCGOverrideGraph PreProcessSplineGraph;
 
-
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category= "Marker", meta = (InlineEditConditionToggle))
+	bool bSetPathDensity = false;
+	
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category= "Marker", meta = (EditCondition="bSetPathDensity", UIMin=0, UIMax=1))
+	float PathDensity = 1.0f;
+	
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category= "Marker", meta = (InlineEditConditionToggle))
+	bool bSetPathColor = false;
+	
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category= "Marker", meta = (EditCondition="bSetPathColor"))
+	FLinearColor PathColor = FLinearColor(1.0f, 1.0f, 1.0f);
 	
 #if WITH_EDITORONLY_DATA
 			
