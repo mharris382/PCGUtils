@@ -99,12 +99,12 @@ void FPCGGetPCGSplineDataElement::ProcessActor(
 				if (FPCGMetadataAttribute<FSoftObjectPath>* GraphAttribute =
 					SplineData->Metadata->FindOrCreateAttribute<FSoftObjectPath>(
 						FPCGAttributeIdentifier(FName(*GetSettings->PreProcessSplineGraphAttributeName), PCGMetadataDomainID::Data),
-						Comp->PreProcessSplineGraph.GetOverrideGraphInterface(),
+						Comp->PreProcessSplineGraph.GetOverrideGraphSoft(),
 						/*bAllowsInterpolation=*/false,
 						/*bOverrideParent=*/false,
 						/*bOverwriteIfTypeMismatch=*/true))
 				{
-					GraphAttribute->SetValue(PCGInvalidEntryKey, Comp->PreProcessSplineGraph.GetOverrideGraphInterface());
+					GraphAttribute->SetValue(PCGInvalidEntryKey, Comp->PreProcessSplineGraph.GetOverrideGraphSoft());
 				}
 			}
 			

@@ -113,12 +113,12 @@ void FPCGGetShapePathElement::ProcessActor(
 				if (FPCGMetadataAttribute<FSoftObjectPath>* GraphAttribute =
 					Meta->FindOrCreateAttribute<FSoftObjectPath>(
 						FPCGAttributeIdentifier(FName(*GetSettings->PreProcessPathGraphAttributeName), PCGMetadataDomainID::Data),
-						Comp->PreProcessShapePath.GetOverrideGraphInterface(),
+						Comp->PreProcessShapePath.GetOverrideGraphSoft(),
 						/*bAllowsInterpolation=*/false,
 						/*bOverrideParent=*/false,
 						/*bOverwriteIfTypeMismatch=*/true))
 				{
-					GraphAttribute->SetValue(PCGInvalidEntryKey, Comp->PreProcessShapePath.GetOverrideGraphInterface());
+					GraphAttribute->SetValue(PCGInvalidEntryKey, Comp->PreProcessShapePath.GetOverrideGraphSoft());
 				}
 			}
 			

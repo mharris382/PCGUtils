@@ -38,6 +38,10 @@ struct PCGUTILS_API FPCGOverrideGraph
     {
         return  bUseGraph ? Graph : nullptr;
     }
+    FSoftObjectPath GetOverrideGraphSoft()
+    {
+        return  FSoftObjectPath(GetOverrideGraphInterface());
+    }
 };
 
 // -----------------------------------------------------------------------------

@@ -112,10 +112,13 @@ void FPCGGetMarkerDataElement::ProcessActor(
 			
 			if (ShapeSettings->bOutputOverrideGraph)
 			{
-				Meta->FindOrCreateAttribute<FSoftObjectPath>(
+				if (FPCGMetadataAttribute<FSoftObjectPath>* GraphAttribute = Meta->FindOrCreateAttribute<FSoftObjectPath>(
 					FPCGAttributeIdentifier(ShapeSettings->OverrideOutputGraphName, PCGMetadataDomainID::Default), 
-					ShapeComp->PointOverrideGraph.bUseGraph ? ShapeComp->PointOverrideGraph.Graph : FSoftObjectPath() ,
-					false, false, false);
+					ShapeComp->PointOverrideGraph.GetOverrideGraphSoft(),
+					false, false, false))
+				{
+					GraphAttribute->SetValue(PCGInvalidEntryKey, ShapeComp->PointOverrideGraph.GetOverrideGraphSoft());
+				}
 			}
 			
 			AddMetadataFromMarker(Context, ShapeSettings, FoundActor, ShapeComp, Meta);
