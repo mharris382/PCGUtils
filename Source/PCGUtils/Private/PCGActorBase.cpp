@@ -68,6 +68,14 @@ void APCGActorBase::TriggerRegeneratePCGOnComponentEdits(UActorComponent* Trigge
 #endif
 }
 
+void APCGActorBase::TriggerRegenerateOnActorEdits(AActor* OtherActor)
+{
+#if WITH_EDITOR
+    if (PCGComponent && bAllowComponentEditsToTriggerGeneration)
+        PCGComponent->GenerateLocal(true);
+#endif
+}
+
 void APCGActorBase::RegeneratePCGOnSplineEdits_Implementation(bool bForceGen)
 {
     PCGComponent->GenerateLocal(bForceGen);

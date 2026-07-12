@@ -30,6 +30,7 @@ public:
 
     virtual void TriggerRegeneratePCGOnComponentEdits(UActorComponent* TriggeringComponent = nullptr);
     
+    virtual void TriggerRegenerateOnActorEdits(AActor* OtherActor);
     
 protected:
     UFUNCTION(BlueprintNativeEvent, Category = "PCG|Utilities")
@@ -40,12 +41,14 @@ protected:
 
     virtual void OnConstruction(const FTransform& Transform) override;
 
+public:
     // Override in child classes to return local-space AABB.
     // Default returns a unit box centered at origin.
     UFUNCTION(BlueprintNativeEvent, Category = "PCG|Bounds")
     void ComputeLocalBounds(FVector& OutMin, FVector& OutMax) const;
     virtual void ComputeLocalBounds_Implementation(FVector& OutMin, FVector& OutMax) const;
-
+    
+protected:
 
     UFUNCTION(BlueprintNativeEvent, Category = "PCG|Bake")
 	FString GetAssetSaveGroupName() const;

@@ -48,6 +48,13 @@ public:
 	
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Settings")
 	FLinearColor DefaultPointColor = FLinearColor::White;
+	
+	
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Settings", meta=(DisplayName="Output Marker Group ID"))
+	bool bOutputMarkerGroupID = false;
+	
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Settings", meta=(DisplayName="Marker Group ID Attribute Name", EditCondition = "bOutputMarkerGroupID"))
+	FName MarkerGroupIDName = FName(TEXT("GroupID"));
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Settings", meta=(DisplayName="Output Override Graph"))
 	bool bOutputOverrideGraph = false;
@@ -56,7 +63,7 @@ public:
 	FName OverrideOutputGraphName = FName(TEXT("OverrideGraph"));
 
 	
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Settings", meta=(DisplayName="Output Override Graph"))
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Settings", meta=(DisplayName="Output Override Graph", ToolTip = "If enabled, Markers will automatically be grouped by shared override graphs (enable if calling ApplyMarkerOverrides)."))
 	bool bMergeByOverrideGraph = false;
 	
 protected:

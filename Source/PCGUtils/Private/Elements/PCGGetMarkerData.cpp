@@ -85,7 +85,7 @@ void FPCGGetMarkerDataElement::ProcessActor(
 		{
 			if (ShapeSettings->bOutputMarkerPriority)
 			{
-				Meta->FindOrCreateAttribute<int32>(FPCGAttributeIdentifier(FName(TEXT("Priority")), PCGMetadataDomainID::Default), ShapeComp->Priority , false, false, false);
+				Meta->FindOrCreateAttribute<int32>(FPCGAttributeIdentifier(FName(TEXT("Priority")), PCGMetadataDomainID::Default), ShapeComp->MarkerGroupID , false, false, false);
 			}
 			
 			if (ShapeSettings->bOutputActorReference)
@@ -118,6 +118,16 @@ void FPCGGetMarkerDataElement::ProcessActor(
 					false, false, false))
 				{
 					GraphAttribute->SetValue(PCGInvalidEntryKey, ShapeComp->PointOverrideGraph.GetOverrideGraphSoft());
+				}
+			}
+			
+			if (ShapeSettings->bOutputMarkerGroupID)
+			{
+				if (FPCGMetadataAttribute<int32>* GroupAttribute = Meta->FindOrCreateAttribute<int32>(
+					FPCGAttributeIdentifier(ShapeSettings->MarkerGroupIDName, PCGMetadataDomainID::Default),
+					ShapeComp->MarkerGroupID, false, false))
+				{
+					
 				}
 			}
 			

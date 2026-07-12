@@ -26,7 +26,7 @@ public:
 	FVector BoundsMin = FVector(-50.0f, -50.0f, -50.0f);
 	
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category= "Marker")
-	int Priority = 0;
+	int32 MarkerGroupID = 0;
 	
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category= "Marker", meta = (InlineEditConditionToggle))
 	bool bSetDensity = false;
