@@ -11,7 +11,7 @@ class UPCGComponent;
 class UPCGGenDataAsset;
 class UPCGGraphInterface;
 
-UCLASS(Abstract, Blueprintable)
+UCLASS(Blueprintable, meta = (DisplayName = "PCGActor"))
 class PCGUTILS_API APCGActorBase : public AActor
 {
     GENERATED_BODY()

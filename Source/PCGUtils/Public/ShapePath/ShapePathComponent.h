@@ -25,6 +25,21 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="PCG", meta = (ToolTip = "General Purpose path ID. intended use case is to make it easy to union grouped path into single path"))
 	int32 GroupID = 0;
 
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category= "PCG", meta = (InlineEditConditionToggle))
+	bool bSetPathDensity = false;
+	
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category= "PCG", meta = (EditCondition="bSetPathDensity", UIMin=0, UIMax=1))
+	float PathDensity = 1.0f;
+	
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category= "PCG", meta = (InlineEditConditionToggle))
+	bool bSetPathColor = false;
+	
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category= "PCG", meta = (EditCondition="bSetPathColor"))
+	FLinearColor PathColor = FLinearColor(1.0f, 1.0f, 1.0f);
+	
+	FLinearColor GetPathColor() const	{ return bSetPathColor ? PathColor : FLinearColor::White; }
+	float GetPathDensity() const { return  bSetPathDensity ? PathDensity : 1.0f; }
+	
 	// IPathProvider
 	virtual const TArray<FVector>& GetPathPoints() override;
 	virtual int32 GetNumPoints() const override;

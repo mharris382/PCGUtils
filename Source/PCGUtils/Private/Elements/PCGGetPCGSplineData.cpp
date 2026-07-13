@@ -59,25 +59,39 @@ void FPCGGetPCGSplineDataElement::ProcessActor(
 		{
 			continue;
 		}
-		UPCGSplineComponent* Comp = Cast<UPCGSplineComponent>(SplineComponent);
 		
-		if (!Comp)
-			continue;
 
 		UPCGSplineData* SplineData = FPCGContext::NewObject_AnyThread<UPCGSplineData>(Context);
 		SplineData->Initialize(SplineComponent);
-
-		if (Comp && SplineData->Metadata)
+		
+		
+		UPCGSplineComponent* Comp = Cast<UPCGSplineComponent>(SplineComponent);
+        if (!Comp)
+        	continue;
+		
+		float Height = 0;
+		FSoftObjectPath OverrideGraphPath = FSoftObjectPath();
+		FLinearColor PathColor = FLinearColor::White;
+		float PathDensity = 1.0f;
+		int32 PathGroup = 0;
+		
+		if (Comp)
+		{
+			OverrideGraphPath= Comp->PreProcessSplineGraph.GetOverrideGraphSoft();
+			Height = Comp->Height;
+			PathGroup = Comp->GroupID;	
+			PathColor = Comp->bSetPathColor ? Comp->PathColor : PathColor;
+			PathDensity = Comp->PathDensity ? Comp->PathDensity : PathDensity;
+		}
+		
+		if (SplineComponent && SplineData->Metadata)
 		{
 			if (FPCGMetadataAttribute<bool>* IsClosedAttribute =
 					SplineData->Metadata->FindOrCreateAttribute<bool>(
 						FPCGAttributeIdentifier(FName("IsClosed"), PCGMetadataDomainID::Data),
-						Comp->IsClosedLoop(),
-						/*bAllowsInterpolation=*/false,
-						/*bOverrideParent=*/false,
-						/*bOverwriteIfTypeMismatch=*/true))
+						SplineComponent->IsClosedLoop(),false,false,true))
 			{
-				IsClosedAttribute->SetValue(PCGInvalidEntryKey, Comp->IsClosedLoop());
+				IsClosedAttribute->SetValue(PCGInvalidEntryKey, SplineComponent->IsClosedLoop());
 			}
 			
 			if (GetSettings->bExtractHeight && !GetSettings->HeightAttributeName.IsEmpty())
@@ -85,12 +99,9 @@ void FPCGGetPCGSplineDataElement::ProcessActor(
 				if (FPCGMetadataAttribute<float>* HeightAttribute =
 					SplineData->Metadata->FindOrCreateAttribute<float>(
 						FPCGAttributeIdentifier(FName(*GetSettings->HeightAttributeName), PCGMetadataDomainID::Data),
-						0.0f,
-						/*bAllowsInterpolation=*/false,
-						/*bOverrideParent=*/false,
-						/*bOverwriteIfTypeMismatch=*/true))
+						Height,false,false,true))
 				{
-					HeightAttribute->SetValue(PCGInvalidEntryKey, Comp->Height);
+					HeightAttribute->SetValue(PCGInvalidEntryKey,Height);
 				}
 			}
 
@@ -99,12 +110,9 @@ void FPCGGetPCGSplineDataElement::ProcessActor(
 				if (FPCGMetadataAttribute<FSoftObjectPath>* GraphAttribute =
 					SplineData->Metadata->FindOrCreateAttribute<FSoftObjectPath>(
 						FPCGAttributeIdentifier(FName(*GetSettings->PreProcessSplineGraphAttributeName), PCGMetadataDomainID::Data),
-						Comp->PreProcessSplineGraph.GetOverrideGraphSoft(),
-						/*bAllowsInterpolation=*/false,
-						/*bOverrideParent=*/false,
-						/*bOverwriteIfTypeMismatch=*/true))
+						OverrideGraphPath,false,false,true))
 				{
-					GraphAttribute->SetValue(PCGInvalidEntryKey, Comp->PreProcessSplineGraph.GetOverrideGraphSoft());
+					GraphAttribute->SetValue(PCGInvalidEntryKey, OverrideGraphPath);
 				}
 			}
 			
@@ -113,12 +121,29 @@ void FPCGGetPCGSplineDataElement::ProcessActor(
 				if (FPCGMetadataAttribute<int32>* GroupAttribute =
 					SplineData->Metadata->FindOrCreateAttribute<int32>(
 						FPCGAttributeIdentifier(FName(*GetSettings->GroupAttributeName), PCGMetadataDomainID::Data),
-						Comp->GroupID,
-						/*bAllowsInterpolation=*/false,
-						/*bOverrideParent=*/false,
-						/*bOverwriteIfTypeMismatch=*/true))
+						PathGroup,false,false,true))
 				{
-					GroupAttribute->SetValue(PCGInvalidEntryKey, Comp->GroupID);
+					GroupAttribute->SetValue(PCGInvalidEntryKey, PathGroup);
+				}
+			}
+			if (GetSettings->bExtractPathColorAttribute && !GetSettings->PathColorAttribute.IsEmpty())
+			{
+				FVector4 ColorV = FVector4(PathColor);
+				if (FPCGMetadataAttribute<FVector4>* ColorAttribute =
+					SplineData->Metadata->FindOrCreateAttribute<FVector4>(
+						FPCGAttributeIdentifier(FName(*GetSettings->PathColorAttribute), PCGMetadataDomainID::Data),
+						ColorV,false,false,true))
+				{
+					ColorAttribute->SetValue(PCGInvalidEntryKey, ColorV);
+				}
+			}
+			if (GetSettings->bExtractPathDensityAttribute && !GetSettings->PathDensityAttribute.IsEmpty())
+			{
+				if (FPCGMetadataAttribute<float>* DensityAttribute =SplineData->Metadata->FindOrCreateAttribute<float>(
+						FPCGAttributeIdentifier(FName(*GetSettings->PathDensityAttribute), PCGMetadataDomainID::Data),
+						PathDensity,false,false,true))
+				{
+					DensityAttribute->SetValue(PCGInvalidEntryKey, PathDensity);
 				}
 			}
 		}

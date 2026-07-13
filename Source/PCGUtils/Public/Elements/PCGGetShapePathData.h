@@ -54,6 +54,19 @@ public:
 	
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Settings", meta=(EditCondition = "bExtractPathGroup"))
 	FString PathGroupAttributeName = TEXT("PathGroup");
+	
+	
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Settings", meta=(InlineEditConditionToggle))
+	bool bExtractPathColorAttribute = true;
+	
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Settings", meta=(EditCondition = "bExtractPathColorAttribute"))
+	FString PathColorAttribute = TEXT("PathColor");
+	
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Settings", meta=(InlineEditConditionToggle))
+	bool bExtractPathDensityAttribute = true;
+	
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Settings", meta=(EditCondition = "bExtractPathDensityAttribute"))
+	FString PathDensityAttribute = TEXT("PathDensity");
 
 protected:
 #if WITH_EDITOR

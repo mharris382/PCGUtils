@@ -62,6 +62,8 @@ void FPCGGetShapePathElement::ProcessActor(
 	TInlineComponentArray<UShapePathComponent*, 4> ShapeComps;
 	FoundActor->GetComponents(ShapeComps);
 
+	
+	
 	for (UShapePathComponent* Comp : ShapeComps)
 	{
 		if (!Comp || !IsValid(Comp))
@@ -75,6 +77,12 @@ void FPCGGetShapePathElement::ProcessActor(
 			continue;
 		}
 
+		float Height = Comp->PathHeight;
+		FSoftObjectPath OverrideGraphPath = FSoftObjectPath();
+		FLinearColor PathColor = Comp->GetPathColor();
+		float PathDensity = Comp->GetPathDensity();
+		int32 PathGroup = Comp->GroupID;
+		
 		const FTransform CompTransform = Comp->GetComponentTransform();
 
 		UPCGPointData* PointData = NewObject<UPCGPointData>();
@@ -86,7 +94,8 @@ void FPCGGetShapePathElement::ProcessActor(
 			FPCGPoint& Point = PCGPoints.Emplace_GetRef();
 			Point.Transform = FTransform(CompTransform.TransformPosition(LocalPos));
 			Point.SetExtents(FVector(50.f));
-			Point.Density = 1.f;
+			Point.Density = PathDensity;
+			Point.Color = PathColor;
 		}
 
 		// Stamp @Data domain attributes using explicit FPCGAttributeIdentifier with
@@ -171,6 +180,27 @@ void FPCGGetShapePathElement::ProcessActor(
 						/*bOverwriteIfTypeMismatch=*/true))
 				{
 					GroupAttribute->SetValue(PCGInvalidEntryKey, Comp->GroupID);
+				}
+			}
+			
+			if (GetSettings->bExtractPathColorAttribute && !GetSettings->PathColorAttribute.IsEmpty())
+			{
+				FVector4 ColorV = FVector4(PathColor);
+				if (FPCGMetadataAttribute<FVector4>* ColorAttribute =
+					Meta->FindOrCreateAttribute<FVector4>(
+						FPCGAttributeIdentifier(FName(*GetSettings->PathColorAttribute), PCGMetadataDomainID::Data),
+						ColorV,false,false,true))
+				{
+					ColorAttribute->SetValue(PCGInvalidEntryKey, ColorV);
+				}
+			}
+			if (GetSettings->bExtractPathDensityAttribute && !GetSettings->PathDensityAttribute.IsEmpty())
+			{
+				if (FPCGMetadataAttribute<float>* DensityAttribute =Meta->FindOrCreateAttribute<float>(
+						FPCGAttributeIdentifier(FName(*GetSettings->PathDensityAttribute), PCGMetadataDomainID::Data),
+						PathDensity,false,false,true))
+				{
+					DensityAttribute->SetValue(PCGInvalidEntryKey, PathDensity);
 				}
 			}
 		}
