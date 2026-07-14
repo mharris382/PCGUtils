@@ -14,10 +14,10 @@ FName UPCGUtilsDynMeshSettings::GetCategoryName() const
 {
 	return TEXT("Plugins");
 }
-
+#if WITH_EDITOR
 FText UPCGUtilsDynMeshSettings::GetSectionText() const
 {
 	return LOCTEXT("SectionText", "PCG Utils DynMesh");
 }
-
+#endif
 #undef LOCTEXT_NAMESPACE
