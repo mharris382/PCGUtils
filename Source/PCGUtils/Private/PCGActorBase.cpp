@@ -3,6 +3,7 @@
 #include "Components/SceneComponent.h"
 #include "Components/SplineComponent.h"
 #include "UObject/ConstructorHelpers.h"
+#include "Settings/PCGUtilsSettings.h"
 
 #include "PCGGraph.h"
 #include "PCGComponent.h"
@@ -11,6 +12,8 @@
 #if WITH_EDITOR
 #include "ScopedTransaction.h"
 #endif
+
+
 
 APCGActorBase::APCGActorBase()
 {
@@ -28,9 +31,17 @@ APCGActorBase::APCGActorBase()
     
     ///PCGUtils/PCG/Templates/Template_PostBake_DynMesh.Template_PostBake_DynMesh
     ///PCGUtils/PCG/Templates/Template_PreBake_DynMesh.Template_PreBake_DynMesh
-	
+    const UPCGUtilsSettings* Settings = GetDefault<UPCGUtilsSettings>();
+    
     PCGComponent = CreateDefaultSubobject<UPCGComponent>(TEXT("PCGComponent"));
-    BakedAssetSavePath = FDirectoryPath(TEXT("/Game/_Generated"));
+    
+    PCGComponent->GenerationTrigger = Settings->DefaultGenerationTrigger;
+    PCGComponent->bRegenerateInEditor = Settings->bRegenerateInEditorByDefault;
+    PCGComponent->bGenerateOnDropWhenTriggerOnDemand = Settings->bGenerateOnDropByDefault;
+    PCGComponent->bOverrideGenerationRadii = Settings->bOverrideGenerationRadiiByDefault;
+    PCGComponent->GenerationRadii = Settings->DefaultGenerationRadii;
+    
+    BakedAssetSavePath = Settings->DefaultAssetSavePath;
 }
 
 void APCGActorBase::OnConstruction(const FTransform& Transform)

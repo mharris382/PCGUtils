@@ -5,6 +5,19 @@ UShapePathComponent::UShapePathComponent()
 	Generator = CreateDefaultSubobject<UCircleGenerator>(TEXT("DefaultGenerator"));
 }
 
+void UShapePathComponent::CopyLegacyPathData()
+{
+	Modify();
+	PathData.ProcessPathGraph = PreProcessShapePath;
+	PathData.Height = PathHeight;
+	PathData.GroupID = GroupID;
+	PathData.bSetPathDensity = bSetPathDensity;
+	PathData.PathDensity = PathDensity;
+	PathData.bSetPathColor = bSetPathColor;
+	PathData.PathColor = PathColor;
+	MarkPackageDirty();
+}
+
 void UShapePathComponent::RebuildPoints()
 {
 	CachedPoints.Reset();

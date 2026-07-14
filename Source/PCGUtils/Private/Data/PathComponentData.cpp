@@ -3,126 +3,94 @@
 
 #include "Data/PathComponentData.h"
 
+namespace 
+{
+	bool AssignInt32Attribute(UPCGMetadata* Meta, FName AttributeName, int32 Value)
+	{
+		if (!Meta || AttributeName.IsNone()) return false;
+		if (FPCGMetadataAttribute<int32>* Attribute =
+						Meta->FindOrCreateAttribute<int32>(
+							FPCGAttributeIdentifier(FName(AttributeName), PCGMetadataDomainID::Data),
+							Value,false,false,true))
+		{
+			Attribute->SetValue(PCGInvalidEntryKey, Value);
+			return true;
+		}
+		return false;
+	}
+	bool AssignFloatAttribute(UPCGMetadata* Meta, FName AttributeName, float Value)
+	{
+		if (!Meta || AttributeName.IsNone()) return false;
+		if (FPCGMetadataAttribute<float>* Attribute =
+						Meta->FindOrCreateAttribute<float>(
+							FPCGAttributeIdentifier(FName(AttributeName), PCGMetadataDomainID::Data),
+							Value,false,false,true))
+		{
+			Attribute->SetValue(PCGInvalidEntryKey, Value);
+			return true;
+		}
+		return false;
+	}
+	bool AssignSoftObjectAttribute(UPCGMetadata* Meta, FName AttributeName, const FSoftObjectPath& Value)
+	{
+		if (!Meta || AttributeName.IsNone()) return false;
+		if (FPCGMetadataAttribute<FSoftObjectPath>* Attribute =
+						Meta->FindOrCreateAttribute<FSoftObjectPath>(
+							FPCGAttributeIdentifier(FName(AttributeName), PCGMetadataDomainID::Data),
+							Value,false,false,true))
+		{
+			Attribute->SetValue(PCGInvalidEntryKey, Value);
+			return true;
+		}
+		return false;
+	}
+	bool AssignVector4Attribute(UPCGMetadata* Meta, FName AttributeName, const FVector4& Value)
+	{
+		if (!Meta || AttributeName.IsNone()) return false;
+		if (FPCGMetadataAttribute<FVector4>* Attribute =
+						Meta->FindOrCreateAttribute<FVector4>(
+							FPCGAttributeIdentifier(FName(AttributeName), PCGMetadataDomainID::Data),
+							Value,false,false,true))
+		{
+			Attribute->SetValue(PCGInvalidEntryKey, Value);
+			return true;
+		}
+		return false;
+	}
+}
 
 void UPCGUtilPathDataLibrary::GetPathDataFromSettings(UPCGMetadata* Meta,
-	const FGetPathElementSettingsConfiguration* Settings, const FPathComponentData* Data, bool bAlwaysCreateAttribute )
+	const FGetPathElementSettingsConfiguration* Settings, const FPathComponentData* Data)
 {
 	if (!Meta || !Settings || !Data)
 		return;
+	
 	if (Settings->bExtractProcessPathGraph && !Settings->ProcessPathGraphAttributeName.IsEmpty())
 	{
-		AssignProcessPathGraphAttribute(Meta,FName(Settings->ProcessPathGraphAttributeName), Data);
+		AssignSoftObjectAttribute(Meta, FName(Settings->ProcessPathGraphAttributeName), Data->ProcessPathGraph.GetOverrideGraphSoft());
 	}
+	
 	if (Settings->bExtractHeight && !Settings->HeightAttributeName.IsEmpty())
 	{
-		AssignPathHeightAttribute(Meta,FName(Settings->HeightAttributeName), Data);
+		AssignFloatAttribute(Meta, FName(Settings->HeightAttributeName), Data->Height);
+	}
+	
+	if (Settings->bExtractWidth && !Settings->WidthAttributeName.IsEmpty())
+	{
+		AssignFloatAttribute(Meta, FName(Settings->WidthAttributeName), Data->PathWidth);
 	}
 	
 	if (Settings->bExtractGroup && !Settings->GroupAttributeName.IsEmpty())
 	{
-		AssignGroupIDAttribute(Meta,FName(Settings->GroupAttributeName), Data);
+		AssignInt32Attribute(Meta, FName(Settings->GroupAttributeName), Data->GroupID);
 	}
 	if (Settings->bExtractColor && !Settings->ColorAttributeName.IsEmpty())
 	{
-		AssignPathColorAttribute(Meta,FName(Settings->ColorAttributeName), Data, FLinearColor::White, bAlwaysCreateAttribute);
+		AssignVector4Attribute(Meta, FName(Settings->ColorAttributeName), Data->GetPathColor(FLinearColor::White));
 	}
 	if (Settings->bExtractDensity && !Settings->PathDensityAttributeName.IsEmpty())
 	{
-		AssignPathDensityAttribute(Meta, FName(Settings->PathDensityAttributeName), Data, 1.0f, bAlwaysCreateAttribute);
+		AssignFloatAttribute(Meta, FName(Settings->PathDensityAttributeName), Data->PathDensity);
 	}
 }
-
-bool UPCGUtilPathDataLibrary::AssignGroupIDAttribute(UPCGMetadata* Meta, FName AttributeName,
-                                                     const FPathComponentData* Data)
-{
-	if (!Data)return false;
-	if (FPCGMetadataAttribute<int32>* GroupAttribute =
-					Meta->FindOrCreateAttribute<int32>(
-						FPCGAttributeIdentifier(FName(AttributeName), PCGMetadataDomainID::Data),
-						Data->GroupID,
-						/*bAllowsInterpolation=*/false,
-						/*bOverrideParent=*/false,
-						/*bOverwriteIfTypeMismatch=*/true))
-	{
-		GroupAttribute->SetValue(PCGInvalidEntryKey, Data->GroupID);
-		return true;
-	}
-	return false;
-}
-
-bool UPCGUtilPathDataLibrary::AssignPathHeightAttribute(UPCGMetadata* Meta, FName AttributeName,
-	const FPathComponentData* Data)
-{
-	if (!Data)return false;
-	if (FPCGMetadataAttribute<float>* HeightAttribute =
-					Meta->FindOrCreateAttribute<float>(
-						FPCGAttributeIdentifier(AttributeName, PCGMetadataDomainID::Data),
-						0.0f,
-						/*bAllowsInterpolation=*/false,
-						/*bOverrideParent=*/false,
-						/*bOverwriteIfTypeMismatch=*/true))
-	{
-		HeightAttribute->SetValue(PCGInvalidEntryKey, Data->Height);
-		return true;
-	}
-	return false;
-}
-
-bool UPCGUtilPathDataLibrary::AssignProcessPathGraphAttribute(UPCGMetadata* Meta, FName AttributeName,
-	const FPathComponentData* Data)
-{
-	if (!Data)return false;
-	if (FPCGMetadataAttribute<FSoftObjectPath>* GraphAttribute =
-					Meta->FindOrCreateAttribute<FSoftObjectPath>(
-						FPCGAttributeIdentifier(AttributeName, PCGMetadataDomainID::Data),
-						Data->ProcessPathGraph.GetOverrideGraphSoft(),
-						/*bAllowsInterpolation=*/false,
-						/*bOverrideParent=*/false,
-						/*bOverwriteIfTypeMismatch=*/true))
-	{
-		GraphAttribute->SetValue(PCGInvalidEntryKey, Data->ProcessPathGraph.GetOverrideGraphSoft());
-		return true;
-	}
-	return false;
-}
-
-bool UPCGUtilPathDataLibrary::AssignPathColorAttribute(UPCGMetadata* Meta, FName AttributeName,
-	const FPathComponentData* Data, FLinearColor DefaultColor, bool bAlwaysCreateAttribute)
-{
-	if (!Data)return false;
-	if (!bAlwaysCreateAttribute && !Data->bSetPathColor)
-		return false;
-	FLinearColor color = Data->GetPathColor(DefaultColor);
-	FVector4 colorV = FVector4(color.R, color.G, color.B, color.A);
-	if (FPCGMetadataAttribute<FVector4>* ColorAttribute =
-		Meta->FindOrCreateAttribute<FVector4>(FPCGAttributeIdentifier(AttributeName, PCGMetadataDomainID::Data), colorV, false, false, false))
-	{
-		ColorAttribute->SetValue(PCGInvalidEntryKey, colorV);
-		return true;
-	}
-	return false;
-}
-
-bool UPCGUtilPathDataLibrary::AssignPathDensityAttribute(UPCGMetadata* Meta, FName AttributeName,
-	const FPathComponentData* Data, float DefaultDensity, bool bAlwaysCreateAttribute)
-{
-	if (!Data)return false;
-	if (!bAlwaysCreateAttribute && !Data->bSetPathDensity)
-		return false;
-	float density = Data->GetPathDensity(DefaultDensity);
-	if (FPCGMetadataAttribute<float>* DensityAttribute =
-					Meta->FindOrCreateAttribute<float>(
-						FPCGAttributeIdentifier(AttributeName, PCGMetadataDomainID::Data),
-						0.0f,
-						/*bAllowsInterpolation=*/false,
-						/*bOverrideParent=*/false,
-						/*bOverwriteIfTypeMismatch=*/true))
-	{
-		DensityAttribute->SetValue(PCGInvalidEntryKey, Data->Height);
-		return true;
-	}
-	return false;
-}
-
-
 

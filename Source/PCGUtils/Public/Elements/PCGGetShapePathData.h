@@ -1,6 +1,7 @@
 #pragma once
 
 #include "PCGSettings.h"
+#include "Data/PathComponentData.h"
 #include "Elements/PCGDataFromActor.h"
 
 #include "PCGGetShapePathData.generated.h"
@@ -37,36 +38,8 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Settings", meta=(DisplayName="Output Component Reference"))
 	bool bOutputComponentReference = false;
 	
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Settings", meta=(InlineEditConditionToggle))
-	bool bExtractPreProcessPathGraph = true;
-	
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Settings", meta=(EditCondition = "bExtractPreProcessPathGraph"))
-	FString PreProcessPathGraphAttributeName = TEXT("ProcessPathGraph");
-	
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Settings", meta=(InlineEditConditionToggle))
-	bool bExtractPathHeight = false;
-	
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Settings", meta=(EditCondition = "bExtractPathHeight"))
-	FString PathHeightAttributeName = TEXT("PathHeight");
-	
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Settings", meta=(InlineEditConditionToggle))
-	bool bExtractPathGroup = false;
-	
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Settings", meta=(EditCondition = "bExtractPathGroup"))
-	FString PathGroupAttributeName = TEXT("PathGroup");
-	
-	
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Settings", meta=(InlineEditConditionToggle))
-	bool bExtractPathColorAttribute = true;
-	
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Settings", meta=(EditCondition = "bExtractPathColorAttribute"))
-	FString PathColorAttribute = TEXT("PathColor");
-	
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Settings", meta=(InlineEditConditionToggle))
-	bool bExtractPathDensityAttribute = true;
-	
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Settings", meta=(EditCondition = "bExtractPathDensityAttribute"))
-	FString PathDensityAttribute = TEXT("PathDensity");
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Settings", meta = (ShowOnlyInnerProperties))
+	FGetPathElementSettingsConfiguration PathSettings;
 
 protected:
 #if WITH_EDITOR

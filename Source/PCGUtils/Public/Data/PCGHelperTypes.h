@@ -122,3 +122,6 @@ struct PCGUTILS_API FPCGUtilsMeshSamplerSettings
 	UPROPERTY(BlueprintReadWrite, EditAnywhere, Category = "Settings|Extra", meta = (PCG_Overridable, EditCondition = "SamplingMethod != EPCGMeshSamplingMethod::OnePointPerVertex && bOutputMaterialInfo", EditConditionHides))
 	FName MaterialAttributeName = TEXT("Material");
 };
+
+
+

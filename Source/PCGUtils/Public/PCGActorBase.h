@@ -89,7 +89,7 @@ public:
     
     // Symmetric padding added to each side of the computed bounds.
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "PCG|Bounds", meta = (ClampMin = "0.0"))
-    float BoundsPadding = 0.f;
+    float BoundsPadding = 50.0f;
 
     UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "PCG|Bake")
     FString BakedAssetSaveName;

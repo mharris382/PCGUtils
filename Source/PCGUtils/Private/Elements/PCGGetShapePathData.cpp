@@ -1,6 +1,7 @@
 #include "Elements/PCGGetShapePathData.h"
 
 #include "ShapePath/ShapePathComponent.h"
+#include "Data/PathComponentData.h"
 #include "Data/PCGPointData.h"
 #include "Metadata/PCGMetadata.h"
 #include "Metadata/Accessors/PCGAttributeAccessorHelpers.h"
@@ -77,15 +78,12 @@ void FPCGGetShapePathElement::ProcessActor(
 			continue;
 		}
 
-		float Height = Comp->PathHeight;
-		FSoftObjectPath OverrideGraphPath = FSoftObjectPath();
-		FLinearColor PathColor = Comp->GetPathColor();
-		float PathDensity = Comp->GetPathDensity();
-		int32 PathGroup = Comp->GroupID;
+		const FLinearColor PathColor = Comp->PathData.GetPathColor(FLinearColor::White);
+		const float PathDensity = Comp->PathData.GetPathDensity(1.0f);
 		
 		const FTransform CompTransform = Comp->GetComponentTransform();
 
-		UPCGPointData* PointData = NewObject<UPCGPointData>();
+		UPCGPointData* PointData = FPCGContext::NewObject_AnyThread<UPCGPointData>(Context);
 		TArray<FPCGPoint>& PCGPoints = PointData->GetMutablePoints();
 		PCGPoints.Reserve(LocalPoints.Num());
 		
@@ -117,23 +115,6 @@ void FPCGGetShapePathElement::ProcessActor(
 				IsClosedAttribute->SetValue(PCGInvalidEntryKey, Comp->IsClosedLoop());
 			}
 			
-			if (GetSettings->bExtractPreProcessPathGraph && !GetSettings->PreProcessPathGraphAttributeName.IsEmpty())
-			{
-				if (FPCGMetadataAttribute<FSoftObjectPath>* GraphAttribute =
-					Meta->FindOrCreateAttribute<FSoftObjectPath>(
-						FPCGAttributeIdentifier(FName(*GetSettings->PreProcessPathGraphAttributeName), PCGMetadataDomainID::Data),
-						Comp->PreProcessShapePath.GetOverrideGraphSoft(),
-						/*bAllowsInterpolation=*/false,
-						/*bOverrideParent=*/false,
-						/*bOverwriteIfTypeMismatch=*/true))
-				{
-					GraphAttribute->SetValue(PCGInvalidEntryKey, Comp->PreProcessShapePath.GetOverrideGraphSoft());
-				}
-			}
-			
-		
-			
-
 			if (GetSettings->bOutputActorReference)
 			{
 				Meta->FindOrCreateAttribute<FSoftObjectPath>(
@@ -154,55 +135,9 @@ void FPCGGetShapePathElement::ProcessActor(
 					/*bOverwriteIfTypeMismatch=*/false);
 			}
 			
-			if (GetSettings->bExtractPathHeight && !GetSettings->PathHeightAttributeName.IsEmpty())
-			{
-				if (FPCGMetadataAttribute<float>* HeightAttribute =
-					Meta->FindOrCreateAttribute<float>(
-						FPCGAttributeIdentifier(FName(*GetSettings->PathHeightAttributeName), PCGMetadataDomainID::Data),
-						0.0f,
-						/*bAllowsInterpolation=*/false,
-						/*bOverrideParent=*/false,
-						/*bOverwriteIfTypeMismatch=*/true))
-				{
-					HeightAttribute->SetValue(PCGInvalidEntryKey, Comp->PathHeight);
-				}
-			}
-			
-			
-			if (GetSettings -> bExtractPathGroup && !GetSettings->PathGroupAttributeName.IsEmpty())
-			{
-				if (FPCGMetadataAttribute<int32>* GroupAttribute =
-					Meta->FindOrCreateAttribute<int32>(
-						FPCGAttributeIdentifier(FName(*GetSettings->PathGroupAttributeName), PCGMetadataDomainID::Data),
-						Comp->GroupID,
-						/*bAllowsInterpolation=*/false,
-						/*bOverrideParent=*/false,
-						/*bOverwriteIfTypeMismatch=*/true))
-				{
-					GroupAttribute->SetValue(PCGInvalidEntryKey, Comp->GroupID);
-				}
-			}
-			
-			if (GetSettings->bExtractPathColorAttribute && !GetSettings->PathColorAttribute.IsEmpty())
-			{
-				FVector4 ColorV = FVector4(PathColor);
-				if (FPCGMetadataAttribute<FVector4>* ColorAttribute =
-					Meta->FindOrCreateAttribute<FVector4>(
-						FPCGAttributeIdentifier(FName(*GetSettings->PathColorAttribute), PCGMetadataDomainID::Data),
-						ColorV,false,false,true))
-				{
-					ColorAttribute->SetValue(PCGInvalidEntryKey, ColorV);
-				}
-			}
-			if (GetSettings->bExtractPathDensityAttribute && !GetSettings->PathDensityAttribute.IsEmpty())
-			{
-				if (FPCGMetadataAttribute<float>* DensityAttribute =Meta->FindOrCreateAttribute<float>(
-						FPCGAttributeIdentifier(FName(*GetSettings->PathDensityAttribute), PCGMetadataDomainID::Data),
-						PathDensity,false,false,true))
-				{
-					DensityAttribute->SetValue(PCGInvalidEntryKey, PathDensity);
-				}
-			}
+
+			UPCGUtilPathDataLibrary::GetPathDataFromSettings(
+				Meta, &GetSettings->PathSettings, &Comp->PathData);
 		}
 
 		FPCGTaggedData& TaggedData = Context->OutputData.TaggedData.Emplace_GetRef();

@@ -5,7 +5,20 @@
 UPCGSplineComponent::UPCGSplineComponent(const FObjectInitializer& ObjectInitializer)
 	: Super(ObjectInitializer)
 {
-	ComponentTags.Add(TEXT("pcg_spline"));
+	
+}
+
+void UPCGSplineComponent::CopyLegacyPathData()
+{
+	Modify();
+	PathData.ProcessPathGraph = PreProcessSplineGraph;
+	PathData.Height = Height;
+	PathData.GroupID = GroupID;
+	PathData.bSetPathDensity = bSetPathDensity;
+	PathData.PathDensity = PathDensity;
+	PathData.bSetPathColor = bSetPathColor;
+	PathData.PathColor = PathColor;
+	MarkPackageDirty();
 }
 
 #if WITH_EDITOR

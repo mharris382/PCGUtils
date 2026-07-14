@@ -20,6 +20,7 @@ public class PCGUtils : ModuleRules
                 "RHI",
                 "RenderCore",
                 "ModelingOperators",
+                "DeveloperSettings"
                 
             }
         );

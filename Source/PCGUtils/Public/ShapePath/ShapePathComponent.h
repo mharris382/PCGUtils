@@ -1,6 +1,7 @@
 #pragma once
 #include "CoreMinimal.h"
 #include "Components/SceneComponent.h"
+#include "Data/PathComponentData.h"
 #include "Interfaces/PathProvider.h"
 #include "OverrideGraphs.h"
 #include "ShapePath/ShapePathGenerator.h"
@@ -16,6 +17,15 @@ public:
 	UPROPERTY(EditAnywhere, Instanced, Category="PCG")
 	TObjectPtr<UShapePathGenerator> Generator;
 
+	/** Standardized path data used by PCG path getter elements. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "PCG")
+	FPathComponentData PathData;
+
+	/** Copies the retained legacy fields below into PathData. */
+	UFUNCTION(CallInEditor, Category = "PCG|Migration", meta = (DisplayName = "Copy Legacy Path Data"))
+	void CopyLegacyPathData();
+
+	// Legacy fields are intentionally retained for asset migration.
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="PCG")
 	FPCGOverrideGraph PreProcessShapePath;
 	

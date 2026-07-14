@@ -1,5 +1,6 @@
 ﻿#include "Customizations/PluginCustomizations.h"
 #include "Customizations/PCGOverrideGraphCustomization.h"
+#include "Customizations/PathComponentDataCustomization.h"
 #include "PropertyEditorModule.h"
 #include "AssetToolsModule.h"
 
@@ -10,6 +11,8 @@ namespace PluginCustomizations
 		FPropertyEditorModule& PropEd = FModuleManager::LoadModuleChecked<FPropertyEditorModule>("PropertyEditor");
 
 		PropEd.RegisterCustomPropertyTypeLayout("PCGOverrideGraph",FOnGetPropertyTypeCustomizationInstance::CreateStatic(&FPCGOverrideGraphCustomization::MakeInstance));
+		PropEd.RegisterCustomPropertyTypeLayout("PathComponentData", FOnGetPropertyTypeCustomizationInstance::CreateStatic(&FPathComponentDataCustomization::MakeInstance));
+		PropEd.NotifyCustomizationModuleChanged();
 	}
 
 	void UnregisterCustomizations()
@@ -17,7 +20,9 @@ namespace PluginCustomizations
 		if (FModuleManager::Get().IsModuleLoaded("PropertyEditor"))
 		{
 			FPropertyEditorModule& PropertyEditor = FModuleManager::GetModuleChecked<FPropertyEditorModule>("PropertyEditor");
-			PropertyEditor.UnregisterCustomClassLayout("PCGOverrideGraph");
+			PropertyEditor.UnregisterCustomPropertyTypeLayout("PCGOverrideGraph");
+			PropertyEditor.UnregisterCustomPropertyTypeLayout("PathComponentData");
+			PropertyEditor.NotifyCustomizationModuleChanged();
 		}
 	}
 }

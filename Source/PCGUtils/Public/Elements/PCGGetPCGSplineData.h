@@ -1,6 +1,7 @@
 #pragma once
 
 #include "PCGSettings.h"
+#include "Data/PathComponentData.h"
 #include "Elements/PCGDataFromActor.h"
 #include "Elements/PCGTypedGetter.h"
 
@@ -24,40 +25,8 @@ protected:
 	virtual FPCGElementPtr CreateElement() const override;
 
 public:
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Settings", meta = (InlineEditConditionToggle))
-	bool bExtractPreProcessSplineGraph = true;
-
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Settings", meta = (EditCondition = "bExtractPreProcessSplineGraph", ToolTip = "Apply Path "))
-	FString PreProcessSplineGraphAttributeName = TEXT("ProcessPathGraph");
-
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Settings", meta = (InlineEditConditionToggle))
-	bool bExtractHeight = true;
-
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Settings", meta = (EditCondition = "bExtractHeight"))
-	FString HeightAttributeName = TEXT("SplineHeight");
-	
-	
-	
-		
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Settings", meta=(InlineEditConditionToggle))
-	bool bExtractGroup = false;
-	
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Settings", meta=(EditCondition = "bExtractGroup"))
-	FString GroupAttributeName = TEXT("PathGroup");
-	
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Settings", meta=(InlineEditConditionToggle))
-	bool bExtractPathColorAttribute = true;
-	
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Settings", meta=(EditCondition = "bExtractPathColorAttribute"))
-	FString PathColorAttribute = TEXT("PathColor");
-	
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Settings", meta=(InlineEditConditionToggle))
-	bool bExtractPathDensityAttribute = true;
-	
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Settings", meta=(EditCondition = "bExtractPathDensityAttribute"))
-	FString PathDensityAttribute = TEXT("PathDensity");
-	
-	
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Settings", meta = (ShowOnlyInnerProperties))
+	FGetPathElementSettingsConfiguration PathSettings;
 };
 
 class PCGUTILS_API FPCGGetPCGSplineDataElement : public FPCGDataFromActorElement
