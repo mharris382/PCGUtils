@@ -2,7 +2,7 @@
 
 #include "CoreMinimal.h"
 #include "Components/SplineComponent.h"
-#include "Data/PathComponentData.h"
+#include "Data/PCGUtilsComponentData.h"
 #include "OverrideGraphs.h"
 #include "PCGSplineComponent.generated.h"
 

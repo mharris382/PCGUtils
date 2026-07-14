@@ -15,6 +15,18 @@ UPCGMarkerComponent::UPCGMarkerComponent(const FObjectInitializer& ObjectInitial
 	PrimaryComponentTick.bCanEverTick = false;
 }
 
+void UPCGMarkerComponent::CopyLegacyPointData()
+{
+	Modify();
+	PointData.GroupID = MarkerGroupID;
+	PointData.ProcessPointGraph = PointOverrideGraph;
+	PointData.bSetPointDensity = bSetDensity;
+	PointData.PointDensity = Density;
+	PointData.bSetPointColor = bSetPointColor;
+	PointData.PointColor = PointColor;
+	MarkPackageDirty();
+}
+
 
 #if WITH_EDITOR
 

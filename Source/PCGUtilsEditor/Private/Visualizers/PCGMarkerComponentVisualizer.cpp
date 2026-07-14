@@ -27,9 +27,9 @@ namespace
 	FLinearColor GetMarkerFillColor(const UPCGMarkerComponent& MarkerComp, const bool bSelected)
 	{
 		FLinearColor FillColor = GetMarkerLineColor(MarkerComp, bSelected);
-		if (MarkerComp.bSetPointColor && MarkerComp.bUsePointColorAsEditorColor)
+		if (MarkerComp.PointData.bSetPointColor && MarkerComp.bUsePointColorAsEditorColor)
 		{
-			FillColor = MarkerComp.PointColor;
+			FillColor = MarkerComp.PointData.PointColor;
 		}
 
 		FillColor.A = FMath::Clamp(FillColor.A * MarkerComp.EditorFillOpacity, 0.0f, 1.0f);

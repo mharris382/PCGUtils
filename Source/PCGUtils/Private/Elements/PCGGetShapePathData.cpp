@@ -1,7 +1,7 @@
 #include "Elements/PCGGetShapePathData.h"
 
 #include "ShapePath/ShapePathComponent.h"
-#include "Data/PathComponentData.h"
+#include "Data/PCGUtilsComponentData.h"
 #include "Data/PCGPointData.h"
 #include "Metadata/PCGMetadata.h"
 #include "Metadata/Accessors/PCGAttributeAccessorHelpers.h"
@@ -16,6 +16,7 @@
 UPCGGetShapePathSettings::UPCGGetShapePathSettings()
 {
 	Mode = EPCGGetDataFromActorMode::ParseActorComponents;
+	bAlwaysRequeryActors = true;
 }
 
 #if WITH_EDITOR

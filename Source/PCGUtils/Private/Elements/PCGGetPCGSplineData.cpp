@@ -1,7 +1,7 @@
 #include "Elements/PCGGetPCGSplineData.h"
 
 #include "Components/PCGSplineComponent.h"
-#include "Data/PathComponentData.h"
+#include "Data/PCGUtilsComponentData.h"
 #include "Data/PCGSplineData.h"
 #include "Metadata/PCGMetadata.h"
 #include "OverrideGraphs.h"
@@ -13,6 +13,7 @@
 UPCGGetPCGSplineDataSettings::UPCGGetPCGSplineDataSettings()
 {
 	Mode = EPCGGetDataFromActorMode::ParseActorComponents;
+	bAlwaysRequeryActors = true;
 }
 
 #if WITH_EDITOR

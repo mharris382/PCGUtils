@@ -1,7 +1,7 @@
 #pragma once
 #include "CoreMinimal.h"
 #include "Components/SceneComponent.h"
-#include "Data/PathComponentData.h"
+#include "Data/PCGUtilsComponentData.h"
 #include "Interfaces/PathProvider.h"
 #include "OverrideGraphs.h"
 #include "ShapePath/ShapePathGenerator.h"

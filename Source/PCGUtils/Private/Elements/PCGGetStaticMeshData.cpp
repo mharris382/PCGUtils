@@ -13,6 +13,7 @@
 UPCGGetStaticMeshDataSettings::UPCGGetStaticMeshDataSettings()
 {
 	Mode = EPCGGetDataFromActorMode::ParseActorComponents;
+	bAlwaysRequeryActors = true;
 }
 
 #if WITH_EDITOR

@@ -3,6 +3,7 @@
 #pragma once
 
 #include "CoreMinimal.h"
+#include "Data/PCGUtilsComponentData.h"
 #include "OverrideGraphs.h"
 #include "Components/SceneComponent.h"
 #include "PCGMarkerComponent.generated.h"
@@ -24,25 +25,35 @@ public:
 	
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category= "Marker")
 	FVector BoundsMin = FVector(-50.0f, -50.0f, -50.0f);
+
+	/** General-purpose data used to construct the marker's output point. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Marker", meta = (ShowOnlyInnerProperties))
+	FPointComponentData PointData;
+
+	/** Copies the retained legacy marker fields into PointData. */
+	UFUNCTION(CallInEditor, Category = "Marker|Migration", meta = (DisplayName = "Copy Legacy Point Data"))
+	void CopyLegacyPointData();
 	
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category= "Marker")
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category= "Marker|Legacy", meta=(DeprecatedProperty, DeprecationMessage="Use PointData.GroupID instead."))
 	int32 MarkerGroupID = 0;
 	
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category= "Marker", meta = (InlineEditConditionToggle))
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category= "Marker|Legacy", meta = (DeprecatedProperty, DeprecationMessage="Use PointData.ProcessPointGraph instead."))
+	FPCGOverrideGraph PointOverrideGraph;
+	
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category= "Marker|Legacy", meta = (DeprecatedProperty, DeprecationMessage="Use PointData.bSetPointDensity instead."))
 	bool bSetDensity = false;
 	
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category= "Marker", meta = (EditCondition="bSetDensity", UIMin=0, UIMax=1))
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category= "Marker|Legacy", meta = (DeprecatedProperty, DeprecationMessage="Use PointData.PointDensity instead."))
 	float Density = 1.0f;
 	
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category= "Marker", meta = (InlineEditConditionToggle))
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category= "Marker|Legacy", meta = (DeprecatedProperty, DeprecationMessage="Use PointData.bSetPointColor instead."))
 	bool bSetPointColor = false;
 	
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category= "Marker", meta = (EditCondition="bSetPointColor"))
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category= "Marker|Legacy", meta = (DeprecatedProperty, DeprecationMessage="Use PointData.PointColor instead."))
 	FLinearColor PointColor = FLinearColor(1.0f, 1.0f, 1.0f);
 	
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category= "Marker", AdvancedDisplay)
-	FPCGOverrideGraph PointOverrideGraph;
-
+	
+	
 	
 #if WITH_EDITORONLY_DATA
 	
@@ -63,7 +74,7 @@ public:
 	UPROPERTY(EditAnywhere, Category =  "Marker|Editor", meta = (DisplayName="Fill Opacity", UIMin=0, UIMax=1))
 	float EditorFillOpacity = .1f;
 	
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category=  "Marker|Editor", meta = (DisplayName="Use Point Color As Fill Color", ToolTip="If bSetPointColor=true then the editor fill color will be the same as the assigned point color"))
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category=  "Marker|Editor", meta = (DisplayName="Use Point Color As Fill Color", ToolTip="When Point Data has Set Point Color enabled, use that color for the editor fill."))
 	bool bUsePointColorAsEditorColor = true;
 	
 #endif

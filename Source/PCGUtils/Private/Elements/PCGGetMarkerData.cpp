@@ -16,6 +16,8 @@
 UPCGGetMarkerDataSettings::UPCGGetMarkerDataSettings()
 {
 	Mode = EPCGGetDataFromActorMode::ParseActorComponents;
+	
+	bAlwaysRequeryActors = true;
 }
 
 #if WITH_EDITOR
@@ -68,9 +70,7 @@ void FPCGGetMarkerDataElement::ProcessActor(
 		{
 			continue;
 		}
-		FVector BoundsMax = ShapeComp->BoundsMax;
-		FVector BoundsMin = ShapeComp->BoundsMin;
-		UPCGPointData* PointData = NewObject<UPCGPointData>();
+		UPCGPointData* PointData = FPCGContext::NewObject_AnyThread<UPCGPointData>(Context);
 		TArray<FPCGPoint>& PCGPoints = PointData->GetMutablePoints();
 		PCGPoints.Reserve(1);
 		FPCGPoint& Point = PCGPoints.Emplace_GetRef();
@@ -78,16 +78,11 @@ void FPCGGetMarkerDataElement::ProcessActor(
 		Point.Transform = ShapeComp->GetComponentTransform();
 		Point.BoundsMin = ShapeComp->BoundsMin;
 		Point.BoundsMax = ShapeComp->BoundsMax;
-		Point.Density = ShapeComp->bSetDensity ? ShapeComp->Density : ShapeSettings->DefaultPointDensity;
-		Point.Color = ShapeComp->bSetPointColor ? ShapeComp->PointColor : ShapeSettings->DefaultPointColor;
+		Point.Density = ShapeComp->PointData.GetPointDensity();
+		Point.Color = ShapeComp->PointData.GetPointColor();
 		
 		if (UPCGMetadata* Meta = PointData->MutableMetadata())
 		{
-			if (ShapeSettings->bOutputMarkerPriority)
-			{
-				Meta->FindOrCreateAttribute<int32>(FPCGAttributeIdentifier(FName(TEXT("Priority")), PCGMetadataDomainID::Default), ShapeComp->MarkerGroupID , false, false, false);
-			}
-			
 			if (ShapeSettings->bOutputActorReference)
 			{
 				Meta->FindOrCreateAttribute<FSoftObjectPath>(
@@ -109,27 +104,23 @@ void FPCGGetMarkerDataElement::ProcessActor(
 					/*bOverwriteIfTypeMismatch=*/false);
 			}
 			
-			
-			if (ShapeSettings->bOutputOverrideGraph)
+
+			const bool bUseElementsDomain =
+				ShapeSettings->PointSettings.AttributeDomain == EPCGUtilsPointMetadataDomain::Elements;
+			const FPCGMetadataDomainID& AttributeDomain = bUseElementsDomain
+				? PCGMetadataDomainID::Elements
+				: PCGMetadataDomainID::Data;
+			const PCGMetadataEntryKey AttributeKey = bUseElementsDomain
+				? Meta->AddEntry()
+				: PCGInvalidEntryKey;
+
+			if (bUseElementsDomain)
 			{
-				if (FPCGMetadataAttribute<FSoftObjectPath>* GraphAttribute = Meta->FindOrCreateAttribute<FSoftObjectPath>(
-					FPCGAttributeIdentifier(ShapeSettings->OverrideOutputGraphName, PCGMetadataDomainID::Default), 
-					ShapeComp->PointOverrideGraph.GetOverrideGraphSoft(),
-					false, false, false))
-				{
-					GraphAttribute->SetValue(PCGInvalidEntryKey, ShapeComp->PointOverrideGraph.GetOverrideGraphSoft());
-				}
+				Point.MetadataEntry = AttributeKey;
 			}
-			
-			if (ShapeSettings->bOutputMarkerGroupID)
-			{
-				if (FPCGMetadataAttribute<int32>* GroupAttribute = Meta->FindOrCreateAttribute<int32>(
-					FPCGAttributeIdentifier(ShapeSettings->MarkerGroupIDName, PCGMetadataDomainID::Default),
-					ShapeComp->MarkerGroupID, false, false))
-				{
-					
-				}
-			}
+
+			UPCGUtilPathDataLibrary::GetPointDataFromSettings(
+				Meta, &ShapeSettings->PointSettings, &ShapeComp->PointData, AttributeDomain, AttributeKey);
 			
 			AddMetadataFromMarker(Context, ShapeSettings, FoundActor, ShapeComp, Meta);
 		}

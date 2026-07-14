@@ -3,6 +3,7 @@
 #pragma once
 
 #include "CoreMinimal.h"
+#include "Data/PCGUtilsComponentData.h"
 #include "Elements/PCGDataFromActor.h"
 #include "PCGGetMarkerData.generated.h"
 
@@ -23,6 +24,8 @@ public:
 	virtual FName GetDefaultNodeName() const override { return FName(TEXT("GetMarkerData")); }
 	virtual FText GetDefaultNodeTitle() const override;
 	virtual FText GetNodeTooltipText() const override;
+	
+	//virtual bool DisplayModeSettings() const override { return false; }
 #endif
 	
 protected:
@@ -33,39 +36,14 @@ public:
 	virtual EPCGDataType GetDataFilter() const override { return EPCGDataType::Point; }
 
 	
-	
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Settings", meta=(DisplayName="Output Marker Priority"))
-	bool bOutputMarkerPriority = true;
-	
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Settings", meta=(DisplayName="Output Actor Reference"))
 	bool bOutputActorReference = false;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Settings", meta=(DisplayName="Output Component Reference"))
 	bool bOutputComponentReference = false;
 	
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Settings")
-	float DefaultPointDensity = 1;
-	
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Settings")
-	FLinearColor DefaultPointColor = FLinearColor::White;
-	
-	
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Settings", meta=(DisplayName="Output Marker Group ID"))
-	bool bOutputMarkerGroupID = false;
-	
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Settings", meta=(DisplayName="Marker Group ID Attribute Name", EditCondition = "bOutputMarkerGroupID"))
-	FName MarkerGroupIDName = FName(TEXT("GroupID"));
-
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Settings", meta=(DisplayName="Output Override Graph"))
-	bool bOutputOverrideGraph = false;
-	
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Settings", meta=(DisplayName="Override Graph Attribute Name", EditCondition = "bOutputOverrideGraph"))
-	FName OverrideOutputGraphName = FName(TEXT("OverrideGraph"));
-
-	
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Settings", meta=(DisplayName="Output Override Graph", ToolTip = "If enabled, Markers will automatically be grouped by shared override graphs (enable if calling ApplyMarkerOverrides)."))
-	bool bMergeByOverrideGraph = false;
-	
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Settings", meta = (ShowOnlyInnerProperties))
+	FGetPointElementSettingsConfiguration PointSettings;
 protected:
 #if WITH_EDITOR
 	virtual bool DisplayModeSettings() const override { return false; }

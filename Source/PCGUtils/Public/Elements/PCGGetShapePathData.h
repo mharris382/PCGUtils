@@ -1,7 +1,7 @@
 #pragma once
 
 #include "PCGSettings.h"
-#include "Data/PathComponentData.h"
+#include "Data/PCGUtilsComponentData.h"
 #include "Elements/PCGDataFromActor.h"
 
 #include "PCGGetShapePathData.generated.h"

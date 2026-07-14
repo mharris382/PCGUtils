@@ -1,58 +1,66 @@
 ﻿// Fill out your copyright notice in the Description page of Project Settings.
 
 
-#include "Data/PathComponentData.h"
+#include "Data/PCGUtilsComponentData.h"
 
 namespace 
 {
-	bool AssignInt32Attribute(UPCGMetadata* Meta, FName AttributeName, int32 Value)
+	bool AssignInt32Attribute(UPCGMetadata* Meta, FName AttributeName, int32 Value, 
+	const FPCGMetadataDomainID& DomainID = PCGMetadataDomainID::Data,
+	const int64 Key = PCGInvalidEntryKey)
 	{
 		if (!Meta || AttributeName.IsNone()) return false;
 		if (FPCGMetadataAttribute<int32>* Attribute =
 						Meta->FindOrCreateAttribute<int32>(
-							FPCGAttributeIdentifier(FName(AttributeName), PCGMetadataDomainID::Data),
+							FPCGAttributeIdentifier(FName(AttributeName), DomainID),
 							Value,false,false,true))
 		{
-			Attribute->SetValue(PCGInvalidEntryKey, Value);
+			Attribute->SetValue(Key, Value);
 			return true;
 		}
 		return false;
 	}
-	bool AssignFloatAttribute(UPCGMetadata* Meta, FName AttributeName, float Value)
+	bool AssignFloatAttribute(UPCGMetadata* Meta, FName AttributeName, float Value, 
+	const FPCGMetadataDomainID& DomainID = PCGMetadataDomainID::Data,
+	const int64 Key = PCGInvalidEntryKey)
 	{
 		if (!Meta || AttributeName.IsNone()) return false;
 		if (FPCGMetadataAttribute<float>* Attribute =
 						Meta->FindOrCreateAttribute<float>(
-							FPCGAttributeIdentifier(FName(AttributeName), PCGMetadataDomainID::Data),
+							FPCGAttributeIdentifier(FName(AttributeName), DomainID),
 							Value,false,false,true))
 		{
-			Attribute->SetValue(PCGInvalidEntryKey, Value);
+			Attribute->SetValue(Key, Value);
 			return true;
 		}
 		return false;
 	}
-	bool AssignSoftObjectAttribute(UPCGMetadata* Meta, FName AttributeName, const FSoftObjectPath& Value)
+	bool AssignSoftObjectAttribute(UPCGMetadata* Meta, FName AttributeName, const FSoftObjectPath& Value, 
+	const FPCGMetadataDomainID& DomainID = PCGMetadataDomainID::Data,
+	const int64 Key = PCGInvalidEntryKey)
 	{
 		if (!Meta || AttributeName.IsNone()) return false;
 		if (FPCGMetadataAttribute<FSoftObjectPath>* Attribute =
 						Meta->FindOrCreateAttribute<FSoftObjectPath>(
-							FPCGAttributeIdentifier(FName(AttributeName), PCGMetadataDomainID::Data),
+							FPCGAttributeIdentifier(FName(AttributeName), DomainID),
 							Value,false,false,true))
 		{
-			Attribute->SetValue(PCGInvalidEntryKey, Value);
+			Attribute->SetValue(Key, Value);
 			return true;
 		}
 		return false;
 	}
-	bool AssignVector4Attribute(UPCGMetadata* Meta, FName AttributeName, const FVector4& Value)
+	bool AssignVector4Attribute(UPCGMetadata* Meta, FName AttributeName, const FVector4& Value, 
+	const FPCGMetadataDomainID& DomainID = PCGMetadataDomainID::Data,
+	const int64 Key = PCGInvalidEntryKey)
 	{
 		if (!Meta || AttributeName.IsNone()) return false;
 		if (FPCGMetadataAttribute<FVector4>* Attribute =
 						Meta->FindOrCreateAttribute<FVector4>(
-							FPCGAttributeIdentifier(FName(AttributeName), PCGMetadataDomainID::Data),
+							FPCGAttributeIdentifier(FName(AttributeName), DomainID),
 							Value,false,false,true))
 		{
-			Attribute->SetValue(PCGInvalidEntryKey, Value);
+			Attribute->SetValue(Key, Value);
 			return true;
 		}
 		return false;
@@ -92,5 +100,25 @@ void UPCGUtilPathDataLibrary::GetPathDataFromSettings(UPCGMetadata* Meta,
 	{
 		AssignFloatAttribute(Meta, FName(Settings->PathDensityAttributeName), Data->PathDensity);
 	}
+}
+
+void UPCGUtilPathDataLibrary::GetPointDataFromSettings(UPCGMetadata* Meta,	const FGetPointElementSettingsConfiguration* Settings, const FPointComponentData* Data, 
+	const FPCGMetadataDomainID Domain, const int64 Key )
+{
+	if (!Meta || !Settings || !Data)
+		return;
+	
+	if (Settings->bExtractProcessPointGraph && !Settings->ProcessPointGraphAttributeName.IsEmpty())
+	{
+		AssignSoftObjectAttribute(Meta, FName(Settings->ProcessPointGraphAttributeName), Data->ProcessPointGraph.GetOverrideGraphSoft());
+	}
+	if (Settings->bExtractGroup && !Settings->GroupAttributeName.IsEmpty())
+	{
+		AssignInt32Attribute(Meta, FName(Settings->GroupAttributeName), Data->GroupID, Domain, Key);
+	}
+	//if (Settings->bExtractFalloff && !Settings->FalloffAttributeName.IsEmpty())
+	//{
+	//	AssignInt32Attribute(Meta, FName(Settings->FalloffAttributeName), Data->GroupID, Domain, Key);
+	//}
 }
 
