@@ -36,7 +36,9 @@ APCGActorBase::APCGActorBase()
     PCGComponent = CreateDefaultSubobject<UPCGComponent>(TEXT("PCGComponent"));
     
     PCGComponent->GenerationTrigger = Settings->DefaultGenerationTrigger;
+#if WITH_EDITORONLY_DATA
     PCGComponent->bRegenerateInEditor = Settings->bRegenerateInEditorByDefault;
+#endif
     PCGComponent->bGenerateOnDropWhenTriggerOnDemand = Settings->bGenerateOnDropByDefault;
     PCGComponent->bOverrideGenerationRadii = Settings->bOverrideGenerationRadiiByDefault;
     PCGComponent->GenerationRadii = Settings->DefaultGenerationRadii;

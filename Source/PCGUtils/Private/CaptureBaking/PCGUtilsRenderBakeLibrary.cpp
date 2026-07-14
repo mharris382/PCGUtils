@@ -58,7 +58,8 @@ FPCGUtilsTopDownCaptureResult UPCGUtilsRenderBakeLibrary::CaptureTopDownToRender
 	}
 
 	// Create transient render target — caller must hold a UPROPERTY ref to prevent GC.
-	UTextureRenderTarget2D* RenderTarget = NewObject<UTextureRenderTarget2D>(GetTransientPackage(), NAME_None, RF_Transient);
+	UTextureRenderTarget2D* RenderTarget;
+	RenderTarget = NewObject<UTextureRenderTarget2D>(GetTransientPackageAsObject(), NAME_None, RF_Transient);
 	if (!RenderTarget)
 	{
 		return MakeCaptureError(TEXT("CaptureTopDownToRenderTarget: failed to create UTextureRenderTarget2D."));
@@ -160,7 +161,7 @@ FPCGUtilsRenderTargetProcessResult UPCGUtilsRenderBakeLibrary::ProcessRenderTarg
 		return MakeProcessError(TEXT("ProcessRenderTargetWithMaterial: ProcessingMaterial is null."));
 	}
 
-	UMaterialInstanceDynamic* MID = UMaterialInstanceDynamic::Create(Request.ProcessingMaterial, GetTransientPackage());
+	UMaterialInstanceDynamic* MID = UMaterialInstanceDynamic::Create(Request.ProcessingMaterial, GetTransientPackageAsObject());
 	if (!MID)
 	{
 		return MakeProcessError(TEXT("ProcessRenderTargetWithMaterial: failed to create UMaterialInstanceDynamic."));

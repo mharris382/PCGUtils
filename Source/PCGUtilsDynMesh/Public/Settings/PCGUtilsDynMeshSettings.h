@@ -17,10 +17,10 @@ class PCGUTILSDYNMESH_API UPCGUtilsDynMeshSettings : public UDeveloperSettings
 public:
 	UPCGUtilsDynMeshSettings();
 
-#if WITH_EDITOR
 	virtual FName GetCategoryName() const override;
+#if WITH_EDITOR
 	virtual FText GetSectionText() const override;
 #endif
-	UPROPERTY(Config, EditAnywhere, Category="Brushes", meta=(AllowedClasses="/Script/Engine.MaterialInterface"))
+	UPROPERTY(Config, EditAnywhere, Category="Brushes", meta=(DisplayName = "Default Mesh Brush Override Material", AllowedClasses="/Script/Engine.MaterialInterface"))
 	TSoftObjectPtr<UMaterialInterface> StaticMeshBrushMaterial;
 };

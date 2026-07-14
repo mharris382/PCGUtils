@@ -14,37 +14,37 @@ class PCGUTILS_API UShapePathComponent : public USceneComponent, public IPathPro
 public:
 	UShapePathComponent();
 
-	UPROPERTY(EditAnywhere, Instanced, Category="PCG")
+	UPROPERTY(EditAnywhere, Instanced, Category="PCG",meta  = (DisplayPriority=0))
 	TObjectPtr<UShapePathGenerator> Generator;
 
 	/** Standardized path data used by PCG path getter elements. */
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "PCG")
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "PCG", meta = (DisplayPriority=1, ShowOnlyInnerProperties))
 	FPathComponentData PathData;
 
 	/** Copies the retained legacy fields below into PathData. */
-	UFUNCTION(CallInEditor, Category = "PCG|Migration", meta = (DisplayName = "Copy Legacy Path Data"))
+	UFUNCTION(CallInEditor, Category = "PCG", meta = (DisplayName = "Copy Legacy Path Data",DisplayPriority=2))
 	void CopyLegacyPathData();
 
 	// Legacy fields are intentionally retained for asset migration.
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="PCG")
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="PCG|Depricated")
 	FPCGOverrideGraph PreProcessShapePath;
 	
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="PCG")
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="PCG|Depricated")
 	float PathHeight = 0;
 	
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="PCG", meta = (ToolTip = "General Purpose path ID. intended use case is to make it easy to union grouped path into single path"))
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="PCG|Depricated", meta = (ToolTip = "General Purpose path ID. intended use case is to make it easy to union grouped path into single path"))
 	int32 GroupID = 0;
 
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category= "PCG", meta = (InlineEditConditionToggle))
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category= "PCG|Depricated", meta = (InlineEditConditionToggle))
 	bool bSetPathDensity = false;
 	
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category= "PCG", meta = (EditCondition="bSetPathDensity", UIMin=0, UIMax=1))
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category= "PCG|Depricated", meta = (EditCondition="bSetPathDensity", UIMin=0, UIMax=1))
 	float PathDensity = 1.0f;
 	
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category= "PCG", meta = (InlineEditConditionToggle))
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category= "PCG|Depricated", meta = (InlineEditConditionToggle))
 	bool bSetPathColor = false;
 	
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category= "PCG", meta = (EditCondition="bSetPathColor"))
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category= "PCG|Depricated", meta = (EditCondition="bSetPathColor"))
 	FLinearColor PathColor = FLinearColor(1.0f, 1.0f, 1.0f);
 	
 	FLinearColor GetPathColor() const	{ return bSetPathColor ? PathColor : FLinearColor::White; }

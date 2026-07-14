@@ -27,7 +27,7 @@ UDynamicMesh* AStaticMeshBrushActor::RetrieveDynamicMesh_Implementation() const
 		return nullptr;
 	}
 
-	UDynamicMesh* DynamicMesh = NewObject<UDynamicMesh>(GetTransientPackage());
+	UDynamicMesh* DynamicMesh = NewObject<UDynamicMesh>(GetTransientPackageAsObject());
 	if (!DynamicMesh)
 	{
 		return nullptr;
@@ -44,6 +44,6 @@ UDynamicMesh* AStaticMeshBrushActor::RetrieveDynamicMesh_Implementation() const
 		RequestedLOD,
 		Outcome,
 		/*bUseSectionMaterials=*/true);
-
+	
 	return Outcome == EGeometryScriptOutcomePins::Success ? DynamicMesh : nullptr;
 }
