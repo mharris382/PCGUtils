@@ -83,6 +83,8 @@ void FPCGGetPCGSplineDataElement::ProcessActor(
 
 			UPCGUtilPathDataLibrary::GetPathDataFromSettings(
 				SplineData->Metadata, &GetSettings->PathSettings, &Comp->PathData);
+			UPCGUtilPathDataLibrary::GetComponentDataFromSettings(
+				SplineData->Metadata, &GetSettings->ComponentSettings, Comp);
 		}
 
 		FPCGTaggedData& TaggedData = Context->OutputData.TaggedData.Emplace_GetRef();

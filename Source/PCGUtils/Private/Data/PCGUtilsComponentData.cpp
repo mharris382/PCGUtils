@@ -3,6 +3,9 @@
 
 #include "Data/PCGUtilsComponentData.h"
 
+#include "Components/SceneComponent.h"
+#include "GameFramework/Actor.h"
+
 namespace 
 {
 	bool AssignInt32Attribute(UPCGMetadata* Meta, FName AttributeName, int32 Value, 
@@ -50,6 +53,7 @@ namespace
 		}
 		return false;
 	}
+	
 	bool AssignVector4Attribute(UPCGMetadata* Meta, FName AttributeName, const FVector4& Value, 
 	const FPCGMetadataDomainID& DomainID = PCGMetadataDomainID::Data,
 	const int64 Key = PCGInvalidEntryKey)
@@ -57,6 +61,22 @@ namespace
 		if (!Meta || AttributeName.IsNone()) return false;
 		if (FPCGMetadataAttribute<FVector4>* Attribute =
 						Meta->FindOrCreateAttribute<FVector4>(
+							FPCGAttributeIdentifier(FName(AttributeName), DomainID),
+							Value,false,false,true))
+		{
+			Attribute->SetValue(Key, Value);
+			return true;
+		}
+		return false;
+	}
+	
+	bool AssignTransformAttribute(UPCGMetadata* Meta, FName AttributeName, const FTransform& Value, 
+	const FPCGMetadataDomainID& DomainID = PCGMetadataDomainID::Data,
+	const int64 Key = PCGInvalidEntryKey)
+	{
+		if (!Meta || AttributeName.IsNone()) return false;
+		if (FPCGMetadataAttribute<FTransform>* Attribute =
+						Meta->FindOrCreateAttribute<FTransform>(
 							FPCGAttributeIdentifier(FName(AttributeName), DomainID),
 							Value,false,false,true))
 		{
@@ -102,8 +122,33 @@ void UPCGUtilPathDataLibrary::GetPathDataFromSettings(UPCGMetadata* Meta,
 	}
 }
 
+void UPCGUtilPathDataLibrary::GetComponentDataFromSettings(UPCGMetadata* Meta,
+	const FGetComponentDataSettings* Settings, USceneComponent* Data)
+{
+	if (!Meta || !Settings || !Data)
+		return;
+	
+	if (Settings->bOutputActorReference && !Settings->ActorReferenceAttributeName.IsEmpty())
+	{
+		FSoftObjectPath ActorReference;
+		if (AActor* owner = Data->GetOwner())
+		{
+			ActorReference = TSoftObjectPtr<AActor>(owner).ToSoftObjectPath();	
+		}
+		AssignSoftObjectAttribute(Meta, FName(Settings->ActorReferenceAttributeName), ActorReference);
+	}
+	if (Settings->bOutputComponentReference && !Settings->ComponentReferenceAttributeName.IsEmpty())
+	{
+		AssignSoftObjectAttribute(Meta, FName(Settings->ComponentReferenceAttributeName), TSoftObjectPtr<UObject>(Data).ToSoftObjectPath());
+	}
+	if (Settings->bOutputComponentTransform && !Settings->RelativeTransformAttributeName.IsEmpty())
+	{
+		AssignTransformAttribute(Meta, FName(Settings->RelativeTransformAttributeName),Data->GetRelativeTransform());
+	}
+}
+
 void UPCGUtilPathDataLibrary::GetPointDataFromSettings(UPCGMetadata* Meta,	const FGetPointElementSettingsConfiguration* Settings, const FPointComponentData* Data, 
-	const FPCGMetadataDomainID Domain, const int64 Key )
+                                                       const FPCGMetadataDomainID Domain, const int64 Key )
 {
 	if (!Meta || !Settings || !Data)
 		return;

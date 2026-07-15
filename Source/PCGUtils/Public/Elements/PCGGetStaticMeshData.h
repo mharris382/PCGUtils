@@ -1,6 +1,7 @@
 #pragma once
 
 #include "CoreMinimal.h"
+#include "Data/PCGUtilsComponentData.h"
 #include "Elements/PCGDataFromActor.h"
 
 #include "PCGGetStaticMeshData.generated.h"
@@ -34,11 +35,8 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Settings", meta=(EditCondition="bExtractMeshMaterials", ToolTip="Base attribute name for extracted materials. When Max Material Count is greater than one, a zero-based number is appended to this name. When set to one, this name is used as-is."))
 	FName MaterialOutputAttributeName = FName(TEXT("Material"));
 
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Settings", meta=(DisplayName="Output Actor Reference"))
-	bool bOutputActorReference = true;
-
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Settings", meta=(DisplayName="Output Component Reference"))
-	bool bOutputComponentReference = false;
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Settings", meta = (ShowOnlyInnerProperties))
+	FGetComponentDataSettings ComponentSettings;
 
 protected:
 	virtual TArray<FPCGPinProperties> OutputPinProperties() const override;

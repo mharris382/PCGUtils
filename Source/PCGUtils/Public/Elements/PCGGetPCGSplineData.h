@@ -26,6 +26,9 @@ protected:
 
 public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Settings", meta = (ShowOnlyInnerProperties))
+	FGetComponentDataSettings ComponentSettings;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Settings", meta = (ShowOnlyInnerProperties))
 	FGetPathElementSettingsConfiguration PathSettings;
 };
 

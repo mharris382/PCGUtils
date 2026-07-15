@@ -193,7 +193,29 @@ struct PCGUTILS_API FGetPointElementSettingsConfiguration
 	//FString FalloffAttributeName = TEXT("PointFalloff");
 };
 
-
+USTRUCT(BlueprintType)
+struct PCGUTILS_API FGetComponentDataSettings
+{
+	GENERATED_BODY()
+	
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Settings")
+	bool bOutputActorReference = false;
+	
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Settings", meta = (EditCondition = "bOutputActorReference", EditConditionHides))
+	FString ActorReferenceAttributeName = TEXT("ActorReference");
+	
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Settings")
+	bool bOutputComponentReference = false;
+	
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Settings", meta = (EditCondition = "bOutputComponentReference", EditConditionHides))
+	FString ComponentReferenceAttributeName = TEXT("ComponentReference");
+	
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Settings", meta = (DisplayName = "Output Component Relative Transform"))
+	bool bOutputComponentTransform = false;
+	
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Settings", meta = (EditCondition = "bOutputComponentTransform", EditConditionHides))
+	FString RelativeTransformAttributeName = TEXT("RelativeTransform");
+};
 
 UCLASS()
 class PCGUTILS_API UPCGUtilPathDataLibrary : public UBlueprintFunctionLibrary
@@ -201,6 +223,7 @@ class PCGUTILS_API UPCGUtilPathDataLibrary : public UBlueprintFunctionLibrary
 	GENERATED_BODY()
 public:
 	static void GetPathDataFromSettings(UPCGMetadata* Meta, const FGetPathElementSettingsConfiguration* Settings, const FPathComponentData* Data);
+	static void GetComponentDataFromSettings(UPCGMetadata* Meta, const FGetComponentDataSettings* Settings, USceneComponent* Data);
 	
 	static void GetPointDataFromSettings(UPCGMetadata* Meta, const FGetPointElementSettingsConfiguration* Settings, const FPointComponentData* Data, const FPCGMetadataDomainID Domain = PCGMetadataDomainID::Data, const int64 Key = -1);
 //	static bool AssignGroupIDAttribute(UPCGMetadata* Meta, FName AttributeName, const FPathComponentData* Data);

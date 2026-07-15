@@ -32,11 +32,8 @@ protected:
 public:
 	virtual EPCGDataType GetDataFilter() const override { return EPCGDataType::Point; }
 
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Settings", meta=(DisplayName="Output Actor Reference"))
-	bool bOutputActorReference = false;
-
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Settings", meta=(DisplayName="Output Component Reference"))
-	bool bOutputComponentReference = false;
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Settings", meta = (ShowOnlyInnerProperties))
+	FGetComponentDataSettings ComponentSettings;
 	
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Settings", meta = (ShowOnlyInnerProperties))
 	FGetPathElementSettingsConfiguration PathSettings;

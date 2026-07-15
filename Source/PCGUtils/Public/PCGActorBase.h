@@ -80,13 +80,7 @@ public:
 
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "PCG")
     int32 Seed = 0;
-    
-    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "PCG|Editor" ,AdvancedDisplay)
-    bool bAllowComponentEditsToTriggerGeneration = true;
 
-    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "PCG|Editor" ,AdvancedDisplay, meta = (EditCondition="bAllowComponentEditsToTriggerGeneration"))
-    bool bAllowSplineEditsToForceGenerate = true;
-    
     // Symmetric padding added to each side of the computed bounds.
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "PCG|Bounds", meta = (ClampMin = "0.0"))
     float BoundsPadding = 50.0f;
@@ -98,7 +92,7 @@ public:
     UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "PCG|Bake", meta = (ContentDir))
     FDirectoryPath BakedAssetSavePath;
 
-    UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "PCG|Bake")
+    UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "PCG|Bake")
     FString BakedAssetGroupLabel = TEXT("DefaultGroup");
     
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "PCG|Bake")
@@ -115,4 +109,12 @@ public:
     TObjectPtr<UPCGComponent> PCGComponent;
 
     
+    
+#if WITH_EDITORONLY_DATA
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "PCG|Editor" ,AdvancedDisplay)
+    bool bAllowComponentEditsToTriggerGeneration = true;
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "PCG|Editor" ,AdvancedDisplay, meta = (EditCondition="bAllowComponentEditsToTriggerGeneration"))
+    bool bAllowSplineEditsToForceGenerate = true;
+#endif
 };

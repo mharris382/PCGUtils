@@ -52,7 +52,7 @@ void APCGActorBase::OnConstruction(const FTransform& Transform)
     Super::OnConstruction(Transform);
     BoundsBox->ShapeColor = GetBoxEditorColor();
     ApplyBoundsToBox();
-    BakedAssetSaveName = GetAssetSaveGroupName() + TEXT("_") + GetActorGuid().ToString();
+    BakedAssetSaveName = BakedAssetGroupLabel + TEXT("_") + GetActorGuid().ToString();
 #endif
 }
 

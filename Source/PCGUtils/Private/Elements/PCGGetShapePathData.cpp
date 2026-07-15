@@ -116,25 +116,8 @@ void FPCGGetShapePathElement::ProcessActor(
 				IsClosedAttribute->SetValue(PCGInvalidEntryKey, Comp->IsClosedLoop());
 			}
 			
-			if (GetSettings->bOutputActorReference)
-			{
-				Meta->FindOrCreateAttribute<FSoftObjectPath>(
-					FPCGAttributeIdentifier(PCGPointDataConstants::ActorReferenceAttribute, PCGMetadataDomainID::Data),
-					FSoftObjectPath(FoundActor),
-					/*bAllowsInterpolation=*/false,
-					/*bOverrideParent=*/false,
-					/*bOverwriteIfTypeMismatch=*/false);
-			}
-
-			if (GetSettings->bOutputComponentReference)
-			{
-				Meta->FindOrCreateAttribute<FSoftObjectPath>(
-					FPCGAttributeIdentifier(FName("ComponentReference"), PCGMetadataDomainID::Data),
-					FSoftObjectPath(Comp),
-					/*bAllowsInterpolation=*/false,
-					/*bOverrideParent=*/false,
-					/*bOverwriteIfTypeMismatch=*/false);
-			}
+			UPCGUtilPathDataLibrary::GetComponentDataFromSettings(
+				Meta, &GetSettings->ComponentSettings, Comp);
 			
 
 			UPCGUtilPathDataLibrary::GetPathDataFromSettings(

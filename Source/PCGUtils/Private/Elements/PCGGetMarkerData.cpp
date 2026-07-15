@@ -83,26 +83,8 @@ void FPCGGetMarkerDataElement::ProcessActor(
 		
 		if (UPCGMetadata* Meta = PointData->MutableMetadata())
 		{
-			if (ShapeSettings->bOutputActorReference)
-			{
-				Meta->FindOrCreateAttribute<FSoftObjectPath>(
-					FPCGAttributeIdentifier(PCGPointDataConstants::ActorReferenceAttribute, PCGMetadataDomainID::Default),
-					FSoftObjectPath(FoundActor),
-					/*bAllowsInterpolation=*/false,
-					/*bOverrideParent=*/false,
-					/*bOverwriteIfTypeMismatch=*/false);
-			}
-
-			
-			if (ShapeSettings->bOutputComponentReference)
-			{
-				Meta->FindOrCreateAttribute<FSoftObjectPath>(
-					FPCGAttributeIdentifier(FName("ComponentReference"), PCGMetadataDomainID::Default),
-					FSoftObjectPath(ShapeComp),
-					/*bAllowsInterpolation=*/false,
-					/*bOverrideParent=*/false,
-					/*bOverwriteIfTypeMismatch=*/false);
-			}
+			UPCGUtilPathDataLibrary::GetComponentDataFromSettings(
+				Meta, &ShapeSettings->ComponentSettings, ShapeComp);
 			
 
 			const bool bUseElementsDomain =

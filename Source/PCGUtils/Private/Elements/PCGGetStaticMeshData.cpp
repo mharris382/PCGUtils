@@ -13,6 +13,7 @@
 UPCGGetStaticMeshDataSettings::UPCGGetStaticMeshDataSettings()
 {
 	Mode = EPCGGetDataFromActorMode::ParseActorComponents;
+	ComponentSettings.bOutputActorReference = true;
 	bAlwaysRequeryActors = true;
 }
 
@@ -106,17 +107,8 @@ void FPCGGetStaticMeshDataElement::ProcessActor(
 				}
 			}
 
-			if (GetSettings->bOutputActorReference)
-			{
-				Metadata->FindOrCreateAttribute<FSoftObjectPath>(
-					PCGPointDataConstants::ActorReferenceAttribute, FSoftObjectPath(FoundActor), false, false, true);
-			}
-
-			if (GetSettings->bOutputComponentReference)
-			{
-				Metadata->FindOrCreateAttribute<FSoftObjectPath>(
-					FName(TEXT("ComponentReference")), FSoftObjectPath(MeshComponent), false, false, true);
-			}
+			UPCGUtilPathDataLibrary::GetComponentDataFromSettings(
+				Metadata, &GetSettings->ComponentSettings, MeshComponent);
 		}
 
 		FPCGTaggedData& TaggedData = Context->OutputData.TaggedData.Emplace_GetRef();
