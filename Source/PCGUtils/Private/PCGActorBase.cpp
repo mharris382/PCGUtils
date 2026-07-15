@@ -43,7 +43,31 @@ APCGActorBase::APCGActorBase()
     PCGComponent->bOverrideGenerationRadii = Settings->bOverrideGenerationRadiiByDefault;
     PCGComponent->GenerationRadii = Settings->DefaultGenerationRadii;
     
-    BakedAssetSavePath = Settings->DefaultAssetSavePath;
+	BakeSettings.BakedAssetSavePath = Settings->DefaultAssetSavePath;
+	BakedAssetSavePath = Settings->DefaultAssetSavePath;
+}
+
+void APCGActorBase::PostLoad()
+{
+	Super::PostLoad();
+
+	if (!bBakeSettingsMigrated)
+	{
+		BakeSettings.BakedAssetSaveName = BakedAssetSaveName;
+		BakeSettings.BakedAssetSavePath = BakedAssetSavePath;
+		BakeSettings.BakedAssetGroupLabel = BakedAssetGroupLabel;
+		BakeSettings.PreBakeGraph = PreBakeGraph;
+		BakeSettings.PostBakeGraph = PostBakeGraph;
+		bBakeSettingsMigrated = true;
+	}
+}
+
+void APCGActorBase::PostActorCreated()
+{
+	Super::PostActorCreated();
+	// Newly created actors already use BakeSettings and must never be treated as
+	// legacy assets on their first reload.
+	bBakeSettingsMigrated = true;
 }
 
 void APCGActorBase::OnConstruction(const FTransform& Transform)
@@ -52,7 +76,7 @@ void APCGActorBase::OnConstruction(const FTransform& Transform)
     Super::OnConstruction(Transform);
     BoundsBox->ShapeColor = GetBoxEditorColor();
     ApplyBoundsToBox();
-    BakedAssetSaveName = BakedAssetGroupLabel + TEXT("_") + GetActorGuid().ToString();
+	BakeSettings.BakedAssetSaveName = BakeSettings.BakedAssetGroupLabel + TEXT("_") + GetActorGuid().ToString();
 #endif
 }
 

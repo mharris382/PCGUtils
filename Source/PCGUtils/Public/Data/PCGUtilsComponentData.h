@@ -8,7 +8,6 @@
 #include "Metadata/PCGMetadata.h"
 #include "Metadata/Accessors/PCGAttributeAccessorHelpers.h"
 #include "Metadata/PCGMetadataCommon.h"
-
 #include "PCGUtilsComponentData.generated.h"
 
 // USTRUCT(BlueprintType)
@@ -216,6 +215,8 @@ struct PCGUTILS_API FGetComponentDataSettings
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Settings", meta = (EditCondition = "bOutputComponentTransform", EditConditionHides))
 	FString RelativeTransformAttributeName = TEXT("RelativeTransform");
 };
+
+
 
 UCLASS()
 class PCGUTILS_API UPCGUtilPathDataLibrary : public UBlueprintFunctionLibrary

@@ -4,19 +4,14 @@
 
 #include "CoreMinimal.h"
 #include "OverrideGraphs.h"
-#include "Components/ActorComponent.h"
-#include "PCGBakeDataComponent.generated.h"
+#include "UObject/ObjectMacros.h"
 
+#include "PCGBakeSettings.generated.h"
 
-UCLASS(ClassGroup=(Custom), meta=(BlueprintSpawnableComponent))
-class PCGUTILS_API UPCGBakeDataComponent : public UActorComponent
+USTRUCT(BlueprintType)
+struct PCGUTILS_API FPCGUtilsBakeSettings
 {
 	GENERATED_BODY()
-
-public:
-	// Sets default values for this component's properties
-	UPCGBakeDataComponent();
-
 	
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "PCG|Bake")
 	FString BakedAssetSaveName;
@@ -33,4 +28,10 @@ public:
     
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "PCG|Bake")
 	FPCGOverrideGraph PostBakeGraph;
+	
+	bool IsValidSavePath() const;
+	
+	FString GetBakeAssetSaveName() const { return BakedAssetGroupLabel+ "_"+ BakedAssetSaveName; }
+	FSoftObjectPath GetBakedAssetSoftPath() const;
 };
+

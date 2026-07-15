@@ -2,6 +2,8 @@
 
 #include "CoreMinimal.h"
 #include "GameFramework/Actor.h"
+#include "Data/PCGBakeSettings.h"
+#include "Interfaces/PCGBakeSettingsProvider.h"
 #include "OverrideGraphs.h"
 #include "PCGActorBase.generated.h"
 
@@ -12,12 +14,15 @@ class UPCGGenDataAsset;
 class UPCGGraphInterface;
 
 UCLASS(Blueprintable, meta = (DisplayName = "PCGActor"))
-class PCGUTILS_API APCGActorBase : public AActor
+class PCGUTILS_API APCGActorBase : public AActor, public IPCGBakeSettingsProvider
 {
     GENERATED_BODY()
 
 public:
     APCGActorBase();
+	virtual void PostLoad() override;
+	virtual void PostActorCreated() override;
+	virtual FPCGUtilsBakeSettings GetPCGBakeSettings_Implementation() const override { return BakeSettings; }
 
     /**
      * Moves the actor's world pivot to the center of its computed bounding box
@@ -52,7 +57,7 @@ protected:
 
     UFUNCTION(BlueprintNativeEvent, Category = "PCG|Bake")
 	FString GetAssetSaveGroupName() const;
-	FString GetAssetSaveGroupName_Implementation() const { return BakedAssetGroupLabel; }
+	FString GetAssetSaveGroupName_Implementation() const { return BakeSettings.BakedAssetGroupLabel; }
 
     FBox GetPCGBounds() const;
 
@@ -81,26 +86,34 @@ public:
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "PCG")
     int32 Seed = 0;
 
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "PCG|Bake", meta = (ShowOnlyInnerProperties))
+	FPCGUtilsBakeSettings BakeSettings;
+
     // Symmetric padding added to each side of the computed bounds.
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "PCG|Bounds", meta = (ClampMin = "0.0"))
     float BoundsPadding = 50.0f;
 
-    UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "PCG|Bake")
+    UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "PCG|Bake|Legacy", meta=(DeprecatedProperty, DeprecationMessage="Use BakeSettings.BakedAssetSaveName."))
     FString BakedAssetSaveName;
 
     /** Output path for baked static mesh and data assets. */
-    UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "PCG|Bake", meta = (ContentDir))
+    UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "PCG|Bake|Legacy", meta=(DeprecatedProperty, DeprecationMessage="Use BakeSettings.BakedAssetSavePath."))
     FDirectoryPath BakedAssetSavePath;
 
-    UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "PCG|Bake")
+    UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "PCG|Bake|Legacy", meta=(DeprecatedProperty, DeprecationMessage="Use BakeSettings.BakedAssetGroupLabel."))
     FString BakedAssetGroupLabel = TEXT("DefaultGroup");
     
-    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "PCG|Bake")
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "PCG|Bake|Legacy", meta=(DeprecatedProperty, DeprecationMessage="Use BakeSettings.PreBakeGraph."))
     FPCGOverrideGraph PreBakeGraph;
     
-    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "PCG|Bake")
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "PCG|Bake|Legacy", meta=(DeprecatedProperty, DeprecationMessage="Use BakeSettings.PostBakeGraph."))
     FPCGOverrideGraph PostBakeGraph;
-    
+
+private:
+	UPROPERTY()
+	bool bBakeSettingsMigrated = false;
+
+public:
 
     UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "PCG", AdvancedDisplay)
     TObjectPtr<UBoxComponent> BoundsBox;
