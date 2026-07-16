@@ -1,21 +1,30 @@
 #include "ShapePath/ShapePathComponent.h"
-#include "PCGActorBase.h"
+#include "PCGUtilsHelpers.h"
 UShapePathComponent::UShapePathComponent()
 {
 	Generator = CreateDefaultSubobject<UCircleGenerator>(TEXT("DefaultGenerator"));
 }
 
-void UShapePathComponent::CopyLegacyPathData()
+void UShapePathComponent::PostLoad()
 {
-	Modify();
-	PathData.ProcessPathGraph = PreProcessShapePath;
-	PathData.Height = PathHeight;
-	PathData.GroupID = GroupID;
-	PathData.bSetPathDensity = bSetPathDensity;
-	PathData.PathDensity = PathDensity;
-	PathData.bSetPathColor = bSetPathColor;
-	PathData.PathColor = PathColor;
-	MarkPackageDirty();
+	Super::PostLoad();
+	if (!bPathDataMigrated)
+	{
+		PathData.ProcessPathGraph = PreProcessShapePath;
+		PathData.Height = PathHeight;
+		PathData.GroupID = GroupID;
+		PathData.bSetPathDensity = bSetPathDensity;
+		PathData.PathDensity = PathDensity;
+		PathData.bSetPathColor = bSetPathColor;
+		PathData.PathColor = PathColor;
+		bPathDataMigrated = true;
+	}
+}
+
+void UShapePathComponent::OnComponentCreated()
+{
+	Super::OnComponentCreated();
+	bPathDataMigrated = true;
 }
 
 void UShapePathComponent::RebuildPoints()
@@ -33,7 +42,7 @@ void UShapePathComponent::OnRegister()
 	RebuildPoints();
 }
 
-const TArray<FVector>& UShapePathComponent::GetPathPoints()
+const TArray<FVector>& UShapePathComponent::GetGeneratedPathPoints()
 {
 	if (CachedPoints.IsEmpty())
 	{
@@ -52,9 +61,51 @@ bool UShapePathComponent::IsClosedLoop() const
 	return Generator ? Generator->IsClosedLoop() : false;
 }
 
-FTransform UShapePathComponent::GetPathTransform() const
+TArray<FPCGPoint> UShapePathComponent::GetPathPoints_Implementation() const
 {
-	return GetComponentTransform();
+	UShapePathComponent* MutableThis = const_cast<UShapePathComponent*>(this);
+	const TArray<FVector>& LocalPoints = MutableThis->GetGeneratedPathPoints();
+	TArray<FPCGPoint> Result;
+	Result.Reserve(LocalPoints.Num());
+	for (const FVector& LocalPosition : LocalPoints)
+	{
+		FPCGPoint& Point = Result.Emplace_GetRef();
+		Point.Transform = FTransform(LocalPosition);
+		Point.SetExtents(FVector(50.f));
+		Point.Density = PathData.GetPathDensity();
+		Point.Color = PathData.GetPathColor();
+	}
+	return Result;
+}
+
+bool UShapePathComponent::GetIsClosedLoop_Implementation() const
+{
+	return IsClosedLoop();
+}
+
+bool UShapePathComponent::GetPCGActorBoundingBox_Implementation(AActor* Actor, FBox& OutBounds) const
+{
+	OutBounds.Init();
+	if (!IsValid(Actor))
+	{
+		return false;
+	}
+
+	UShapePathComponent* MutableThis = const_cast<UShapePathComponent*>(this);
+	const TArray<FVector>& LocalPoints = MutableThis->GetGeneratedPathPoints();
+	const FTransform ComponentTransform = GetComponentTransform();
+	const FTransform ActorTransform = Actor->GetActorTransform();
+	for (const FVector& LocalPoint : LocalPoints)
+	{
+		const FVector WorldPoint = ComponentTransform.TransformPosition(LocalPoint);
+		OutBounds += ActorTransform.InverseTransformPosition(WorldPoint);
+	}
+
+	if (OutBounds.IsValid)
+	{
+		OutBounds = OutBounds.ExpandBy(1.0f);
+	}
+	return OutBounds.IsValid != 0;
 }
 
 FVector UShapePathComponent::GetPathPoint(int32 PointIndex) const
@@ -72,9 +123,9 @@ void UShapePathComponent::PostEditChangeChainProperty(FPropertyChangedChainEvent
 	Super::PostEditChangeChainProperty(PropertyChangedEvent);
 	RebuildPoints();
 	MarkRenderStateDirty();
-	if (APCGActorBase* actor = Cast<APCGActorBase>(GetOwner()))
+	if (bAllowRegeneratePCGOnEdits)
 	{
-		actor->TriggerRegeneratePCGOnComponentEdits(this);
+		UPCGUtilsHelpers::TryRefreshPCGGeneration(this, true);
 	}
 }
 
@@ -83,9 +134,9 @@ void UShapePathComponent::PostEditComponentMove(bool bFinished)
 	Super::PostEditComponentMove(bFinished);
 	if (bFinished)
 	{
-		if (APCGActorBase* actor = Cast<APCGActorBase>(GetOwner()))
+		if (bAllowRegeneratePCGOnEdits)
 		{
-			actor->TriggerRegeneratePCGOnComponentEdits(this);
+			UPCGUtilsHelpers::TryRefreshPCGGeneration(this, true);
 		}
 	}
 }
@@ -93,9 +144,9 @@ void UShapePathComponent::PostEditComponentMove(bool bFinished)
 void UShapePathComponent::PostEditChangeProperty(FPropertyChangedEvent& PropertyChangedEvent)
 {
 	Super::PostEditChangeProperty(PropertyChangedEvent);
-	if (APCGActorBase* actor = Cast<APCGActorBase>(GetOwner()))
+	if (bAllowRegeneratePCGOnEdits)
 	{
-		actor->TriggerRegeneratePCGOnComponentEdits(this);
+		UPCGUtilsHelpers::TryRefreshPCGGeneration(this, true);
 	}
 }
 #endif

@@ -98,10 +98,9 @@ FBox APCGActorBase::GetPCGBounds() const
 void APCGActorBase::TriggerRegeneratePCGOnComponentEdits(UActorComponent* TriggeringComponent)
 {
 #if WITH_EDITOR
-    if (PCGComponent && bAllowComponentEditsToTriggerGeneration)
-    {
-        RegeneratePCGOnSplineEdits(bAllowSplineEditsToForceGenerate);
-    }
+	UPCGUtilsHelpers::TryRefreshPCGGeneration(
+		TriggeringComponent ? TriggeringComponent : PCGComponent,
+		true);
 #endif
 }
 
@@ -111,11 +110,6 @@ void APCGActorBase::TriggerRegenerateOnActorEdits(AActor* OtherActor)
     if (PCGComponent && bAllowComponentEditsToTriggerGeneration)
         PCGComponent->GenerateLocal(true);
 #endif
-}
-
-void APCGActorBase::RegeneratePCGOnSplineEdits_Implementation(bool bForceGen)
-{
-    PCGComponent->GenerateLocal(bForceGen);
 }
 
 void APCGActorBase::ApplyBoundsToBox()

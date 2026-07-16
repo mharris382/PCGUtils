@@ -2,17 +2,20 @@
 #include "CoreMinimal.h"
 #include "Components/SceneComponent.h"
 #include "Data/PCGUtilsComponentData.h"
-#include "Interfaces/PathProvider.h"
+#include "Interfaces/PCGBoundsProvider.h"
+#include "Interfaces/PCGPathProvider.h"
 #include "OverrideGraphs.h"
 #include "ShapePath/ShapePathGenerator.h"
 #include "ShapePathComponent.generated.h"
 
 UCLASS(ClassGroup=(Custom), meta=(BlueprintSpawnableComponent))
-class PCGUTILS_API UShapePathComponent : public USceneComponent, public IPathProvider
+class PCGUTILS_API UShapePathComponent : public USceneComponent, public IPCGPathProvider, public IPCGBoundsProvider
 {
 	GENERATED_BODY()
 public:
 	UShapePathComponent();
+	virtual void PostLoad() override;
+	virtual void OnComponentCreated() override;
 
 	UPROPERTY(EditAnywhere, Instanced, Category="PCG",meta  = (DisplayPriority=0))
 	TObjectPtr<UShapePathGenerator> Generator;
@@ -20,10 +23,6 @@ public:
 	/** Standardized path data used by PCG path getter elements. */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "PCG", meta = (DisplayPriority=1, ShowOnlyInnerProperties))
 	FPathComponentData PathData;
-
-	/** Copies the retained legacy fields below into PathData. */
-	UFUNCTION(CallInEditor, Category = "PCG", meta = (DisplayName = "Copy Legacy Path Data",DisplayPriority=2))
-	void CopyLegacyPathData();
 
 	// Legacy fields are intentionally retained for asset migration.
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="PCG|Depricated")
@@ -50,11 +49,13 @@ public:
 	FLinearColor GetPathColor() const	{ return bSetPathColor ? PathColor : FLinearColor::White; }
 	float GetPathDensity() const { return  bSetPathDensity ? PathDensity : 1.0f; }
 	
-	// IPathProvider
-	virtual const TArray<FVector>& GetPathPoints() override;
-	virtual int32 GetNumPoints() const override;
-	virtual bool IsClosedLoop() const override;
-	virtual FTransform GetPathTransform() const override;
+	virtual TArray<FPCGPoint> GetPathPoints_Implementation() const override;
+	virtual FPathComponentData GetPathData_Implementation() const override { return PathData; }
+	virtual bool GetIsClosedLoop_Implementation() const override;
+	const TArray<FVector>& GetGeneratedPathPoints();
+	int32 GetNumPoints() const;
+	bool IsClosedLoop() const;
+	virtual bool GetPCGActorBoundingBox_Implementation(AActor* Actor, FBox& OutBounds) const override;
 	
 	
 	FVector GetPathPoint(int32 PointIndex) const;
@@ -70,12 +71,17 @@ public:
 protected:
 	virtual void OnRegister() override;
 	
+#if WITH_EDITORONLY_DATA
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Shape Path" ,AdvancedDisplay)
 	bool bAllowRegeneratePCGOnEdits = true;
-	
+#endif
 #if WITH_EDITOR
 	virtual void PostEditChangeChainProperty(FPropertyChangedChainEvent& PropertyChangedEvent) override;
 	virtual void PostEditComponentMove(bool bFinished) override;
 	virtual void PostEditChangeProperty(FPropertyChangedEvent& PropertyChangedEvent) override;
 #endif
+
+private:
+	UPROPERTY()
+	bool bPathDataMigrated = false;
 };

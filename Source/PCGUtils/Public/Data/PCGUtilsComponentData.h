@@ -65,8 +65,8 @@ struct PCGUTILS_API FPathComponentData
 	float PathWidth = 0.0f;
 	
 	
-	float GetPathDensity(const float DefaultDensity) const { return bSetPathDensity ? PathDensity : DefaultDensity; }
-	FLinearColor GetPathColor(const FLinearColor DefaultColor) const { return bSetPathColor ? PathColor : DefaultColor; }
+	float GetPathDensity() const { return bSetPathDensity ? PathDensity : 1.0f; }
+	FLinearColor GetPathColor() const { return bSetPathColor ? PathColor : FLinearColor::White; }
 	
 };
 

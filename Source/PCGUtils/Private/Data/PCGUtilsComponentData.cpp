@@ -114,7 +114,7 @@ void UPCGUtilPathDataLibrary::GetPathDataFromSettings(UPCGMetadata* Meta,
 	}
 	if (Settings->bExtractColor && !Settings->ColorAttributeName.IsEmpty())
 	{
-		AssignVector4Attribute(Meta, FName(Settings->ColorAttributeName), Data->GetPathColor(FLinearColor::White));
+		AssignVector4Attribute(Meta, FName(Settings->ColorAttributeName), Data->GetPathColor());
 	}
 	if (Settings->bExtractDensity && !Settings->PathDensityAttributeName.IsEmpty())
 	{

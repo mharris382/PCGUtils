@@ -2,7 +2,7 @@
 
 
 #include "Components/PCGMarkerComponent.h"
-#include "PCGActorBase.h"
+#include "PCGUtilsHelpers.h"
 
 #if WITH_EDITOR
 #include "ScopedTransaction.h"
@@ -15,16 +15,56 @@ UPCGMarkerComponent::UPCGMarkerComponent(const FObjectInitializer& ObjectInitial
 	PrimaryComponentTick.bCanEverTick = false;
 }
 
-void UPCGMarkerComponent::CopyLegacyPointData()
+bool UPCGMarkerComponent::GetPCGActorBoundingBox_Implementation(AActor* Actor, FBox& OutBounds) const
 {
-	Modify();
-	PointData.GroupID = MarkerGroupID;
-	PointData.ProcessPointGraph = PointOverrideGraph;
-	PointData.bSetPointDensity = bSetDensity;
-	PointData.PointDensity = Density;
-	PointData.bSetPointColor = bSetPointColor;
-	PointData.PointColor = PointColor;
-	MarkPackageDirty();
+	OutBounds.Init();
+	if (!IsValid(Actor))
+	{
+		return false;
+	}
+
+	FBox LocalBounds(EForceInit::ForceInit);
+	LocalBounds += BoundsMin;
+	LocalBounds += BoundsMax;
+	const FTransform ComponentToActor = GetComponentTransform().GetRelativeTransform(Actor->GetActorTransform());
+	OutBounds = LocalBounds.TransformBy(ComponentToActor);
+	return OutBounds.IsValid != 0;
+}
+
+void UPCGMarkerComponent::PostLoad()
+{
+	Super::PostLoad();
+	if (!bPointDataMigrated)
+	{
+		PointData.GroupID = MarkerGroupID;
+		PointData.ProcessPointGraph = PointOverrideGraph;
+		PointData.bSetPointDensity = bSetDensity;
+		PointData.PointDensity = Density;
+		PointData.bSetPointColor = bSetPointColor;
+		PointData.PointColor = PointColor;
+		bPointDataMigrated = true;
+	}
+}
+
+bool UPCGMarkerComponent::GetPCGPointData_Implementation(
+	TArray<FPCGPoint>& OutPoints,
+	FPointComponentData& OutPointData) const
+{
+	OutPoints.Reset(1);
+	FPCGPoint& Point = OutPoints.Emplace_GetRef();
+	Point.Transform = GetComponentTransform();
+	Point.BoundsMin = BoundsMin;
+	Point.BoundsMax = BoundsMax;
+	Point.Density = PointData.GetPointDensity();
+	Point.Color = PointData.GetPointColor();
+	OutPointData = PointData;
+	return true;
+}
+
+void UPCGMarkerComponent::OnComponentCreated()
+{
+	Super::OnComponentCreated();
+	bPointDataMigrated = true;
 }
 
 
@@ -62,13 +102,7 @@ void UPCGMarkerComponent::TriggerRegeneratePCGOnMarkerEdits()
 		return;
 	}
 
-	APCGActorBase* Actor = Cast<APCGActorBase>(GetOwner());
-	if (!Actor)
-	{
-		return;
-	}
-
-	Actor->TriggerRegeneratePCGOnComponentEdits(this);
+	UPCGUtilsHelpers::TryRefreshPCGGeneration(this, true);
 }
 
 #endif

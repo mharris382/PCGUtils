@@ -2,17 +2,87 @@
 
 #include "PCGUtilsHelpers.h"
 
-#include "Components/PCGMarkerComponent.h"
 #include "Components/SplineComponent.h"
 #include "GameFramework/Actor.h"
+#include "Interfaces/PCGBoundsProvider.h"
+#include "Interfaces/PCGComponentProvider.h"
 #include "Metadata/PCGMetadata.h"
 #include "Metadata/PCGMetadataAttributeTpl.h"
 #include "PCGParamData.h"
+#include "Settings/PCGUtilsSettings.h"
 #include "Engine/StaticMesh.h"
+#include "PCGComponent.h"
 
 // ─────────────────────────────────────────────────────────────────────────────
 // ComputeSplineBoundingBox
 // ─────────────────────────────────────────────────────────────────────────────
+
+
+
+bool UPCGUtilsHelpers::TryRefreshPCGGeneration(UActorComponent* Component, bool bForceRegenerate)
+{
+	if (!IsValid(Component) || !IsValid(Component->GetOwner()))
+		return false;
+
+	AActor* Owner = Component->GetOwner();
+	UPCGComponent* PCGComponent = nullptr;
+	bool bFoundProvider = false;
+
+	auto TryProvider = [&PCGComponent, &bFoundProvider](UObject* Provider) -> bool
+	{
+		if (!IsValid(Provider) || !Provider->GetClass()->ImplementsInterface(UPCGComponentProvider::StaticClass()))
+		{
+			return false;
+		}
+
+		bFoundProvider = true;
+		if (!IPCGComponentProvider::Execute_AllowsComponentTriggeredRegeneration(Provider))
+		{
+			return true;
+		}
+
+		PCGComponent = IPCGComponentProvider::Execute_GetPrimaryPCGComponent(Provider);
+		return true;
+	};
+
+	TryProvider(Owner);
+	if (!bFoundProvider)
+	{
+		TInlineComponentArray<UActorComponent*, 8> OwnerComponents;
+		Owner->GetComponents(OwnerComponents);
+		for (UActorComponent* OwnerComponent : OwnerComponents)
+		{
+			if (TryProvider(OwnerComponent))
+			{
+				break;
+			}
+		}
+	}
+
+	if (bFoundProvider)
+	{
+		if (!IsValid(PCGComponent))
+		{
+			return false;
+		}
+
+		PCGComponent->GenerateLocal(bForceRegenerate);
+		return true;
+	}
+
+	const UPCGUtilsSettings* Settings = GetDefault<UPCGUtilsSettings>();
+	if (!Settings || Settings->bRequirePCGComponentProviderForAutoRegeneration)
+		return false;
+
+	PCGComponent = Owner->FindComponentByClass<UPCGComponent>();
+	if (!IsValid(PCGComponent))
+	{
+		return false;
+	}
+
+	PCGComponent->GenerateLocal(bForceRegenerate);
+	return true;
+}
 
 FBox UPCGUtilsHelpers::ComputePathBoundingBox(UShapePathComponent* PathComponent, bool bLocalSpace)
 {
@@ -148,39 +218,22 @@ FBox UPCGUtilsHelpers::ComputeActorPCGBoundingBox(
 		}
 	}
 	
-	TArray<UShapePathComponent*> ShapePathComponents;
-	Actor->GetComponents<UShapePathComponent>(ShapePathComponents);
-	for (UShapePathComponent* ShapePathComponent : ShapePathComponents)
+	TInlineComponentArray<UActorComponent*, 8> Components;
+	Actor->GetComponents(Components);
+	for (UActorComponent* Component : Components)
 	{
-		const FBox PathBox = ComputePathBoundingBox(ShapePathComponent, bLocalSpace);
-		if (PathBox.IsValid)
-		{
-			Result += PathBox;
-		}
-	}
-
-	TArray<UPCGMarkerComponent*> MarkerComponents;
-	Actor->GetComponents<UPCGMarkerComponent>(MarkerComponents);
-	const FTransform ActorTransform = Actor->GetActorTransform();
-	for (const UPCGMarkerComponent* MarkerComponent : MarkerComponents)
-	{
-		if (!MarkerComponent)
+		if (!IsValid(Component) || !Component->GetClass()->ImplementsInterface(UPCGBoundsProvider::StaticClass()))
 		{
 			continue;
 		}
 
-		FBox LocalMarkerBox(EForceInit::ForceInit);
-		LocalMarkerBox += MarkerComponent->BoundsMin;
-		LocalMarkerBox += MarkerComponent->BoundsMax;
-
-		const FTransform MarkerToOutputTransform = bLocalSpace
-			? MarkerComponent->GetComponentTransform().GetRelativeTransform(ActorTransform)
-			: MarkerComponent->GetComponentTransform();
-		const FBox MarkerBox = LocalMarkerBox.TransformBy(MarkerToOutputTransform);
-
-		if (MarkerBox.IsValid)
+		FBox ActorRelativeBounds(EForceInit::ForceInit);
+		if (IPCGBoundsProvider::Execute_GetPCGActorBoundingBox(Component, const_cast<AActor*>(Actor), ActorRelativeBounds)
+			&& ActorRelativeBounds.IsValid)
 		{
-			Result += MarkerBox;
+			Result += bLocalSpace
+				? ActorRelativeBounds
+				: ActorRelativeBounds.TransformBy(Actor->GetActorTransform());
 		}
 	}
 #endif

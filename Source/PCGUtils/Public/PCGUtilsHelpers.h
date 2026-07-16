@@ -10,6 +10,7 @@
 
 class USplineComponent;
 class UStaticMesh;
+class UActorComponent;
 
 /**
  * Blueprint function library providing spline-related geometry utilities for PCG workflows.
@@ -20,7 +21,12 @@ class PCGUTILS_API UPCGUtilsHelpers : public UBlueprintFunctionLibrary
 	GENERATED_BODY()
 
 public:
+	/** Regenerates PCG supplied by the component owner's provider, or its ordinary PCG component as a fallback. */
+	UFUNCTION(BlueprintCallable, Category = "PCGUtils|PCG")
+	static bool TryRefreshPCGGeneration(
+		UActorComponent* Component, bool bForceRegenerate = true );
 
+	
 	UFUNCTION(BlueprintCallable, BlueprintPure, Category = "PCGUtils|Spline",
 		meta = (Keywords = "spline bounds bounding box AABB"))
 	static FBox ComputePathBoundingBox(
@@ -49,10 +55,10 @@ public:
 		int32 SampleSubdivisionCount = 1);
 
 	/**
-	 * Computes a bounding box that encloses every spline component on the given actor.
+	 * Computes a bounding box that encloses every spline and PCG bounds-provider component on the actor.
 	 *
-	 * Collects all USplineComponent instances attached to the actor and accumulates
-	 * their individual bounding boxes (via ComputeSplineBoundingBox) into a single result.
+	 * Samples all USplineComponent instances and combines their bounds with actor-relative
+	 * boxes returned by components implementing PCGBoundsProvider.
 	 *
 	 * @param Actor                  The actor whose spline components are measured.
 	 * @param bLocalSpace            When true each spline is measured in its own local space

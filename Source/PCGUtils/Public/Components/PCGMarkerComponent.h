@@ -4,21 +4,26 @@
 
 #include "CoreMinimal.h"
 #include "Data/PCGUtilsComponentData.h"
+#include "Interfaces/PCGBoundsProvider.h"
+#include "Interfaces/PCGPointProvider.h"
 #include "OverrideGraphs.h"
 #include "Components/SceneComponent.h"
 #include "PCGMarkerComponent.generated.h"
 
 
 UCLASS(ClassGroup=(Custom), meta=(BlueprintSpawnableComponent))
-class PCGUTILS_API UPCGMarkerComponent : public USceneComponent
+class PCGUTILS_API UPCGMarkerComponent : public USceneComponent, public IPCGBoundsProvider, public IPCGPointProvider
 {
 	GENERATED_BODY()
 
 public:
 	// Sets default values for this component's properties
 	UPCGMarkerComponent(const FObjectInitializer& ObjectInitializer);
+	virtual bool GetPCGActorBoundingBox_Implementation(AActor* Actor, FBox& OutBounds) const override;
+	virtual bool GetPCGPointData_Implementation(TArray<FPCGPoint>& OutPoints, FPointComponentData& OutPointData) const override;
 
-	
+	virtual void PostLoad() override;
+	virtual void OnComponentCreated() override;
 public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category= "Marker")
 	FVector BoundsMax = FVector(50.0f, 50.0f, 50.0f);
@@ -30,10 +35,6 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Marker", meta = (ShowOnlyInnerProperties))
 	FPointComponentData PointData;
 
-	/** Copies the retained legacy marker fields into PointData. */
-	UFUNCTION(CallInEditor, Category = "Marker|Migration", meta = (DisplayName = "Copy Legacy Point Data"))
-	void CopyLegacyPointData();
-	
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category= "Marker|Legacy", meta=(DeprecatedProperty, DeprecationMessage="Use PointData.GroupID instead."))
 	int32 MarkerGroupID = 0;
 	
@@ -92,5 +93,9 @@ protected:
 #if WITH_EDITOR
 	void TriggerRegeneratePCGOnMarkerEdits();
 #endif
+
+private:
+	UPROPERTY()
+	bool bPointDataMigrated = false;
 
 };

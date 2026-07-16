@@ -17,7 +17,7 @@ void FShapePathComponentVisualizer::DrawVisualization(
 		return;
 	}
 
-	const TArray<FVector>& Points = ShapeComp->GetPathPoints();
+	const TArray<FVector>& Points = ShapeComp->GetGeneratedPathPoints();
 	if (Points.Num() < 2)
 	{
 		return;

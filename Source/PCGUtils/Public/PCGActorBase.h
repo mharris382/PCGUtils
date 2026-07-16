@@ -4,6 +4,7 @@
 #include "GameFramework/Actor.h"
 #include "Data/PCGBakeSettings.h"
 #include "Interfaces/PCGBakeSettingsProvider.h"
+#include "Interfaces/PCGComponentProvider.h"
 #include "OverrideGraphs.h"
 #include "PCGActorBase.generated.h"
 
@@ -14,7 +15,7 @@ class UPCGGenDataAsset;
 class UPCGGraphInterface;
 
 UCLASS(Blueprintable, meta = (DisplayName = "PCGActor"))
-class PCGUTILS_API APCGActorBase : public AActor, public IPCGBakeSettingsProvider
+class PCGUTILS_API APCGActorBase : public AActor, public IPCGBakeSettingsProvider, public IPCGComponentProvider
 {
     GENERATED_BODY()
 
@@ -23,6 +24,8 @@ public:
 	virtual void PostLoad() override;
 	virtual void PostActorCreated() override;
 	virtual FPCGUtilsBakeSettings GetPCGBakeSettings_Implementation() const override { return BakeSettings; }
+	virtual UPCGComponent* GetPrimaryPCGComponent_Implementation() const override { return PCGComponent; }
+	virtual bool AllowsComponentTriggeredRegeneration_Implementation() const override { return bAllowComponentEditsToTriggerGeneration; }
 
     /**
      * Moves the actor's world pivot to the center of its computed bounding box
@@ -38,11 +41,6 @@ public:
     virtual void TriggerRegenerateOnActorEdits(AActor* OtherActor);
     
 protected:
-    UFUNCTION(BlueprintNativeEvent, Category = "PCG|Utilities")
-    void RegeneratePCGOnSplineEdits(bool bForceGen);
-    void RegeneratePCGOnSplineEdits_Implementation(bool bForceGen);
-    
-
 
     virtual void OnConstruction(const FTransform& Transform) override;
 
@@ -127,7 +125,7 @@ public:
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "PCG|Editor" ,AdvancedDisplay)
     bool bAllowComponentEditsToTriggerGeneration = true;
 
-    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "PCG|Editor" ,AdvancedDisplay, meta = (EditCondition="bAllowComponentEditsToTriggerGeneration"))
-    bool bAllowSplineEditsToForceGenerate = true;
+    //UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "PCG|Editor" ,AdvancedDisplay, meta = (EditCondition="bAllowComponentEditsToTriggerGeneration"))
+    //bool bAllowSplineEditsToForceGenerate = true;
 #endif
 };

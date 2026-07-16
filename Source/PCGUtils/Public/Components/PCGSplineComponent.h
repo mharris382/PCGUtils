@@ -3,6 +3,7 @@
 #include "CoreMinimal.h"
 #include "Components/SplineComponent.h"
 #include "Data/PCGUtilsComponentData.h"
+#include "Interfaces/PCGPathProvider.h"
 #include "OverrideGraphs.h"
 #include "PCGSplineComponent.generated.h"
 
@@ -14,12 +15,14 @@ enum class ESplineLoopMode : uint8
 };
 
 UCLASS(ClassGroup = "PCG", meta = (BlueprintSpawnableComponent), BlueprintType, Blueprintable)
-class PCGUTILS_API UPCGSplineComponent : public USplineComponent
+class PCGUTILS_API UPCGSplineComponent : public USplineComponent, public IPCGPathProvider
 {
 	GENERATED_BODY()
 
 public:
 	UPCGSplineComponent(const FObjectInitializer& ObjectInitializer);
+	virtual void PostLoad() override;
+	virtual void OnComponentCreated() override;
 
 
 	UFUNCTION(BlueprintNativeEvent, Category = "PCG|Spline")
@@ -30,9 +33,14 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "PCG", meta = (DisplayPriority = 0, ShowOnlyInnerProperties))
 	FPathComponentData PathData;
 
-	/** Copies the retained legacy fields below into PathData. */
-	UFUNCTION(CallInEditor, Category = "PCG", meta = (DisplayName = "Copy Legacy Path Data",DisplayPriority = 1))
-	void CopyLegacyPathData();
+	/** Extra interior samples added to curved spline segments when producing path points. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, AdvancedDisplay, Category = "PCG", meta = (ClampMin = 0, UIMin = 0))
+	int32 PathSubdivisionCount = 2;
+
+	virtual TArray<FPCGPoint> GetPathPoints_Implementation() const override;
+	virtual FPathComponentData GetPathData_Implementation() const override { return PathData; }
+	virtual bool GetIsClosedLoop_Implementation() const override { return IsClosedLoop(); }
+
 
 	// Legacy fields are intentionally retained for asset migration.
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "PCG|Deprecated", meta = (DepricatedProperty, DepricationMessage="UsePathData Version"))
@@ -70,9 +78,14 @@ public:
 #if WITH_EDITOR
 	
 	virtual void PostEditChangeProperty(FPropertyChangedEvent& PropertyChangedEvent) override;
+	virtual void PostEditComponentMove(bool bFinished) override;
 	
 #endif
 	
 protected:
 	virtual ESplineLoopMode GetSplineLoopMode() { return ESplineLoopMode::UserControlled; }
+
+private:
+	UPROPERTY()
+	bool bPathDataMigrated = false;
 };

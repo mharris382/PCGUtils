@@ -68,19 +68,19 @@ void FPCGGetShapePathElement::ProcessActor(
 	
 	for (UShapePathComponent* Comp : ShapeComps)
 	{
-		if (!Comp || !IsValid(Comp))
+		if (!Comp || !IsValid(Comp))// || Settings->ComponentSelector.FilterComponent(Comp))
 		{
 			continue;
 		}
-
-		const TArray<FVector>& LocalPoints = Comp->GetPathPoints();
+		
+		const TArray<FVector>& LocalPoints = Comp->GetGeneratedPathPoints();
 		if (LocalPoints.IsEmpty())
 		{
 			continue;
 		}
 
-		const FLinearColor PathColor = Comp->PathData.GetPathColor(FLinearColor::White);
-		const float PathDensity = Comp->PathData.GetPathDensity(1.0f);
+		const FLinearColor PathColor = Comp->PathData.GetPathColor();
+		const float PathDensity = Comp->PathData.GetPathDensity();
 		
 		const FTransform CompTransform = Comp->GetComponentTransform();
 

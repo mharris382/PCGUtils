@@ -79,3 +79,23 @@ void UStarGenerator::GeneratePoints(TArray<FVector>& OutPoints) const
 		OutPoints.Add(FVector(R * FMath::Cos(Angle), R * FMath::Sin(Angle), 0.f));
 	}
 }
+
+void USpiralGenerator::GeneratePoints(TArray<FVector>& OutPoints) const
+{
+	const float SafeTurns = FMath::Max(Turns, 0.01f);
+	const int32 SegmentCount = FMath::Max(1, FMath::RoundToInt(SafeTurns * FMath::Max(1, SegmentsPerTurn)));
+	OutPoints.Reset(SegmentCount + 1);
+	const float StartAngle = FMath::DegreesToRadians(StartAngleDeg);
+	const float Direction = bClockwise ? -1.f : 1.f;
+
+	for (int32 PointIndex = 0; PointIndex <= SegmentCount; ++PointIndex)
+	{
+		const float Alpha = static_cast<float>(PointIndex) / static_cast<float>(SegmentCount);
+		const float Radius = FMath::Lerp(StartRadius, EndRadius, Alpha);
+		const float Angle = StartAngle + Direction * Alpha * SafeTurns * 2.f * PI;
+		OutPoints.Emplace(
+			Radius * FMath::Cos(Angle),
+			Radius * FMath::Sin(Angle),
+			Height * Alpha);
+	}
+}

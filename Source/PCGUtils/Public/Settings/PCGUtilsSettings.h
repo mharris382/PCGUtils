@@ -40,5 +40,8 @@ public:
 	UPROPERTY(Config,	EditAnywhere,Category = "PCG Editor",	meta = (DisplayName = "Disable PCG Editor Cache on Startup",ToolTip = "Automatically disables pcg.cache.editor.enabled when PCGUtils loads."))
 	bool bAutoDisablePCGEditorCache = false;
 	
+	UPROPERTY(Config,	EditAnywhere,Category = "PCG Editor",	meta = (ToolTip = "If true, pcg util components that trigger automatic regeneration in the editor will only be able to regenerate if a PCGComponentProvider is implemented by the actor or a component on the actor.  Otherwise the first PCGComponent found will be used if no provider is located "))
+	bool bRequirePCGComponentProviderForAutoRegeneration = false;	
+	
 	virtual FName GetCategoryName() const override { return FName("Plugins"); }
 };

@@ -3,6 +3,7 @@
 #pragma once
 
 #include "CoreMinimal.h"
+#include "UObject/SoftObjectPtr.h"
 #include "DynMeshBrushTypes.generated.h"
 
 class UMaterialInterface;

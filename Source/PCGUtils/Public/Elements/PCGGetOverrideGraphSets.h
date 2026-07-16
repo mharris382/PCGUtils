@@ -6,6 +6,14 @@
 
 #include "PCGGetOverrideGraphSets.generated.h"
 
+UENUM(BlueprintType)
+enum class EPCGMetadataDomainTarget : uint8
+{
+	Data,
+	Elements,
+	Any
+};
+
 UCLASS(BlueprintType, ClassGroup = (Procedural))
 class PCGUTILS_API UPCGGetOverrideGraphSetsSettings : public UPCGSettings
 {
@@ -27,6 +35,9 @@ protected:
 public:
 	UPROPERTY(BlueprintReadWrite, EditAnywhere, Category = "Settings", meta = (PCG_Overridable))
 	FName OverrideGraphAttributeName = FName(TEXT("PointOverride"));
+	
+	UPROPERTY(BlueprintReadWrite, EditAnywhere, Category = "Settings", meta = (PCG_Overridable))
+	EPCGMetadataDomainTarget TargetDomain = EPCGMetadataDomainTarget::Data;
 };
 
 class PCGUTILS_API FPCGGetOverrideGraphSetsElement : public IPCGElement

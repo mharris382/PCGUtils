@@ -111,3 +111,34 @@ public:
 	virtual void GeneratePoints(TArray<FVector>& OutPoints) const override;
 	virtual bool IsClosedLoop() const override { return true; }
 };
+
+/** Open Archimedean spiral with optional vertical rise. */
+UCLASS(DisplayName="Spiral")
+class PCGUTILS_API USpiralGenerator : public UShapePathGenerator
+{
+	GENERATED_BODY()
+public:
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Spiral", meta=(ClampMin=0.0))
+	float StartRadius = 0.f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Spiral", meta=(ClampMin=0.0))
+	float EndRadius = 500.f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Spiral", meta=(ClampMin=0.01))
+	float Turns = 3.f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Spiral", meta=(ClampMin=1))
+	int32 SegmentsPerTurn = 16;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Spiral")
+	float Height = 0.f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Spiral")
+	float StartAngleDeg = 0.f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Spiral")
+	bool bClockwise = false;
+
+	virtual void GeneratePoints(TArray<FVector>& OutPoints) const override;
+	virtual bool IsClosedLoop() const override { return false; }
+};
