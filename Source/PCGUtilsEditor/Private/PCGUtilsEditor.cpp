@@ -2,9 +2,11 @@
 #include "Customizations/PluginCustomizations.h"
 #include "Visualizers/PCGMarkerComponentVisualizer.h"
 #include "Visualizers/PCGSplineComponentVisualizer.h"
+#include "Visualizers/PCGChildSplineComponentVisualizer.h"
 #include "Visualizers/ShapePathComponentVisualizer.h"
 #include "Components/PCGMarkerComponent.h"
 #include "Components/PCGSplineComponent.h"
+#include "Components/PCGChildSplineComponent.h"
 #include "ShapePath/ShapePathComponent.h"
 #include "Editor/UnrealEdEngine.h"
 #include "UnrealEdGlobals.h"
@@ -17,6 +19,10 @@ void FPCGUtilsEditor::StartupModule()
 
 	if (GUnrealEd)
 	{
+		TSharedPtr<FPCGChildSplineComponentVisualizer> ChildSplineVis = MakeShared<FPCGChildSplineComponentVisualizer>();
+		GUnrealEd->RegisterComponentVisualizer(UPCGChildSplineComponent::StaticClass()->GetFName(), ChildSplineVis);
+		ChildSplineVis->OnRegister();
+
 		//GUnrealEd->RegisterComponentVisualizer(
 		//	UPCGSplineComponent::StaticClass()->GetFName(),
 		//	MakeShareable(new FPCGSplineComponentVisualizer));
@@ -39,6 +45,7 @@ void FPCGUtilsEditor::ShutdownModule()
 	{
 		GUnrealEd->UnregisterComponentVisualizer(UPCGMarkerComponent::StaticClass()->GetFName());
 		GUnrealEd->UnregisterComponentVisualizer(UPCGSplineComponent::StaticClass()->GetFName());
+		GUnrealEd->UnregisterComponentVisualizer(UPCGChildSplineComponent::StaticClass()->GetFName());
 		GUnrealEd->UnregisterComponentVisualizer(UShapePathComponent::StaticClass()->GetFName());
 	}
 }

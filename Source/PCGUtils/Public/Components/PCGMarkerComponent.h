@@ -11,7 +11,7 @@
 #include "PCGMarkerComponent.generated.h"
 
 
-UCLASS(ClassGroup=(Custom), meta=(BlueprintSpawnableComponent))
+UCLASS(ClassGroup="PCG", meta=(BlueprintSpawnableComponent), BlueprintType, Blueprintable)
 class PCGUTILS_API UPCGMarkerComponent : public USceneComponent, public IPCGBoundsProvider, public IPCGPointProvider
 {
 	GENERATED_BODY()
