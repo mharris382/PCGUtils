@@ -13,14 +13,14 @@ class PCGUTILS_API UPCGPathProvider : public UInterface
 	GENERATED_BODY()
 };
 
-/** Supplies a component-local PCG point path and its shared path data. */
+/** Supplies a PCG point path, its coordinate space, and shared path data. */
 class PCGUTILS_API IPCGPathProvider
 {
 	GENERATED_BODY()
 
 public:
 	UFUNCTION(BlueprintNativeEvent, BlueprintCallable, Category = "PCG|Path")
-	TArray<FPCGPoint> GetPathPoints() const;
+	TArray<FPCGPoint> GetPathPoints(bool& bIsLocalSpace) const;
 
 	UFUNCTION(BlueprintNativeEvent, BlueprintCallable, Category = "PCG|Path")
 	FPathComponentData GetPathData() const;

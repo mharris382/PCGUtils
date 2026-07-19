@@ -24,7 +24,7 @@ FText UPCGGetPathDataSettings::GetDefaultNodeTitle() const
 
 FText UPCGGetPathDataSettings::GetNodeTooltipText() const
 {
-	return LOCTEXT("NodeTooltip", "Collects point paths from actor components implementing PCGPathProvider.");
+	return LOCTEXT("NodeTooltip", "Collects point paths from actors and actor components implementing PCGPathProvider.");
 }
 #endif
 
@@ -46,54 +46,67 @@ void FPCGGetPathElement::ProcessActor(
 	AActor* FoundActor) const
 {
 	check(Context && Settings);
-	if (!IsValid(FoundActor))
-	{
-		return;
-	}
+	if (!IsValid(FoundActor)) return;
 
 	const UPCGGetPathDataSettings* GetSettings = CastChecked<UPCGGetPathDataSettings>(Settings);
+	auto HasPathProvider = [](const AActor* Actor)
+	{
+		if (!IsValid(Actor)) return false;
+		if (Actor->GetClass()->ImplementsInterface(UPCGPathProvider::StaticClass())) return true;
+		TInlineComponentArray<UActorComponent*, 8> CandidateComponents;
+		Actor->GetComponents(CandidateComponents);
+		return CandidateComponents.ContainsByPredicate([](const UActorComponent* Component)
+		{
+			return IsValid(Component) && Component->GetClass()->ImplementsInterface(UPCGPathProvider::StaticClass());
+		});
+	};
+
+	AActor* ProviderActor = FoundActor;
+	const bool bSelfOrOriginalSelection = GetSettings->ActorSelector.ActorFilter == EPCGActorFilter::Self
+		|| GetSettings->ActorSelector.ActorFilter == EPCGActorFilter::Original;
+	if (bSelfOrOriginalSelection && !HasPathProvider(ProviderActor))
+	{
+		const IPCGGraphExecutionSource* ExecutionSource = Context->ExecutionSource.Get();
+		const IPCGGraphExecutionSource* OriginalSource = ExecutionSource
+			? ExecutionSource->GetExecutionState().GetOriginalSource()
+			: nullptr;
+		AActor* OriginalActor = OriginalSource
+			? OriginalSource->GetExecutionState().GetTypedTarget<AActor>()
+			: nullptr;
+		if (IsValid(OriginalActor) && HasPathProvider(OriginalActor)) ProviderActor = OriginalActor;
+	}
+
 	const auto NameToString = [](const FName& Name) { return Name.ToString(); };
 	TSet<FString> ActorTags;
-	Algo::Transform(FoundActor->Tags, ActorTags, NameToString);
+	Algo::Transform(ProviderActor->Tags, ActorTags, NameToString);
 
-	TInlineComponentArray<UActorComponent*, 8> Components;
-	FoundActor->GetComponents(Components);
-	for (UActorComponent* Component : Components)
+	auto ProcessProvider = [&](const UObject* Provider, USceneComponent* SceneComponent,
+		const FTransform& LocalToWorld, const TArray<FName>* ProviderTags)
 	{
-		if (!IsValid(Component)
-			|| Settings->ComponentSelector.FilterComponent(Component)
-			|| !Component->GetClass()->ImplementsInterface(UPCGPathProvider::StaticClass()))
-		{
-			continue;
-		}
+		if (!IsValid(Provider) || !Provider->GetClass()->ImplementsInterface(UPCGPathProvider::StaticClass())) return;
 
-		TArray<FPCGPoint> ProviderPoints = IPCGPathProvider::Execute_GetPathPoints(Component);
-		if (ProviderPoints.IsEmpty())
-		{
-			continue;
-		}
+		bool bIsLocalSpace = false;
+		TArray<FPCGPoint> ProviderPoints = IPCGPathProvider::Execute_GetPathPoints(Provider, bIsLocalSpace);
+		if (ProviderPoints.IsEmpty()) return;
 
-		USceneComponent* SceneComponent = Cast<USceneComponent>(Component);
-		if (SceneComponent)
+		if (bIsLocalSpace)
 		{
-			const FTransform ComponentTransform = SceneComponent->GetComponentTransform();
 			for (FPCGPoint& Point : ProviderPoints)
 			{
-				Point.Transform = Point.Transform * ComponentTransform;
+				Point.Transform = Point.Transform * LocalToWorld;
 			}
 		}
 
-		const FPathComponentData PathData = IPCGPathProvider::Execute_GetPathData(Component);
-		const bool bIsClosed = IPCGPathProvider::Execute_GetIsClosedLoop(Component);
+		const FPathComponentData PathData = IPCGPathProvider::Execute_GetPathData(Provider);
+		const bool bIsClosed = IPCGPathProvider::Execute_GetIsClosedLoop(Provider);
 		UPCGPointData* PointData = FPCGContext::NewObject_AnyThread<UPCGPointData>(Context);
 		PointData->GetMutablePoints() = MoveTemp(ProviderPoints);
-
-		if (UPCGMetadata* Metadata = PointData->MutableMetadata())
+		UPCGMetadata* Metadata = PointData->MutableMetadata();
+		if (Metadata)
 		{
-			if (FPCGMetadataAttribute<bool>* IsClosedAttribute =
-				Metadata->FindOrCreateAttribute<bool>(
-					FPCGAttributeIdentifier(FName("IsClosed"), PCGMetadataDomainID::Data),
-					bIsClosed, false, false, true))
+			if (FPCGMetadataAttribute<bool>* IsClosedAttribute = Metadata->FindOrCreateAttribute<bool>(
+				FPCGAttributeIdentifier(FName("IsClosed"), PCGMetadataDomainID::Data),
+				bIsClosed, false, false, true))
 			{
 				IsClosedAttribute->SetValue(PCGInvalidEntryKey, bIsClosed);
 			}
@@ -107,11 +120,43 @@ void FPCGGetPathElement::ProcessActor(
 				Metadata, &GetSettings->PathSettings, &PathData);
 		}
 
+		TSet<FString> AdditionalTags;
+		ProcessPathComponent(Context, GetSettings, ProviderActor, Provider, PointData, Metadata, AdditionalTags);
+
 		FPCGTaggedData& TaggedData = Context->OutputData.TaggedData.Emplace_GetRef();
 		TaggedData.Data = PointData;
-		Algo::Transform(Component->ComponentTags, TaggedData.Tags, NameToString);
+		if (ProviderTags) Algo::Transform(*ProviderTags, TaggedData.Tags, NameToString);
 		TaggedData.Tags.Append(ActorTags);
+		TaggedData.Tags.Append(AdditionalTags);
+	};
+
+	// Actors can provide paths directly. Their local points are relative to the actor transform.
+	ProcessProvider(ProviderActor, nullptr, ProviderActor->GetActorTransform(), nullptr);
+
+	TInlineComponentArray<UActorComponent*, 8> Components;
+	ProviderActor->GetComponents(Components);
+	for (UActorComponent* Component : Components)
+	{
+		if (!IsValid(Component)
+			|| !Settings->ComponentSelector.FilterComponent(Component)
+			|| !Component->GetClass()->ImplementsInterface(UPCGPathProvider::StaticClass()))
+		{
+			continue;
+		}
+
+		USceneComponent* SceneComponent = Cast<USceneComponent>(Component);
+		const FTransform LocalToWorld = SceneComponent
+			? SceneComponent->GetComponentTransform()
+			: ProviderActor->GetActorTransform();
+		ProcessProvider(Component, SceneComponent, LocalToWorld, &Component->ComponentTags);
 	}
 }
+
+void FPCGGetPathElement::ProcessPathComponent(FPCGContext* Context, const UPCGGetPathDataSettings* Settings,
+	const AActor* Actor, const UObject* PathProvider, UPCGPointData* PointData,
+	UPCGMetadata* MutableMetadata, TSet<FString>& OutTags) const
+{
+}
+
 
 #undef LOCTEXT_NAMESPACE

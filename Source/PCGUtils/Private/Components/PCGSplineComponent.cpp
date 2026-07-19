@@ -30,8 +30,9 @@ void UPCGSplineComponent::OnComponentCreated()
 	bPathDataMigrated = true;
 }
 
-TArray<FPCGPoint> UPCGSplineComponent::GetPathPoints_Implementation() const
+TArray<FPCGPoint> UPCGSplineComponent::GetPathPoints_Implementation(bool& bIsLocalSpace) const
 {
+	bIsLocalSpace = true;
 	TArray<FPCGPoint> Result;
 	const int32 NumSplinePoints = GetNumberOfSplinePoints();
 	if (NumSplinePoints == 0)

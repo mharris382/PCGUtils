@@ -49,7 +49,7 @@ public:
 	FLinearColor GetPathColor() const	{ return bSetPathColor ? PathColor : FLinearColor::White; }
 	float GetPathDensity() const { return  bSetPathDensity ? PathDensity : 1.0f; }
 	
-	virtual TArray<FPCGPoint> GetPathPoints_Implementation() const override;
+	virtual TArray<FPCGPoint> GetPathPoints_Implementation(bool& bIsLocalSpace) const override;
 	virtual FPathComponentData GetPathData_Implementation() const override { return PathData; }
 	virtual bool GetIsClosedLoop_Implementation() const override;
 	const TArray<FVector>& GetGeneratedPathPoints();

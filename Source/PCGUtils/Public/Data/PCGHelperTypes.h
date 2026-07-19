@@ -10,8 +10,6 @@
 
 
 
-
-
 USTRUCT(BlueprintType)
 struct PCGUTILS_API FTransformRandomSettings
 {
@@ -48,6 +46,32 @@ struct PCGUTILS_API FTransformRandomSettings
 	
 };
 
+
+USTRUCT(BlueprintType)
+struct PCGUTILS_API FSurfaceSamplerSettings
+{
+	GENERATED_BODY();
+
+	FSurfaceSamplerSettings() = default;
+	
+	UPROPERTY(BlueprintReadWrite, EditAnywhere, Category = "Surface Sampler Settings")
+	float PointsPerSquaredMeter = .1f;
+	
+	UPROPERTY(BlueprintReadWrite, EditAnywhere, Category = "Surface Sampler Settings", meta = (AllowPreserveRatio))
+	FVector PointExtents = FVector(50, 50, 50);
+	
+	UPROPERTY(BlueprintReadWrite, EditAnywhere, Category = "Surface Sampler Settings", meta = (AllowPreserveRatio))
+	float Looseness = 1.0f;
+	
+	UPROPERTY(BlueprintReadWrite, EditAnywhere, Category = "Surface Sampler Settings", meta = (ToolTip = "Shorthand way to specify random offset from (-Jitter, -Jitter, 0) to (Jitter, Jitter, 0)"))
+	float Jitter = 0.0f;
+	
+	UPROPERTY(BlueprintReadWrite, EditAnywhere, Category = "Surface Sampler Settings", meta = (ToolTip = "Shorthand way to specify random yaw from 0, 360 degrees"))
+	bool bRandomSpin = true;
+	
+	UPROPERTY(BlueprintReadWrite, EditAnywhere, Category = "Surface Sampler Settings", meta = (ToolTip = "Shorthand way to specify random roll,pitch between -RandomTilt, RandomTilt"))
+	float RandomTilt = 0.0f;
+};
 
 
 USTRUCT(BlueprintType)

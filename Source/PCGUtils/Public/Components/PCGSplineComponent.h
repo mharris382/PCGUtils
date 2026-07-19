@@ -37,7 +37,7 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, AdvancedDisplay, Category = "PCG", meta = (ClampMin = 0, UIMin = 0))
 	int32 PathSubdivisionCount = 2;
 
-	virtual TArray<FPCGPoint> GetPathPoints_Implementation() const override;
+	virtual TArray<FPCGPoint> GetPathPoints_Implementation(bool& bIsLocalSpace) const override;
 	virtual FPathComponentData GetPathData_Implementation() const override { return PathData; }
 	virtual bool GetIsClosedLoop_Implementation() const override { return IsClosedLoop(); }
 
@@ -49,19 +49,19 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "PCG|Deprecated", meta = (DepricatedProperty, DepricationMessage="UsePathData Version"))
 	float Height = 0.0f;
 
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="PCG|Deprecated", meta = (ToolTip = "General Purpose path ID. intended use case is to make it easy to union grouped path into single path"))
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="PCG|Deprecated", meta = ( ToolTip = "General Purpose path ID. intended use case is to make it easy to union grouped path into single path", DeprecatedProperty, DepricationMessage="UsePathData Version"))
 	int32 GroupID = 0;
 	
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category= "PCG|Deprecated", meta = (InlineEditConditionToggle))
 	bool bSetPathDensity = false;
 	
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category= "PCG|Deprecated", meta = (EditCondition="bSetPathDensity", UIMin=0, UIMax=1))
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category= "PCG|Deprecated", meta = (EditCondition="bSetPathDensity", UIMin=0, UIMax=1, DeprecatedProperty, DepricationMessage="UsePathData Version"))
 	float PathDensity = 1.0f;
 	
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category= "PCG|Deprecated", meta = (InlineEditConditionToggle))
 	bool bSetPathColor = false;
 	
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category= "PCG|Deprecated", meta = (EditCondition="bSetPathColor"))
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category= "PCG|Deprecated", meta = (EditCondition="bSetPathColor", DeprecatedProperty, DepricationMessage="UsePathData Version"))
 	FLinearColor PathColor = FLinearColor(1.0f, 1.0f, 1.0f);
 	
 #if WITH_EDITORONLY_DATA

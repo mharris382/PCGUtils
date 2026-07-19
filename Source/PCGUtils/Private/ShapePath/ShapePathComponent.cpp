@@ -61,8 +61,9 @@ bool UShapePathComponent::IsClosedLoop() const
 	return Generator ? Generator->IsClosedLoop() : false;
 }
 
-TArray<FPCGPoint> UShapePathComponent::GetPathPoints_Implementation() const
+TArray<FPCGPoint> UShapePathComponent::GetPathPoints_Implementation(bool& bIsLocalSpace) const
 {
+	bIsLocalSpace = true;
 	UShapePathComponent* MutableThis = const_cast<UShapePathComponent*>(this);
 	const TArray<FVector>& LocalPoints = MutableThis->GetGeneratedPathPoints();
 	TArray<FPCGPoint> Result;

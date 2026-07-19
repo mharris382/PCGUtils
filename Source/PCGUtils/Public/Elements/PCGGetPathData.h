@@ -6,7 +6,10 @@
 
 #include "PCGGetPathData.generated.h"
 
-/** Collects point paths from actor components implementing PCGPathProvider. */
+class UPCGMetadata;
+class UPCGPointData;
+
+/** Collects point paths from actors and actor components implementing PCGPathProvider. */
 UCLASS(BlueprintType, ClassGroup=(Procedural))
 class PCGUTILS_API UPCGGetPathDataSettings : public UPCGDataFromActorSettings
 {
@@ -40,9 +43,23 @@ protected:
 
 class PCGUTILS_API FPCGGetPathElement : public FPCGDataFromActorElement
 {
+public:
+	/** Path providers may be implemented in Blueprint and must be dispatched on the game thread. */
+	virtual bool CanExecuteOnlyOnMainThread(FPCGContext* Context) const override { return true; }
+
 protected:
 	virtual void ProcessActor(
 		FPCGContext* Context,
 		const UPCGDataFromActorSettings* Settings,
 		AActor* FoundActor) const override;
+	
+	/** Extension hook for component-specific @Data attributes and output tags. */
+	virtual void ProcessPathComponent(
+		FPCGContext* Context,
+		const UPCGGetPathDataSettings* Settings,
+		const AActor* Actor,
+		const UObject* PathProvider,
+		UPCGPointData* PointData,
+		UPCGMetadata* MutableMetadata,
+		TSet<FString>& OutTags) const;
 };
