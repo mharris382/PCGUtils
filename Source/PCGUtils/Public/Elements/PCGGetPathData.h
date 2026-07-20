@@ -7,7 +7,7 @@
 #include "PCGGetPathData.generated.h"
 
 class UPCGMetadata;
-class UPCGPointData;
+class UPCGBasePointData;
 
 /** Collects point paths from actors and actor components implementing PCGPathProvider. */
 UCLASS(BlueprintType, ClassGroup=(Procedural))
@@ -59,7 +59,7 @@ protected:
 		const UPCGGetPathDataSettings* Settings,
 		const AActor* Actor,
 		const UObject* PathProvider,
-		UPCGPointData* PointData,
+		UPCGBasePointData* PointData,
 		UPCGMetadata* MutableMetadata,
 		TSet<FString>& OutTags) const;
 };

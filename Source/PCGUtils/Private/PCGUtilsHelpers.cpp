@@ -2,16 +2,21 @@
 
 #include "PCGUtilsHelpers.h"
 
+#include "PCGActorBase.h"
 #include "Components/SplineComponent.h"
 #include "GameFramework/Actor.h"
 #include "Interfaces/PCGBoundsProvider.h"
 #include "Interfaces/PCGComponentProvider.h"
 #include "Metadata/PCGMetadata.h"
 #include "Metadata/PCGMetadataAttributeTpl.h"
+#include "Data/PCGPointArrayData.h"
+#include "Data/PCGBasePointData.h"
 #include "PCGParamData.h"
 #include "Settings/PCGUtilsSettings.h"
 #include "Engine/StaticMesh.h"
+#include "PCGPoint.h"
 #include "PCGComponent.h"
+#include "PCGContext.h"
 
 // ─────────────────────────────────────────────────────────────────────────────
 // ComputeSplineBoundingBox
@@ -25,8 +30,16 @@ bool UPCGUtilsHelpers::TryRefreshPCGGeneration(UActorComponent* Component, bool 
 		return false;
 
 	AActor* Owner = Component->GetOwner();
+	if (!Owner) return false;
 	UPCGComponent* PCGComponent = nullptr;
 	bool bFoundProvider = false;
+	APCGActorBase* PCGActorBaseOwner = Cast<APCGActorBase>(Owner);
+	if (PCGActorBaseOwner)
+	{
+		bFoundProvider = true;	
+		PCGActorBaseOwner->PCGComponent->GenerateLocal(true);
+		return true;
+	}
 
 	auto TryProvider = [&PCGComponent, &bFoundProvider](UObject* Provider) -> bool
 	{
@@ -294,3 +307,48 @@ UStaticMesh* UPCGUtilsHelpers::ResolveStaticMeshFromData(
 
 	return nullptr;
 }
+
+
+UPCGPointArrayData* UPCGUtilsHelpers::CreatePointArrayDataFromPoints(
+	FPCGContext* Context,
+	const TArray<FPCGPoint>& Points)
+{
+	if (!Context)
+	{
+		return nullptr;
+	}
+	UPCGPointArrayData* OutputData = FPCGContext::NewObject_AnyThread<UPCGPointArrayData>(Context);
+	
+	if (!OutputData)
+	{
+		return nullptr;
+	}
+	const int32 NumPoints = Points.Num();
+
+	OutputData->SetNumPoints(NumPoints, false);
+	auto Transforms = OutputData->GetTransformValueRange();
+	auto Densities = OutputData->GetDensityValueRange();
+	auto BoundsMin = OutputData->GetBoundsMinValueRange();
+	auto BoundsMax = OutputData->GetBoundsMaxValueRange();
+	auto Colors = OutputData->GetColorValueRange();
+	auto Steepness = OutputData->GetSteepnessValueRange();
+	auto Seeds = OutputData->GetSeedValueRange();
+	auto MetadataEntries = OutputData->GetMetadataEntryValueRange();
+
+	for (int32 Index = 0; Index < NumPoints; ++Index)
+	{
+		const FPCGPoint& Point = Points[Index];
+		Transforms[Index] = Point.Transform;
+		Densities[Index] = Point.Density;
+		BoundsMin[Index] = Point.BoundsMin;
+		BoundsMax[Index] = Point.BoundsMax;
+		Colors[Index] = Point.Color;
+		Steepness[Index] = Point.Steepness;
+		Seeds[Index] = Point.Seed;
+		MetadataEntries[Index] = Point.MetadataEntry;
+	}
+
+	return OutputData;
+}
+
+

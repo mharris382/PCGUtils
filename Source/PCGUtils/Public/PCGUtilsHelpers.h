@@ -5,6 +5,7 @@
 #include "CoreMinimal.h"
 #include "Kismet/BlueprintFunctionLibrary.h"
 #include "PCGData.h"
+#include "PCGPoint.h"
 #include "ShapePath/ShapePathComponent.h"
 #include "PCGUtilsHelpers.generated.h"
 
@@ -85,6 +86,9 @@ public:
 		FName AttributeName = TEXT("AssetPath"),
 		FString Tag = TEXT(""));
 	
-	
+	/** Creates native point-array data and copies all legacy FPCGPoint properties into its SoA ranges. */
+	static class UPCGPointArrayData* CreatePointArrayDataFromPoints(
+		struct FPCGContext* Context,
+		const TArray<FPCGPoint>& Points);
 	//static UStaticMesh* GetBakedStaticMeshFromPCGData(UPCGDataCollection* )
 };

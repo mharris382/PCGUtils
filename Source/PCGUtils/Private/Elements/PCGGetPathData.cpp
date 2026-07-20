@@ -1,9 +1,11 @@
 #include "Elements/PCGGetPathData.h"
 
+#include "PCGUtilsHelpers.h"
 #include "Algo/Transform.h"
 #include "Components/ActorComponent.h"
 #include "Components/SceneComponent.h"
-#include "Data/PCGPointData.h"
+#include "Data/PCGPointArrayData.h"
+#include "Data/PCGBasePointData.h"
 #include "GameFramework/Actor.h"
 #include "Interfaces/PCGPathProvider.h"
 #include "Metadata/PCGMetadata.h"
@@ -96,11 +98,13 @@ void FPCGGetPathElement::ProcessActor(
 				Point.Transform = Point.Transform * LocalToWorld;
 			}
 		}
-
+		
 		const FPathComponentData PathData = IPCGPathProvider::Execute_GetPathData(Provider);
 		const bool bIsClosed = IPCGPathProvider::Execute_GetIsClosedLoop(Provider);
-		UPCGPointData* PointData = FPCGContext::NewObject_AnyThread<UPCGPointData>(Context);
-		PointData->GetMutablePoints() = MoveTemp(ProviderPoints);
+		
+		UPCGPointArrayData* PointData = UPCGUtilsHelpers::CreatePointArrayDataFromPoints(Context, ProviderPoints);
+		if (!PointData) return;
+
 		UPCGMetadata* Metadata = PointData->MutableMetadata();
 		if (Metadata)
 		{
@@ -153,8 +157,8 @@ void FPCGGetPathElement::ProcessActor(
 }
 
 void FPCGGetPathElement::ProcessPathComponent(FPCGContext* Context, const UPCGGetPathDataSettings* Settings,
-	const AActor* Actor, const UObject* PathProvider, UPCGPointData* PointData,
-	UPCGMetadata* MutableMetadata, TSet<FString>& OutTags) const
+                                              const AActor* Actor, const UObject* PathProvider, UPCGBasePointData* PointData,
+                                              UPCGMetadata* MutableMetadata, TSet<FString>& OutTags) const
 {
 }
 
