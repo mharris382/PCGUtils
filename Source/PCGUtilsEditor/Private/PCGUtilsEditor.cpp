@@ -1,4 +1,5 @@
 #include "PCGUtilsEditor.h"
+#include "PCGUtilsEditorStyle.h"
 #include "Customizations/PluginCustomizations.h"
 #include "Visualizers/PCGMarkerComponentVisualizer.h"
 #include "Visualizers/PCGSplineComponentVisualizer.h"
@@ -15,6 +16,7 @@
 
 void FPCGUtilsEditor::StartupModule()
 {
+	FPCGUtilsEditorStyle::Initialize();
 	PluginCustomizations::RegisterCustomizations();
 
 	if (GUnrealEd)
@@ -48,6 +50,8 @@ void FPCGUtilsEditor::ShutdownModule()
 		GUnrealEd->UnregisterComponentVisualizer(UPCGChildSplineComponent::StaticClass()->GetFName());
 		GUnrealEd->UnregisterComponentVisualizer(UShapePathComponent::StaticClass()->GetFName());
 	}
+
+	FPCGUtilsEditorStyle::Shutdown();
 }
 
 #undef LOCTEXT_NAMESPACE
