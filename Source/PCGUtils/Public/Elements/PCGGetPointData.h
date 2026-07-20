@@ -7,7 +7,7 @@
 #include "PCGGetPointData.generated.h"
 
 /** Collects point data from components implementing PCGPointProvider. */
-UCLASS(BlueprintType, ClassGroup=(Procedural))
+UCLASS(BlueprintType, ClassGroup=(Procedural), Category="PCGUtils|Interface Data")
 class PCGUTILS_API UPCGGetPointDataSettings : public UPCGDataFromActorSettings
 {
 	GENERATED_BODY()

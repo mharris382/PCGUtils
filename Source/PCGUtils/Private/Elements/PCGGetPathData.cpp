@@ -4,6 +4,7 @@
 #include "Algo/Transform.h"
 #include "Components/ActorComponent.h"
 #include "Components/SceneComponent.h"
+#include "Data/PCGPathPoint.h"
 #include "Data/PCGPointArrayData.h"
 #include "Data/PCGBasePointData.h"
 #include "GameFramework/Actor.h"
@@ -86,28 +87,57 @@ void FPCGGetPathElement::ProcessActor(
 		const FTransform& LocalToWorld, const TArray<FName>* ProviderTags)
 	{
 		if (!IsValid(Provider) || !Provider->GetClass()->ImplementsInterface(UPCGPathProvider::StaticClass())) return;
+		if (!ShouldProcessPathProvider(Context, GetSettings, Provider)) return;
 
 		bool bIsLocalSpace = false;
-		TArray<FPCGPoint> ProviderPoints = IPCGPathProvider::Execute_GetPathPoints(Provider, bIsLocalSpace);
+		bool bIsLinearPath = true;
+		TArray<FPCGPathPoint> ProviderPoints = IPCGPathProvider::Execute_GetPCGPathPoints(
+			Provider, bIsLocalSpace, bIsLinearPath);
 		if (ProviderPoints.IsEmpty()) return;
 
 		if (bIsLocalSpace)
 		{
-			for (FPCGPoint& Point : ProviderPoints)
+			for (FPCGPathPoint& Point : ProviderPoints)
 			{
 				Point.Transform = Point.Transform * LocalToWorld;
+				Point.ArriveTangent = LocalToWorld.TransformVector(Point.ArriveTangent);
+				Point.LeaveTangent = LocalToWorld.TransformVector(Point.LeaveTangent);
 			}
 		}
 		
 		const FPathComponentData PathData = IPCGPathProvider::Execute_GetPathData(Provider);
 		const bool bIsClosed = IPCGPathProvider::Execute_GetIsClosedLoop(Provider);
 		
-		UPCGPointArrayData* PointData = UPCGUtilsHelpers::CreatePointArrayDataFromPoints(Context, ProviderPoints);
+		UPCGPointArrayData* PointData = UPCGUtilsHelpers::CreatePointArrayDataFromPathPoints(Context, ProviderPoints);
 		if (!PointData) return;
 
 		UPCGMetadata* Metadata = PointData->MutableMetadata();
 		if (Metadata)
 		{
+			if (!bIsLinearPath)
+			{
+				FPCGMetadataDomain* ElementsDomain = Metadata->GetMetadataDomain(PCGMetadataDomainID::Elements);
+				FPCGMetadataAttribute<FVector>* ArriveTangentAttribute = ElementsDomain
+					? ElementsDomain->FindOrCreateAttribute<FVector>(FName("ArriveTangent"), FVector::ZeroVector, true, true)
+					: nullptr;
+				FPCGMetadataAttribute<FVector>* LeaveTangentAttribute = ElementsDomain
+					? ElementsDomain->FindOrCreateAttribute<FVector>(FName("LeaveTangent"), FVector::ZeroVector, true, true)
+					: nullptr;
+				auto MetadataEntries = PointData->GetMetadataEntryValueRange();
+				for (int32 Index = 0; Index < ProviderPoints.Num(); ++Index)
+				{
+					ElementsDomain->InitializeOnSet(MetadataEntries[Index]);
+					if (ArriveTangentAttribute)
+					{
+						ArriveTangentAttribute->SetValue(MetadataEntries[Index], ProviderPoints[Index].ArriveTangent);
+					}
+					if (LeaveTangentAttribute)
+					{
+						LeaveTangentAttribute->SetValue(MetadataEntries[Index], ProviderPoints[Index].LeaveTangent);
+					}
+				}
+			}
+
 			if (FPCGMetadataAttribute<bool>* IsClosedAttribute = Metadata->FindOrCreateAttribute<bool>(
 				FPCGAttributeIdentifier(FName("IsClosed"), PCGMetadataDomainID::Data),
 				bIsClosed, false, false, true))

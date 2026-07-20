@@ -5,7 +5,7 @@
 
 #include "PCGGetActorBakeSettings.generated.h"
 
-UCLASS(BlueprintType, ClassGroup=(Procedural))
+UCLASS(BlueprintType, ClassGroup=(Procedural), Category="PCGUtils|Interface Data")
 class PCGUTILS_API UPCGGetActorBakeSettingsSettings : public UPCGDataFromActorSettings
 {
 	GENERATED_BODY()

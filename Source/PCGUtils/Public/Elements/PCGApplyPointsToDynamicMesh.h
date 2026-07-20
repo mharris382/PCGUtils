@@ -110,7 +110,7 @@ struct FApplyPointsUVChannelMapping
 // Settings
 // ─────────────────────────────────────────────────────────────────────────────
 
-UCLASS(BlueprintType, ClassGroup = (Procedural))
+UCLASS(BlueprintType, ClassGroup = (Procedural), Category="PCGUtils|Dynamic Mesh")
 class PCGUTILS_API UPCGApplyPointsToDynamicMeshSettings : public UPCGDynamicMeshBaseSettings
 {
 	GENERATED_BODY()

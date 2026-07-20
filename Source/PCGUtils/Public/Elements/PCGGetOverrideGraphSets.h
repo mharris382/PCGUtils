@@ -14,7 +14,7 @@ enum class EPCGMetadataDomainTarget : uint8
 	Any
 };
 
-UCLASS(BlueprintType, ClassGroup = (Procedural))
+UCLASS(BlueprintType, ClassGroup = (Procedural), Category="PCGUtils|Graph Utilities")
 class PCGUTILS_API UPCGGetOverrideGraphSetsSettings : public UPCGSettings
 {
 	GENERATED_BODY()

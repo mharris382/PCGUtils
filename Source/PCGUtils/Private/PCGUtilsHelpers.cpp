@@ -351,4 +351,39 @@ UPCGPointArrayData* UPCGUtilsHelpers::CreatePointArrayDataFromPoints(
 	return OutputData;
 }
 
+UPCGPointArrayData* UPCGUtilsHelpers::CreatePointArrayDataFromPathPoints(
+	FPCGContext* Context,
+	const TArray<FPCGPathPoint>& Points)
+{
+	if (!Context)
+	{
+		return nullptr;
+	}
+
+	UPCGPointArrayData* OutputData = FPCGContext::NewObject_AnyThread<UPCGPointArrayData>(Context);
+	if (!OutputData)
+	{
+		return nullptr;
+	}
+
+	OutputData->SetNumPoints(Points.Num(), false);
+	auto Transforms = OutputData->GetTransformValueRange();
+	auto Densities = OutputData->GetDensityValueRange();
+	auto Colors = OutputData->GetColorValueRange();
+	auto Steepness = OutputData->GetSteepnessValueRange();
+	auto Seeds = OutputData->GetSeedValueRange();
+
+	for (int32 Index = 0; Index < Points.Num(); ++Index)
+	{
+		const FPCGPathPoint& Point = Points[Index];
+		Transforms[Index] = Point.Transform;
+		Densities[Index] = Point.Density;
+		Colors[Index] = Point.Color;
+		Steepness[Index] = Point.Steepness;
+		Seeds[Index] = Point.Seed;
+	}
+
+	return OutputData;
+}
+
 

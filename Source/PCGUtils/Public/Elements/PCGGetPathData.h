@@ -10,7 +10,7 @@ class UPCGMetadata;
 class UPCGBasePointData;
 
 /** Collects point paths from actors and actor components implementing PCGPathProvider. */
-UCLASS(BlueprintType, ClassGroup=(Procedural))
+UCLASS(BlueprintType, ClassGroup=(Procedural), Category="PCGUtils|Interface Data")
 class PCGUTILS_API UPCGGetPathDataSettings : public UPCGDataFromActorSettings
 {
 	GENERATED_BODY()
@@ -48,6 +48,12 @@ public:
 	virtual bool CanExecuteOnlyOnMainThread(FPCGContext* Context) const override { return true; }
 
 protected:
+	/** Allows specialized path elements to reject a provider before extracting or allocating its path data. */
+	virtual bool ShouldProcessPathProvider(
+		FPCGContext* Context,
+		const UPCGGetPathDataSettings* Settings,
+		const UObject* PathProvider) const { return true; }
+
 	virtual void ProcessActor(
 		FPCGContext* Context,
 		const UPCGDataFromActorSettings* Settings,

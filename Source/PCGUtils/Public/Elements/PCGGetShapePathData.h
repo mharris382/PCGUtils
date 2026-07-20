@@ -12,7 +12,7 @@
  * If the component's PreProcessShapePath override graph is active, its path is stamped into
  * the @Data metadata root so downstream PCG graphs can resolve it.
  */
-UCLASS(BlueprintType, ClassGroup=(Procedural))
+UCLASS(BlueprintType, ClassGroup=(Procedural), Category="PCGUtils|Paths")
 class PCGUTILS_API UPCGGetShapePathSettings : public UPCGDataFromActorSettings
 {
 	GENERATED_BODY()

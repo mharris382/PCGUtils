@@ -13,7 +13,7 @@
 // Settings
 // ─────────────────────────────────────────────────────────────────────────────
 
-UCLASS(BlueprintType, ClassGroup = (Procedural))
+UCLASS(BlueprintType, ClassGroup = (Procedural), Category="PCGUtils|Dynamic Mesh")
 class PCGUTILS_API UPCGMergeByDistanceSettings : public UPCGDynamicMeshBaseSettings
 {
 	GENERATED_BODY()

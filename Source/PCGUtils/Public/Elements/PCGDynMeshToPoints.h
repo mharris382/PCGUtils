@@ -12,7 +12,7 @@ namespace PCGDynMeshToPointsConstants
 	const FName InDynamicMeshLabel = TEXT("In Dynamic Mesh");
 }
 
-UCLASS(BlueprintType, ClassGroup = (Procedural))
+UCLASS(BlueprintType, ClassGroup = (Procedural), Category="PCGUtils|Dynamic Mesh")
 class PCGUTILS_API UPCGDynMeshToPointsSettings : public UPCGDynamicMeshBaseSettings
 {
 	GENERATED_BODY()
@@ -20,7 +20,7 @@ class PCGUTILS_API UPCGDynMeshToPointsSettings : public UPCGDynamicMeshBaseSetti
 public:
 #if WITH_EDITOR
 	virtual bool ShouldDrawNodeCompact() const override { return true; }
-	virtual FName GetDefaultNodeName() const override { return FName(TEXT("DynMeshToPoints")); }
+	virtual FName GetDefaultNodeName() const override { return FName(TEXT("DynMsh|Point")); }
 	virtual FText GetDefaultNodeTitle() const override
 	{
 		return NSLOCTEXT("PCGUtils", "DynMeshToPoints_Title", "Dynamic Mesh To Points");

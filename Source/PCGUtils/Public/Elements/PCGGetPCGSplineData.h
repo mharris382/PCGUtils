@@ -7,7 +7,7 @@
 
 #include "PCGGetPCGSplineData.generated.h"
 
-UCLASS(BlueprintType, ClassGroup = (Procedural))
+UCLASS(BlueprintType, ClassGroup = (Procedural), Category="PCGUtils|Paths")
 class PCGUTILS_API UPCGGetPCGSplineDataSettings : public UPCGGetSplineSettings
 {
 	GENERATED_BODY()

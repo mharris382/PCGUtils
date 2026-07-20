@@ -12,7 +12,7 @@ class UPCGMarkerComponent;
 /**
  * 
  */
-UCLASS(BlueprintType, ClassGroup=(Procedural))
+UCLASS(BlueprintType, ClassGroup=(Procedural), Category="PCGUtils|Interface Data")
 class PCGUTILS_API UPCGGetMarkerDataSettings : public UPCGDataFromActorSettings
 {
 	GENERATED_BODY()

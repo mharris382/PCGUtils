@@ -10,21 +10,30 @@
 class UStaticMesh;
 
 /** Bakes a spline mesh for every segment of each input PCG spline. */
-UCLASS(BlueprintType, ClassGroup = (Procedural))
+UCLASS(BlueprintType, ClassGroup = (Procedural), Category="PCGUtils|Dynamic Mesh")
 class PCGUTILSDYNMESH_API UPCGSplineToDynamicMeshSettings : public UPCGSettings
 {
 	GENERATED_BODY()
 
 public:
 #if WITH_EDITOR
-	virtual FName GetDefaultNodeName() const override { return TEXT("SplineToDynamicMesh"); }
+	virtual FName GetDefaultNodeName() const override { return TEXT("SplineMeshToDynMesh"); }
 	virtual FText GetDefaultNodeTitle() const override;
 	virtual FText GetNodeTooltipText() const override;
 #endif
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Spline Mesh", meta = (PCG_Overridable))
 	TObjectPtr<UStaticMesh> StaticMesh;
-
+	
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Spline Mesh", meta = (PCG_Overridable))
+	bool bUseDataAttributeStaticMesh;
+	
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Spline Mesh", meta = (PCG_Overridable, EditCondition = "bUseDataAttributeStaticMesh", EditConditionHides, ToolTip="Allows spline input to provide static mesh as attribute, Must be a Data domain static mesh attribute.  If attribute is not found, the constant static mesh will be used"))
+	FName StaticMeshAttributeName = FName(TEXT("@Data.Mesh"));
+	
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Spline Mesh", meta = (PCG_Overridable, EditCondition = "bUseDataAttributeStaticMesh", EditConditionHides))
+	bool bWarnIfAttributeMissing = true;
+	
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Spline Mesh", meta = (PCG_Overridable))
 	TEnumAsByte<ESplineMeshAxis::Type> ForwardAxis = ESplineMeshAxis::X;
 
@@ -43,7 +52,14 @@ public:
 
 	/** Boolean-union all segment meshes belonging to an input spline into one output mesh. */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Output", meta = (PCG_Overridable))
-	bool bUnionSegments = false;
+	bool bUnionSegments = true;
+
+	/**
+	 * Converts world-space spline data into the PCG target actor's local space before generating the mesh.
+	 * Enable this when the resulting Dynamic Mesh or baked Static Mesh will be attached to that actor.
+	 */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Output", meta = (PCG_Overridable))
+	bool bConvertWorldToActorLocal = true;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Output", meta = (PCG_Overridable, EditCondition = "bUnionSegments", EditConditionHides, ShowOnlyInnerProperties))
 	FGeometryScriptMeshBooleanOptions UnionOptions;

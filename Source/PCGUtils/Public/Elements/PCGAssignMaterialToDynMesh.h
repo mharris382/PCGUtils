@@ -31,7 +31,7 @@ struct FPCGAssignMaterialToDynMeshContext : public FPCGContext
 
 // ── Settings ──────────────────────────────────────────────────────────────────
 
-UCLASS(BlueprintType, ClassGroup = (Procedural))
+UCLASS(BlueprintType, ClassGroup = (Procedural), Category="PCGUtils|Dynamic Mesh")
 class PCGUTILS_API UPCGAssignMaterialToDynMeshSettings : public UPCGDynamicMeshBaseSettings
 {
 	GENERATED_BODY()

@@ -5,6 +5,7 @@
 #include "CoreMinimal.h"
 #include "Kismet/BlueprintFunctionLibrary.h"
 #include "PCGData.h"
+#include "Data/PCGPathPoint.h"
 #include "PCGPoint.h"
 #include "ShapePath/ShapePathComponent.h"
 #include "PCGUtilsHelpers.generated.h"
@@ -90,5 +91,10 @@ public:
 	static class UPCGPointArrayData* CreatePointArrayDataFromPoints(
 		struct FPCGContext* Context,
 		const TArray<FPCGPoint>& Points);
+
+	/** Creates native point-array data from the path-specific point container. */
+	static class UPCGPointArrayData* CreatePointArrayDataFromPathPoints(
+		struct FPCGContext* Context,
+		const TArray<FPCGPathPoint>& Points);
 	//static UStaticMesh* GetBakedStaticMeshFromPCGData(UPCGDataCollection* )
 };

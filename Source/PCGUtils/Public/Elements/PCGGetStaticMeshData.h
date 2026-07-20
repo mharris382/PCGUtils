@@ -7,7 +7,7 @@
 #include "PCGGetStaticMeshData.generated.h"
 
 /** Collects static mesh components from actors as individual point data. */
-UCLASS(BlueprintType, ClassGroup=(Procedural))
+UCLASS(BlueprintType, ClassGroup=(Procedural), Category="PCGUtils|Actor Data")
 class PCGUTILS_API UPCGGetStaticMeshDataSettings : public UPCGDataFromActorSettings
 {
 	GENERATED_BODY()
