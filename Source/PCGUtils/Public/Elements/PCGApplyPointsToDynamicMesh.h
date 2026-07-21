@@ -148,6 +148,10 @@ public:
 	UPROPERTY(BlueprintReadWrite, EditAnywhere, Category = "Settings", meta = (PCG_Overridable))
 	bool bCopyRotationAsNormals = false;
 
+	/** Convert incoming world-space point positions and normals into the PCG target actor's local mesh space. */
+	UPROPERTY(BlueprintReadWrite, EditAnywhere, Category = "Settings", meta = (PCG_Overridable))
+	bool bConvertToLocalSpace = false;
+
 	/**
 	 * If point count doesn't match vertex count, log a warning and pass the mesh through unchanged.
 	 * If false, the node will error and output nothing on mismatch.
@@ -202,7 +206,7 @@ struct FPCGApplyPointsToDynamicMeshContext : public FPCGContext {};
 class FPCGApplyPointsToDynamicMeshElement : public IPCGDynamicMeshBaseElement
 {
 public:
-	virtual bool CanExecuteOnlyOnMainThread(FPCGContext* Context) const override { return false; }
+	virtual bool CanExecuteOnlyOnMainThread(FPCGContext* Context) const override { return true; }
 
 protected:
 	virtual FPCGContext* CreateContext() override;

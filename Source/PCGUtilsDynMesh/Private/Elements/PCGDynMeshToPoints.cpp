@@ -7,6 +7,7 @@
 #include "UDynamicMesh.h"
 #include "DynamicMesh/DynamicMesh3.h"
 #include "DynamicMesh/DynamicMeshAttributeSet.h"
+#include "GameFramework/Actor.h"
 
 #define LOCTEXT_NAMESPACE "PCGDynMeshToPointsElement"
 
@@ -82,6 +83,9 @@ bool FPCGDynMeshToPointsElement::ExecuteInternal(FPCGContext* InContext) const
 	TRACE_CPUPROFILER_EVENT_SCOPE(FPCGDynMeshToPointsElement::ExecuteInternal);
 
 	check(InContext);
+	const UPCGDynMeshToPointsSettings* Settings =
+		InContext->GetInputSettings<UPCGDynMeshToPointsSettings>();
+	check(Settings);
 
 	const TArray<FPCGTaggedData> MeshInputs =
 		InContext->InputData.GetInputsByPin(PCGDynMeshToPointsConstants::InDynamicMeshLabel);
@@ -109,6 +113,21 @@ bool FPCGDynMeshToPointsElement::ExecuteInternal(FPCGContext* InContext) const
 		{
 			PCGLog::LogWarningOnGraph(LOCTEXT("NullMesh", "DynMeshToPoints: source mesh is null, skipping."), InContext);
 			continue;
+		}
+
+		FTransform MeshToOutput = FTransform::Identity;
+		if (Settings->bOutputToWorldSpace)
+		{
+			if (const AActor* TargetActor = InContext->GetTargetActor(InMeshData))
+			{
+				MeshToOutput = TargetActor->GetActorTransform();
+			}
+			else
+			{
+				PCGLog::LogWarningOnGraph(
+					LOCTEXT("MissingTargetActor", "DynMeshToPoints could not resolve a target actor; points remain in mesh-local space."),
+					InContext);
+			}
 		}
 
 		const FDynamicMeshNormalOverlay* NormalOverlay = nullptr;
@@ -144,10 +163,16 @@ bool FPCGDynMeshToPointsElement::ExecuteInternal(FPCGContext* InContext) const
 				: FVector4f(VertexColor.X, VertexColor.Y, VertexColor.Z, 1.0f);
 
 			FPCGPoint& Point = Points.Emplace_GetRef();
-			const FVector NormalVector((double)Normal.X, (double)Normal.Y, (double)Normal.Z);
+			const FVector LocalNormal((double)Normal.X, (double)Normal.Y, (double)Normal.Z);
+			const FVector OutputNormal = Settings->bOutputToWorldSpace
+				? MeshToOutput.TransformVectorNoScale(LocalNormal).GetSafeNormal()
+				: LocalNormal;
+			const FVector OutputPosition = Settings->bOutputToWorldSpace
+				? MeshToOutput.TransformPosition(FVector(Position))
+				: FVector(Position);
 			Point.Transform = FTransform(
-				FRotationMatrix::MakeFromZ(NormalVector).ToQuat(),
-				FVector(Position),
+				FRotationMatrix::MakeFromZ(OutputNormal).ToQuat(),
+				OutputPosition,
 				FVector::OneVector);
 			Point.Color = FVector4(Color.X, Color.Y, Color.Z, Color.W);
 			Point.SetExtents(FVector::ZeroVector);

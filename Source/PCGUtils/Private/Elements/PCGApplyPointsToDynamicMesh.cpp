@@ -8,6 +8,7 @@
 #include "UDynamicMesh.h"
 #include "DynamicMesh/DynamicMesh3.h"
 #include "DynamicMesh/DynamicMeshAttributeSet.h"
+#include "GameFramework/Actor.h"
 
 #define LOCTEXT_NAMESPACE "PCGApplyPointsToDynamicMeshElement"
 
@@ -253,16 +254,37 @@ bool FPCGApplyPointsToDynamicMeshElement::ProcessSinglePair(
     FDynamicMeshNormalOverlay* NormalOverlay = bCopyNormals
         ? RawMesh->Attributes()->PrimaryNormals() : nullptr;
 
+	FTransform PointsToMesh = FTransform::Identity;
+	if (Settings->bConvertToLocalSpace)
+	{
+		if (const AActor* TargetActor = InContext->GetTargetActor(InMeshData))
+		{
+			PointsToMesh = TargetActor->GetActorTransform().Inverse();
+		}
+		else
+		{
+			PCGLog::LogWarningOnGraph(
+				LOCTEXT("MissingTargetActor", "ApplyPointsToDynamicMesh could not resolve a target actor; point positions remain unchanged."),
+				InContext);
+		}
+	}
+
     int32 PointIdx = 0;
     for (int32 VID : RawMesh->VertexIndicesItr())
     {
         const FTransform& PT = TransformRange[PointIdx];
 
-        RawMesh->SetVertex(VID, FVector3d(PT.GetLocation()));
+		const FVector MeshPosition = Settings->bConvertToLocalSpace
+			? PointsToMesh.TransformPosition(PT.GetLocation())
+			: PT.GetLocation();
+		RawMesh->SetVertex(VID, FVector3d(MeshPosition));
 
         if (NormalOverlay)
         {
-            const FVector Normal = PT.GetRotation().GetUpVector();
+			const FVector PointNormal = PT.GetRotation().GetUpVector();
+			const FVector Normal = Settings->bConvertToLocalSpace
+				? PointsToMesh.TransformVectorNoScale(PointNormal).GetSafeNormal()
+				: PointNormal;
             const FVector3f Normalf(Normal.X, Normal.Y, Normal.Z);
 
             RawMesh->EnumerateVertexTriangles(VID, [&](int32 TID)

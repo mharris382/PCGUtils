@@ -13,13 +13,18 @@ namespace PCGDynMeshToPointsConstants
 }
 
 UCLASS(BlueprintType, ClassGroup = (Procedural), Category="PCGUtils|Dynamic Mesh")
-class PCGUTILS_API UPCGDynMeshToPointsSettings : public UPCGDynamicMeshBaseSettings
+class PCGUTILSDYNMESH_API UPCGDynMeshToPointsSettings : public UPCGDynamicMeshBaseSettings
 {
 	GENERATED_BODY()
 
 public:
 #if WITH_EDITOR
 	virtual bool ShouldDrawNodeCompact() const override { return true; }
+	virtual bool GetCompactNodeIcon(FName& OutCompactNodeIcon) const override
+	{
+		OutCompactNodeIcon = TEXT("PCGUtils.DynamicMeshToPoints");
+		return true;
+	}
 	virtual FName GetDefaultNodeName() const override { return FName(TEXT("DynMsh|Point")); }
 	virtual FText GetDefaultNodeTitle() const override
 	{
@@ -35,6 +40,10 @@ public:
 	virtual TArray<FPCGPinProperties> InputPinProperties() const override;
 	virtual TArray<FPCGPinProperties> OutputPinProperties() const override;
 
+	/** Transform local mesh vertices and normals into the PCG target actor's world space. */
+	UPROPERTY(BlueprintReadWrite, EditAnywhere, Category = "Settings", meta = (PCG_Overridable))
+	bool bOutputToWorldSpace = false;
+
 protected:
 	virtual FPCGElementPtr CreateElement() const override;
 };
@@ -44,7 +53,7 @@ struct FPCGDynMeshToPointsContext : public FPCGContext {};
 class FPCGDynMeshToPointsElement : public IPCGDynamicMeshBaseElement
 {
 public:
-	virtual bool CanExecuteOnlyOnMainThread(FPCGContext* Context) const override { return false; }
+	virtual bool CanExecuteOnlyOnMainThread(FPCGContext* Context) const override { return true; }
 
 protected:
 	virtual FPCGContext* CreateContext() override;
