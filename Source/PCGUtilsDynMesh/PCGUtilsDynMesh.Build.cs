@@ -15,6 +15,7 @@ public class PCGUtilsDynMesh : ModuleRules
                 "CoreUObject",
                 "Engine",
                 "DeveloperSettings",
+				"DynamicMesh",
                 "GeometryFramework",
                 "GeometryCore",
                 "GeometryScriptingCore",
