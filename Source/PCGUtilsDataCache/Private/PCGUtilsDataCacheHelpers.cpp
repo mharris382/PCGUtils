@@ -27,6 +27,14 @@ bool PCGUtilsDataCacheHelpers::NormalizeAndValidateFolder(
 	{
 		return false;
 	}
+
+	const FString MountPoint = FPackageName::GetPackageMountPoint(OutFolder, false).ToString();
+	if (MountPoint.IsEmpty() || !FPackageName::MountPointExists(MountPoint))
+	{
+		OutError = FText::Format(NSLOCTEXT("PCGUtilsDataCache", "FolderUnknownMount",
+			"Cache folder '{0}' does not begin with a mounted content root."), FText::FromString(InFolder));
+		return false;
+	}
 	return true;
 }
 

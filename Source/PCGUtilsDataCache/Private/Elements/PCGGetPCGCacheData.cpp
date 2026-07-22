@@ -127,7 +127,9 @@ void FPCGGetPCGCacheDataElement::ProcessActor(
 			PCGUtilsDataCache::CacheAssetPathAttribute, FSoftObjectPath(), false, false, true);
 		const PCGMetadataEntryKey Entry = Metadata->AddEntry();
 		Attribute->SetValue(Entry, CachePath);
-		Context->OutputData.TaggedData.Emplace_GetRef().Data = ParamData;
+		FPCGTaggedData& Output = Context->OutputData.TaggedData.Emplace_GetRef();
+		Output.Pin = PCGPinConstants::DefaultOutputLabel;
+		Output.Data = ParamData;
 	}
 	else
 	{
@@ -146,7 +148,9 @@ void FPCGGetPCGCacheDataElement::ProcessActor(
 		auto MetadataEntries = PointData->GetMetadataEntryValueRange();
 		ElementsDomain->InitializeOnSet(MetadataEntries[0]);
 		Attribute->SetValue(MetadataEntries[0], CachePath);
-		Context->OutputData.TaggedData.Emplace_GetRef().Data = PointData;
+		FPCGTaggedData& Output = Context->OutputData.TaggedData.Emplace_GetRef();
+		Output.Pin = PCGPinConstants::DefaultOutputLabel;
+		Output.Data = PointData;
 	}
 }
 

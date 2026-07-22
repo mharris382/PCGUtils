@@ -20,9 +20,9 @@ public:
 	virtual FName GetDefaultNodeName() const override { return TEXT("SavePCGCacheData"); }
 	virtual FText GetDefaultNodeTitle() const override;
 	virtual FText GetNodeTooltipText() const override;
+	virtual EPCGSettingsType GetType() const override { return EPCGSettingsType::InputOutput; }
 #endif
 
-	virtual EPCGSettingsType GetType() const override { return EPCGSettingsType::InputOutput; }
 	virtual TArray<FPCGPinProperties> InputPinProperties() const override;
 	virtual TArray<FPCGPinProperties> OutputPinProperties() const override;
 

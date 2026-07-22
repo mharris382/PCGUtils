@@ -4,6 +4,7 @@
 
 bool UPCGUtilsDataCacheExporter::ExportAsset(const FString& PackageName, UPCGDataAsset* Asset)
 {
+#if WITH_EDITOR
 	if (!Asset)
 	{
 		return false;
@@ -17,4 +18,7 @@ bool UPCGUtilsDataCacheExporter::ExportAsset(const FString& PackageName, UPCGDat
 #endif
 
 	return true;
+#else
+	return false;
+#endif
 }
