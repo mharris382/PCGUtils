@@ -141,6 +141,11 @@ struct PCGUTILS_API FPointComponentData
 	
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category= "PCG", meta = (EditCondition="bSetPointDensity", UIMin=0, UIMax=1))
 	float PointDensity = 1.0f;
+
+	/** Controls the size of the full-density core inside the point bounds. Lower values produce softer edges. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="PCG",
+		meta=(ClampMin="0.0", ClampMax="1.0", UIMin="0.0", UIMax="1.0"))
+	float Steepness = 1.0f;
 	
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category= "PCG", meta = (InlineEditConditionToggle))
 	bool bSetPointColor = false;

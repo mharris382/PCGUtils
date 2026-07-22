@@ -92,6 +92,18 @@ void FPCGMarkerComponentVisualizer::DrawVisualization(
 
 	DrawWireBox(PDI, ComponentTransform.ToMatrixWithScale(), LocalBox, LineColor, SDPG_Foreground, bSelected ? 2.0f : 1.0f);
 
+	const float Steepness = FMath::Clamp(MarkerComp->PointData.Steepness, 0.0f, 1.0f);
+	if (Steepness < 1.0f - KINDA_SMALL_NUMBER)
+	{
+		const FVector SoftCoreExtent = LocalBox.GetExtent() * Steepness;
+		const FVector SoftCoreCenter = LocalBox.GetCenter();
+		const FBox SoftCoreBox(SoftCoreCenter - SoftCoreExtent, SoftCoreCenter + SoftCoreExtent);
+		FLinearColor SoftCoreColor = LineColor;
+		SoftCoreColor.A = FMath::Clamp(LineColor.A * 0.35f, 0.05f, 0.35f);
+		DrawWireBox(PDI, ComponentTransform.ToMatrixWithScale(), SoftCoreBox,
+			SoftCoreColor, SDPG_Foreground, 0.75f);
+	}
+
 	PDI->SetHitProxy(nullptr);
 }
 

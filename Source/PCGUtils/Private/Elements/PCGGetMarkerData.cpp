@@ -66,7 +66,9 @@ void FPCGGetMarkerDataElement::ProcessActor(
 	FoundActor->GetComponents(ShapeComps);
 	for (UPCGMarkerComponent* ShapeComp : ShapeComps)
 	{
-		if (!ShapeComp || !IsValid(ShapeComp) || !ShouldFilterMarker(ShapeSettings, ShapeComp))
+		if (!IsValid(ShapeComp)
+			|| !ShapeSettings->ComponentSelector.FilterComponent(ShapeComp)
+			|| !ShouldFilterMarker(ShapeSettings, ShapeComp))
 		{
 			continue;
 		}
@@ -79,6 +81,7 @@ void FPCGGetMarkerDataElement::ProcessActor(
 		Point.BoundsMin = ShapeComp->BoundsMin;
 		Point.BoundsMax = ShapeComp->BoundsMax;
 		Point.Density = ShapeComp->PointData.GetPointDensity();
+		Point.Steepness = ShapeComp->PointData.Steepness;
 		Point.Color = ShapeComp->PointData.GetPointColor();
 		
 		if (UPCGMetadata* Meta = PointData->MutableMetadata())

@@ -56,6 +56,7 @@ bool UPCGMarkerComponent::GetPCGPointData_Implementation(
 	Point.BoundsMin = BoundsMin;
 	Point.BoundsMax = BoundsMax;
 	Point.Density = PointData.GetPointDensity();
+	Point.Steepness = PointData.Steepness;
 	Point.Color = PointData.GetPointColor();
 	OutPointData = PointData;
 	return true;
