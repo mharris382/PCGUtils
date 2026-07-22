@@ -7,9 +7,11 @@
 #include "Data/PCGPathPoint.h"
 #include "Data/PCGPointArrayData.h"
 #include "Data/PCGBasePointData.h"
+#include "Data/PCGSplineData.h"
 #include "GameFramework/Actor.h"
 #include "Interfaces/PCGPathProvider.h"
 #include "Metadata/PCGMetadata.h"
+#include "Components/SplineComponent.h"
 
 #define LOCTEXT_NAMESPACE "PCGGetPathDataElement"
 
@@ -27,14 +29,31 @@ FText UPCGGetPathDataSettings::GetDefaultNodeTitle() const
 
 FText UPCGGetPathDataSettings::GetNodeTooltipText() const
 {
-	return LOCTEXT("NodeTooltip", "Collects point paths from actors and actor components implementing PCGPathProvider.");
+	return LOCTEXT("NodeTooltip", "Collects PCG path providers as point-array data or spline data. Spline components are copied directly in spline mode.");
+}
+
+EPCGChangeType UPCGGetPathDataSettings::GetChangeTypeForProperty(FPropertyChangedEvent& PropertyChangedEvent) const
+{
+	EPCGChangeType ChangeType = Super::GetChangeTypeForProperty(PropertyChangedEvent);
+	if (PropertyChangedEvent.GetMemberPropertyName() == GET_MEMBER_NAME_CHECKED(UPCGGetPathDataSettings, OutputMode))
+	{
+		ChangeType |= EPCGChangeType::Structural;
+	}
+	return ChangeType;
 }
 #endif
 
 TArray<FPCGPinProperties> UPCGGetPathDataSettings::OutputPinProperties() const
 {
 	TArray<FPCGPinProperties> PinProperties;
-	PinProperties.Emplace(PCGPinConstants::DefaultOutputLabel, EPCGDataType::Point);
+	if (OutputMode == EPCGPathDataOutputMode::SplineData)
+	{
+		PinProperties.Emplace(TEXT("Spline"), EPCGDataType::Spline);
+	}
+	else
+	{
+		PinProperties.Emplace(TEXT("Points"), EPCGDataType::Point);
+	}
 	return PinProperties;
 }
 
@@ -89,32 +108,69 @@ void FPCGGetPathElement::ProcessActor(
 		if (!IsValid(Provider) || !Provider->GetClass()->ImplementsInterface(UPCGPathProvider::StaticClass())) return;
 		if (!ShouldProcessPathProvider(Context, GetSettings, Provider)) return;
 
-		bool bIsLocalSpace = false;
-		bool bIsLinearPath = true;
-		TArray<FPCGPathPoint> ProviderPoints = IPCGPathProvider::Execute_GetPCGPathPoints(
-			Provider, bIsLocalSpace, bIsLinearPath);
-		if (ProviderPoints.IsEmpty()) return;
-
-		if (bIsLocalSpace)
-		{
-			for (FPCGPathPoint& Point : ProviderPoints)
-			{
-				Point.Transform = Point.Transform * LocalToWorld;
-				Point.ArriveTangent = LocalToWorld.TransformVector(Point.ArriveTangent);
-				Point.LeaveTangent = LocalToWorld.TransformVector(Point.LeaveTangent);
-			}
-		}
-		
 		const FPathComponentData PathData = IPCGPathProvider::Execute_GetPathData(Provider);
 		const bool bIsClosed = IPCGPathProvider::Execute_GetIsClosedLoop(Provider);
-		
-		UPCGPointArrayData* PointData = UPCGUtilsHelpers::CreatePointArrayDataFromPathPoints(Context, ProviderPoints);
-		if (!PointData) return;
+		UPCGData* ProducedData = nullptr;
+		UPCGMetadata* Metadata = nullptr;
+		bool bIsLocalSpace = false;
+		bool bIsLinearPath = true;
+		TArray<FPCGPathPoint> ProviderPoints;
 
-		UPCGMetadata* Metadata = PointData->MutableMetadata();
-		if (Metadata)
+		if (GetSettings->OutputMode == EPCGPathDataOutputMode::SplineData)
 		{
-			if (!bIsLinearPath)
+			UPCGSplineData* SplineData = FPCGContext::NewObject_AnyThread<UPCGSplineData>(Context);
+			if (const USplineComponent* SplineComponent = Cast<USplineComponent>(Provider))
+			{
+				// Preserve the source component's exact control points, tangents, rotations, scales and transform.
+				SplineData->Initialize(SplineComponent);
+			}
+			else
+			{
+				ProviderPoints = IPCGPathProvider::Execute_GetPCGPathPoints(
+					Provider, bIsLocalSpace, bIsLinearPath);
+				if (ProviderPoints.IsEmpty()) return;
+
+				TArray<FSplinePoint> SplinePoints;
+				SplinePoints.Reserve(ProviderPoints.Num());
+				for (int32 Index = 0; Index < ProviderPoints.Num(); ++Index)
+				{
+					const FPCGPathPoint& PathPoint = ProviderPoints[Index];
+					const bool bHasTangents = !PathPoint.ArriveTangent.IsNearlyZero()
+						|| !PathPoint.LeaveTangent.IsNearlyZero();
+					const ESplinePointType::Type PointType = bIsLinearPath
+						? ESplinePointType::Linear
+						: (bHasTangents ? ESplinePointType::CurveCustomTangent : ESplinePointType::Curve);
+					SplinePoints.Emplace(
+						static_cast<float>(Index), PathPoint.Transform.GetLocation(),
+						PathPoint.ArriveTangent, PathPoint.LeaveTangent,
+						PathPoint.Transform.Rotator(), PathPoint.Transform.GetScale3D(), PointType);
+				}
+				SplineData->Initialize(SplinePoints, bIsClosed,
+					bIsLocalSpace ? LocalToWorld : FTransform::Identity);
+			}
+			ProducedData = SplineData;
+			Metadata = SplineData->MutableMetadata();
+		}
+		else
+		{
+			ProviderPoints = IPCGPathProvider::Execute_GetPCGPathPoints(
+				Provider, bIsLocalSpace, bIsLinearPath);
+			if (ProviderPoints.IsEmpty()) return;
+			if (bIsLocalSpace)
+			{
+				for (FPCGPathPoint& Point : ProviderPoints)
+				{
+					Point.Transform = Point.Transform * LocalToWorld;
+					Point.ArriveTangent = LocalToWorld.TransformVector(Point.ArriveTangent);
+					Point.LeaveTangent = LocalToWorld.TransformVector(Point.LeaveTangent);
+				}
+			}
+			UPCGPointArrayData* PointData = UPCGUtilsHelpers::CreatePointArrayDataFromPathPoints(Context, ProviderPoints);
+			if (!PointData) return;
+			ProducedData = PointData;
+			Metadata = PointData->MutableMetadata();
+
+			if (Metadata && !bIsLinearPath)
 			{
 				FPCGMetadataDomain* ElementsDomain = Metadata->GetMetadataDomain(PCGMetadataDomainID::Elements);
 				FPCGMetadataAttribute<FVector>* ArriveTangentAttribute = ElementsDomain
@@ -127,17 +183,14 @@ void FPCGGetPathElement::ProcessActor(
 				for (int32 Index = 0; Index < ProviderPoints.Num(); ++Index)
 				{
 					ElementsDomain->InitializeOnSet(MetadataEntries[Index]);
-					if (ArriveTangentAttribute)
-					{
-						ArriveTangentAttribute->SetValue(MetadataEntries[Index], ProviderPoints[Index].ArriveTangent);
-					}
-					if (LeaveTangentAttribute)
-					{
-						LeaveTangentAttribute->SetValue(MetadataEntries[Index], ProviderPoints[Index].LeaveTangent);
-					}
+					if (ArriveTangentAttribute) ArriveTangentAttribute->SetValue(MetadataEntries[Index], ProviderPoints[Index].ArriveTangent);
+					if (LeaveTangentAttribute) LeaveTangentAttribute->SetValue(MetadataEntries[Index], ProviderPoints[Index].LeaveTangent);
 				}
 			}
+		}
 
+		if (Metadata)
+		{
 			if (FPCGMetadataAttribute<bool>* IsClosedAttribute = Metadata->FindOrCreateAttribute<bool>(
 				FPCGAttributeIdentifier(FName("IsClosed"), PCGMetadataDomainID::Data),
 				bIsClosed, false, false, true))
@@ -155,10 +208,11 @@ void FPCGGetPathElement::ProcessActor(
 		}
 
 		TSet<FString> AdditionalTags;
-		ProcessPathComponent(Context, GetSettings, ProviderActor, Provider, PointData, Metadata, AdditionalTags);
+		ProcessPathComponent(Context, GetSettings, ProviderActor, Provider, ProducedData, Metadata, AdditionalTags);
 
 		FPCGTaggedData& TaggedData = Context->OutputData.TaggedData.Emplace_GetRef();
-		TaggedData.Data = PointData;
+		TaggedData.Data = ProducedData;
+		TaggedData.Pin = GetSettings->OutputMode == EPCGPathDataOutputMode::SplineData ? TEXT("Spline") : TEXT("Points");
 		if (ProviderTags) Algo::Transform(*ProviderTags, TaggedData.Tags, NameToString);
 		TaggedData.Tags.Append(ActorTags);
 		TaggedData.Tags.Append(AdditionalTags);
@@ -187,7 +241,7 @@ void FPCGGetPathElement::ProcessActor(
 }
 
 void FPCGGetPathElement::ProcessPathComponent(FPCGContext* Context, const UPCGGetPathDataSettings* Settings,
-                                              const AActor* Actor, const UObject* PathProvider, UPCGBasePointData* PointData,
+                                              const AActor* Actor, const UObject* PathProvider, UPCGData* ProducedData,
                                               UPCGMetadata* MutableMetadata, TSet<FString>& OutTags) const
 {
 }

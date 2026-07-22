@@ -7,7 +7,14 @@
 #include "PCGGetPathData.generated.h"
 
 class UPCGMetadata;
-class UPCGBasePointData;
+class UPCGData;
+
+UENUM(BlueprintType)
+enum class EPCGPathDataOutputMode : uint8
+{
+	PointData UMETA(DisplayName="Point Data"),
+	SplineData UMETA(DisplayName="Spline Data")
+};
 
 /** Collects point paths from actors and actor components implementing PCGPathProvider. */
 UCLASS(BlueprintType, ClassGroup=(Procedural), Category="PCGUtils|Interface Data")
@@ -18,13 +25,21 @@ class PCGUTILS_API UPCGGetPathDataSettings : public UPCGDataFromActorSettings
 public:
 	UPCGGetPathDataSettings();
 
+	/** Selects whether each provider produces sampled points or a PCG spline. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Settings")
+	EPCGPathDataOutputMode OutputMode = EPCGPathDataOutputMode::PointData;
+
 #if WITH_EDITOR
 	virtual FName GetDefaultNodeName() const override { return FName(TEXT("GetPathData")); }
 	virtual FText GetDefaultNodeTitle() const override;
 	virtual FText GetNodeTooltipText() const override;
+	virtual EPCGChangeType GetChangeTypeForProperty(FPropertyChangedEvent& PropertyChangedEvent) const override;
 #endif
 
-	virtual EPCGDataType GetDataFilter() const override { return EPCGDataType::Point; }
+	virtual EPCGDataType GetDataFilter() const override
+	{
+		return OutputMode == EPCGPathDataOutputMode::SplineData ? EPCGDataType::Spline : EPCGDataType::Point;
+	}
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Settings", meta = (ShowOnlyInnerProperties))
 	FGetComponentDataSettings ComponentSettings;
@@ -59,13 +74,13 @@ protected:
 		const UPCGDataFromActorSettings* Settings,
 		AActor* FoundActor) const override;
 	
-	/** Extension hook for component-specific @Data attributes and output tags. */
+	/** Extension hook shared by point and spline outputs for specialized metadata and tags. */
 	virtual void ProcessPathComponent(
 		FPCGContext* Context,
 		const UPCGGetPathDataSettings* Settings,
 		const AActor* Actor,
 		const UObject* PathProvider,
-		UPCGBasePointData* PointData,
+		UPCGData* ProducedData,
 		UPCGMetadata* MutableMetadata,
 		TSet<FString>& OutTags) const;
 };
