@@ -5,8 +5,7 @@
 #include "PCGUtilsDataCacheTypes.h"
 #include "PCGGetPCGCacheData.generated.h"
 
-UCLASS(BlueprintType, ClassGroup=(Procedural), Category="PCGUtils|Data Cache",
-	HideCategories=("Data Retrieval Settings"))
+UCLASS(BlueprintType, ClassGroup=(Procedural), Category="PCGUtils|Data Cache")
 class PCGUTILSDATACACHE_API UPCGGetPCGCacheDataSettings : public UPCGDataFromActorSettings
 {
 	GENERATED_BODY()
@@ -14,13 +13,13 @@ class PCGUTILSDATACACHE_API UPCGGetPCGCacheDataSettings : public UPCGDataFromAct
 public:
 	UPCGGetPCGCacheDataSettings();
 
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Data Cache")
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Settings")
 	EPCGUtilsDataCache TargetCache = EPCGUtilsDataCache::Runtime;
 
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Data Cache")
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Settings")
 	EPCGUtilsDataCacheReferenceOutput OutputType = EPCGUtilsDataCacheReferenceOutput::PointData;
 
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Data Cache", AdvancedDisplay)
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Settings", AdvancedDisplay)
 	bool bSuppressSelfCacheWarning = false;
 
 #if WITH_EDITOR
@@ -31,7 +30,7 @@ public:
 	virtual bool DisplayModeSettings() const override { return false; }
 #endif
 
-	virtual EPCGDataType GetDataFilter() const override { return EPCGDataType::None; }
+	
 
 protected:
 	virtual TArray<FPCGPinProperties> OutputPinProperties() const override;

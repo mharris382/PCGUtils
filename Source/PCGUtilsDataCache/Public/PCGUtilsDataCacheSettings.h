@@ -2,9 +2,10 @@
 
 #include "CoreMinimal.h"
 #include "Engine/DeveloperSettings.h"
+#include "UObject/SoftObjectPath.h"
 #include "PCGUtilsDataCacheSettings.generated.h"
 
-UCLASS(Config=Game, DefaultConfig, meta=(DisplayName="Data Cache"))
+UCLASS(Config=Game, DefaultConfig, meta=(DisplayName="PCGUtils"))
 class PCGUTILSDATACACHE_API UPCGUtilsDataCacheSettings : public UDeveloperSettings
 {
 	GENERATED_BODY()

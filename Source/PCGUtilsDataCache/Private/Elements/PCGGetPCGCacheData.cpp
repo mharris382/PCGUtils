@@ -16,6 +16,7 @@ UPCGGetPCGCacheDataSettings::UPCGGetPCGCacheDataSettings()
 {
 	Mode = EPCGGetDataFromActorMode::ParseActorComponents;
 	bAlwaysRequeryActors = true;
+	ActorSelector.ActorFilter = EPCGActorFilter::FromInput;
 }
 
 #if WITH_EDITOR
