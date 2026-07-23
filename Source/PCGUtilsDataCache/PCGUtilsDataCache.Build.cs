@@ -12,7 +12,7 @@ public class PCGUtilsDataCache : ModuleRules
 			"CoreUObject",
 			"Engine",
 			"PCG",
-			"DeveloperSettings"
+			"PCGUtils"
 		});
 
 		// Asset creation is routed through PCG's exported utility, whose editor-only

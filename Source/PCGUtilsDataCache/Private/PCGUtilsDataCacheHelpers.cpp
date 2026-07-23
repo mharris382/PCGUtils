@@ -1,7 +1,7 @@
 #include "PCGUtilsDataCacheHelpers.h"
 
 #include "PCGDataCacheComponent.h"
-#include "PCGUtilsDataCacheSettings.h"
+#include "Settings/PCGUtilsSettings.h"
 #include "GameFramework/Actor.h"
 #include "Misc/PackageName.h"
 
@@ -67,7 +67,7 @@ bool PCGUtilsDataCacheHelpers::BuildAssetPath(
 		return false;
 	}
 
-	const UPCGUtilsDataCacheSettings* Settings = GetDefault<UPCGUtilsDataCacheSettings>();
+	const UPCGUtilsSettings* Settings = GetDefault<UPCGUtilsSettings>();
 	if (!Settings)
 	{
 		OutError = NSLOCTEXT("PCGUtilsDataCache", "MissingSettings", "PCG data cache project settings are unavailable.");
