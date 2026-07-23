@@ -25,9 +25,11 @@ public:
 #if WITH_EDITOR
 	virtual FName GetDefaultNodeName() const override { return TEXT("GetPCGCacheData"); }
 	virtual FText GetDefaultNodeTitle() const override;
+	virtual TArray<FText> GetNodeTitleAliases() const override;
 	virtual FText GetNodeTooltipText() const override;
 	virtual EPCGChangeType GetChangeTypeForProperty(FPropertyChangedEvent& PropertyChangedEvent) const override;
 	virtual bool DisplayModeSettings() const override { return false; }
+	virtual bool OnlyExposePreconfiguredSettings() const override { return true; }
 #endif
 
 	

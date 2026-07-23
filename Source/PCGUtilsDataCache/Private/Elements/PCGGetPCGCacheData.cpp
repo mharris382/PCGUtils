@@ -25,6 +25,14 @@ FText UPCGGetPCGCacheDataSettings::GetDefaultNodeTitle() const
 	return LOCTEXT("Title", "Get PCG Cache Data");
 }
 
+TArray<FText> UPCGGetPCGCacheDataSettings::GetNodeTitleAliases() const
+{
+	return {
+		LOCTEXT("GetRuntimeCacheDataAlias", "GetRuntimeCacheData"),
+		LOCTEXT("GetOfflineCacheDataAlias", "GetOfflineCacheData")
+	};
+}
+
 FText UPCGGetPCGCacheDataSettings::GetNodeTooltipText() const
 {
 	return LOCTEXT("Tooltip", "Outputs deterministic soft references to PCG cache data assets without loading them.");
