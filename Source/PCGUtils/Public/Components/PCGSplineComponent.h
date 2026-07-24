@@ -37,9 +37,9 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, AdvancedDisplay, Category = "PCG", meta = (ClampMin = 0, UIMin = 0))
 	int32 PathSubdivisionCount = 2;
 
-	virtual TArray<FPCGPoint> GetPathPoints_Implementation(bool& bIsLocalSpace) const override;
+	virtual TArray<FPCGPathPoint> GetPCGPathPoints_Implementation(
+		bool& bIsLocalSpace, bool& bIsLinearPath, bool& bIsClosedLoop) const override;
 	virtual FPathComponentData GetPathData_Implementation() const override { return PathData; }
-	virtual bool GetIsClosedLoop_Implementation() const override { return IsClosedLoop(); }
 
 
 	// Legacy fields are intentionally retained for asset migration.

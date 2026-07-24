@@ -30,18 +30,20 @@ void UPCGSplineComponent::OnComponentCreated()
 	bPathDataMigrated = true;
 }
 
-TArray<FPCGPoint> UPCGSplineComponent::GetPathPoints_Implementation(bool& bIsLocalSpace) const
+TArray<FPCGPathPoint> UPCGSplineComponent::GetPCGPathPoints_Implementation(
+	bool& bIsLocalSpace, bool& bIsLinearPath, bool& bIsClosedLoop) const
 {
 	bIsLocalSpace = true;
-	TArray<FPCGPoint> Result;
+	bIsLinearPath = true;
+	bIsClosedLoop = IsClosedLoop();
+	TArray<FPCGPathPoint> Result;
 	const int32 NumSplinePoints = GetNumberOfSplinePoints();
 	if (NumSplinePoints == 0)
 	{
 		return Result;
 	}
 
-	const bool bPathIsClosedLoop = IsClosedLoop();
-	const int32 NumSegments = bPathIsClosedLoop ? NumSplinePoints : NumSplinePoints - 1;
+	const int32 NumSegments = bIsClosedLoop ? NumSplinePoints : NumSplinePoints - 1;
 	const int32 InteriorSamples = FMath::Max(0, PathSubdivisionCount);
 	const float Density = PathData.GetPathDensity();
 	const FLinearColor Color = PathData.GetPathColor();
@@ -49,11 +51,10 @@ TArray<FPCGPoint> UPCGSplineComponent::GetPathPoints_Implementation(bool& bIsLoc
 
 	auto AddPoint = [&Result, Density, Color](const FTransform& LocalTransform)
 	{
-		FPCGPoint& Point = Result.Emplace_GetRef();
+		FPCGPathPoint& Point = Result.Emplace_GetRef();
 		Point.Transform = LocalTransform;
-		Point.SetExtents(FVector(50.f));
 		Point.Density = Density;
-		Point.Color = Color;
+		Point.SetColor(Color);
 	};
 
 	for (int32 SegmentIndex = 0; SegmentIndex < NumSegments; ++SegmentIndex)
@@ -77,7 +78,7 @@ TArray<FPCGPoint> UPCGSplineComponent::GetPathPoints_Implementation(bool& bIsLoc
 		}
 	}
 
-	if (!bPathIsClosedLoop)
+	if (!bIsClosedLoop)
 	{
 		AddPoint(GetTransformAtSplinePoint(NumSplinePoints - 1, ESplineCoordinateSpace::Local, true));
 	}

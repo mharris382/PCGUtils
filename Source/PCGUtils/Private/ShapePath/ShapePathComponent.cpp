@@ -61,27 +61,24 @@ bool UShapePathComponent::IsClosedLoop() const
 	return Generator ? Generator->IsClosedLoop() : false;
 }
 
-TArray<FPCGPoint> UShapePathComponent::GetPathPoints_Implementation(bool& bIsLocalSpace) const
+TArray<FPCGPathPoint> UShapePathComponent::GetPCGPathPoints_Implementation(
+	bool& bIsLocalSpace, bool& bIsLinearPath, bool& bIsClosedLoop) const
 {
 	bIsLocalSpace = true;
+	bIsLinearPath = true;
+	bIsClosedLoop = IsClosedLoop();
 	UShapePathComponent* MutableThis = const_cast<UShapePathComponent*>(this);
 	const TArray<FVector>& LocalPoints = MutableThis->GetGeneratedPathPoints();
-	TArray<FPCGPoint> Result;
+	TArray<FPCGPathPoint> Result;
 	Result.Reserve(LocalPoints.Num());
 	for (const FVector& LocalPosition : LocalPoints)
 	{
-		FPCGPoint& Point = Result.Emplace_GetRef();
+		FPCGPathPoint& Point = Result.Emplace_GetRef();
 		Point.Transform = FTransform(LocalPosition);
-		Point.SetExtents(FVector(50.f));
 		Point.Density = PathData.GetPathDensity();
-		Point.Color = PathData.GetPathColor();
+		Point.SetColor(PathData.GetPathColor());
 	}
 	return Result;
-}
-
-bool UShapePathComponent::GetIsClosedLoop_Implementation() const
-{
-	return IsClosedLoop();
 }
 
 bool UShapePathComponent::GetPCGActorBoundingBox_Implementation(AActor* Actor, FBox& OutBounds) const

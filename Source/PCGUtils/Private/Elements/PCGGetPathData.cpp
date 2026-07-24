@@ -109,11 +109,11 @@ void FPCGGetPathElement::ProcessActor(
 		if (!ShouldProcessPathProvider(Context, GetSettings, Provider)) return;
 
 		const FPathComponentData PathData = IPCGPathProvider::Execute_GetPathData(Provider);
-		const bool bIsClosed = IPCGPathProvider::Execute_GetIsClosedLoop(Provider);
 		UPCGData* ProducedData = nullptr;
 		UPCGMetadata* Metadata = nullptr;
 		bool bIsLocalSpace = false;
 		bool bIsLinearPath = true;
+		bool bIsClosed = false;
 		TArray<FPCGPathPoint> ProviderPoints;
 
 		if (GetSettings->OutputMode == EPCGPathDataOutputMode::SplineData)
@@ -122,12 +122,13 @@ void FPCGGetPathElement::ProcessActor(
 			if (const USplineComponent* SplineComponent = Cast<USplineComponent>(Provider))
 			{
 				// Preserve the source component's exact control points, tangents, rotations, scales and transform.
+				bIsClosed = SplineComponent->IsClosedLoop();
 				SplineData->Initialize(SplineComponent);
 			}
 			else
 			{
 				ProviderPoints = IPCGPathProvider::Execute_GetPCGPathPoints(
-					Provider, bIsLocalSpace, bIsLinearPath);
+					Provider, bIsLocalSpace, bIsLinearPath, bIsClosed);
 				if (ProviderPoints.IsEmpty()) return;
 
 				TArray<FSplinePoint> SplinePoints;
@@ -154,7 +155,7 @@ void FPCGGetPathElement::ProcessActor(
 		else
 		{
 			ProviderPoints = IPCGPathProvider::Execute_GetPCGPathPoints(
-				Provider, bIsLocalSpace, bIsLinearPath);
+				Provider, bIsLocalSpace, bIsLinearPath, bIsClosed);
 			if (ProviderPoints.IsEmpty()) return;
 			if (bIsLocalSpace)
 			{
