@@ -3,7 +3,6 @@
 #include "CoreMinimal.h"
 #include "GameFramework/Actor.h"
 #include "Data/PCGBakeSettings.h"
-#include "Interfaces/PCGBakeSettingsProvider.h"
 #include "Interfaces/PCGComponentProvider.h"
 #include "OverrideGraphs.h"
 #include "PCGActorBase.generated.h"
@@ -15,7 +14,7 @@ class UPCGGenDataAsset;
 class UPCGGraphInterface;
 
 UCLASS(Blueprintable, meta = (DisplayName = "PCGActor"))
-class PCGUTILS_API APCGActorBase : public AActor, public IPCGBakeSettingsProvider, public IPCGComponentProvider
+class PCGUTILS_API APCGActorBase : public AActor, public IPCGComponentProvider
 {
     GENERATED_BODY()
 
@@ -23,9 +22,15 @@ public:
     APCGActorBase();
 	virtual void PostLoad() override;
 	virtual void PostActorCreated() override;
-	virtual FPCGUtilsBakeSettings GetPCGBakeSettings_Implementation() const override { return BakeSettings; }
 	virtual UPCGComponent* GetPrimaryPCGComponent_Implementation() const override { return PCGComponent; }
-	virtual bool AllowsComponentTriggeredRegeneration_Implementation() const override { return bAllowComponentEditsToTriggerGeneration; }
+	virtual bool AllowsComponentTriggeredRegeneration_Implementation() const override
+	{
+#if WITH_EDITORONLY_DATA
+		return bAllowComponentEditsToTriggerGeneration;
+#else
+		return false;
+#endif
+	}
 
     /**
      * Moves the actor's world pivot to the center of its computed bounding box
@@ -84,6 +89,10 @@ public:
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "PCG")
     int32 Seed = 0;
 
+	/**
+	 * Convention-based bake integration. PCG bake subgraphs use vanilla Get Actor
+	 * Property and look for a visible property named exactly "BakeSettings".
+	 */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "PCG|Bake", meta = (ShowOnlyInnerProperties))
 	FPCGUtilsBakeSettings BakeSettings;
 

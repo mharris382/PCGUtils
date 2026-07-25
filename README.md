@@ -63,10 +63,13 @@ The core module defines Blueprint-compatible interfaces that decouple PCG nodes 
 - `PCGPathProvider` — ordered path points, local/world-space indication, path metadata, and closed-loop state.
 - `PCGPointProvider` — point collections with shared point metadata.
 - `PCGBoundsProvider` — actor-relative bounds contribution.
-- `PCGBakeSettingsProvider` — standardized asset-baking settings.
 - `PCGComponentProvider` — access to a primary PCG component and regeneration policy.
 
-`FPathComponentData`, `FPointComponentData`, bake settings, and override-graph types provide consistent metadata and extension hooks across these interfaces.
+`FPathComponentData`, `FPointComponentData`, bake settings, and override-graph types provide consistent metadata and extension hooks across these systems.
+
+### Bake settings integration
+
+Bake subgraphs use the vanilla PCG **Get Actor Property** node to read a visible actor property named exactly `BakeSettings`. To integrate a custom actor with the bake system, expose an `FPCGUtilsBakeSettings` property with that name (for example, `UPROPERTY(EditAnywhere, BlueprintReadWrite) FPCGUtilsBakeSettings BakeSettings`). `APCGActorBase` already provides this property. Bake settings do not use a provider interface or a custom get-bake-settings element.
 
 ## Native general-purpose PCG nodes
 
@@ -76,7 +79,6 @@ The core module defines Blueprint-compatible interfaces that decouple PCG nodes 
 - **Get PCG Spline Data** — retrieves PCG spline components with their standardized settings.
 - **Get Shape Path Data** and **Get Spline Data With Overrides** — compatibility nodes for the specialized path component workflows.
 - **Get Static Mesh Data** — emits one point-data collection per matching static-mesh component.
-- **Get Actor Bake Settings** — reads standardized bake settings through the provider interface using preconfigured node variants.
 - **Get Override Graph Sets** — routes data according to serialized override-graph metadata.
 
 The component-query workflow is shown below:

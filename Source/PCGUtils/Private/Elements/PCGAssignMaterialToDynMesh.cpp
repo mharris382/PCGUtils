@@ -28,6 +28,11 @@ FText UPCGAssignMaterialToDynMeshSettings::GetNodeTooltipText() const
 	return NSLOCTEXT("PCGUtils", "AssignMaterialToDynMesh_Tooltip",
 		"Assigns material slot to dynamic mesh input.");
 }
+
+FLinearColor UPCGAssignMaterialToDynMeshSettings::GetNodeTitleColor() const
+{
+	return FColor::FromHex("856BCB");
+}
 #endif // WITH_EDITOR
 
 // ── Settings ──────────────────────────────────────────────────────────────────
