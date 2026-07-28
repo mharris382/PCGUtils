@@ -118,6 +118,7 @@ class PCGUTILS_API UPCGApplyPointsToDynamicMeshSettings : public UPCGDynamicMesh
 public:
 #if WITH_EDITOR
 	virtual FName GetDefaultNodeName() const override { return FName(TEXT("ApplyPointsToDynamicMesh")); }
+	virtual FLinearColor GetNodeTitleColor() const override { return FLinearColor(0.413f, 0.25f ,1.0f, 1.0f);	}
 	virtual FText GetDefaultNodeTitle() const override
 	{
 		return NSLOCTEXT("PCGUtils", "ApplyPointsToDynMesh_Title", "Apply Points To Dynamic Mesh");

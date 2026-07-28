@@ -36,6 +36,11 @@
 			"Name": "PCGUtilsDataCache",
 			"Type": "Runtime",
 			"LoadingPhase": "Default"
+		},
+		{
+			"Name": "PCGUtilsMaterialCache",
+			"Type": "Runtime",
+			"LoadingPhase": "Default"
 		}
 	],
 	"Plugins": [

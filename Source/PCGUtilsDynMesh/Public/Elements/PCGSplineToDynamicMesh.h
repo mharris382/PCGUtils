@@ -20,6 +20,7 @@ public:
 	virtual FName GetDefaultNodeName() const override { return TEXT("SplineMeshToDynMesh"); }
 	virtual FText GetDefaultNodeTitle() const override;
 	virtual FText GetNodeTooltipText() const override;
+	virtual FLinearColor GetNodeTitleColor() const override { return FLinearColor(0.413f, 0.25f ,1.0f, 1.0f);	}
 #endif
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Spline Mesh", meta = (PCG_Overridable))

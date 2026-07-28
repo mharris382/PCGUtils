@@ -1,0 +1,1116 @@
+You are working inside my Unreal Engine 5.8 C++ plugin repository named PCGUtils.
+
+The repository either already contains, or is currently implementing, a module named:
+
+PCGUtilsMaterialCache
+
+That module contains a world-scoped material variant cache that resolves:
+
+Parent material + parameter configuration
+-> shared immutable UMaterialInterface
+
+Extend this module with a complementary actor-local material cache system.
+
+The local system should allow PCG and Blueprint code to automatically create, retain, retrieve, and reuse mutable UMaterialInstanceDynamic objects associated with specific actor components.
+
+The primary use case is gameplay-driven procedural content.
+
+Example:
+
+* A spline component authors a gunpowder trail through PCG.
+* PCG creates one mutable MID for that spline component.
+* Every generated point belonging to that spline receives the same local MID.
+* The spline component does not need to create the MID or manually pass it into PCG.
+* Gameplay later retrieves the MID associated with that spline component.
+* Gameplay modifies parameters such as BurnProgress, IgnitionPosition, or FireIntensity.
+* Other spline components have independent local MIDs and are unaffected.
+
+The system should support UActorComponent instances as logical material owners.
+
+The public API and PCG node should provide convenience paths that accept either:
+
+* A direct UActorComponent reference
+* A component soft object path
+* A component-derived name/key
+
+Callers should not be required to manually convert:
+
+Component -> Soft Object Path -> Name
+
+before resolving or retrieving a material.
+
+Likewise, a PCG graph should be able to provide a soft-object-path metadata attribute referencing a component, and the material node should resolve that component and derive the appropriate local owner key internally.
+
+IMPORTANT WORKING INSTRUCTIONS
+
+Before changing code:
+
+1. Inspect the current PCGUtilsMaterialCache implementation.
+2. Inspect the module’s request structs, canonical keys, subsystem, Blueprint library, PCG nodes, tests, and logging.
+3. Inspect existing PCGUtils conventions for:
+
+   * Actor components
+   * PCG selectors and metadata accessors
+   * Object and soft-object metadata
+   * Component lookup
+   * Game-thread handoff
+   * Automated tests
+4. Inspect Unreal Engine 5.8 source whenever an API is uncertain.
+5. Do not invent Unreal APIs.
+6. Do not duplicate request canonicalization or parameter-application logic that already exists in the global cache.
+7. Reuse the existing material request and initialization code wherever practical.
+8. Keep the global immutable cache and local mutable cache conceptually separate.
+9. Do not modify unrelated modules unless required for registration or compilation.
+10. Provide a concise implementation plan before editing.
+
+CORE ARCHITECTURE
+
+The module should contain two complementary material authorities.
+
+GLOBAL MATERIAL VARIANT CACHE
+
+World-scoped.
+
+Canonical material request
+-> shared immutable UMaterialInterface
+
+Properties:
+
+* Content-addressed
+* Shared across callers in one world
+* Must not be mutated after resolution
+* Returned as UMaterialInterface*
+
+LOCAL MATERIAL CACHE COMPONENT
+
+Actor-scoped.
+
+Owner component identity + binding name + optional variant name
+-> locally owned mutable UMaterialInstanceDynamic
+
+Properties:
+
+* Owned by an actor-local cache component
+* Mutable for gameplay
+* Reused across PCG regeneration when appropriate
+* Returned as UMaterialInstanceDynamic*
+* Lifetime follows the actor and cache component
+
+Do not store mutable local MIDs inside the global content-addressed cache.
+
+Once gameplay mutates a local MID, its current values no longer correspond to the canonical initialization request. The canonical request should only represent how the local MID was initially created.
+
+1. LOCAL MATERIAL CACHE COMPONENT
+
+Create an actor component similar to:
+
+UCLASS(
+ClassGroup = "PCGUtils",
+meta = (BlueprintSpawnableComponent))
+class PCGUTILSMATERIALCACHE_API UPCGUtilsLocalMaterialCacheComponent
+: public UActorComponent
+{
+GENERATED_BODY()
+};
+
+A suitable alternative name is acceptable if it better matches existing module conventions.
+
+The component should:
+
+* Be attachable to any actor.
+* Own transient mutable UMaterialInstanceDynamic objects.
+* Support materials associated with sibling actor components.
+* Allow gameplay code to retrieve materials using direct component references.
+* Allow PCG to resolve materials using component object or soft-object metadata.
+* Release its strong references when removed or destroyed.
+* Never serialize generated MIDs into actor or map packages.
+
+Do not automatically add this component to actors in V1.
+
+Actors that require local material ownership should explicitly contain the cache component.
+
+2. LOCAL MATERIAL BINDING KEY
+
+A local material should be addressed by:
+
+Owner component + binding name + optional variant name
+
+Conceptually:
+
+struct FPCGUtilsLocalMaterialBindingKey
+{
+FName OwnerComponentKey;
+FName BindingName;
+FName VariantName;
+};
+
+The exact internal structure may differ.
+
+Requirements:
+
+* The key must be deterministic within the owning actor.
+* Different sibling components must not collide.
+* Different bindings on one component must not collide.
+* Different variants under one binding must not collide.
+* NAME_None should be valid for the optional variant.
+* The key should be usable efficiently in a TMap.
+* Hash equality and structural equality must agree.
+
+Because the cache component is actor-local, the owning component’s FName may be sufficient as the internal owner key when the component belongs to the same actor.
+
+However, inspect the actual ownership scenarios and Unreal object-path behavior before finalizing this.
+
+If external components belonging to another actor are supported, the key must include enough path or actor identity information to remain unambiguous.
+
+Do not assume that GetFName() alone is globally unique.
+
+3. COMPONENT IDENTITY CONVERSION HELPERS
+
+Implement centralized helpers that derive the local owner key from:
+
+* UActorComponent*
+* FSoftObjectPath
+* TSoftObjectPtr<UActorComponent>, if useful
+* UObject*, when it can validly resolve to an actor component
+
+Suggested utility functions:
+
+static bool TryGetComponentOwnerKey(
+const UActorComponent* Component,
+FName& OutOwnerKey);
+
+static bool TryGetComponentOwnerKey(
+const FSoftObjectPath& ComponentPath,
+FName& OutOwnerKey);
+
+static bool TryResolveComponent(
+const FSoftObjectPath& ComponentPath,
+UActorComponent*& OutComponent);
+
+The exact names may follow repository conventions.
+
+These helpers must be shared by:
+
+* The local cache component
+* The Blueprint function library
+* The PCG node
+* Tests
+
+Do not reimplement component-path parsing independently in multiple places.
+
+DIRECT COMPONENT CONVERSION
+
+For a direct component reference:
+
+* Validate that the component is non-null.
+* Validate its relationship to the local cache component’s actor.
+* Derive the correct internal owner key.
+* Prefer the actual component FName when actor-local uniqueness is sufficient.
+* Produce a useful error when the component cannot be used.
+
+SOFT-PATH CONVERSION
+
+For a component soft object path:
+
+1. Resolve the path to a UObject.
+2. Confirm that the resolved object is a UActorComponent.
+3. Confirm that it belongs to the expected actor when resolving against a local cache component.
+4. Derive the same internal owner key that would be produced from a direct component reference.
+
+Do not create a different key merely because one caller supplied a direct component and another supplied a soft path.
+
+These should resolve to the same local material:
+
+ResolveLocalMaterialForComponent(
+SplineComponent,
+"GunpowderTrail",
+Request);
+
+and:
+
+ResolveLocalMaterialForComponentPath(
+SplineComponentSoftPath,
+"GunpowderTrail",
+Request);
+
+Investigate Unreal Engine 5.8 component soft-object-path behavior carefully.
+
+Component paths commonly involve actor subobject paths, and not every transient or dynamically created component necessarily has a persistent resolvable path.
+
+Do not claim all components can be reliably represented as persistent soft paths unless verified.
+
+For unsupported transient component paths, fail with a clear diagnostic and recommend using the direct component-reference API.
+
+4. OPTIONAL PUBLIC COMPONENT-PATH HELPERS
+
+Expose Blueprint-callable convenience functions for converting component identity.
+
+Suggested functions:
+
+Get Component Soft Object Path
+
+Inputs:
+
+* UActorComponent* Component
+
+Output:
+
+* FSoftObjectPath
+
+Get Component Owner Key
+
+Inputs:
+
+* UActorComponent* Component
+
+Output:
+
+* FName OwnerKey
+* bool bSuccess
+
+Resolve Component From Soft Object Path
+
+Inputs:
+
+* UObject* WorldContextObject
+* FSoftObjectPath ComponentPath
+
+Output:
+
+* UActorComponent* Component
+* bool bSuccess
+
+Get Component Owner Key From Soft Object Path
+
+Inputs:
+
+* UObject* WorldContextObject
+* FSoftObjectPath ComponentPath
+
+Output:
+
+* FName OwnerKey
+* bool bSuccess
+
+Only expose helpers that are valid and useful with actual Unreal Engine 5.8 APIs.
+
+Document that the owner-key name is intended for this local cache system and is not a globally unique component identifier.
+
+5. LOCAL CACHE ENTRY
+
+Each local material entry should retain:
+
+* The mutable MID
+* The canonical initialization key
+* The owning component key
+* Binding name
+* Optional variant name
+* Optionally, a weak direct component reference for diagnostics
+
+Conceptually:
+
+struct FPCGUtilsLocalMaterialEntry
+{
+TObjectPtr<UMaterialInstanceDynamic> Material;
+FPCGUtilsMaterialVariantKey InitializationKey;
+TWeakObjectPtr<UActorComponent> OwnerComponent;
+};
+
+The cache component must hold MIDs using garbage-collection-visible references.
+
+If the key or entry cannot be reflected cleanly by UHT, use an appropriate combination such as:
+
+* Non-reflected key-to-index map
+* Reflected transient array of entries or MIDs
+
+Do not leave the MIDs referenced only by raw pointers.
+
+6. LOCAL MATERIAL RESOLUTION
+
+Implement a local resolution API similar to:
+
+UMaterialInstanceDynamic* ResolveLocalMaterial(
+UActorComponent* OwnerComponent,
+FName BindingName,
+FName VariantName,
+const FPCGUtilsMaterialVariantRequest& InitialConfiguration);
+
+The VariantName argument may default to NAME_None.
+
+Resolution behavior:
+
+1. Validate the owner component.
+2. Validate that it belongs to the local cache component’s actor, unless external ownership is intentionally supported.
+3. Derive the owner-component key.
+4. Build the local binding key.
+5. Validate and canonicalize the initialization material request.
+6. Search for an existing local entry.
+7. If no entry exists:
+
+   * Create a unique MID.
+   * Apply the initialization parameters.
+   * Store the MID and initialization key.
+   * Return the MID.
+8. If an entry exists and its initialization key matches:
+
+   * Return the existing MID.
+   * Do not reapply initialization values.
+   * Preserve gameplay-modified parameter values.
+9. If an entry exists but the initialization key changed:
+
+   * Create a replacement MID.
+   * Apply the new initialization configuration.
+   * Replace the entry.
+   * Return the replacement MID.
+10. Never add the local MID to the global shared cache.
+
+The component should reuse the existing canonical material request logic and parameter-application logic from the global cache.
+
+Do not mutate an existing MID to force it to match a changed authoring configuration. Create a replacement so stale gameplay state does not mix unpredictably with a new base configuration.
+
+7. SOFT-PATH LOCAL RESOLUTION CONVENIENCE API
+
+Implement a convenience overload similar to:
+
+UMaterialInstanceDynamic* ResolveLocalMaterialFromComponentPath(
+const FSoftObjectPath& OwnerComponentPath,
+FName BindingName,
+FName VariantName,
+const FPCGUtilsMaterialVariantRequest& InitialConfiguration);
+
+This function should internally:
+
+1. Resolve the path.
+2. Validate UActorComponent type.
+3. Validate actor ownership.
+4. Derive the owner key.
+5. Call the same internal local resolution implementation used by the direct component overload.
+
+Do not require callers to explicitly execute:
+
+Soft path -> component -> FName -> local material
+
+The function should perform that conversion internally.
+
+8. LOCAL MATERIAL RETRIEVAL API
+
+Provide direct-component retrieval:
+
+UMaterialInstanceDynamic* GetLocalMaterial(
+const UActorComponent* OwnerComponent,
+FName BindingName,
+FName VariantName = NAME_None) const;
+
+Provide soft-path retrieval:
+
+UMaterialInstanceDynamic* GetLocalMaterialFromComponentPath(
+const FSoftObjectPath& OwnerComponentPath,
+FName BindingName,
+FName VariantName = NAME_None) const;
+
+Provide name-based retrieval:
+
+UMaterialInstanceDynamic* GetLocalMaterialByOwnerKey(
+FName OwnerComponentKey,
+FName BindingName,
+FName VariantName = NAME_None) const;
+
+The direct component and soft-path versions must internally convert to the same owner key used by the name-based lookup.
+
+Also expose collection functions where useful:
+
+TArray<UMaterialInstanceDynamic*> GetLocalMaterialsForComponent(
+const UActorComponent* OwnerComponent) const;
+
+TArray<UMaterialInstanceDynamic*> GetLocalMaterialsForComponentPath(
+const FSoftObjectPath& OwnerComponentPath) const;
+
+TArray<UMaterialInstanceDynamic*> GetLocalMaterialsForOwnerKey(
+FName OwnerComponentKey) const;
+
+TArray<UMaterialInstanceDynamic*> GetAllLocalMaterials() const;
+
+Do not make callers manually retrieve an owner name merely to call the common case.
+
+The name-based functions remain useful for systems that already store the derived component key.
+
+9. REMOVAL AND CLEARING API
+
+Expose:
+
+bool RemoveLocalMaterial(
+const UActorComponent* OwnerComponent,
+FName BindingName,
+FName VariantName = NAME_None);
+
+bool RemoveLocalMaterialFromComponentPath(
+const FSoftObjectPath& OwnerComponentPath,
+FName BindingName,
+FName VariantName = NAME_None);
+
+int32 RemoveAllLocalMaterialsForComponent(
+const UActorComponent* OwnerComponent);
+
+int32 RemoveAllLocalMaterialsForComponentPath(
+const FSoftObjectPath& OwnerComponentPath);
+
+int32 RemoveAllLocalMaterialsForOwnerKey(
+FName OwnerComponentKey);
+
+void ClearAllLocalMaterials();
+
+Removing a local entry should release the cache component’s strong reference.
+
+It does not need to forcibly destroy a MID that is still referenced elsewhere.
+
+10. BLUEPRINT API
+
+Expose the common direct-reference functions to Blueprint.
+
+Suggested Blueprint-facing functions on the component:
+
+Resolve Local Material for Component
+
+Inputs:
+
+* Owner Component
+* Binding Name
+* Variant Name
+* Initial Material Request
+
+Output:
+
+* Dynamic Material Instance
+* Success or result information
+
+Resolve Local Material from Component Path
+
+Inputs:
+
+* Component Soft Object Path
+* Binding Name
+* Variant Name
+* Initial Material Request
+
+Output:
+
+* Dynamic Material Instance
+* Success or result information
+
+Get Local Material for Component
+
+Get Local Material from Component Path
+
+Get Local Material by Owner Key
+
+Get All Local Materials for Component
+
+Remove Local Material for Component
+
+Clear Local Materials for Component
+
+Use sensible DisplayName and Category metadata.
+
+Suggested category:
+
+PCGUtils|Material Cache|Local
+
+Document clearly:
+
+* Local materials are mutable.
+* Local materials belong to this cache component.
+* Re-resolving the same component, binding, variant, and initialization request returns the same MID.
+* Runtime parameter changes are preserved when the initialization request remains unchanged.
+* A changed initialization request replaces the MID.
+
+11. FINDING THE LOCAL CACHE COMPONENT
+
+Provide convenience helpers for finding the appropriate local cache component from:
+
+* AActor*
+* UActorComponent*
+* UObject*
+
+Suggested behavior:
+
+If the context is UPCGUtilsLocalMaterialCacheComponent:
+use it directly.
+
+If the context is UActorComponent:
+search its owning actor.
+
+If the context is AActor:
+search that actor.
+
+If no cache component exists:
+return null and report a useful diagnostic.
+
+Do not silently create a new component in V1.
+
+If multiple local material cache components exist on one actor, do not silently select an arbitrary one.
+
+Support one of these strategies:
+
+* Give cache components an optional CacheName and resolve by name.
+* Require a direct cache-component reference.
+* Warn or fail when multiple unnamed caches exist.
+
+Preferred approach:
+
+UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Material Cache")
+FName CacheName = NAME_None;
+
+Resolution rules:
+
+* If a direct cache component is provided, use it.
+* If an actor has exactly one cache component and no cache name is requested, use it.
+* If an actor has multiple cache components, require CacheName.
+* If CacheName is supplied, require exactly one matching cache component.
+* Report duplicates or missing matches.
+
+12. PCG NODE INTEGRATION
+
+Extend the existing Resolve Material Variants PCG node, or create a closely related node if that produces a cleaner design.
+
+The node should support at least:
+
+UENUM(BlueprintType)
+enum class EPCGUtilsMaterialCacheScope : uint8
+{
+GlobalShared,
+LocalComponent
+};
+
+GLOBAL SHARED MODE
+
+Continue using the world subsystem:
+
+Canonical request
+-> shared immutable UMaterialInterface
+
+LOCAL COMPONENT MODE
+
+Resolve:
+
+Owner component + binding name + optional variant name
+-> local mutable UMaterialInstanceDynamic
+
+The local mode should use an actor-local UPCGUtilsLocalMaterialCacheComponent.
+
+13. PCG LOCAL OWNER SOURCE
+
+Expose a PCG selector for the owner component.
+
+Suggested setting:
+
+FPCGAttributePropertyInputSelector OwnerComponentSource;
+
+The selector should accept compatible metadata forms, including where supported:
+
+* UActorComponent object references
+* UObject references resolving to UActorComponent
+* TSoftObjectPtr<UActorComponent>
+* FSoftObjectPath
+* PCG soft-object metadata representing a component
+
+The node must normalize all supported representations to a UActorComponent and then to the local owner key internally.
+
+Do not require the PCG graph author to insert a separate:
+
+Soft path -> component name
+
+conversion node.
+
+The material node should handle this conversion as part of local resolution.
+
+Example point metadata:
+
+@Points.MaterialOwner = /Game/Maps/TestMap.TestMap:PersistentLevel.BP_Trail_1.SplineComponent
+
+Node settings:
+
+Cache Scope: Local Component
+Owner Component Source: @Points.MaterialOwner
+Cache Name: TrailMaterials
+Binding Name: GunpowderTrail
+Variant Name Source: optional
+
+The node should:
+
+1. Read the owner attribute.
+2. Detect whether the value is a direct object or soft-object representation.
+3. Resolve it to UActorComponent.
+4. Find the local cache component on the owning actor.
+5. Derive the owner component key.
+6. Resolve the local material.
+7. Assign the resulting MID to the output material attribute.
+
+Use the actual UE 5.8 metadata accessor and type-conversion APIs.
+
+Do not infer unsupported implicit conversions.
+
+14. PCG BINDING NAME AND VARIANT NAME
+
+Expose:
+
+FName BindingName;
+
+and optionally:
+
+FPCGAttributePropertyInputSelector VariantNameSource;
+
+The binding name may be a constant node setting in V1.
+
+The optional variant name may come from:
+
+* A constant FName
+* A PCG metadata selector, if existing node patterns make this clean
+
+The effective local binding is:
+
+Owner component key + BindingName + VariantName
+
+Example:
+
+Spline_A + GunpowderTrail + Default
+Spline_B + GunpowderTrail + Default
+Spline_A + IgnitionGlow + Default
+Spline_A + GunpowderTrail + Wet
+
+15. PCG LOCAL GROUPING
+
+The PCG node should deduplicate local requests before resolving them.
+
+For local mode, group by:
+
+Local cache component
+
+* owner component key
+* binding name
+* variant name
+* canonical initialization request
+
+The registry lookup identity is:
+
+Local cache component
+
+* owner component key
+* binding name
+* variant name
+
+The canonical initialization request is compared against the existing entry to decide whether the MID can be reused.
+
+For N points and K unique local bindings:
+
+Extract and normalize owners: O(N)
+Group local requests: O(N)
+Resolve local materials: O(K)
+Assign outputs: O(N)
+
+Do not resolve one local MID per point when many points belong to the same component binding.
+
+16. PCG BINDING CONFLICT VALIDATION
+
+Detect this conflict:
+
+Same cache component
+Same owner component
+Same binding name
+Same variant name
+Different initialization requests
+
+Example:
+
+SplineComponent_A
+Binding = GunpowderTrail
+Variant = Default
+Texture = T_Gunpowder_A
+
+and:
+
+SplineComponent_A
+Binding = GunpowderTrail
+Variant = Default
+Texture = T_Gunpowder_B
+
+These requests attempt to assign two incompatible initialization configurations to the same mutable local binding.
+
+Do not use nondeterministic last-request-wins behavior.
+
+Report an error similar to:
+
+Multiple material configurations attempted to claim the same local material binding. Use distinct Variant Names or ensure all points owned by this component use the same initialization configuration.
+
+Failed conflicting entries should receive null unless established PCGUtils conventions specify another safe behavior.
+
+17. PCG SOFT-PATH RESOLUTION AND THREADING
+
+Resolving soft object paths and creating MIDs involves UObject access.
+
+PCG may execute work off the game thread.
+
+Separate processing into safe phases.
+
+WORKER-COMPATIBLE PHASE
+
+* Read plain metadata where permitted.
+* Collect owner representations.
+* Collect soft paths.
+* Build plain material-request values.
+* Group raw requests where possible.
+
+GAME-THREAD PHASE
+
+* Resolve component soft object paths.
+* Validate component ownership.
+* Find local cache components.
+* Canonicalize any UObject-dependent asset values.
+* Resolve or create local MIDs.
+* Write UObject references into output metadata when required.
+
+Use the established UE 5.8 PCG game-thread handoff or context pause/resume pattern already used in the repository or engine source.
+
+Do not call ResolveObject, TryLoad, create MIDs, or mutate UObjects from an unsafe worker thread.
+
+Load each unique component or asset path at most once per execution where practical.
+
+18. SOFT-PATH FAILURE HANDLING
+
+Handle these cases explicitly:
+
+* Empty soft path
+* Unresolved soft path
+* Path resolves to non-component UObject
+* Component belongs to a different actor than the selected local cache
+* Component was destroyed
+* Transient component has no usable persistent soft path
+* Actor has no local material cache component
+* Multiple cache components exist and no CacheName resolves the ambiguity
+* Duplicate CacheName values
+* Component owner key cannot be derived
+* Binding name is NAME_None, if that is considered invalid
+* Conflicting initialization requests
+* Output material metadata cannot store the MID
+
+Errors should identify:
+
+* The input attribute
+* The soft path or object
+* The expected type
+* The affected binding name
+* The relevant point or data entry where practical
+
+Do not silently fall back to the global shared cache.
+
+A local material is expected to be mutable. Falling back to a shared immutable MID could create dangerous cross-owner mutations.
+
+19. PCG OUTPUT
+
+Continue using the existing material-object output mechanism established by PCGUtilsMaterialCache.
+
+The local mode output should contain the resolved UMaterialInstanceDynamic as a UMaterialInterface-compatible object value.
+
+Verify in UE 5.8 source and tests whether:
+
+* PCG object metadata can retain a live MID.
+* The built-in Static Mesh Spawner material override can consume it.
+* The spawner correctly groups points sharing the same local MID.
+* Different local MIDs produce separate material groups as expected.
+
+Do not convert a transient MID into a fake asset soft path.
+
+If the built-in Static Mesh Spawner cannot consume live MID object metadata, reuse or extend the existing custom integration created for the global material-cache feature.
+
+Document the verified consumption path.
+
+20. GAMEPLAY RETRIEVAL EXAMPLE
+
+The intended Blueprint or C++ workflow should be:
+
+Actor hierarchy:
+
+BP_GunpowderTrail
+SplineComponent
+PCGComponent
+PCGUtilsLocalMaterialCacheComponent
+
+PCG metadata:
+
+@Points.MaterialOwner = soft object path to SplineComponent
+
+PCG material node:
+
+Cache Scope: Local Component
+Owner Component Source: @Points.MaterialOwner
+Cache Name: TrailMaterials
+Binding Name: GunpowderTrail
+Output: @Points.ResolvedMaterial
+
+Gameplay retrieval using the direct component convenience API:
+
+UMaterialInstanceDynamic* TrailMaterial =
+LocalMaterialCache->GetLocalMaterial(
+SplineComponent,
+TEXT("GunpowderTrail"));
+
+Gameplay retrieval using the path convenience API:
+
+UMaterialInstanceDynamic* TrailMaterial =
+LocalMaterialCache->GetLocalMaterialFromComponentPath(
+SplineComponentPath,
+TEXT("GunpowderTrail"));
+
+Gameplay then updates:
+
+TrailMaterial->SetScalarParameterValue(
+TEXT("BurnProgress"),
+CurrentBurnProgress);
+
+The caller should not need to:
+
+* Create the MID
+* Pass the MID into PCG
+* Convert the component to a name manually
+* Convert a soft path to a component manually
+* Search through all generated materials manually
+
+21. INITIALIZATION PRESERVATION
+
+Preserve gameplay state across unrelated PCG regeneration.
+
+Example:
+
+Initial configuration:
+
+Parent = M_Gunpowder
+BaseTexture = T_Gunpowder
+BurnProgress = 0
+
+Gameplay changes:
+
+BurnProgress = 0.75
+
+PCG regenerates because the spline shape changed.
+
+If these remain unchanged:
+
+* Owner component
+* Cache component
+* Binding name
+* Variant name
+* Canonical initialization configuration
+
+then return the existing MID and preserve BurnProgress = 0.75.
+
+Do not reapply the initialization request merely because PCG executed again.
+
+If the author changes BaseTexture or ParentMaterial, the initialization key changes and the component should create a replacement MID.
+
+22. COMPONENT RENAMING AND RECONSTRUCTION
+
+Investigate behavior when:
+
+* A component is renamed in the editor.
+* A Blueprint construction script reconstructs components.
+* An actor is duplicated.
+* PIE creates world-specific copies.
+* PCG regenerates after component reconstruction.
+
+The local cache is transient, so persistent cross-session identity is not required.
+
+However, within a live actor instance, avoid retaining stale entries indefinitely when their weak component reference is no longer valid.
+
+Implement a cleanup function such as:
+
+int32 RemoveInvalidComponentEntries();
+
+Call it at safe, sensible times such as:
+
+* Before resolving a new local material
+* During explicit cache maintenance
+* During editor reconstruction hooks if appropriate and safe
+
+Do not overengineer global lifecycle tracking in V1.
+
+23. LOCAL CACHE STATISTICS
+
+Add local statistics including:
+
+* Number of local MIDs
+* Number of local bindings
+* Local cache hits
+* Local cache misses
+* Replacements caused by changed initialization requests
+* Failed component resolutions
+* Invalid entries removed
+* Counts grouped by owner component where practical
+
+Expose:
+
+Get Local Material Cache Statistics
+
+Dump Local Material Cache
+
+Include:
+
+* Owner component key
+* Binding name
+* Variant name
+* Parent material
+* Whether the component reference is still valid
+
+Avoid logging excessively during normal PCG execution.
+
+24. AUTOMATED TESTS
+
+Add tests for the following where practical.
+
+COMPONENT KEY CONVERSION
+
+* Direct component produces a valid owner key.
+* The same component path produces the same owner key.
+* Two sibling components produce different owner keys.
+* Null component fails.
+* Non-component path fails.
+* Unresolved path fails.
+* Component on the wrong actor fails when actor-local ownership is required.
+* Direct and soft-path overloads resolve the same cache entry.
+
+LOCAL CACHE RESOLUTION
+
+* First local request creates a MID.
+* Repeated identical request returns the same MID.
+* Different owner components receive different MIDs.
+* Different binding names receive different MIDs.
+* Different variant names receive different MIDs.
+* Global and local resolution do not share the same MID.
+* Local MIDs remain mutable.
+* Mutating one component’s MID does not affect another component’s MID.
+
+INITIALIZATION BEHAVIOR
+
+* Same initialization key preserves the existing MID.
+* Gameplay-modified values are not reset on repeated resolution.
+* Changed initialization key creates a replacement MID.
+* Failed parameter application does not create a local entry.
+* Conflicting claims for one binding are rejected.
+
+REMOVAL
+
+* Removing one binding leaves unrelated bindings intact.
+* Removing all entries for one component leaves other components intact.
+* Clearing the component releases all local cache references.
+* Invalid weak-component entries can be removed.
+
+PCG
+
+* A direct component object attribute resolves correctly.
+* A component soft-path attribute resolves correctly.
+* Direct object and soft path group into the same local owner.
+* Multiple points belonging to one component use one MID.
+* Two components receive separate MIDs.
+* Conflicting requests for one binding report an error.
+* Missing local cache component does not fall back globally.
+* Soft-path conversion does not require a separate PCG conversion node.
+
+25. DOCUMENTATION
+
+Add concise documentation explaining:
+
+* Difference between the global and local caches
+* Why global results are immutable
+* Why local results are mutable
+* How component ownership works
+* Direct component retrieval
+* Component soft-path retrieval
+* Name-based retrieval
+* Limits of component soft paths for transient components
+* PCG owner-selector behavior
+* Binding and variant names
+* Initialization preservation
+* Replacement behavior
+* Missing-cache and conflict behavior
+* Verified Static Mesh Spawner compatibility
+
+Include the gunpowder spline example.
+
+26. BUILD AND PACKAGING
+
+Ensure:
+
+* The local cache component is available in packaged builds.
+* The implementation has no unnecessary UnrealEd dependency.
+* Editor-specific code is guarded appropriately.
+* Generated MIDs remain transient.
+* Component soft-path support compiles outside the editor.
+* Tests are conditionally compiled using existing repository conventions.
+* The module compiles for Unreal Engine 5.8 editor and non-editor targets.
+
+27. IMPLEMENTATION PROCESS
+
+Implement this in stages.
+
+STAGE 1: INVESTIGATION
+
+Before editing:
+
+* Summarize the existing global cache architecture.
+* Identify reusable request, key, and parameter-application code.
+* Verify UE 5.8 component soft-object-path behavior.
+* Verify PCG object and soft-object metadata APIs.
+* Verify game-thread requirements.
+* Explain the chosen internal component owner key.
+* State whether local owners are restricted to sibling components on the cache component’s actor.
+
+STAGE 2: LOCAL CACHE CORE
+
+Implement:
+
+* Local material cache actor component
+* Binding key
+* Local entry storage
+* Component identity helpers
+* Direct component resolve and retrieval
+* Soft-path resolve and retrieval
+* Name-based retrieval
+* Removal and cleanup
+* Blueprint API
+* Statistics
+* Core tests
+
+Compile before continuing.
+
+STAGE 3: PCG INTEGRATION
+
+Implement:
+
+* Global versus local cache scope
+* Owner component selector
+* Direct object input
+* Soft-object-path input
+* Cache component discovery
+* CacheName handling
+* Local grouping
+* Conflict validation
+* Safe game-thread resolution
+* MID object output
+* PCG tests
+
+Compile again.
+
+STAGE 4: VERIFICATION
+
+At the end:
+
+1. List every file created or modified.
+2. Explain the final architecture.
+3. State the internal component owner-key strategy.
+4. Report whether direct component and soft-path calls resolve the same entry.
+5. Report whether the module compiled.
+6. Report test results.
+7. Confirm whether built-in Static Mesh Spawner consumption was verified.
+8. Document unsupported component soft-path cases.
+9. Identify unresolved limitations.
+10. Do not claim behavior that was not verified.
+
+Do not stop after producing pseudocode. Implement the feature in the repository.

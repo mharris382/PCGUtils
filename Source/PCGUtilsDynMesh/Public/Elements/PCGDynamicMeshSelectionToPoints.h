@@ -16,6 +16,7 @@ public:
 	virtual FName GetDefaultNodeName() const override { return TEXT("DynamicMeshSelectionToPoints"); }
 	virtual FText GetDefaultNodeTitle() const override;
 	virtual FText GetNodeTooltipText() const override;
+	virtual FLinearColor GetNodeTitleColor() const override { return FLinearColor(0.413f, 0.25f ,1.0f, 1.0f);	}
 #endif
 
 	/** Transform mesh-local vertex positions and normals into the PCG target actor's world space. */
