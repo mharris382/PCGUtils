@@ -2,15 +2,50 @@
 
 #include "PCGUtilsDynMesh.h"
 
+#if WITH_EDITOR
+#include "PCGModule.h"
+#include "Data/Registry/PCGDataTypeRegistry.h"
+#include "Data/PCGDynamicMeshSelectionData.h"
+#include "Misc/CoreDelegates.h"
+#endif
+
 #define LOCTEXT_NAMESPACE "FPCGUtilsDynMeshModule"
 
 void FPCGUtilsDynMeshModule::StartupModule()
 {
+#if WITH_EDITOR
+	RegisterPinColors();
+
+	// The registry lives in the PCG module; register cleanup on PreExit (as PCGEditor does)
+	// rather than in ShutdownModule, since module shutdown order is not guaranteed here.
+	FCoreDelegates::OnPreExit.AddRaw(this, &FPCGUtilsDynMeshModule::OnPreExit);
+#endif
 }
 
 void FPCGUtilsDynMeshModule::ShutdownModule()
 {
+#if WITH_EDITOR
+	FCoreDelegates::OnPreExit.RemoveAll(this);
+#endif
 }
+
+#if WITH_EDITOR
+void FPCGUtilsDynMeshModule::RegisterPinColors()
+{
+	// A soft, desaturated gold-yellow evoking Blender's selected-element highlight color,
+	// without the harsher fully-saturated brightness of Blender's actual selection yellow.
+	static const FLinearColor DynamicMeshSelectionPinColor(0.85f, 0.68f, 0.15f, 1.0f);
+
+	FPCGModule::GetMutableDataTypeRegistry().RegisterPinColorFunction(
+		FPCGDataTypeInfoDynamicMeshSelection::AsId(),
+		[](const FPCGDataTypeIdentifier&) { return DynamicMeshSelectionPinColor; });
+}
+
+void FPCGUtilsDynMeshModule::OnPreExit()
+{
+	FPCGModule::GetMutableDataTypeRegistry().UnregisterPinColorFunction(FPCGDataTypeInfoDynamicMeshSelection::AsId());
+}
+#endif
 
 #undef LOCTEXT_NAMESPACE
 
