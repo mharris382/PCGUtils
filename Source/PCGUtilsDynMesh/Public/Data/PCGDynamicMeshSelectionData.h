@@ -18,7 +18,7 @@ struct FPCGDataTypeInfoDynamicMeshSelection : public FPCGDataTypeInfo
 	PCG_DECLARE_TYPE_INFO(PCGUTILSDYNMESH_API);
 };
 
-/** A triangle-face selection tied to the exact PCG Dynamic Mesh on which it was evaluated. */
+/** A geometry selection tied to the exact PCG Dynamic Mesh on which it was evaluated. */
 UCLASS(BlueprintType)
 class PCGUTILSDYNMESH_API UPCGDynamicMeshSelectionData : public UPCGData
 {

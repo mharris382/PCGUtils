@@ -10,7 +10,6 @@ void UPCGDynamicMeshSelectionData::Initialize(
 	const UPCGDynamicMeshData* InSourceMesh,
 	UE::Geometry::FGeometrySelection InSelection)
 {
-	check(InSelection.ElementType == UE::Geometry::EGeometryElementType::Face);
 	check(InSelection.TopologyType == UE::Geometry::EGeometryTopologyType::Triangle);
 	SourceMeshData = const_cast<UPCGDynamicMeshData*>(InSourceMesh);
 	Selection = MoveTemp(InSelection);

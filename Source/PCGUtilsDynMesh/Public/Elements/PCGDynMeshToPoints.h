@@ -45,6 +45,14 @@ public:
 	UPROPERTY(BlueprintReadWrite, EditAnywhere, Category = "Settings", meta = (PCG_Overridable))
 	bool bOutputToWorldSpace = false;
 
+	/** Add the source dynamic-mesh vertex ID to every generated point. */
+	UPROPERTY(BlueprintReadWrite, EditAnywhere, Category = "Settings", meta = (PCG_Overridable))
+	bool bOutputVertexIndex = false;
+
+	/** Attribute that receives the source dynamic-mesh vertex ID. */
+	UPROPERTY(BlueprintReadWrite, EditAnywhere, Category = "Settings", meta = (PCG_Overridable, EditCondition = "bOutputVertexIndex"))
+	FName VertexIndexAttribute = TEXT("VertexIndex");
+
 protected:
 	virtual FPCGElementPtr CreateElement() const override;
 };

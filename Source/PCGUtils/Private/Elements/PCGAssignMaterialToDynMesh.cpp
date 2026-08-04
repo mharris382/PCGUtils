@@ -178,14 +178,8 @@ bool FPCGAssignMaterialToDynMeshElement::ExecuteInternal(FPCGContext* InContext)
 			const FVector3d V2 = RawMesh->GetVertex(Tri.C);
 
 			FVector3d Normal = (V1 - V0).Cross(V2 - V0);
-
-			if (!Normal.Normalize())
-			{
-				// Degenerate triangle — classify as sloped to be safe
-				MaterialIDs->SetValue(TriID, 1);
-				++SlopedCount;
-				continue;
-			}
+			
+			
 			MaterialIDs->SetValue(TriID, 0);
 			//const double Dot = FMath::Abs(Normal.Dot(WorldUp));
 //

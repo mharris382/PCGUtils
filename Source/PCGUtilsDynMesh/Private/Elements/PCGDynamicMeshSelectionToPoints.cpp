@@ -93,25 +93,38 @@ bool FPCGDynamicMeshSelectionToPointsElement::ExecuteInternal(FPCGContext* Conte
 		}
 
 		TSet<int32> SelectedVertexSet;
-		int32 InvalidTriangleCount = 0;
+		int32 InvalidElementCount = 0;
 		for (uint64 EncodedID : SelectionData->GetSelection().Selection)
 		{
-			const int32 TriangleID = static_cast<int32>(UE::Geometry::FGeoSelectionID(EncodedID).GeometryID);
-			if (!Mesh->IsTriangle(TriangleID))
+			const int32 GeometryID = static_cast<int32>(UE::Geometry::FGeoSelectionID(EncodedID).GeometryID);
+			if (SelectionData->GetSelection().ElementType == UE::Geometry::EGeometryElementType::Vertex)
 			{
-				++InvalidTriangleCount;
-				continue;
+				if (Mesh->IsVertex(GeometryID))
+				{
+					SelectedVertexSet.Add(GeometryID);
+				}
+				else
+				{
+					++InvalidElementCount;
+				}
 			}
-			const UE::Geometry::FIndex3i Triangle = Mesh->GetTriangle(TriangleID);
-			SelectedVertexSet.Add(Triangle.A);
-			SelectedVertexSet.Add(Triangle.B);
-			SelectedVertexSet.Add(Triangle.C);
+			else if (Mesh->IsTriangle(GeometryID))
+			{
+				const UE::Geometry::FIndex3i Triangle = Mesh->GetTriangle(GeometryID);
+				SelectedVertexSet.Add(Triangle.A);
+				SelectedVertexSet.Add(Triangle.B);
+				SelectedVertexSet.Add(Triangle.C);
+			}
+			else
+			{
+				++InvalidElementCount;
+			}
 		}
-		if (InvalidTriangleCount > 0)
+		if (InvalidElementCount > 0)
 		{
 			PCGLog::LogWarningOnGraph(FText::Format(
-				LOCTEXT("InvalidTriangles", "Dynamic Mesh Selection To Points ignored {0} invalid or stale triangle IDs."),
-				FText::AsNumber(InvalidTriangleCount)), Context);
+				LOCTEXT("InvalidElements", "Dynamic Mesh Selection To Points ignored {0} invalid or stale selection IDs."),
+				FText::AsNumber(InvalidElementCount)), Context);
 		}
 
 		TArray<int32> SelectedVertices = SelectedVertexSet.Array();

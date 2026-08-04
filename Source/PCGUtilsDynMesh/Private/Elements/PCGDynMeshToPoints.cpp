@@ -4,6 +4,7 @@
 #include "Data/PCGDynamicMeshData.h"
 #include "Data/PCGPointData.h"
 #include "Data/PCGPointArrayData.h"
+#include "Metadata/PCGMetadata.h"
 #include "UDynamicMesh.h"
 #include "DynamicMesh/DynamicMesh3.h"
 #include "DynamicMesh/DynamicMeshAttributeSet.h"
@@ -184,6 +185,32 @@ bool FPCGDynMeshToPointsElement::ExecuteInternal(FPCGContext* InContext) const
 			PointIndices.Add(i);
 		}
 		PointArrayData->SetPointsFrom(PointData, PointIndices);
+
+		if (Settings->bOutputVertexIndex)
+		{
+			if (Settings->VertexIndexAttribute.IsNone())
+			{
+				PCGLog::LogWarningOnGraph(LOCTEXT("EmptyVertexIndexAttribute", "DynMeshToPoints cannot output an unnamed Vertex Index attribute."), InContext);
+			}
+			else if (UPCGMetadata* Metadata = PointArrayData->MutableMetadata())
+			{
+				FPCGMetadataDomain* ElementsDomain = Metadata->GetMetadataDomain(PCGMetadataDomainID::Elements);
+				FPCGMetadataAttribute<int32>* VertexIndexAttribute = ElementsDomain
+					? ElementsDomain->FindOrCreateAttribute<int32>(Settings->VertexIndexAttribute, INDEX_NONE, false, true)
+					: nullptr;
+				if (VertexIndexAttribute)
+				{
+					auto MetadataEntries = PointArrayData->GetMetadataEntryValueRange();
+					int32 PointIndex = 0;
+					for (const int32 VID : Mesh->VertexIndicesItr())
+					{
+						ElementsDomain->InitializeOnSet(MetadataEntries[PointIndex]);
+						VertexIndexAttribute->SetValue(MetadataEntries[PointIndex], VID);
+						++PointIndex;
+					}
+				}
+			}
+		}
 
 		FPCGTaggedData& Output = InContext->OutputData.TaggedData.Emplace_GetRef(Input);
 		Output.Data = PointArrayData;
