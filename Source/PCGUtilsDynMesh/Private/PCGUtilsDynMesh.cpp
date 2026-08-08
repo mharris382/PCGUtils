@@ -11,6 +11,8 @@
 
 #define LOCTEXT_NAMESPACE "FPCGUtilsDynMeshModule"
 
+DEFINE_LOG_CATEGORY(LogPCGUtilsDynMesh);
+
 void FPCGUtilsDynMeshModule::StartupModule()
 {
 #if WITH_EDITOR
