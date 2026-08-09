@@ -15,20 +15,11 @@ enum class EPCGRemeshMode : uint8
 	Adaptive
 };
 
-UENUM(BlueprintType)
-enum class EPCGRemeshInputMode : uint8
-{
-	/** Remeshes the entire input Dynamic Mesh. */
-	DynamicMesh,
-	/** Remeshes only the region described by an input Mesh Selection; the rest of the source mesh is preserved exactly and the region is welded back in. */
-	MeshSelection
-};
-
 /**
- * Applies Geometry Script Uniform or Adaptive remeshing, either to an entire Dynamic Mesh or to only the
- * triangle region described by a PCGUtilsDynMesh Mesh Selection. In Mesh Selection mode, the selected region is
- * extracted, remeshed with its outer boundary held fixed, and welded back into the untouched remainder of the
- * source mesh.
+ * Applies Geometry Script Uniform or Adaptive remeshing to Dynamic Mesh data. The Mesh input pin accepts either a
+ * whole Dynamic Mesh or a PCGUtilsDynMesh Mesh Selection - for a Selection, only the selected region is remeshed
+ * (with its outer boundary held fixed) and welded back into the untouched remainder of the source mesh, via the
+ * shared PCGUtilsDynMesh Mesh Target Handle infrastructure (see MeshTarget/PCGUtilsMeshTargetFunctions.h).
  */
 UCLASS(BlueprintType, ClassGroup=(Procedural), Category="PCGUtils|Dynamic Mesh")
 class PCGUTILSDYNMESH_API UPCGRemeshSettings : public UPCGSettings
@@ -41,12 +32,7 @@ public:
 	virtual FText GetDefaultNodeTitle() const override;
 	virtual FText GetNodeTooltipText() const override;
 	virtual FLinearColor GetNodeTitleColor() const override { return FLinearColor(0.413f, 0.25f, 1.0f, 1.0f); }
-	virtual EPCGChangeType GetChangeTypeForProperty(FPropertyChangedEvent& PropertyChangedEvent) const override;
 #endif
-
-	/** Whole mesh: the normal Dynamic Mesh pin is remeshed entirely. Mesh Selection: only the selected region is remeshed and welded back into the untouched remainder. */
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Remesh", meta = (PCG_Overridable))
-	EPCGRemeshInputMode InputMode = EPCGRemeshInputMode::DynamicMesh;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Remesh", meta = (PCG_Overridable))
 	EPCGRemeshMode Mode = EPCGRemeshMode::Uniform;
@@ -54,11 +40,10 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Remesh Options", meta = (PCG_Overridable, ShowOnlyInnerProperties))
 	FGeometryScriptRemeshOptions RemeshOptions;
 
-	/** Purely informational: in Mesh Selection mode, the extracted region's outer boundary is always held Fixed (regardless of Mesh Boundary Constraint above) so it can be welded back exactly. Group/Material boundary constraints above still apply normally. */
-	UPROPERTY(VisibleAnywhere, Category = "Remesh Options",
-		meta = (PCG_Overridable, EditCondition = "InputMode==EPCGRemeshInputMode::MeshSelection", EditConditionHides))
+	/** Purely informational: when the Mesh input is a Mesh Selection, the extracted region's outer boundary is always held Fixed (regardless of Mesh Boundary Constraint above) so it can be welded back exactly. Group/Material boundary constraints above still apply normally. This has no effect on a whole Dynamic Mesh input. */
+	UPROPERTY(VisibleAnywhere, Category = "Remesh Options")
 	FText SelectionModeBoundaryNotice = NSLOCTEXT("PCGRemesh", "SelectionBoundaryNotice",
-		"Mesh Selection mode always uses a Fixed outer boundary on the extracted region so it welds back exactly. Mesh Boundary Constraint above only applies in Dynamic Mesh (whole-mesh) mode.");
+		"When the Mesh input is a Mesh Selection, the extracted region's outer boundary always uses a Fixed constraint so it welds back exactly, regardless of Mesh Boundary Constraint above.");
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Uniform Options",
 		meta = (PCG_Overridable, EditCondition = "Mode==EPCGRemeshMode::Uniform", EditConditionHides, ShowOnlyInnerProperties))
