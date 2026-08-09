@@ -2,6 +2,7 @@
 
 #include "CoreMinimal.h"
 #include "MeshTarget/PCGUtilsMeshTargetHandle.h"
+#include "MeshTarget/PCGUtilsMeshTargetTypes.h"
 #include "PCGPin.h"
 
 struct FPCGTaggedData;
@@ -20,12 +21,12 @@ class UPCGData;
  * Typical element usage:
  *
  *   FPCGUtilsMeshTargetHandle Handle = FPCGUtilsMeshTargetFunctions::CreateTarget(
- *       Input.Data, EPCGUtilsMeshSelectionApplyMethod::SelectedVertexPositions, Context);
+ *       Input.Data, EPCGUtilsMeshTargetPreparation::FullMeshCopy, Context);
  *   if (!Handle.IsValid()) { return; }
  *
  *   ApplyMyGeometryScriptOperation(Handle.GetTargetMesh(), ...);
  *
- *   FPCGUtilsMeshTargetFunctions::RestoreSelectedVertexPositions(Handle);
+ *   FPCGUtilsMeshTargetFunctions::RestoreVertexPositions(Handle, Settings->SelectionBlend);
  *   FPCGUtilsMeshTargetFunctions::EmitOutput(Context, Input, Handle);
  */
 class PCGUTILSDYNMESH_API FPCGUtilsMeshTargetFunctions
@@ -33,14 +34,14 @@ class PCGUTILSDYNMESH_API FPCGUtilsMeshTargetFunctions
 public:
 	/**
 	 * Resolves InputData (expected to be a UPCGDynamicMeshData or a UPCGDynamicMeshSelectionData - any other
-	 * type produces an invalid handle with a logged warning) into a target handle prepared for ApplyMethod.
+	 * type produces an invalid handle with a logged warning) into a target handle prepared as requested.
 	 * Always produces a *working copy*; the original PCG data is never mutated.
 	 */
 	static FPCGUtilsMeshTargetHandle CreateTarget(
-		const UPCGData* InputData, EPCGUtilsMeshSelectionApplyMethod ApplyMethod, FPCGContext* Context);
+		const UPCGData* InputData, EPCGUtilsMeshTargetPreparation Preparation, FPCGContext* Context);
 
 	/**
-	 * Finalizes a handle created with EPCGUtilsMeshSelectionApplyMethod::RegionReinsert: for a Selection source,
+	 * Finalizes a handle created with EPCGUtilsMeshTargetPreparation::Region: for a Selection source,
 	 * reinserts/welds the (possibly retopologized) target mesh back into the untouched remainder of the source
 	 * via the FMeshRegionOperator captured at CreateTarget() time. For a FullMesh source, or an empty-selection
 	 * no-op, this simply makes GetTargetMesh() return the correct (already-final) mesh.
@@ -49,13 +50,12 @@ public:
 	static bool RestoreRegion(FPCGUtilsMeshTargetHandle& Handle);
 
 	/**
-	 * Finalizes a handle created with EPCGUtilsMeshSelectionApplyMethod::SelectedVertexPositions: for a
-	 * Selection source, copies only the positions of the originally-selected vertices from the operated-on
-	 * temporary mesh back onto the untouched working copy, via UDynamicMesh::EditMesh() for correct change
-	 * notification. For a FullMesh source, or an empty-selection no-op, this simply makes GetTargetMesh() return
-	 * the correct (already-final) mesh.
+	 * Composites vertex positions from a handle prepared with FullMeshCopy. Selection sources use the canonical
+	 * Geometry Script selection converted to base vertices and the requested hard/feathered influence; whole mesh
+	 * sources are already final. Full copies must retain the source's base vertex IDs until restoration.
 	 */
-	static void RestoreSelectedVertexPositions(FPCGUtilsMeshTargetHandle& Handle);
+	static void RestoreVertexPositions(
+		FPCGUtilsMeshTargetHandle& Handle, const FPCGUtilsSelectionBlendOptions& Options);
 
 	/**
 	 * Builds the PCG pin properties for an input pin that accepts either Dynamic Mesh or Dynamic Mesh Selection
@@ -74,7 +74,7 @@ public:
 
 private:
 	static FPCGUtilsMeshTargetHandle CreateFullMeshTarget(
-		const class UPCGDynamicMeshData* SourceData, EPCGUtilsMeshSelectionApplyMethod ApplyMethod, FPCGContext* Context);
+		const class UPCGDynamicMeshData* SourceData, EPCGUtilsMeshTargetPreparation Preparation, FPCGContext* Context);
 	static FPCGUtilsMeshTargetHandle CreateSelectionTarget(
-		const class UPCGDynamicMeshSelectionData* SelectionData, EPCGUtilsMeshSelectionApplyMethod ApplyMethod, FPCGContext* Context);
+		const class UPCGDynamicMeshSelectionData* SelectionData, EPCGUtilsMeshTargetPreparation Preparation, FPCGContext* Context);
 };

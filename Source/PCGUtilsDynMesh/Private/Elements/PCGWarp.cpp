@@ -3,6 +3,8 @@
 #include "Data/PCGBasePointData.h"
 #include "Data/PCGDynamicMeshData.h"
 #include "DynamicMesh/DynamicMesh3.h"
+#include "DynamicMesh/DynamicMeshAttributeSet.h"
+#include "DynamicMesh/MeshNormals.h"
 #include "GameFramework/Actor.h"
 #include "MeshTarget/PCGUtilsMeshTargetFunctions.h"
 #include "PCGContext.h"
@@ -189,6 +191,22 @@ namespace
 			break;
 		}
 	}
+
+	void RecomputeSelectionAffectedNormals(FPCGUtilsMeshTargetHandle& Handle)
+	{
+		if (!Handle.IsSelection() || Handle.IsEmptySelectionNoOp()) { return; }
+		Handle.GetTargetMesh()->EditMesh([&Handle](UE::Geometry::FDynamicMesh3& Mesh)
+		{
+			if (!Mesh.HasAttributes() || !Mesh.Attributes()->PrimaryNormals()) { return; }
+			TSet<int32> AffectedTriangles;
+			Handle.GetSelection().ProcessByVertexID(Mesh, [&Mesh, &AffectedTriangles](int32 VertexID)
+			{
+				for (const int32 TriangleID : Mesh.VtxTrianglesItr(VertexID)) { AffectedTriangles.Add(TriangleID); }
+			}, false);
+			UE::Geometry::FMeshNormals::RecomputeOverlayTriNormals(
+				Mesh, AffectedTriangles.Array(), /*bAreaWeighted=*/true, /*bAngleWeighted=*/true);
+		});
+	}
 }
 
 #if WITH_EDITOR
@@ -201,8 +219,8 @@ FText UPCGWarpSettings::GetNodeTooltipText() const
 {
 	return LOCTEXT("NodeTooltip",
 		"Applies a Geometry Script Bend, Twist, or Flare/Squish space deformation to Dynamic Mesh data. If the "
-		"Mesh input is a Mesh Selection, only the selected vertex positions change - topology, UVs, normals, "
-		"colors, materials, and PolyGroups are left untouched.");
+		"Mesh input is a Mesh Selection, only selected geometry is deformed. Topology and unrelated mesh "
+		"attributes such as UVs, vertex colors, materials, and PolyGroups are preserved.");
 }
 
 EPCGChangeType UPCGWarpSettings::GetChangeTypeForProperty(FPropertyChangedEvent& PropertyChangedEvent) const
@@ -252,7 +270,7 @@ bool FPCGWarpElement::ExecuteInternal(FPCGContext* Context) const
 	for (const FPCGTaggedData& Input : Context->InputData.GetInputsByPin(WarpMeshPin))
 	{
 		FPCGUtilsMeshTargetHandle Handle = FPCGUtilsMeshTargetFunctions::CreateTarget(
-			Input.Data, EPCGUtilsMeshSelectionApplyMethod::SelectedVertexPositions, Context);
+			Input.Data, EPCGUtilsMeshTargetPreparation::FullMeshCopy, Context);
 		if (!Handle.IsValid())
 		{
 			continue;
@@ -267,7 +285,8 @@ bool FPCGWarpElement::ExecuteInternal(FPCGContext* Context) const
 			}
 		}
 
-		FPCGUtilsMeshTargetFunctions::RestoreSelectedVertexPositions(Handle);
+		FPCGUtilsMeshTargetFunctions::RestoreVertexPositions(Handle, Settings->SelectionBlend);
+		RecomputeSelectionAffectedNormals(Handle);
 		FPCGUtilsMeshTargetFunctions::EmitOutput(Context, Input, Handle);
 	}
 

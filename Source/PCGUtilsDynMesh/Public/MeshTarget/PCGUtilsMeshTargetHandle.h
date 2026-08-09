@@ -1,6 +1,7 @@
 #pragma once
 
 #include "CoreMinimal.h"
+#include "GeometryScript/GeometryScriptSelectionTypes.h"
 
 class UDynamicMesh;
 class UPCGDynamicMeshData;
@@ -16,12 +17,11 @@ enum class EPCGUtilsMeshTargetSourceType : uint8
 };
 
 /**
- * How a geometry operation's result on a Mesh Target Handle's target mesh should be applied back to the source,
- * when that source was a Mesh Selection. See FPCGUtilsMeshTargetFunctions for the corresponding Create.../Restore...
- * pairs. Only relevant for Selection sources - for a whole Dynamic Mesh source both strategies behave identically
- * (the operation's result *is* the result, nothing to recombine).
+ * The working representation handed to an operation. Restoration is deliberately separate: Region is normally
+ * finalized by RestoreRegion(), while FullMeshCopy can be consumed by any topology-preserving domain compositor
+ * (currently RestoreVertexPositions()). For whole meshes both preparations use the same single writable copy.
  */
-enum class EPCGUtilsMeshSelectionApplyMethod : uint8
+enum class EPCGUtilsMeshTargetPreparation : uint8
 {
 	/**
 	 * The operation may change topology/vertex count/connectivity (eg remeshing). The selected region is
@@ -32,15 +32,13 @@ enum class EPCGUtilsMeshSelectionApplyMethod : uint8
 	 * at the time it is handed out (eg by compacting) if it wants the region to weld back correctly - new
 	 * vertices may be added freely, and existing (interior or boundary) vertices may otherwise be edited freely.
 	 */
-	RegionReinsert,
+	Region,
 
 	/**
-	 * The operation only changes vertex *positions*, preserving topology (eg warping/bending). The target is a
-	 * complete temporary copy of the source mesh (vertex-ID-preserving); after the operation, only the positions
-	 * of the originally-selected vertices are copied back onto the source. Topology, UVs, normals, colors,
-	 * materials, and PolyGroups are left completely untouched outside the selection.
+	 * A complete temporary copy of the source mesh, preserving base vertex IDs 1:1. The preparation is generic;
+	 * the caller separately chooses which result domain to composite back.
 	 */
-	SelectedVertexPositions
+	FullMeshCopy
 };
 
 /**
@@ -48,8 +46,7 @@ enum class EPCGUtilsMeshSelectionApplyMethod : uint8
  * apply that operation's result back to its original source" - whether that source was a whole Dynamic Mesh or a
  * PCGUtilsDynMesh Mesh Selection. Created via FPCGUtilsMeshTargetFunctions::CreateTarget() and friends, consumed
  * via GetTargetMesh(), and finalized via FPCGUtilsMeshTargetFunctions::RestoreRegion() or
- * RestoreSelectedVertexPositions() (matching whichever EPCGUtilsMeshSelectionApplyMethod the handle was created
- * with).
+ * RestoreVertexPositions(), chosen explicitly according to the operation's result semantics.
  *
  * A geometry operation using this handle does not need to know or branch on whether it received a whole mesh or
  * a selection - GetTargetMesh() always returns the correct mesh to operate on, and the matching Restore* call
@@ -91,11 +88,14 @@ struct PCGUTILSDYNMESH_API FPCGUtilsMeshTargetHandle
 	 */
 	const UPCGDynamicMeshData* GetSourceMeshData() const { return SourceMeshData; }
 
+	/** Canonical Geometry Script selection; valid for Selection sources. */
+	const FGeometryScriptMeshSelection& GetSelection() const { return Selection; }
+
 	/**
-	 * For a Selection source using RegionReinsert, maps a vertex ID on the current (pre-operation) target mesh
+	 * For a Selection source using Region preparation, maps a vertex ID on the current (pre-operation) target mesh
 	 * back to the corresponding vertex ID on the original source mesh, or INDEX_NONE if the target vertex has no
 	 * known correspondence (eg a newly-extracted interior vertex). In every other case (FullMesh source,
-	 * SelectedVertexPositions - whose temporary copy already preserves source vertex IDs 1:1 - or an
+	 * FullMeshCopy - whose temporary copy preserves source vertex IDs 1:1 - or an
 	 * empty-selection no-op) target and source vertex IDs are identical, so this returns TargetVertexID
 	 * unchanged. Intended for operations that need to seed per-vertex data (eg a weight map) on the target mesh
 	 * from the source before running.
@@ -108,7 +108,7 @@ private:
 	bool bIsValid = false;
 	bool bIsEmptySelectionNoOp = false;
 	EPCGUtilsMeshTargetSourceType SourceType = EPCGUtilsMeshTargetSourceType::FullMesh;
-	EPCGUtilsMeshSelectionApplyMethod ApplyMethod = EPCGUtilsMeshSelectionApplyMethod::RegionReinsert;
+	EPCGUtilsMeshTargetPreparation Preparation = EPCGUtilsMeshTargetPreparation::Region;
 
 	/** Context used to log warnings/errors from Restore*(), so callers don't need to re-check/log themselves. */
 	FPCGContext* Context = nullptr;
@@ -125,9 +125,12 @@ private:
 
 	const UPCGDynamicMeshData* SourceMeshData = nullptr;
 
-	/** RegionReinsert + Selection (non-empty) only. */
+	/** Region + Selection (non-empty) only. */
 	TUniquePtr<UE::Geometry::FMeshRegionOperator> RegionOperator;
 
-	/** SelectedVertexPositions + Selection (non-empty) only. Resolved once at target creation. */
+	/** Canonical selection retained for future domain-specific compositors. */
+	FGeometryScriptMeshSelection Selection;
+
+	/** Lazily useful derived vertex-domain cache for FullMeshCopy restoration. */
 	TArray<int32> SelectedVertexIDs;
 };

@@ -2,6 +2,7 @@
 
 #include "CoreMinimal.h"
 #include "GeometryScript/MeshDeformFunctions.h"
+#include "MeshTarget/PCGUtilsMeshTargetTypes.h"
 #include "PCGSettings.h"
 
 #include "PCGWarp.generated.h"
@@ -29,8 +30,9 @@ enum class EPCGUtilsWarpControlMode : uint8
 /**
  * Applies a Geometry Script space-deformation warp (Bend, Twist, or Flare/Squish) to Dynamic Mesh data. The Mesh
  * input pin accepts either a whole Dynamic Mesh or a PCGUtilsDynMesh Mesh Selection - for a Selection, only the
- * positions of the selected vertices change; topology, UVs, normals, colors, materials, and PolyGroups are left
- * completely untouched, via the shared PCGUtilsDynMesh Mesh Target Handle infrastructure (see
+ * selected geometry is deformed; topology and unrelated attributes such as UVs, colors, materials, and
+ * PolyGroups are preserved. Existing normal overlay topology is retained while affected values are recomputed
+ * from the final geometry, via the shared PCGUtilsDynMesh Mesh Target Handle infrastructure (see
  * MeshTarget/PCGUtilsMeshTargetFunctions.h).
  *
  * In Point Data control mode, each connected Point Data input contributes one warp "controller" from its first
@@ -51,6 +53,10 @@ public:
 	virtual FLinearColor GetNodeTitleColor() const override { return FLinearColor(0.413f, 0.25f, 1.0f, 1.0f); }
 	virtual EPCGChangeType GetChangeTypeForProperty(FPropertyChangedEvent& PropertyChangedEvent) const override;
 #endif
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Selection",
+		meta = (DisplayName = "Selection Restoration", PCG_Overridable))
+	FPCGUtilsSelectionBlendOptions SelectionBlend;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Warp", meta = (PCG_Overridable))
 	EPCGUtilsWarpType WarpType = EPCGUtilsWarpType::Bend;

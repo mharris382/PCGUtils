@@ -132,57 +132,10 @@ namespace
 	 * source mesh via the handle's vertex correspondence before remeshing. A no-op for a whole Dynamic Mesh input
 	 * (whose target already has correct values, being a full deep copy) or when Adaptive weight maps aren't used.
 	 */
-	void SeedAdaptiveWeightMapOnTarget(FPCGUtilsMeshTargetHandle& Handle, const UPCGRemeshSettings* Settings)
-	{
-		using namespace UE::Geometry;
-
-		if (!Handle.IsSelection() || Settings->Mode != EPCGRemeshMode::Adaptive || !Settings->bUseAdaptiveWeightMap)
-		{
-			return;
-		}
-
-		const UPCGDynamicMeshData* SourceData = Handle.GetSourceMeshData();
-		const UDynamicMesh* SourceObject = SourceData ? SourceData->GetDynamicMesh() : nullptr;
-		const FDynamicMesh3* SourceMesh = SourceObject ? SourceObject->GetMeshPtr() : nullptr;
-		UDynamicMesh* Target = Handle.GetTargetMesh();
-		if (!SourceMesh || !Target)
-		{
-			return;
-		}
-
-		const int32 SourceLayerIndex = FindWeightMapLayerIndex(*SourceMesh, Settings->AdaptiveWeightMapAttributeName);
-		if (SourceLayerIndex == INDEX_NONE)
-		{
-			// Nothing to seed; ApplyRemeshOperation's own resolution will warn and fall back to a neutral map.
-			return;
-		}
-
-		Target->EditMesh([&Handle, SourceMesh, SourceLayerIndex, Settings](FDynamicMesh3& M)
-		{
-			const int32 TargetLayerIndex = FindWeightMapLayerIndex(M, Settings->AdaptiveWeightMapAttributeName);
-			if (TargetLayerIndex == INDEX_NONE)
-			{
-				return;
-			}
-			const FDynamicMeshWeightAttribute* SourceLayer = SourceMesh->Attributes()->GetWeightLayer(SourceLayerIndex);
-			FDynamicMeshWeightAttribute* TargetLayer = M.Attributes()->GetWeightLayer(TargetLayerIndex);
-			for (const int32 TargetVertexID : M.VertexIndicesItr())
-			{
-				const int32 SourceVertexID = Handle.GetSourceVertexID(TargetVertexID);
-				float Value = 0.0f;
-				if (SourceVertexID != INDEX_NONE && SourceMesh->IsVertex(SourceVertexID))
-				{
-					SourceLayer->GetValue(SourceVertexID, &Value);
-				}
-				TargetLayer->SetScalarValue(TargetVertexID, Value);
-			}
-		});
-	}
-
 	void RemeshOne(FPCGContext* Context, const UPCGRemeshSettings* Settings, const FPCGTaggedData& Input)
 	{
 		FPCGUtilsMeshTargetHandle Handle = FPCGUtilsMeshTargetFunctions::CreateTarget(
-			Input.Data, EPCGUtilsMeshSelectionApplyMethod::RegionReinsert, Context);
+			Input.Data, EPCGUtilsMeshTargetPreparation::Region, Context);
 		if (!Handle.IsValid())
 		{
 			return;
@@ -192,7 +145,6 @@ namespace
 
 		if (!Handle.IsEmptySelectionNoOp())
 		{
-			SeedAdaptiveWeightMapOnTarget(Handle, Settings);
 			ApplyRemeshOperation(Handle.GetTargetMesh(), Settings, bIsSelectionRegion, Context);
 		}
 
