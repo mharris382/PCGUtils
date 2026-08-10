@@ -58,6 +58,17 @@ public:
 		FPCGUtilsMeshTargetHandle& Handle, const FPCGUtilsSelectionBlendOptions& Options);
 
 	/**
+	 * Recomputes normals only for triangles touching a selected vertex, leaving the rest of the mesh's shading
+	 * untouched. A no-op for a whole Dynamic Mesh source (nothing to narrow to) or an empty-selection no-op.
+	 * Intended for operations (eg Warp, Spline Deform) whose deformation only changes vertex positions within a
+	 * Mesh Selection, where the full mesh's normals elsewhere remain valid and shouldn't be disturbed. Callers
+	 * are responsible for handling the whole-mesh normal recompute themselves, since the appropriate method for
+	 * that (eg relying on a Geometry Script op's own built-in normal transform, vs. a plain topology-based
+	 * recompute) is operation-specific.
+	 */
+	static void RecomputeSelectionAffectedNormals(FPCGUtilsMeshTargetHandle& Handle);
+
+	/**
 	 * Builds the PCG pin properties for an input pin that accepts either Dynamic Mesh or Dynamic Mesh Selection
 	 * data - the single unified "Mesh" input this infrastructure is built around.
 	 */

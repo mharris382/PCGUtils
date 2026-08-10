@@ -4,6 +4,7 @@
 #include "Data/PCGDynamicMeshSelectionData.h"
 #include "DynamicMesh/DynamicMesh3.h"
 #include "DynamicMesh/DynamicMeshAttributeSet.h"
+#include "DynamicMesh/MeshNormals.h"
 #include "GeometryScript/GeometryScriptSelectionTypes.h"
 #include "Operations/MeshRegionOperator.h"
 #include "PCGContext.h"
@@ -338,6 +339,30 @@ void FPCGUtilsMeshTargetFunctions::RestoreVertexPositions(
 	});
 
 	Handle.TargetMesh = Handle.BaseMesh;
+}
+
+void FPCGUtilsMeshTargetFunctions::RecomputeSelectionAffectedNormals(FPCGUtilsMeshTargetHandle& Handle)
+{
+	using namespace UE::Geometry;
+
+	if (!Handle.IsSelection() || Handle.IsEmptySelectionNoOp())
+	{
+		return;
+	}
+
+	Handle.GetTargetMesh()->EditMesh([&Handle](FDynamicMesh3& Mesh)
+	{
+		if (!Mesh.HasAttributes() || !Mesh.Attributes()->PrimaryNormals())
+		{
+			return;
+		}
+		TSet<int32> AffectedTriangles;
+		Handle.GetSelection().ProcessByVertexID(Mesh, [&Mesh, &AffectedTriangles](int32 VertexID)
+		{
+			for (const int32 TriangleID : Mesh.VtxTrianglesItr(VertexID)) { AffectedTriangles.Add(TriangleID); }
+		}, false);
+		FMeshNormals::RecomputeOverlayTriNormals(Mesh, AffectedTriangles.Array(), /*bAreaWeighted=*/true, /*bAngleWeighted=*/true);
+	});
 }
 
 FPCGPinProperties FPCGUtilsMeshTargetFunctions::MakeMeshInputPinProperties(
