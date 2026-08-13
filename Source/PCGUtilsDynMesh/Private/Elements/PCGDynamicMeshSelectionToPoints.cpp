@@ -20,7 +20,7 @@ namespace
 	const FName SelectionToPointsOutputPin = TEXT("Points");
 
 	template<typename OverlayType, typename ValueType>
-	ValueType GetFirstVertexOverlayElement(const UE::Geometry::FDynamicMesh3& Mesh,
+	ValueType SelectionToPoints_GetFirstVertexOverlayElement(const UE::Geometry::FDynamicMesh3& Mesh,
 		const OverlayType* Overlay, int32 VertexID, const ValueType& DefaultValue)
 	{
 		if (!Overlay) return DefaultValue;
@@ -159,7 +159,7 @@ bool FPCGDynamicMeshSelectionToPointsElement::ExecuteInternal(FPCGContext* Conte
 			const int32 VertexID = SelectedVertices[Index];
 			const FVector LocalPosition(Mesh->GetVertex(VertexID));
 			FVector3f Normal = Normals
-				? GetFirstVertexOverlayElement(*Mesh, Normals, VertexID, FVector3f::UnitZ())
+				? SelectionToPoints_GetFirstVertexOverlayElement(*Mesh, Normals, VertexID, FVector3f::UnitZ())
 				: (Mesh->HasVertexNormals() ? Mesh->GetVertexNormal(VertexID) : FVector3f::UnitZ());
 			if (!Normal.Normalize())
 			{
@@ -173,7 +173,7 @@ bool FPCGDynamicMeshSelectionToPointsElement::ExecuteInternal(FPCGContext* Conte
 			Transforms[Index] = FTransform(FRotationMatrix::MakeFromZ(OutputNormal).ToQuat(), Position);
 			const FVector3f NativeColor = Mesh->HasVertexColors() ? Mesh->GetVertexColor(VertexID) : FVector3f::One();
 			const FVector4f Color = Colors
-				? GetFirstVertexOverlayElement(*Mesh, Colors, VertexID, FVector4f(1, 1, 1, 1))
+				? SelectionToPoints_GetFirstVertexOverlayElement(*Mesh, Colors, VertexID, FVector4f(1, 1, 1, 1))
 				: FVector4f(NativeColor.X, NativeColor.Y, NativeColor.Z, 1.0f);
 			PointColors[Index] = FVector4(Color);
 			Densities[Index] = 1.0f;
