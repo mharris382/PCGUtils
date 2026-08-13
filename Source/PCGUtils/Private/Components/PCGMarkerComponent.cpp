@@ -75,9 +75,9 @@ void UPCGMarkerComponent::PostEditChangeProperty(FPropertyChangedEvent& Property
 {
 	Super::PostEditChangeProperty(PropertyChangedEvent);
 	bool hasScriptedEditorColors = false;
-	FLinearColor SelectedColor = FLinearColor::White;
 	FLinearColor UnselectedColor = FLinearColor::Black;
-	GetEditorColors(hasScriptedEditorColors, SelectedColor, UnselectedColor);
+	FLinearColor SelectedColor = FLinearColor::White;
+	GetEditorColors(hasScriptedEditorColors, UnselectedColor, SelectedColor);
 	if (hasScriptedEditorColors)
 	{
 		EditorSelectedMarkerColor = SelectedColor;

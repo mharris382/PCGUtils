@@ -24,10 +24,5 @@ public:
 		HComponentVisProxy* VisProxy,
 		const FViewportClick& Click) override;
 
-	virtual void EndEditing() override;
-
-	virtual UActorComponent* GetEditedComponent() const override;
-
-private:
-	TWeakObjectPtr<UPCGMarkerComponent> EditedComponent;
+	virtual bool ShouldAutoSelectElementOnHandleClick() const override;
 };

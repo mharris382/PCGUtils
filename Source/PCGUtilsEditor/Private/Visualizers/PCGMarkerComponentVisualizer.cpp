@@ -1,7 +1,6 @@
 #include "Visualizers/PCGMarkerComponentVisualizer.h"
 #include "Materials/Material.h"
 #include "Components/PCGMarkerComponent.h"
-#include "Editor.h"
 #include "EditorModes.h"
 #include "EditorViewportClient.h"
 #include "Engine/Engine.h"
@@ -62,14 +61,14 @@ void FPCGMarkerComponentVisualizer::DrawVisualization(
 	}
 
 	const bool bSelected = MarkerComp->IsSelectedInEditor();
-	
-	const bool bDrawAsWireframe = !bSelected;
+
+	const bool bDrawAsWireframe = ShouldDrawMarkerAsWireframe(*MarkerComp, bSelected);
 	const FLinearColor LineColor = GetMarkerLineColor(*MarkerComp, bSelected);
 	const FLinearColor FillColor = GetMarkerFillColor(*MarkerComp, bSelected);
 	const FTransform& ComponentTransform = MarkerComp->GetComponentTransform();
 
 	PDI->SetHitProxy(new HPCGMarkerProxy(MarkerComp));
-	TObjectPtr<UMaterial> EditedMaterial ;//= bDrawAsWireframe ? GEngine->WireframeMaterial : GEngine->GeomMaterial;
+	TObjectPtr<UMaterial> EditedMaterial;
 	if (GEngine)
 	{
 		EditedMaterial = bDrawAsWireframe ? GEngine->WireframeMaterial : GEngine->GeomMaterial; 
@@ -117,85 +116,24 @@ bool FPCGMarkerComponentVisualizer::VisProxyHandleClick(
 		return false;
 	}
 
-	UPCGMarkerComponent* Comp = const_cast<UPCGMarkerComponent*>(
-		Cast<UPCGMarkerComponent>(VisProxy->Component.Get()));
+	const UPCGMarkerComponent* Comp = Cast<UPCGMarkerComponent>(VisProxy->Component.Get());
 	if (!Comp)
 	{
 		return false;
 	}
-	const bool bAddToSelection = Click.IsControlDown() || Click.IsShiftDown();
-	const bool bToggleSelection = Click.IsControlDown();
-	const bool bWasSelected = Comp->IsSelectedInEditor();
-	const bool bShouldSelectComponent = !(bToggleSelection && bWasSelected);
-	
-	EditedComponent = Comp;
 
-	if (GEditor)
-	{
-		if (!bAddToSelection)
-		{
-			GEditor->SelectNone(
-				/*bNoteSelectionChange=*/false,
-				/*bDeselectBSPSurfs=*/true,
-				/*WarnAboutManyActors=*/false);
-		}
-
-		if (bShouldSelectComponent)
-		{
-			if (AActor* Owner = Comp->GetOwner())
-			{
-				GEditor->SelectActor(
-					Owner,
-					/*bInSelected=*/true,
-					/*bNotify=*/false,
-					/*bSelectEvenIfHidden=*/true);
-			}
-		}
-
-		GEditor->SelectComponent(
-			Comp,
-			/*bInSelected=*/bShouldSelectComponent,
-			/*bNotify=*/false,
-			/*bSelectEvenIfHidden=*/false);
-
-		GEditor->NoteSelectionChange();
-	}
-	
-	if (bShouldSelectComponent)
-	{
-		EditedComponent = Comp;
-	}
-	else
-	{
-		EditedComponent.Reset();
-	}
-	
+	// Component selection itself is handled by FComponentVisualizerManager via
+	// ShouldAutoSelectElementOnHandleClick() once this returns true. We only need to
+	// acknowledge the hit; we don't own any transform/editing state.
 	if (InViewportClient)
 	{
 		InViewportClient->Invalidate();
 	}
-	if (bShouldSelectComponent)
-	{
-		EditedComponent = Comp;
-	}
-	else
-	{
-		EditedComponent.Reset();
-	}
-	
-	if (InViewportClient)
-	{
-		InViewportClient->Invalidate();
-	}
+
 	return true;
 }
 
-void FPCGMarkerComponentVisualizer::EndEditing()
+bool FPCGMarkerComponentVisualizer::ShouldAutoSelectElementOnHandleClick() const
 {
-	EditedComponent.Reset();
-}
-
-UActorComponent* FPCGMarkerComponentVisualizer::GetEditedComponent() const
-{
-	return EditedComponent.Get();
+	return true;
 }
