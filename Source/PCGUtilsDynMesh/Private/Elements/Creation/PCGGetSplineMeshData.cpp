@@ -1,4 +1,4 @@
-#include "Elements/PCGGetSplineMeshData.h"
+#include "Elements/Creation/PCGGetSplineMeshData.h"
 
 #include "Components/SplineMeshComponent.h"
 #include "Data/PCGDynamicMeshData.h"

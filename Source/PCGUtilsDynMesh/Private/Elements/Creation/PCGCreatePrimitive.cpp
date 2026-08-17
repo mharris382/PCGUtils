@@ -1,9 +1,9 @@
-#include "Elements/PCGCreatePrimitive.h"
+#include "Elements/Creation/PCGCreatePrimitive.h"
 
 #include "Data/PCGBasePointData.h"
 #include "Data/PCGDynamicMeshData.h"
 #include "DynamicMesh/DynamicMesh3.h"
-#include "Elements/CreatePrimitive/PCGCreatePrimitiveSettingsBase.h"
+#include "Elements/Creation/CreatePrimitive/PCGCreatePrimitiveSettingsBase.h"
 #include "GameFramework/Actor.h"
 #include "GeometryScript/MeshBasicEditFunctions.h"
 #include "PCGContext.h"

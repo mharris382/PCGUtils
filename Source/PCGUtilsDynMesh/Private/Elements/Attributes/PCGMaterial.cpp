@@ -1,4 +1,4 @@
-#include "Elements/PCGMaterial.h"
+#include "Elements/Attributes/PCGMaterial.h"
 
 #include "Data/PCGDynamicMeshData.h"
 #include "Data/PCGDynamicMeshSelectionData.h"

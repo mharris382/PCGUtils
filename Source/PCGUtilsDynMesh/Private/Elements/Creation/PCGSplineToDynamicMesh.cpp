@@ -1,4 +1,4 @@
-#include "Elements/PCGSplineToDynamicMesh.h"
+#include "Elements/Creation/PCGSplineToDynamicMesh.h"
 
 #include "Data/PCGDynamicMeshData.h"
 #include "Data/PCGSplineData.h"

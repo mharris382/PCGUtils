@@ -1,4 +1,4 @@
-#include "Elements/PCGBevelEdges.h"
+#include "Elements/Topology/PCGBevelEdges.h"
 
 #include "GeometryScript/GeometryScriptSelectionTypes.h"
 #include "GeometryScript/MeshModelingFunctions.h"

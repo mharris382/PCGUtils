@@ -1,4 +1,4 @@
-#include "Elements/CreatePrimitive/PCGCreatePrimitiveSettingsBase.h"
+#include "Elements/Creation/CreatePrimitive/PCGCreatePrimitiveSettingsBase.h"
 
 void UPCGCreatePrimitiveBoxSettings::AppendPrimitive(UDynamicMesh* TargetMesh, const FTransform& Transform) const
 {

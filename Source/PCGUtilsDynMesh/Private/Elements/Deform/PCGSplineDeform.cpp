@@ -1,4 +1,4 @@
-#include "Elements/PCGSplineDeform.h"
+#include "Elements/Deform/PCGSplineDeform.h"
 
 #include "Data/PCGDynamicMeshData.h"
 #include "Data/PCGSplineData.h"

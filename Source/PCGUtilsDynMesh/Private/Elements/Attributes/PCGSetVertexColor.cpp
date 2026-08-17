@@ -1,4 +1,4 @@
-#include "Elements/PCGSetVertexColor.h"
+#include "Elements/Attributes/PCGSetVertexColor.h"
 
 #include "Data/PCGDynamicMeshData.h"
 #include "GeometryScript/MeshVertexColorFunctions.h"

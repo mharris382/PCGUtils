@@ -1,4 +1,4 @@
-#include "Elements/PCGSmoothDynamicMesh.h"
+#include "Elements/Deform/PCGSmoothDynamicMesh.h"
 
 #include "Async/ParallelFor.h"
 #include "Data/PCGDynamicMeshData.h"
