@@ -5,6 +5,7 @@
 #include "PCGActorBase.h"
 #include "Components/SplineComponent.h"
 #include "GameFramework/Actor.h"
+#include "Helpers/PCGHelpers.h"
 #include "Interfaces/PCGBoundsProvider.h"
 #include "Interfaces/PCGComponentProvider.h"
 #include "Metadata/PCGMetadata.h"
@@ -23,6 +24,11 @@
 // ─────────────────────────────────────────────────────────────────────────────
 
 
+
+bool UPCGUtilsHelpers::IsPCGRuntimeOrPIE()
+{
+	return PCGHelpers::IsRuntimeOrPIE();
+}
 
 bool UPCGUtilsHelpers::TryRefreshPCGGeneration(UActorComponent* Component, bool bForceRegenerate)
 {

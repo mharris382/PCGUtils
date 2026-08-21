@@ -23,6 +23,10 @@ class PCGUTILS_API UPCGUtilsHelpers : public UBlueprintFunctionLibrary
 	GENERATED_BODY()
 
 public:
+	/** True during PIE, standalone/-game, and packaged runtime PCG execution. */
+	UFUNCTION(BlueprintPure, Category = "PCGUtils|Execution")
+	static bool IsPCGRuntimeOrPIE();
+
 	/** Regenerates PCG supplied by the component owner's provider, or its ordinary PCG component as a fallback. */
 	UFUNCTION(BlueprintCallable, Category = "PCGUtils|PCG")
 	static bool TryRefreshPCGGeneration(
