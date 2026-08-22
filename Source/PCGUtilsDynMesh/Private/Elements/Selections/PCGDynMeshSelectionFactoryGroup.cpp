@@ -138,7 +138,7 @@ FText UPCGDynMeshSelectionFactoryGroupProviderSettings::GetDefaultNodeTitle() co
 	case EPCGUtilsDynMeshSelectionFactoryGroupMode::Or:
 		return LOCTEXT("OrTitle", "OR");
 	case EPCGUtilsDynMeshSelectionFactoryGroupMode::Not:
-		return LOCTEXT("NotTitle", "Selection Factory NOT");
+		return LOCTEXT("NotTitle", "NOT");
 	default:
 		return LOCTEXT("Title", "Selection Factory Group");
 	}
@@ -147,6 +147,51 @@ FText UPCGDynMeshSelectionFactoryGroupProviderSettings::GetDefaultNodeTitle() co
 FText UPCGDynMeshSelectionFactoryGroupProviderSettings::GetNodeTooltipText() const
 {
 	return LOCTEXT("Tooltip", "Combines child DynMesh selection factories into a nested AND, OR, or NOT predicate.");
+}
+
+TArray<FText> UPCGDynMeshSelectionFactoryGroupProviderSettings::GetNodeTitleAliases() const
+{
+	return {
+		LOCTEXT("AndAlias", "Intersect Selection Factories"),
+		LOCTEXT("IntersectAlias", "Selection Factory Intersect"),
+		LOCTEXT("OrAlias", "Add Selection Factories"),
+		LOCTEXT("UnionAlias", "Union Selection Factories"),
+		LOCTEXT("NotAlias", "Invert Selection Factory")
+	};
+}
+
+TArray<FPCGPreConfiguredSettingsInfo>
+UPCGDynMeshSelectionFactoryGroupProviderSettings::GetPreconfiguredInfo() const
+{
+	return {
+		{static_cast<int32>(EPCGUtilsDynMeshSelectionFactoryGroupMode::And),
+			LOCTEXT("AndPreconfiguredTitle", "Selection Factory AND"),
+			LOCTEXT("AndPreconfiguredTooltip", "Keeps an element only when every child selection factory passes.")},
+		{static_cast<int32>(EPCGUtilsDynMeshSelectionFactoryGroupMode::Or),
+			LOCTEXT("OrPreconfiguredTitle", "Selection Factory OR"),
+			LOCTEXT("OrPreconfiguredTooltip", "Keeps an element when any child selection factory passes.")},
+		{static_cast<int32>(EPCGUtilsDynMeshSelectionFactoryGroupMode::Not),
+			LOCTEXT("NotPreconfiguredTitle", "Selection Factory NOT"),
+			LOCTEXT("NotPreconfiguredTooltip", "Inverts the result of one child selection factory.")}
+	};
+}
+
+void UPCGDynMeshSelectionFactoryGroupProviderSettings::ApplyPreconfiguredSettings(
+	const FPCGPreConfiguredSettingsInfo& PreconfiguredInfo)
+{
+	Super::ApplyPreconfiguredSettings(PreconfiguredInfo);
+	switch (static_cast<EPCGUtilsDynMeshSelectionFactoryGroupMode>(PreconfiguredInfo.PreconfiguredIndex))
+	{
+	case EPCGUtilsDynMeshSelectionFactoryGroupMode::And:
+	case EPCGUtilsDynMeshSelectionFactoryGroupMode::Or:
+	case EPCGUtilsDynMeshSelectionFactoryGroupMode::Not:
+		Mode = static_cast<EPCGUtilsDynMeshSelectionFactoryGroupMode>(PreconfiguredInfo.PreconfiguredIndex);
+		break;
+	default:
+		ensureMsgf(false, TEXT("Unknown DynMesh Selection Factory Group preconfiguration index: %d"),
+			PreconfiguredInfo.PreconfiguredIndex);
+		break;
+	}
 }
 #endif
 

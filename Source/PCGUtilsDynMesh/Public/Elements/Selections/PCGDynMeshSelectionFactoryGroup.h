@@ -47,12 +47,14 @@ public:
 #if WITH_EDITOR
 	virtual FName GetDefaultNodeName() const override { return TEXT("DynMeshSelectionFactoryGroup"); }
 	virtual FText GetDefaultNodeTitle() const override;
+	virtual TArray<FText> GetNodeTitleAliases() const override;
 	virtual FText GetNodeTooltipText() const override;
-	virtual bool ShouldDrawNodeCompact() const override
-	{
-		return Mode == EPCGUtilsDynMeshSelectionFactoryGroupMode::And ||
-			Mode == EPCGUtilsDynMeshSelectionFactoryGroupMode::Or;
-	}
+	virtual bool ShouldDrawNodeCompact() const override { return true; }
+	virtual bool ShouldShowCompactNodeTitle() const override { return true; }
+	virtual TArray<FPCGPreConfiguredSettingsInfo> GetPreconfiguredInfo() const override;
+	virtual bool OnlyExposePreconfiguredSettings() const override { return true; }
+	virtual bool GroupPreconfiguredSettings() const override { return false; }
+	virtual void ApplyPreconfiguredSettings(const FPCGPreConfiguredSettingsInfo& PreconfiguredInfo) override;
 #endif
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Selection", meta=(PCG_Overridable))
