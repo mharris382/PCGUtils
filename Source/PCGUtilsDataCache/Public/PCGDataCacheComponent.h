@@ -13,6 +13,10 @@ class PCGUTILSDATACACHE_API UPCGDataCacheComponent : public UActorComponent
 public:
 	UPCGDataCacheComponent();
 
+	/** Optional prefix used to make this component's generated cache assets easier to identify. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Data Cache")
+	FString Label;
+
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Data Cache")
 	bool bUsesRuntimeCache = true;
 
@@ -46,6 +50,7 @@ public:
 
 #if WITH_EDITOR
 	virtual void PreSave(FObjectPreSaveContext SaveContext) override;
+	virtual void PostEditChangeProperty(FPropertyChangedEvent& PropertyChangedEvent) override;
 	virtual void PostEditImport() override;
 #endif
 

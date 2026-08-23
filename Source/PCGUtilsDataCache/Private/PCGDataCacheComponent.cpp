@@ -87,7 +87,8 @@ bool UPCGDataCacheComponent::SynchronizeCacheSaveName()
 		return false;
 	}
 
-	const FName ExpectedName(*FString::Printf(TEXT("PCGCache_%s"), *ActorGuid.ToString(EGuidFormats::Digits)));
+	const FString CacheName = FString::Printf(TEXT("PCGCache_%s"), *ActorGuid.ToString(EGuidFormats::Digits));
+	const FName ExpectedName(Label.IsEmpty() ? CacheName : FString::Printf(TEXT("%s_%s"), *Label, *CacheName));
 	if (CacheSaveName != ExpectedName)
 	{
 		CacheSaveName = ExpectedName;
@@ -99,6 +100,12 @@ void UPCGDataCacheComponent::PreSave(FObjectPreSaveContext SaveContext)
 {
 	SynchronizeCacheSaveName();
 	Super::PreSave(SaveContext);
+}
+
+void UPCGDataCacheComponent::PostEditChangeProperty(FPropertyChangedEvent& PropertyChangedEvent)
+{
+	Super::PostEditChangeProperty(PropertyChangedEvent);
+	SynchronizeCacheSaveName();
 }
 
 void UPCGDataCacheComponent::PostEditImport()

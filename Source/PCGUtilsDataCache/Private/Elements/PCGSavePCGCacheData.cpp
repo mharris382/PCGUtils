@@ -13,7 +13,10 @@
 
 #define LOCTEXT_NAMESPACE "PCGSavePCGCacheData"
 
-UPCGSavePCGCacheDataSettings::UPCGSavePCGCacheDataSettings() = default;
+UPCGSavePCGCacheDataSettings::UPCGSavePCGCacheDataSettings()
+{
+	Pins = Super::InputPinProperties();
+}
 
 #if WITH_EDITOR
 FText UPCGSavePCGCacheDataSettings::GetDefaultNodeTitle() const
@@ -29,7 +32,7 @@ FText UPCGSavePCGCacheDataSettings::GetNodeTooltipText() const
 
 TArray<FPCGPinProperties> UPCGSavePCGCacheDataSettings::InputPinProperties() const
 {
-	return { FPCGPinProperties(PCGPinConstants::DefaultInputLabel, EPCGDataType::Any) };
+	return Pins;
 }
 
 TArray<FPCGPinProperties> UPCGSavePCGCacheDataSettings::OutputPinProperties() const
@@ -49,9 +52,10 @@ bool FPCGSavePCGCacheDataElement::ExecuteInternal(FPCGContext* Context) const
 	check(Settings);
 
 	FPCGDataCollection CollectionToSave;
+	const TArray<FPCGPinProperties> InputPins = Settings->InputPinProperties();
 	for (const FPCGTaggedData& Input : Context->InputData.TaggedData)
 	{
-		if (Input.Pin == PCGPinConstants::DefaultInputLabel)
+		if (InputPins.ContainsByPredicate([&Input](const FPCGPinProperties& Pin) { return Input.Pin == Pin.Label; }))
 		{
 			CollectionToSave.TaggedData.Add(Input);
 			FPCGTaggedData& Output = Context->OutputData.TaggedData.Add_GetRef(Input);

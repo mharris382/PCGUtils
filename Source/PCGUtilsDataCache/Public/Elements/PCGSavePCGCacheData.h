@@ -13,6 +13,10 @@ class PCGUTILSDATACACHE_API UPCGSavePCGCacheDataSettings final : public UPCGSett
 public:
 	UPCGSavePCGCacheDataSettings();
 
+	/** Input pins whose data will be stored in the cache asset. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Data")
+	TArray<FPCGPinProperties> Pins;
+
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Settings")
 	EPCGUtilsDataCache SaveTargetCache = EPCGUtilsDataCache::Offline;
 
