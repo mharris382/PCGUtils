@@ -3,8 +3,7 @@
 #pragma once
 
 #include "CoreMinimal.h"
-#include "Factories/PCGUtilsDynMeshFactoryProvider.h"
-#include "Factories/PCGUtilsDynMeshSelectionFactory.h"
+#include "Factories/PCGUtilsDynMeshDomainSelectionFactory.h"
 
 #include "PCGDynMeshSelectionFromPointsFactory.generated.h"
 
@@ -18,7 +17,7 @@ namespace PCGDynMeshSelectionFromPointsFactoryConstants
 /** Selection factory that matches vertex IDs read from an integer attribute on PCG points. */
 UCLASS(BlueprintType, ClassGroup=(Procedural), Category="PCGUtils|Dynamic Mesh|Selections")
 class PCGUTILSDYNMESH_API UPCGDynMeshSelectionFromPointsFactoryData
-	: public UPCGUtilsDynMeshSelectionFactoryData
+	: public UPCGUtilsDynMeshDomainSelectionFactoryData
 {
 	GENERATED_BODY()
 
@@ -29,16 +28,18 @@ public:
 	UPROPERTY()
 	FName VertexIndexAttribute = TEXT("VertexIndex");
 
-	virtual bool SupportsDomain(const FPCGUtilsDynMeshSelectionDomain& Domain) const override;
-
 protected:
-	virtual TSharedPtr<FPCGUtilsDynMeshSelectionOperation> CreateOperationInternal() const override;
+	virtual UE::Geometry::EGeometryElementType GetNativeElementTypeInternal() const override
+	{
+		return UE::Geometry::EGeometryElementType::Vertex;
+	}
+	virtual TSharedPtr<FPCGUtilsDynMeshSelectionOperation> CreateNativeOperationInternal() const override;
 	virtual void AddToCrc(FArchiveCrc32& Ar, bool bFullDataCrc) const override;
 };
 
 UCLASS(BlueprintType, ClassGroup=(Procedural), Category="PCGUtils|Dynamic Mesh|Selections")
 class PCGUTILSDYNMESH_API UPCGDynMeshSelectionFromPointsFactoryProviderSettings
-	: public UPCGUtilsDynMeshFactoryProviderSettings
+	: public UPCGUtilsDynMeshDomainSelectionFactoryProviderSettings
 {
 	GENERATED_BODY()
 

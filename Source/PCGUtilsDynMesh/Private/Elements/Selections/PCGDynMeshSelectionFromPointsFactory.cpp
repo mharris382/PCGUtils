@@ -90,15 +90,8 @@ namespace
 	};
 }
 
-bool UPCGDynMeshSelectionFromPointsFactoryData::SupportsDomain(
-	const FPCGUtilsDynMeshSelectionDomain& Domain) const
-{
-	return Domain.TopologyType == UE::Geometry::EGeometryTopologyType::Triangle &&
-		Domain.ElementType == UE::Geometry::EGeometryElementType::Vertex;
-}
-
 TSharedPtr<FPCGUtilsDynMeshSelectionOperation>
-UPCGDynMeshSelectionFromPointsFactoryData::CreateOperationInternal() const
+UPCGDynMeshSelectionFromPointsFactoryData::CreateNativeOperationInternal() const
 {
 	return MakeShared<FSelectionFromPointsOperation>(this);
 }
@@ -129,7 +122,7 @@ TArray<FText> UPCGDynMeshSelectionFromPointsFactoryProviderSettings::GetNodeTitl
 
 FText UPCGDynMeshSelectionFromPointsFactoryProviderSettings::GetNodeTooltipText() const
 {
-	return LOCTEXT("Tooltip", "Creates a reusable vertex-selection predicate from integer vertex IDs stored on PCG points. It supports the vertex Build domain only.");
+	return LOCTEXT("Tooltip", "Creates a reusable selection predicate from integer vertex IDs stored on PCG points. Vertex IDs are converted implicitly when the consuming Build node requests edges or triangles.");
 }
 
 FString UPCGDynMeshSelectionFromPointsFactoryProviderSettings::GetAdditionalTitleInformation() const

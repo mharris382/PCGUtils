@@ -5,6 +5,7 @@
 #include "Data/PCGDynamicMeshSelectionData.h"
 #include "Data/PCGPointArrayData.h"
 #include "DynamicMesh/DynamicMesh3.h"
+#include "Factories/PCGUtilsDynMeshDomainSelectionFactory.h"
 #include "DynamicMesh/DynamicMeshAttributeSet.h"
 #include "GameFramework/Actor.h"
 #include "PCGContext.h"
@@ -53,7 +54,7 @@ FText UPCGDynamicMeshSelectionToPointsSettings::GetDefaultNodeTitle() const
 
 FText UPCGDynamicMeshSelectionToPointsSettings::GetNodeTooltipText() const
 {
-	return LOCTEXT("Tooltip", "Outputs one PCG point for each unique source-mesh vertex belonging to the selected triangle faces.");
+	return LOCTEXT("Tooltip", "Converts the incoming vertex, edge, or triangle selection to vertices and outputs one PCG point for each unique selected source-mesh vertex.");
 }
 #endif
 
@@ -92,39 +93,26 @@ bool FPCGDynamicMeshSelectionToPointsElement::ExecuteInternal(FPCGContext* Conte
 			continue;
 		}
 
-		TSet<int32> SelectedVertexSet;
-		int32 InvalidElementCount = 0;
-		for (uint64 EncodedID : SelectionData->GetSelection().Selection)
+		UE::Geometry::FGeometrySelection VertexSelection;
+		if (!PCGUtilsDynMeshSelectionDomains::ConvertSelection(
+			MeshData, *Mesh, SelectionData->GetSelection(),
+			UE::Geometry::EGeometryElementType::Vertex, Settings->bAllowPartialInclusion,
+			VertexSelection))
 		{
-			const int32 GeometryID = static_cast<int32>(UE::Geometry::FGeoSelectionID(EncodedID).GeometryID);
-			if (SelectionData->GetSelection().ElementType == UE::Geometry::EGeometryElementType::Vertex)
-			{
-				if (Mesh->IsVertex(GeometryID))
-				{
-					SelectedVertexSet.Add(GeometryID);
-				}
-				else
-				{
-					++InvalidElementCount;
-				}
-			}
-			else if (Mesh->IsTriangle(GeometryID))
-			{
-				const UE::Geometry::FIndex3i Triangle = Mesh->GetTriangle(GeometryID);
-				SelectedVertexSet.Add(Triangle.A);
-				SelectedVertexSet.Add(Triangle.B);
-				SelectedVertexSet.Add(Triangle.C);
-			}
-			else
-			{
-				++InvalidElementCount;
-			}
+			PCGLog::LogErrorOnGraph(
+				LOCTEXT("SelectionConversionFailed", "Dynamic Mesh Selection To Points could not convert the incoming selection to vertices."),
+				Context);
+			continue;
 		}
-		if (InvalidElementCount > 0)
+
+		TSet<int32> SelectedVertexSet;
+		for (const uint64 EncodedID : VertexSelection.Selection)
 		{
-			PCGLog::LogWarningOnGraph(FText::Format(
-				LOCTEXT("InvalidElements", "Dynamic Mesh Selection To Points ignored {0} invalid or stale selection IDs."),
-				FText::AsNumber(InvalidElementCount)), Context);
+			const int32 VertexID = static_cast<int32>(UE::Geometry::FGeoSelectionID(EncodedID).GeometryID);
+			if (Mesh->IsVertex(VertexID))
+			{
+				SelectedVertexSet.Add(VertexID);
+			}
 		}
 
 		TArray<int32> SelectedVertices = SelectedVertexSet.Array();

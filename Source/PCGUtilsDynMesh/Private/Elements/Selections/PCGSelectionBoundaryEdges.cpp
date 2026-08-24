@@ -6,6 +6,7 @@
 #include "Data/PCGDynamicMeshSelectionData.h"
 #include "DynamicMesh/DynamicMesh3.h"
 #include "Elements/Selections/PCGDynamicMeshSelectionFilterBase.h"
+#include "Factories/PCGUtilsDynMeshDomainSelectionFactory.h"
 #include "GeometryScript/GeometryScriptSelectionTypes.h"
 #include "GeometryScript/MeshSelectionFunctions.h"
 #include "PCGContext.h"
@@ -31,7 +32,7 @@ TArray<FText> UPCGSelectionBoundaryEdgesSettings::GetNodeTitleAliases() const
 
 FText UPCGSelectionBoundaryEdgesSettings::GetNodeTooltipText() const
 {
-	return LOCTEXT("Tooltip", "Creates an edge selection around the triangle-region boundary of an incoming DynMesh selection. Vertex and edge selections are converted through their incident triangles.");
+	return LOCTEXT("Tooltip", "Creates an edge selection around the triangle-region boundary of an incoming DynMesh selection. Vertex and edge inputs are converted to triangles implicitly.");
 }
 #endif
 
@@ -76,20 +77,14 @@ bool FPCGSelectionBoundaryEdgesElement::ExecuteInternal(FPCGContext* Context) co
 			continue;
 		}
 
-		FGeometryScriptMeshSelection ScriptSelection;
-		ScriptSelection.SetSelection(SelectionData->GetSelection());
-		FGeometryScriptMeshSelection ScriptBoundary;
-		UGeometryScriptLibrary_MeshSelectionFunctions::SelectSelectionBoundaryEdges(
-			const_cast<UDynamicMesh*>(DynamicMesh), ScriptSelection, ScriptBoundary,
-			Settings->bExcludeMeshBoundaryEdges);
-
-		TArray<int32> BoundaryEdgeIDs;
-		const EGeometryScriptIndexType ResultType = ScriptBoundary.ConvertToMeshIndexArray(
-			*Mesh, BoundaryEdgeIDs, EGeometryScriptIndexType::Edge);
-		if (ResultType != EGeometryScriptIndexType::Edge)
+		UE::Geometry::FGeometrySelection TriangleSelection;
+		if (!PCGUtilsDynMeshSelectionDomains::ConvertSelection(
+			MeshData, *Mesh, SelectionData->GetSelection(),
+			UE::Geometry::EGeometryElementType::Face, Settings->bAllowPartialInclusion,
+			TriangleSelection))
 		{
 			PCGLog::LogErrorOnGraph(
-				LOCTEXT("BoundaryConversionFailed", "Selection Boundary Edges could not convert the generated boundary to edge IDs."),
+				LOCTEXT("SelectionConversionFailed", "Selection Boundary Edges could not convert the incoming selection to its required triangle domain."),
 				Context);
 			continue;
 		}
@@ -98,12 +93,33 @@ bool FPCGSelectionBoundaryEdgesElement::ExecuteInternal(FPCGContext* Context) co
 		BoundarySelection.InitializeTypes(
 			UE::Geometry::EGeometryElementType::Edge,
 			UE::Geometry::EGeometryTopologyType::Triangle);
-		for (const int32 EdgeID : BoundaryEdgeIDs)
+		if (!TriangleSelection.IsEmpty())
 		{
-			if (Mesh->IsEdge(EdgeID))
+			FGeometryScriptMeshSelection ScriptSelection;
+			ScriptSelection.SetSelection(MoveTemp(TriangleSelection));
+			FGeometryScriptMeshSelection ScriptBoundary;
+			UGeometryScriptLibrary_MeshSelectionFunctions::SelectSelectionBoundaryEdges(
+				const_cast<UDynamicMesh*>(DynamicMesh), ScriptSelection, ScriptBoundary,
+				Settings->bExcludeMeshBoundaryEdges);
+
+			TArray<int32> BoundaryEdgeIDs;
+			const EGeometryScriptIndexType ResultType = ScriptBoundary.ConvertToMeshIndexArray(
+				*Mesh, BoundaryEdgeIDs, EGeometryScriptIndexType::Edge);
+			if (ResultType != EGeometryScriptIndexType::Edge)
 			{
-				PCGDynamicMeshSelectionFilterHelpers::AddEdgeToSelection(
-					*Mesh, EdgeID, BoundarySelection);
+				PCGLog::LogErrorOnGraph(
+					LOCTEXT("BoundaryConversionFailed", "Selection Boundary Edges could not convert the generated boundary to edge IDs."),
+					Context);
+				continue;
+			}
+
+			for (const int32 EdgeID : BoundaryEdgeIDs)
+			{
+				if (Mesh->IsEdge(EdgeID))
+				{
+					PCGDynamicMeshSelectionFilterHelpers::AddEdgeToSelection(
+						*Mesh, EdgeID, BoundarySelection);
+				}
 			}
 		}
 

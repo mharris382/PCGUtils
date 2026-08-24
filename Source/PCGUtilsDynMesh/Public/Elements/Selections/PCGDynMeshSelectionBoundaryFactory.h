@@ -3,8 +3,7 @@
 #pragma once
 
 #include "CoreMinimal.h"
-#include "Factories/PCGUtilsDynMeshFactoryProvider.h"
-#include "Factories/PCGUtilsDynMeshSelectionFactory.h"
+#include "Factories/PCGUtilsDynMeshDomainSelectionFactory.h"
 
 #include "PCGDynMeshSelectionBoundaryFactory.generated.h"
 
@@ -13,19 +12,10 @@ namespace PCGDynMeshSelectionBoundaryFactoryConstants
 	inline const FName RegionFactoryInputPin = TEXT("Region Factory");
 }
 
-/** Domain in which the child factory is evaluated before its result is converted to a triangle region. */
-UENUM(BlueprintType)
-enum class EPCGUtilsDynMeshBoundarySourceElementType : uint8
-{
-	Triangle,
-	Vertex,
-	Edge
-};
-
 /** Edge-output factory that computes the boundary of the region selected by one child factory. */
 UCLASS(BlueprintType, ClassGroup=(Procedural), Category="PCGUtils|Dynamic Mesh|Selections")
 class PCGUTILSDYNMESH_API UPCGDynMeshSelectionBoundaryFactoryData
-	: public UPCGUtilsDynMeshSelectionFactoryData
+	: public UPCGUtilsDynMeshDomainSelectionFactoryData
 {
 	GENERATED_BODY()
 
@@ -34,22 +24,20 @@ public:
 	TObjectPtr<const UPCGUtilsDynMeshSelectionFactoryData> RegionFactory;
 
 	UPROPERTY()
-	EPCGUtilsDynMeshBoundarySourceElementType SourceElementType =
-		EPCGUtilsDynMeshBoundarySourceElementType::Triangle;
-
-	UPROPERTY()
 	bool bExcludeMeshBoundaryEdges = false;
 
-	virtual bool SupportsDomain(const FPCGUtilsDynMeshSelectionDomain& Domain) const override;
-
 protected:
-	virtual TSharedPtr<FPCGUtilsDynMeshSelectionOperation> CreateOperationInternal() const override;
+	virtual UE::Geometry::EGeometryElementType GetNativeElementTypeInternal() const override
+	{
+		return UE::Geometry::EGeometryElementType::Edge;
+	}
+	virtual TSharedPtr<FPCGUtilsDynMeshSelectionOperation> CreateNativeOperationInternal() const override;
 	virtual void AddToCrc(FArchiveCrc32& Ar, bool bFullDataCrc) const override;
 };
 
 UCLASS(BlueprintType, ClassGroup=(Procedural), Category="PCGUtils|Dynamic Mesh|Selections")
 class PCGUTILSDYNMESH_API UPCGDynMeshSelectionBoundaryFactoryProviderSettings
-	: public UPCGUtilsDynMeshFactoryProviderSettings
+	: public UPCGUtilsDynMeshDomainSelectionFactoryProviderSettings
 {
 	GENERATED_BODY()
 
@@ -59,13 +47,7 @@ public:
 	virtual FText GetDefaultNodeTitle() const override;
 	virtual TArray<FText> GetNodeTitleAliases() const override;
 	virtual FText GetNodeTooltipText() const override;
-	virtual FString GetAdditionalTitleInformation() const override;
 #endif
-
-	/** Domain used to evaluate the child region factory. The final Build node must use the Edge domain. */
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Selection", meta=(PCG_Overridable))
-	EPCGUtilsDynMeshBoundarySourceElementType SourceElementType =
-		EPCGUtilsDynMeshBoundarySourceElementType::Triangle;
 
 	/** Do not include region-boundary edges that are also open boundaries of the mesh itself. */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Selection", meta=(PCG_Overridable))

@@ -5,7 +5,7 @@
 
 #include "PCGDynamicMeshSelectionToPoints.generated.h"
 
-/** Converts the unique vertices belonging to selected mesh faces into PCG points. */
+/** Converts the incoming selection to unique mesh vertices and emits them as PCG points. */
 UCLASS(BlueprintType, ClassGroup=(Procedural), Category="PCGUtils|Dynamic Mesh")
 class PCGUTILSDYNMESH_API UPCGDynamicMeshSelectionToPointsSettings : public UPCGSettings
 {
@@ -22,6 +22,10 @@ public:
 	/** Transform mesh-local vertex positions and normals into the PCG target actor's world space. */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Settings", meta=(PCG_Overridable))
 	bool bOutputToWorldSpace = true;
+
+	/** Include a vertex when any incident source element is selected. Disable to require full inclusion. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Selection", AdvancedDisplay, meta=(PCG_Overridable))
+	bool bAllowPartialInclusion = true;
 
 protected:
 	virtual TArray<FPCGPinProperties> InputPinProperties() const override;

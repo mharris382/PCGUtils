@@ -18,38 +18,6 @@
 
 namespace
 {
-	FPCGUtilsDynMeshSelectionDomain MakeSourceDomain(
-		EPCGUtilsDynMeshBoundarySourceElementType SourceElementType)
-	{
-		FPCGUtilsDynMeshSelectionDomain Domain;
-		Domain.TopologyType = UE::Geometry::EGeometryTopologyType::Triangle;
-		switch (SourceElementType)
-		{
-		case EPCGUtilsDynMeshBoundarySourceElementType::Vertex:
-			Domain.ElementType = UE::Geometry::EGeometryElementType::Vertex;
-			break;
-		case EPCGUtilsDynMeshBoundarySourceElementType::Edge:
-			Domain.ElementType = UE::Geometry::EGeometryElementType::Edge;
-			break;
-		case EPCGUtilsDynMeshBoundarySourceElementType::Triangle:
-		default:
-			Domain.ElementType = UE::Geometry::EGeometryElementType::Face;
-			break;
-		}
-		return Domain;
-	}
-
-	const TCHAR* GetSourceDomainName(EPCGUtilsDynMeshBoundarySourceElementType SourceElementType)
-	{
-		switch (SourceElementType)
-		{
-		case EPCGUtilsDynMeshBoundarySourceElementType::Vertex: return TEXT("Vertex Region");
-		case EPCGUtilsDynMeshBoundarySourceElementType::Edge: return TEXT("Edge Region");
-		case EPCGUtilsDynMeshBoundarySourceElementType::Triangle:
-		default: return TEXT("Triangle Region");
-		}
-	}
-
 	class FSelectionBoundaryOperation final : public FPCGUtilsDynMeshSelectionOperation
 	{
 	public:
@@ -66,12 +34,14 @@ namespace
 				return false;
 			}
 
-			const FPCGUtilsDynMeshSelectionDomain SourceDomain = MakeSourceDomain(Factory->SourceElementType);
+			FPCGUtilsDynMeshSelectionDomain SourceDomain;
+			SourceDomain.ElementType = UE::Geometry::EGeometryElementType::Face;
+			SourceDomain.TopologyType = UE::Geometry::EGeometryTopologyType::Triangle;
 			if (!Factory->RegionFactory->SupportsDomain(SourceDomain))
 			{
-				PCGLog::LogErrorOnGraph(FText::Format(
-					LOCTEXT("UnsupportedSourceDomain", "The boundary factory's child does not support its configured {0} source domain."),
-					FText::FromString(GetSourceDomainName(Factory->SourceElementType))), Context);
+				PCGLog::LogErrorOnGraph(
+					LOCTEXT("UnsupportedSourceDomain", "The boundary factory could not adapt its child to the required triangle region domain."),
+					Context);
 				return false;
 			}
 
@@ -90,38 +60,17 @@ namespace
 			const UE::Geometry::FDynamicMesh3& Mesh = InSelectionContext.Mesh;
 			UE::Geometry::FGeometrySelection RegionSelection;
 			RegionSelection.InitializeTypes(SourceDomain.ElementType, SourceDomain.TopologyType);
-			if (SourceDomain.ElementType == UE::Geometry::EGeometryElementType::Face)
+			for (const int32 TriangleID : Mesh.TriangleIndicesItr())
 			{
-				for (const int32 TriangleID : Mesh.TriangleIndicesItr())
+				if (RegionOperation->TestElement(TriangleID))
 				{
-					if (RegionOperation->TestElement(TriangleID))
-					{
-						RegionSelection.Selection.Add(
-							UE::Geometry::FGeoSelectionID::MeshTriangle(TriangleID).Encoded());
-					}
+					RegionSelection.Selection.Add(
+						UE::Geometry::FGeoSelectionID::MeshTriangle(TriangleID).Encoded());
 				}
 			}
-			else if (SourceDomain.ElementType == UE::Geometry::EGeometryElementType::Vertex)
+			if (RegionSelection.IsEmpty())
 			{
-				for (const int32 VertexID : Mesh.VertexIndicesItr())
-				{
-					if (RegionOperation->TestElement(VertexID))
-					{
-						RegionSelection.Selection.Add(
-							UE::Geometry::FGeoSelectionID::MeshVertex(VertexID).Encoded());
-					}
-				}
-			}
-			else
-			{
-				for (const int32 EdgeID : Mesh.EdgeIndicesItr())
-				{
-					if (RegionOperation->TestElement(EdgeID))
-					{
-						PCGDynamicMeshSelectionFilterHelpers::AddEdgeToSelection(
-							Mesh, EdgeID, RegionSelection);
-					}
-				}
+				return true;
 			}
 
 			FGeometryScriptMeshSelection ScriptRegion;
@@ -165,15 +114,8 @@ namespace
 	};
 }
 
-bool UPCGDynMeshSelectionBoundaryFactoryData::SupportsDomain(
-	const FPCGUtilsDynMeshSelectionDomain& Domain) const
-{
-	return Domain.TopologyType == UE::Geometry::EGeometryTopologyType::Triangle &&
-		Domain.ElementType == UE::Geometry::EGeometryElementType::Edge && RegionFactory;
-}
-
 TSharedPtr<FPCGUtilsDynMeshSelectionOperation>
-UPCGDynMeshSelectionBoundaryFactoryData::CreateOperationInternal() const
+UPCGDynMeshSelectionBoundaryFactoryData::CreateNativeOperationInternal() const
 {
 	return MakeShared<FSelectionBoundaryOperation>(this);
 }
@@ -183,10 +125,8 @@ void UPCGDynMeshSelectionBoundaryFactoryData::AddToCrc(FArchiveCrc32& Ar, bool b
 	Super::AddToCrc(Ar, bFullDataCrc);
 	if (bFullDataCrc)
 	{
-		uint8 SourceTypeValue = static_cast<uint8>(SourceElementType);
 		bool bExclude = bExcludeMeshBoundaryEdges;
 		uint32 ChildCrc = RegionFactory ? RegionFactory->GetOrComputeCrc(true).GetValue() : 0;
-		Ar << SourceTypeValue;
 		Ar << bExclude;
 		Ar << ChildCrc;
 	}
@@ -208,12 +148,7 @@ TArray<FText> UPCGDynMeshSelectionBoundaryFactoryProviderSettings::GetNodeTitleA
 
 FText UPCGDynMeshSelectionBoundaryFactoryProviderSettings::GetNodeTooltipText() const
 {
-	return LOCTEXT("Tooltip", "Evaluates one child factory in the configured source domain, converts its result to a triangle region, and outputs an edge predicate for that region's boundary. Build DynMesh Selection must use the Edge domain.");
-}
-
-FString UPCGDynMeshSelectionBoundaryFactoryProviderSettings::GetAdditionalTitleInformation() const
-{
-	return GetSourceDomainName(SourceElementType);
+	return LOCTEXT("Tooltip", "Evaluates one child factory, converts its result to a triangle region, and finds that region's boundary edges. The edge result is converted implicitly when the consuming Build node requests another domain.");
 }
 #endif
 
@@ -265,7 +200,6 @@ UPCGUtilsDynMeshFactoryData* UPCGDynMeshSelectionBoundaryFactoryProviderSettings
 
 	Factory->Priority = Priority;
 	Factory->RegionFactory = RegionFactories[0];
-	Factory->SourceElementType = SourceElementType;
 	Factory->bExcludeMeshBoundaryEdges = bExcludeMeshBoundaryEdges;
 	return Super::CreateFactory(InContext, Factory);
 }

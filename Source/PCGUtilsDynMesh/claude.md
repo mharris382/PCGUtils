@@ -33,6 +33,16 @@ For a **mutating** element that accepts either a whole Dynamic Mesh or a Mesh Se
 
 For a **read-only** element that only ever computes a Selection (never mutates a mesh) - eg the filter chain built on `UPCGDynamicMeshSelectionFilterBaseSettings` - `FPCGUtilsMeshTargetHandle` does not apply, since `CreateTarget()` always makes a working copy. Those elements resolve the source mesh directly (`Cast<UPCGDynamicMeshSelectionData>` / `GetSourceMeshData()`), matching `PCGDynamicMeshSelectionFilterBase.cpp`.
 
+## Selection Pins Must Be Domain-Agnostic
+
+A `UPCGDynamicMeshSelectionData` input pin must accept vertex, edge, and triangle selections regardless of the element domain required by the implementation. Do not reject, silently skip, or require the user to recreate an upstream selection merely because its `FGeometrySelection::ElementType` differs from the operation's native domain.
+
+When an operation requires a specific domain, convert the incoming selection internally with GeometryScript's `ConvertMeshSelection` semantics. Use `PCGUtilsDynMeshSelectionDomains::ConvertSelection()` rather than hand-rolling incident-element conversion. Inclusive conversion (`bAllowPartialInclusion = true`) is the default; expose the restrictive full-inclusion behavior only as an advanced setting when it is useful.
+
+The same rule applies to selection factories. A factory whose predicate is natively meaningful in only one domain must derive its data/provider classes from `UPCGUtilsDynMeshDomainSelectionFactoryData` and `UPCGUtilsDynMeshDomainSelectionFactoryProviderSettings`. Implement only the native predicate; the base materializes and converts it automatically when `Build DynMesh Selection` or another factory requests a different domain.
+
+This is a user-facing graph contract: selection wires communicate mesh-element membership, not a hidden compatibility requirement. Domain conversion is an implementation detail and must not produce mysterious empty results or runtime-only domain errors.
+
 ## Naming: Prefer `DynMesh`
 
 For project-owned filenames, class names, node names, and related identifiers, prefer the shorter term:

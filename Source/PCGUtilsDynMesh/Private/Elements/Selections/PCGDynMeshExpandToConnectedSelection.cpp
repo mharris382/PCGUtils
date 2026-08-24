@@ -90,7 +90,7 @@ namespace
 			if (!Factory->SeedFactory->SupportsDomain(InSelectionContext.Domain))
 			{
 				PCGLog::LogErrorOnGraph(
-					LOCTEXT("UnsupportedSeedDomain", "Expand To Connected Factory requires a child that supports the Triangle domain."),
+					LOCTEXT("UnsupportedSeedDomain", "Expand To Connected Factory could not adapt its child seed factory to the operation's internal domain."),
 					Context);
 				return false;
 			}
@@ -157,7 +157,7 @@ TArray<FText> UPCGDynMeshExpandToConnectedSelectionSettings::GetNodeTitleAliases
 
 FText UPCGDynMeshExpandToConnectedSelectionSettings::GetNodeTooltipText() const
 {
-	return LOCTEXT("ElementTooltip", "Expands an incoming triangle selection to complete connected regions, optionally constrained by PolyGroup or Material ID. Vertex and edge selections are not supported by the underlying GeometryScript operation.");
+	return LOCTEXT("ElementTooltip", "Expands an incoming selection to complete connected regions, optionally constrained by PolyGroup or Material ID. Vertex and edge inputs are processed through triangles and converted back to their incoming domain.");
 }
 
 FText UPCGDynMeshExpandToConnectedSelectionFactoryProviderSettings::GetDefaultNodeTitle() const
@@ -175,7 +175,7 @@ TArray<FText> UPCGDynMeshExpandToConnectedSelectionFactoryProviderSettings::GetN
 
 FText UPCGDynMeshExpandToConnectedSelectionFactoryProviderSettings::GetNodeTooltipText() const
 {
-	return LOCTEXT("FactoryTooltip", "Evaluates one child factory as triangle seeds, expands those seeds to complete connected regions, and caches the result as a triangle selection predicate.");
+	return LOCTEXT("FactoryTooltip", "Evaluates one child factory as seeds, converts them to triangles when necessary, expands them to complete connected regions, and converts the cached result to the consuming Build domain.");
 }
 
 FString UPCGDynMeshExpandToConnectedSelectionFactoryProviderSettings::GetAdditionalTitleInformation() const
@@ -227,19 +227,21 @@ bool FPCGDynMeshExpandToConnectedSelectionElement::ExecuteInternal(FPCGContext* 
 			continue;
 		}
 
-		const UE::Geometry::FGeometrySelection& SeedSelection = SelectionData->GetSelection();
-		if (SeedSelection.ElementType != UE::Geometry::EGeometryElementType::Face ||
-			SeedSelection.TopologyType != UE::Geometry::EGeometryTopologyType::Triangle)
+		UE::Geometry::FGeometrySelection TriangleSeedSelection;
+		if (!PCGUtilsDynMeshSelectionDomains::ConvertSelection(
+			MeshData, *Mesh, SelectionData->GetSelection(),
+			UE::Geometry::EGeometryElementType::Face, Settings->bAllowPartialInclusion,
+			TriangleSeedSelection))
 		{
 			PCGLog::LogErrorOnGraph(
-				LOCTEXT("RequiresTriangles", "Expand Selection to Connected requires a triangle selection. UE 5.8 does not implement vertex or edge expansion for this operation."),
+				LOCTEXT("SeedConversionFailed", "Expand Selection to Connected could not convert the incoming selection to its required triangle domain."),
 				Context);
 			continue;
 		}
 
 		TSet<int32> ConnectedTriangleIDs;
 		if (!ExpandToConnectedTriangles(
-			MeshData, *Mesh, SeedSelection, Settings->ConnectionType, ConnectedTriangleIDs))
+			MeshData, *Mesh, TriangleSeedSelection, Settings->ConnectionType, ConnectedTriangleIDs))
 		{
 			PCGLog::LogErrorOnGraph(
 				LOCTEXT("ElementExpansionFailed", "Expand Selection to Connected could not generate its connected triangle region."),
@@ -247,14 +249,26 @@ bool FPCGDynMeshExpandToConnectedSelectionElement::ExecuteInternal(FPCGContext* 
 			continue;
 		}
 
-		UE::Geometry::FGeometrySelection ResultSelection;
-		ResultSelection.InitializeTypes(
+		UE::Geometry::FGeometrySelection TriangleResultSelection;
+		TriangleResultSelection.InitializeTypes(
 			UE::Geometry::EGeometryElementType::Face,
 			UE::Geometry::EGeometryTopologyType::Triangle);
 		for (const int32 TriangleID : ConnectedTriangleIDs)
 		{
-			ResultSelection.Selection.Add(
+			TriangleResultSelection.Selection.Add(
 				UE::Geometry::FGeoSelectionID::MeshTriangle(TriangleID).Encoded());
+		}
+
+		UE::Geometry::FGeometrySelection ResultSelection;
+		if (!PCGUtilsDynMeshSelectionDomains::ConvertSelection(
+			MeshData, *Mesh, TriangleResultSelection,
+			SelectionData->GetSelection().ElementType, Settings->bAllowPartialInclusion,
+			ResultSelection))
+		{
+			PCGLog::LogErrorOnGraph(
+				LOCTEXT("ResultConversionFailed", "Expand Selection to Connected could not convert its triangle result back to the incoming selection domain."),
+				Context);
+			continue;
 		}
 
 		UPCGDynamicMeshSelectionData* OutputData =
@@ -268,15 +282,8 @@ bool FPCGDynMeshExpandToConnectedSelectionElement::ExecuteInternal(FPCGContext* 
 	return true;
 }
 
-bool UPCGDynMeshExpandToConnectedSelectionFactoryData::SupportsDomain(
-	const FPCGUtilsDynMeshSelectionDomain& Domain) const
-{
-	return Domain.TopologyType == UE::Geometry::EGeometryTopologyType::Triangle &&
-		Domain.ElementType == UE::Geometry::EGeometryElementType::Face && SeedFactory;
-}
-
 TSharedPtr<FPCGUtilsDynMeshSelectionOperation>
-UPCGDynMeshExpandToConnectedSelectionFactoryData::CreateOperationInternal() const
+UPCGDynMeshExpandToConnectedSelectionFactoryData::CreateNativeOperationInternal() const
 {
 	return MakeShared<FExpandToConnectedSelectionOperation>(this);
 }

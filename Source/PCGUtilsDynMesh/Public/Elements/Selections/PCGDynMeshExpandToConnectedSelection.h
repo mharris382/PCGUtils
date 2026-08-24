@@ -4,8 +4,7 @@
 
 #include "CoreMinimal.h"
 #include "Elements/PCGDynamicMeshBaseElement.h"
-#include "Factories/PCGUtilsDynMeshFactoryProvider.h"
-#include "Factories/PCGUtilsDynMeshSelectionFactory.h"
+#include "Factories/PCGUtilsDynMeshDomainSelectionFactory.h"
 #include "GeometryScript/MeshSelectionFunctions.h"
 
 #include "PCGDynMeshExpandToConnectedSelection.generated.h"
@@ -35,6 +34,10 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Selection", meta=(PCG_Overridable))
 	EGeometryScriptTopologyConnectionType ConnectionType = EGeometryScriptTopologyConnectionType::Geometric;
 
+	/** Include a triangle when any incident source element is selected. Disable to require full inclusion. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Selection", AdvancedDisplay, meta=(PCG_Overridable))
+	bool bAllowPartialInclusion = true;
+
 protected:
 	virtual TArray<FPCGPinProperties> InputPinProperties() const override;
 	virtual TArray<FPCGPinProperties> OutputPinProperties() const override;
@@ -50,7 +53,7 @@ protected:
 /** Factory that caches the connected triangle regions reached from one child seed factory. */
 UCLASS(BlueprintType, ClassGroup=(Procedural), Category="PCGUtils|Dynamic Mesh|Selections")
 class PCGUTILSDYNMESH_API UPCGDynMeshExpandToConnectedSelectionFactoryData
-	: public UPCGUtilsDynMeshSelectionFactoryData
+	: public UPCGUtilsDynMeshDomainSelectionFactoryData
 {
 	GENERATED_BODY()
 
@@ -61,16 +64,18 @@ public:
 	UPROPERTY()
 	EGeometryScriptTopologyConnectionType ConnectionType = EGeometryScriptTopologyConnectionType::Geometric;
 
-	virtual bool SupportsDomain(const FPCGUtilsDynMeshSelectionDomain& Domain) const override;
-
 protected:
-	virtual TSharedPtr<FPCGUtilsDynMeshSelectionOperation> CreateOperationInternal() const override;
+	virtual UE::Geometry::EGeometryElementType GetNativeElementTypeInternal() const override
+	{
+		return UE::Geometry::EGeometryElementType::Face;
+	}
+	virtual TSharedPtr<FPCGUtilsDynMeshSelectionOperation> CreateNativeOperationInternal() const override;
 	virtual void AddToCrc(FArchiveCrc32& Ar, bool bFullDataCrc) const override;
 };
 
 UCLASS(BlueprintType, ClassGroup=(Procedural), Category="PCGUtils|Dynamic Mesh|Selections")
 class PCGUTILSDYNMESH_API UPCGDynMeshExpandToConnectedSelectionFactoryProviderSettings
-	: public UPCGUtilsDynMeshFactoryProviderSettings
+	: public UPCGUtilsDynMeshDomainSelectionFactoryProviderSettings
 {
 	GENERATED_BODY()
 
