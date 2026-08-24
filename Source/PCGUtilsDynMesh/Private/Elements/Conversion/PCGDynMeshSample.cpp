@@ -5,6 +5,7 @@
 #include "Data/PCGPointArrayData.h"
 #include "DynamicMesh/DynamicMesh3.h"
 #include "DynamicMesh/DynamicMeshAttributeSet.h"
+#include "DynamicMesh/MeshNormals.h"
 #include "DynamicSubmesh3.h"
 #include "GameFramework/Actor.h"
 #include "GeometryScript/GeometryScriptSelectionTypes.h"
@@ -60,36 +61,6 @@ namespace
 	FTransform ToLocalTransform(const FSampledPoint& Point)
 	{
 		return FTransform(FRotationMatrix::MakeFromXZ(Point.TangentX, Point.Normal).ToQuat(), Point.Position);
-	}
-
-	template<typename OverlayType, typename ValueType>
-	ValueType Sample_GetFirstVertexOverlayElement(const FDynamicMesh3& Mesh, const OverlayType* Overlay, int32 VertexID, const ValueType& DefaultValue)
-	{
-		if (!Overlay)
-		{
-			return DefaultValue;
-		}
-		ValueType Result = DefaultValue;
-		bool bFound = false;
-		Mesh.EnumerateVertexTriangles(VertexID, [&](int32 TriangleID)
-		{
-			if (bFound || !Overlay->IsSetTriangle(TriangleID))
-			{
-				return;
-			}
-			const FIndex3i TriVerts = Mesh.GetTriangle(TriangleID);
-			const FIndex3i TriElems = Overlay->GetTriangle(TriangleID);
-			for (int32 Corner = 0; Corner < 3; ++Corner)
-			{
-				if (TriVerts[Corner] == VertexID && Overlay->IsElement(TriElems[Corner]))
-				{
-					Result = Overlay->GetElement(TriElems[Corner]);
-					bFound = true;
-					break;
-				}
-			}
-		});
-		return Result;
 	}
 
 	FLinearColor InterpolateTriangleColor(const FDynamicMesh3& Mesh, int32 TriangleID, const FVector& Barycentric, const FLinearColor& DefaultColor)
@@ -152,29 +123,67 @@ namespace
 	// computed for this mode, since a mesh vertex is shared by multiple triangles and has no single triangle id.
 	void SampleOnePointPerVertex(const FDynamicMesh3& Mesh, const UPCGDynMeshSampleSettings* Settings, TArray<FSampledPoint>& OutPoints)
 	{
-		const FDynamicMeshNormalOverlay* Normals = Mesh.HasAttributes() ? Mesh.Attributes()->PrimaryNormals() : nullptr;
-		const FDynamicMeshColorOverlay* Colors = Mesh.HasAttributes() ? Mesh.Attributes()->PrimaryColors() : nullptr;
-		const FLinearColor DefaultColor = Settings->bHasDefaultColorOverride ? Settings->DefaultColorOverride : FLinearColor::White;
+		// Match GeometryScript's GetMeshPerVertexNormals default behavior used by the vanilla sampler: split
+		// overlay normals are averaged into one normal per source vertex.
+		FMeshNormals MeshNormals(&Mesh);
+		MeshNormals.GetVertexNormalsFromOverlayNormals(FMeshNormals::ECombineSplitNormalsMethod::Average);
+		const TArray<FVector3d>& Normals = MeshNormals.GetNormals();
 
-		OutPoints.Reserve(OutPoints.Num() + Mesh.VertexCount());
-		for (const int32 VertexID : Mesh.VertexIndicesItr())
+		// Match GeometryScript's GetMeshPerVertexColors default behavior: split colors are averaged, vertices
+		// without a color remain transparent, and the default override is used only when there is no color set.
+		TArray<FLinearColor> Colors;
+		Colors.Init(FLinearColor::Transparent, Mesh.MaxVertexID());
+		bool bHasValidColors = false;
+		if (Mesh.HasAttributes())
+		{
+			if (const FDynamicMeshColorOverlay* ColorOverlay = Mesh.Attributes()->PrimaryColors())
+			{
+				TArray<int32> ColorCounts;
+				ColorCounts.Init(0, Mesh.MaxVertexID());
+				for (const int32 TriangleID : Mesh.TriangleIndicesItr())
+				{
+					if (!ColorOverlay->IsSetTriangle(TriangleID))
+					{
+						continue;
+					}
+
+					const FIndex3i Triangle = Mesh.GetTriangle(TriangleID);
+					FVector4f A, B, C;
+					ColorOverlay->GetTriElements(TriangleID, A, B, C);
+					Colors[Triangle.A] += FLinearColor(A.X, A.Y, A.Z, A.W);
+					Colors[Triangle.B] += FLinearColor(B.X, B.Y, B.Z, B.W);
+					Colors[Triangle.C] += FLinearColor(C.X, C.Y, C.Z, C.W);
+					++ColorCounts[Triangle.A];
+					++ColorCounts[Triangle.B];
+					++ColorCounts[Triangle.C];
+				}
+
+				for (int32 VertexID = 0; VertexID < ColorCounts.Num(); ++VertexID)
+				{
+					if (ColorCounts[VertexID] > 1)
+					{
+						Colors[VertexID] *= 1.0f / static_cast<float>(ColorCounts[VertexID]);
+					}
+				}
+				bHasValidColors = true;
+			}
+		}
+
+		if (!bHasValidColors && Settings->bHasDefaultColorOverride)
+		{
+			Colors.Init(Settings->DefaultColorOverride, Mesh.MaxVertexID());
+		}
+
+		// Vanilla requests positions with bSkipGaps=false, so preserve the MaxVertexID indexing (including
+		// zero-valued placeholders for any vertex ID gaps) to keep output count and ordering identical.
+		OutPoints.Reserve(OutPoints.Num() + Mesh.MaxVertexID());
+		for (int32 VertexID = 0; VertexID < Mesh.MaxVertexID(); ++VertexID)
 		{
 			FSampledPoint& Point = OutPoints.Emplace_GetRef();
-
-			FVector3f Normal = Normals
-				? Sample_GetFirstVertexOverlayElement<FDynamicMeshNormalOverlay, FVector3f>(Mesh, Normals, VertexID, FVector3f::UnitZ())
-				: (Mesh.HasVertexNormals() ? Mesh.GetVertexNormal(VertexID) : FVector3f::UnitZ());
-			SetFrame(Point, Mesh.GetVertex(VertexID), FVector(Normal));
-
-			const FVector4f DefaultColor4f(DefaultColor.R, DefaultColor.G, DefaultColor.B, DefaultColor.A);
-			FVector4f VertexColor = DefaultColor4f;
-			if (Mesh.HasVertexColors())
-			{
-				const FVector3f VC = Mesh.GetVertexColor(VertexID);
-				VertexColor = FVector4f(VC.X, VC.Y, VC.Z, DefaultColor4f.W);
-			}
-			VertexColor = Colors ? Sample_GetFirstVertexOverlayElement<FDynamicMeshColorOverlay, FVector4f>(Mesh, Colors, VertexID, DefaultColor4f) : VertexColor;
-			Point.Color = FLinearColor(VertexColor.X, VertexColor.Y, VertexColor.Z, VertexColor.W);
+			const FVector Position = Mesh.IsVertex(VertexID) ? FVector(Mesh.GetVertex(VertexID)) : FVector::ZeroVector;
+			const FVector Normal = Normals.IsValidIndex(VertexID) ? FVector(Normals[VertexID]) : FVector::UpVector;
+			SetFrame(Point, Position, Normal);
+			Point.Color = Colors.IsValidIndex(VertexID) ? Colors[VertexID] : FLinearColor::Transparent;
 		}
 	}
 
@@ -212,8 +221,9 @@ namespace
 	{
 		FMeshSurfacePointSampling PointSampling;
 		PointSampling.SampleRadius = Settings->SamplingOptions.SamplingRadius;
-		PointSampling.MaxSamples = Settings->SamplingOptions.MaxNumSamples > 0
-			? (uint32)Settings->SamplingOptions.MaxNumSamples : TNumericLimits<uint32>::Max();
+		// GeometryCore treats zero as unlimited after narrowing this value to int32. Passing uint32::Max here
+		// narrows to -1 and causes the sampling loops to reject every candidate.
+		PointSampling.MaxSamples = Settings->SamplingOptions.MaxNumSamples;
 		PointSampling.RandomSeed = PCGHelpers::ComputeSeed(ContextSeed, Settings->SamplingOptions.RandomSeed);
 		PointSampling.SubSampleDensity = Settings->SamplingOptions.SubSampleDensity;
 		PointSampling.SamplingMethodVersion = Settings->SamplingOptions.SamplingMethodVersion;
@@ -421,13 +431,8 @@ bool FPCGDynMeshSampleElement::ExecuteInternal(FPCGContext* Context) const
 
 		UPCGPointArrayData* OutputData = FPCGContext::NewObject_AnyThread<UPCGPointArrayData>(Context);
 		OutputData->SetNumPoints(SampledPoints.Num(), false);
-		auto Transforms = OutputData->GetTransformValueRange();
-		auto PointColors = OutputData->GetColorValueRange();
-		auto Densities = OutputData->GetDensityValueRange();
-		auto BoundsMin = OutputData->GetBoundsMinValueRange();
-		auto BoundsMax = OutputData->GetBoundsMaxValueRange();
-		auto Steepnesses = OutputData->GetSteepnessValueRange();
-		auto Seeds = OutputData->GetSeedValueRange();
+		OutputData->AllocateProperties(EPCGPointNativeProperties::All);
+		FPCGPointValueRanges OutRanges(OutputData, false);
 
 		const bool bWantUV = Settings->bExtractUVAsAttribute && Settings->SamplingMethod != EPCGMeshSamplingMethod::OnePointPerVertex;
 		const bool bWantTriangleId = Settings->bOutputTriangleIds && Settings->SamplingMethod != EPCGMeshSamplingMethod::OnePointPerVertex;
@@ -444,7 +449,6 @@ bool FPCGDynMeshSampleElement::ExecuteInternal(FPCGContext* Context) const
 			? Metadata->CreateAttribute<FSoftObjectPath>(Settings->MaterialAttributeName, FSoftObjectPath(), false, true) : nullptr;
 
 		const TArray<TObjectPtr<UMaterialInterface>>& SourceMaterials = SourceData->GetMaterials();
-		auto MetadataEntries = OutputData->GetMetadataEntryValueRange();
 
 		for (int32 Index = 0; Index < SampledPoints.Num(); ++Index)
 		{
@@ -452,33 +456,35 @@ bool FPCGDynMeshSampleElement::ExecuteInternal(FPCGContext* Context) const
 			const FTransform LocalTransform = ToLocalTransform(Point);
 			const FTransform FinalTransform = Settings->bTransformToWorldSpace ? LocalTransform * ToWorld : LocalTransform;
 
-			Transforms[Index] = FinalTransform;
-			PointColors[Index] = FVector4(Point.Color.R, Point.Color.G, Point.Color.B, Point.Color.A);
-			Densities[Index] = Settings->bUseColorChannelAsDensity ? ExtractDensityFromColor(Settings->ColorChannelAsDensity, Point.Color) : 1.0f;
-			BoundsMin[Index] = FVector::ZeroVector;
-			BoundsMax[Index] = FVector::ZeroVector;
-			Steepnesses[Index] = Settings->PointSteepness;
-			Seeds[Index] = PCGHelpers::ComputeSeedFromPosition(FinalTransform.GetLocation());
+			// Construct a complete point so the vanilla defaults are retained for bounds and metadata entry.
+			FPCGPoint OutPoint{};
+			OutPoint.Transform = FinalTransform;
+			OutPoint.Color = FVector4(Point.Color.R, Point.Color.G, Point.Color.B, Point.Color.A);
+			OutPoint.Density = Settings->bUseColorChannelAsDensity ? ExtractDensityFromColor(Settings->ColorChannelAsDensity, Point.Color) : 1.0f;
+			OutPoint.Steepness = Settings->PointSteepness;
+			OutPoint.Seed = PCGHelpers::ComputeSeedFromPosition(FinalTransform.GetLocation());
 
 			if (UVAttribute && Point.UV.IsSet())
 			{
-				Metadata->InitializeOnSet(MetadataEntries[Index]);
-				UVAttribute->SetValue(MetadataEntries[Index], Point.UV.GetValue());
+				Metadata->InitializeOnSet(OutPoint.MetadataEntry);
+				UVAttribute->SetValue(OutPoint.MetadataEntry, Point.UV.GetValue());
 			}
 			if (TriangleIdAttribute && Point.SourceTriangleId != INDEX_NONE)
 			{
-				Metadata->InitializeOnSet(MetadataEntries[Index]);
-				TriangleIdAttribute->SetValue(MetadataEntries[Index], Point.SourceTriangleId);
+				Metadata->InitializeOnSet(OutPoint.MetadataEntry);
+				TriangleIdAttribute->SetValue(OutPoint.MetadataEntry, Point.SourceTriangleId);
 			}
 			if (MaterialIdAttribute && Point.MaterialId.IsSet())
 			{
-				Metadata->InitializeOnSet(MetadataEntries[Index]);
-				MaterialIdAttribute->SetValue(MetadataEntries[Index], Point.MaterialId.GetValue());
+				Metadata->InitializeOnSet(OutPoint.MetadataEntry);
+				MaterialIdAttribute->SetValue(OutPoint.MetadataEntry, Point.MaterialId.GetValue());
 				if (MaterialAttribute && SourceMaterials.IsValidIndex(Point.MaterialId.GetValue()) && SourceMaterials[Point.MaterialId.GetValue()])
 				{
-					MaterialAttribute->SetValue(MetadataEntries[Index], FSoftObjectPath(SourceMaterials[Point.MaterialId.GetValue()]));
+					MaterialAttribute->SetValue(OutPoint.MetadataEntry, FSoftObjectPath(SourceMaterials[Point.MaterialId.GetValue()]));
 				}
 			}
+
+			OutRanges.SetFromPoint(Index, OutPoint);
 		}
 
 		FPCGTaggedData& Output = Context->OutputData.TaggedData.Emplace_GetRef(Input);

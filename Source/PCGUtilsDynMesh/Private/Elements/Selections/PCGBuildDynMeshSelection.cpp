@@ -75,7 +75,7 @@ bool FPCGBuildDynMeshSelectionElement::CreateSelection(
 		return false;
 	}
 
-	FPCGUtilsDynMeshSelectionEvaluationContext EvaluationContext(Mesh, Domain);
+	FPCGUtilsDynMeshSelectionEvaluationContext EvaluationContext(MeshData, Mesh, Domain);
 	TArray<TSharedPtr<FPCGUtilsDynMeshSelectionOperation>> Operations;
 	Operations.Reserve(Factories.Num());
 	for (const UPCGUtilsDynMeshSelectionFactoryData* Factory : Factories)

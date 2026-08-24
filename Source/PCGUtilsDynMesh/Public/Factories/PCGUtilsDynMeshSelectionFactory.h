@@ -15,6 +15,8 @@ namespace UE::Geometry
 	class FDynamicMesh3;
 }
 
+class UPCGDynamicMeshData;
+
 namespace PCGUtilsDynMeshSelectionFactoryConstants
 {
 	inline const FName OutputPin = TEXT("Selection Factory");
@@ -32,12 +34,14 @@ struct PCGUTILSDYNMESH_API FPCGUtilsDynMeshSelectionDomain
 struct PCGUTILSDYNMESH_API FPCGUtilsDynMeshSelectionEvaluationContext
 {
 	FPCGUtilsDynMeshSelectionEvaluationContext(
+		const UPCGDynamicMeshData* InMeshData,
 		const UE::Geometry::FDynamicMesh3& InMesh,
 		const FPCGUtilsDynMeshSelectionDomain& InDomain)
-		: Mesh(InMesh), Domain(InDomain)
+		: MeshData(InMeshData), Mesh(InMesh), Domain(InDomain)
 	{
 	}
 
+	const UPCGDynamicMeshData* MeshData = nullptr;
 	const UE::Geometry::FDynamicMesh3& Mesh;
 	FPCGUtilsDynMeshSelectionDomain Domain;
 };

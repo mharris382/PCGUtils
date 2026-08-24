@@ -43,6 +43,10 @@ protected:
 class PCGUTILSDYNMESH_API FPCGBuildDynMeshSelectionElement
 	: public FPCGDynamicMeshSelectionBaseElement
 {
+public:
+	/** Spatial factories may resolve the mesh target actor while initializing their operations. */
+	virtual bool CanExecuteOnlyOnMainThread(FPCGContext*) const override { return true; }
+
 protected:
 	virtual bool CreateSelection(const UPCGDynamicMeshData* MeshData,
 		const UE::Geometry::FDynamicMesh3& Mesh, FPCGContext* Context,

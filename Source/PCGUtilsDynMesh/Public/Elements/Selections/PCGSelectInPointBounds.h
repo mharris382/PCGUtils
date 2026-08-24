@@ -2,6 +2,7 @@
 
 #include "CoreMinimal.h"
 #include "Elements/Selections/PCGDynamicMeshSelectionFilterBase.h"
+#include "Elements/Selections/PCGDynMeshBoundsSelectionTypes.h"
 
 #include "PCGSelectInPointBounds.generated.h"
 
@@ -9,25 +10,6 @@ namespace PCGSelectInPointBoundsConstants
 {
 	inline const FName PointsInputPin = TEXT("Points");
 }
-
-UENUM(BlueprintType)
-enum class EPCGDynMeshBoundsSelectionElementType : uint8
-{
-	Vertex,
-	Edge,
-	Triangle
-};
-
-UENUM(BlueprintType)
-enum class EPCGDynMeshBoundsTestMode : uint8
-{
-	/** Selects an element if its center (edge midpoint / triangle centroid) is inside the point's bounds. */
-	ElementCenterInside,
-	/** Selects an element if any one of its vertices is inside the point's bounds. */
-	AnyVertexInside,
-	/** Selects an element if all of its vertices are inside the point's bounds. */
-	AllVerticesInside
-};
 
 /**
  * Selects Dynamic Mesh elements whose test position(s) fall inside the oriented bounding box of one or more PCG

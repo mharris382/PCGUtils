@@ -8,6 +8,7 @@
 
 #include "Components/SceneComponent.h"
 #include "GameFramework/Actor.h"
+#include "MaterialCache/PCGUtilsComponentIdentity.h"
 #include "Materials/MaterialInstanceDynamic.h"
 #include "Materials/MaterialInterface.h"
 
