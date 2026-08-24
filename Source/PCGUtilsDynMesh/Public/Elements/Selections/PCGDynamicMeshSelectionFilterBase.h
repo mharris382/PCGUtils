@@ -2,6 +2,7 @@
 
 #include "CoreMinimal.h"
 #include "Elements/PCGDynamicMeshBaseElement.h"
+#include "Elements/Selections/PCGDynamicMeshSelectionBase.h"
 #include "Selections/GeometrySelection.h"
 
 #include "PCGDynamicMeshSelectionFilterBase.generated.h"
@@ -16,7 +17,8 @@ namespace PCGDynamicMeshSelectionFilterConstants
 
 /**
  * Common base for nodes that compute a Dynamic Mesh element selection and either output it directly, or - if fed
- * an existing Dynamic Mesh Selection instead of a bare Dynamic Mesh - intersect it with that existing selection.
+ * an existing Dynamic Mesh Selection instead of a bare Dynamic Mesh - evaluate only the incoming selection after
+ * converting it to the node's output domain.
  *
  * This is the "filter an existing selection, or start fresh from the whole mesh" counterpart to
  * PCGDynamicMeshSelectionBase (which only ever starts fresh from a Mesh pin). It exists because chaining multiple
@@ -35,7 +37,7 @@ protected:
 };
 
 /**
- * Executes the common mesh/selection resolution, match computation, and intersect-with-incoming-selection path.
+ * Executes the common mesh/selection resolution, candidate-domain match computation, and output creation path.
  * Resolution is read-only (never copies the mesh) - unlike PCGUtilsMeshTargetFunctions, which always produces a
  * mutable working copy for mutation-oriented elements, filter nodes only ever read the mesh to compute a Selection.
  */
@@ -45,13 +47,14 @@ protected:
 	virtual bool ExecuteInternal(FPCGContext* Context) const override;
 
 	/**
-	 * Computes the full set of mesh elements this node matches, independent of any incoming selection (the base
-	 * class intersects with an incoming selection afterward, if one was supplied). Implementations should call
-	 * OutSelection.InitializeTypes(...) to declare the element/topology type they produce.
+	 * Computes the matching mesh elements inside Candidates. Implementations should call
+	 * OutSelection.InitializeTypes(...) to declare the element/topology type they produce, then use the matching
+	 * Candidates.Process* method rather than iterating the whole mesh directly.
 	 * @return false to skip this input entirely (eg on a hard error already logged by the implementation).
 	 */
 	virtual bool ComputeMatchSelection(const UPCGDynamicMeshData* MeshData,
-		const UE::Geometry::FDynamicMesh3& Mesh, FPCGContext* Context,
+		const UE::Geometry::FDynamicMesh3& Mesh, const FPCGDynamicMeshSelectionCandidates& Candidates,
+		FPCGContext* Context,
 		UE::Geometry::FGeometrySelection& OutSelection) const = 0;
 };
 

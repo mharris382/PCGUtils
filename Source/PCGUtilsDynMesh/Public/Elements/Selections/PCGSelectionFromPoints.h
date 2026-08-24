@@ -36,6 +36,7 @@ class PCGUTILSDYNMESH_API FPCGSelectionFromPointsElement : public FPCGDynamicMes
 {
 protected:
 	virtual bool CreateSelection(const UPCGDynamicMeshData* MeshData,
-		const UE::Geometry::FDynamicMesh3& Mesh, FPCGContext* Context,
+		const UE::Geometry::FDynamicMesh3& Mesh, const FPCGDynamicMeshSelectionCandidates& Candidates,
+		FPCGContext* Context,
 		UE::Geometry::FGeometrySelection& OutSelection) const override;
 };

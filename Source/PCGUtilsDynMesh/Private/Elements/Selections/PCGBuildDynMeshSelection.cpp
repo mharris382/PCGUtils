@@ -41,6 +41,7 @@ FPCGElementPtr UPCGBuildDynMeshSelectionSettings::CreateElement() const
 bool FPCGBuildDynMeshSelectionElement::CreateSelection(
 	const UPCGDynamicMeshData* MeshData,
 	const UE::Geometry::FDynamicMesh3& Mesh,
+	const FPCGDynamicMeshSelectionCandidates& Candidates,
 	FPCGContext* Context,
 	UE::Geometry::FGeometrySelection& OutSelection) const
 {
@@ -114,33 +115,33 @@ bool FPCGBuildDynMeshSelectionElement::CreateSelection(
 
 	if (Domain.ElementType == EGeometryElementType::Face)
 	{
-		for (const int32 TriangleID : Mesh.TriangleIndicesItr())
+		Candidates.ProcessTriangles([&OutSelection, &PassesAll](int32 TriangleID)
 		{
 			if (PassesAll(TriangleID))
 			{
 				OutSelection.Selection.Add(FGeoSelectionID::MeshTriangle(TriangleID).Encoded());
 			}
-		}
+		});
 	}
 	else if (Domain.ElementType == EGeometryElementType::Vertex)
 	{
-		for (const int32 VertexID : Mesh.VertexIndicesItr())
+		Candidates.ProcessVertices([&OutSelection, &PassesAll](int32 VertexID)
 		{
 			if (PassesAll(VertexID))
 			{
 				OutSelection.Selection.Add(FGeoSelectionID::MeshVertex(VertexID).Encoded());
 			}
-		}
+		});
 	}
 	else
 	{
-		for (const int32 EdgeID : Mesh.EdgeIndicesItr())
+		Candidates.ProcessEdges([&Mesh, &OutSelection, &PassesAll](int32 EdgeID)
 		{
 			if (PassesAll(EdgeID))
 			{
 				PCGDynamicMeshSelectionFilterHelpers::AddEdgeToSelection(Mesh, EdgeID, OutSelection);
 			}
-		}
+		});
 	}
 
 	return true;

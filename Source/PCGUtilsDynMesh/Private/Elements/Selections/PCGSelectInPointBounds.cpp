@@ -18,7 +18,7 @@ FText UPCGSelectInPointBoundsSettings::GetDefaultNodeTitle() const
 
 FText UPCGSelectInPointBoundsSettings::GetNodeTooltipText() const
 {
-	return LOCTEXT("Tooltip", "Selects Dynamic Mesh elements whose test position falls inside the oriented bounding box of one or more PCG points. Intersects with an incoming selection, if any.");
+	return LOCTEXT("Tooltip", "Selects Dynamic Mesh elements whose test position falls inside the oriented bounding box of one or more PCG points. If an incoming selection is supplied, only its converted candidates are evaluated.");
 }
 #endif
 
@@ -35,7 +35,8 @@ FPCGElementPtr UPCGSelectInPointBoundsSettings::CreateElement() const
 }
 
 bool FPCGSelectInPointBoundsElement::ComputeMatchSelection(const UPCGDynamicMeshData* MeshData,
-	const UE::Geometry::FDynamicMesh3& Mesh, FPCGContext* Context,
+	const UE::Geometry::FDynamicMesh3& Mesh, const FPCGDynamicMeshSelectionCandidates& Candidates,
+	FPCGContext* Context,
 	UE::Geometry::FGeometrySelection& OutSelection) const
 {
 	using namespace UE::Geometry;
@@ -58,6 +59,27 @@ bool FPCGSelectInPointBoundsElement::ComputeMatchSelection(const UPCGDynamicMesh
 	}
 
 	const FTransform ActorTransform = PCGUtilsDynMeshSpaceHelpers::ResolveMeshActorTransform(Context, MeshData, Settings->bConvertPointsToLocalSpace);
+	TSet<int32> RestrictedCandidateIDs;
+	if (Candidates.IsRestricted())
+	{
+		switch (Settings->ElementType)
+		{
+		case EPCGDynMeshBoundsSelectionElementType::Vertex:
+			Candidates.ProcessVertices([&RestrictedCandidateIDs](int32 VertexID) { RestrictedCandidateIDs.Add(VertexID); });
+			break;
+		case EPCGDynMeshBoundsSelectionElementType::Edge:
+			Candidates.ProcessEdges([&RestrictedCandidateIDs](int32 EdgeID) { RestrictedCandidateIDs.Add(EdgeID); });
+			break;
+		case EPCGDynMeshBoundsSelectionElementType::Triangle:
+		default:
+			Candidates.ProcessTriangles([&RestrictedCandidateIDs](int32 TriangleID) { RestrictedCandidateIDs.Add(TriangleID); });
+			break;
+		}
+	}
+	const auto IsCandidate = [&Candidates, &RestrictedCandidateIDs](int32 ElementID)
+	{
+		return !Candidates.IsRestricted() || RestrictedCandidateIDs.Contains(ElementID);
+	};
 
 	int32 InvalidPointCount = 0;
 
@@ -122,7 +144,7 @@ bool FPCGSelectInPointBoundsElement::ComputeMatchSelection(const UPCGDynamicMesh
 				}
 				for (const int32 VertexID : CandidateVertices)
 				{
-					if (TestPosition(Mesh.GetVertex(VertexID)))
+					if (IsCandidate(VertexID) && TestPosition(Mesh.GetVertex(VertexID)))
 					{
 						OutSelection.Selection.Add(FGeoSelectionID::MeshVertex(VertexID).Encoded());
 					}
@@ -144,7 +166,7 @@ bool FPCGSelectInPointBoundsElement::ComputeMatchSelection(const UPCGDynamicMesh
 				}
 				for (const int32 EdgeID : CandidateEdges)
 				{
-					if (!Mesh.IsEdge(EdgeID))
+					if (!Mesh.IsEdge(EdgeID) || !IsCandidate(EdgeID))
 					{
 						continue;
 					}
@@ -176,7 +198,7 @@ bool FPCGSelectInPointBoundsElement::ComputeMatchSelection(const UPCGDynamicMesh
 			{
 				for (const int32 TriangleID : CandidateTriangles)
 				{
-					if (!Mesh.IsTriangle(TriangleID))
+					if (!Mesh.IsTriangle(TriangleID) || !IsCandidate(TriangleID))
 					{
 						continue;
 					}

@@ -42,8 +42,12 @@ bool FPCGDynamicMeshSelectionFilterBaseElement::ExecuteInternal(FPCGContext* Con
 			continue;
 		}
 
+		const UE::Geometry::FGeometrySelection* IncomingSelection = IncomingSelectionData
+			? &IncomingSelectionData->GetSelection() : nullptr;
+		const FPCGDynamicMeshSelectionCandidates Candidates(*Mesh, IncomingSelection);
+
 		UE::Geometry::FGeometrySelection MatchSelection;
-		if (!ComputeMatchSelection(MeshData, *Mesh, Context, MatchSelection))
+		if (!ComputeMatchSelection(MeshData, *Mesh, Candidates, Context, MatchSelection))
 		{
 			continue;
 		}
@@ -54,15 +58,15 @@ bool FPCGDynamicMeshSelectionFilterBaseElement::ExecuteInternal(FPCGContext* Con
 		UE::Geometry::FGeometrySelection FinalSelection;
 		if (IncomingSelectionData)
 		{
-			const UE::Geometry::FGeometrySelection& Incoming = IncomingSelectionData->GetSelection();
-			if (!Incoming.IsSameType(MatchSelection))
+			UE::Geometry::FGeometrySelection ConvertedCandidates;
+			if (!Candidates.BuildSelection(MatchSelection.ElementType, ConvertedCandidates))
 			{
-				PCGLog::LogErrorOnGraph(LOCTEXT("MismatchedSelectionType",
-					"Selection filter received an incoming selection whose element/topology type does not match this node's output; skipping."), Context);
+				PCGLog::LogErrorOnGraph(LOCTEXT("UnsupportedOutputSelectionType",
+					"Selection filter produced an element type that cannot be materialized from its incoming selection."), Context);
 				continue;
 			}
 			FinalSelection.InitializeTypes(MatchSelection);
-			FinalSelection.Selection = Incoming.Selection.Intersect(MatchSelection.Selection);
+			FinalSelection.Selection = ConvertedCandidates.Selection.Intersect(MatchSelection.Selection);
 		}
 		else
 		{

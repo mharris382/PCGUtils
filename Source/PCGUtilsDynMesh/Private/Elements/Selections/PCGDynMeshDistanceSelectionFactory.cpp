@@ -37,31 +37,6 @@ namespace
 		}
 	}
 
-	bool CompareDistance(double A, double B, double Tolerance, EPCGUtilsDynMeshDistanceComparison Comparison)
-	{
-		switch (Comparison)
-		{
-		case EPCGUtilsDynMeshDistanceComparison::StrictlyEqual:
-			return A == B;
-		case EPCGUtilsDynMeshDistanceComparison::StrictlyNotEqual:
-			return A != B;
-		case EPCGUtilsDynMeshDistanceComparison::EqualOrGreater:
-			return A >= B;
-		case EPCGUtilsDynMeshDistanceComparison::EqualOrSmaller:
-			return A <= B;
-		case EPCGUtilsDynMeshDistanceComparison::StrictlyGreater:
-			return A > B;
-		case EPCGUtilsDynMeshDistanceComparison::StrictlySmaller:
-			return A < B;
-		case EPCGUtilsDynMeshDistanceComparison::NearlyEqual:
-			return FMath::IsNearlyEqual(A, B, Tolerance);
-		case EPCGUtilsDynMeshDistanceComparison::NearlyNotEqual:
-			return !FMath::IsNearlyEqual(A, B, Tolerance);
-		default:
-			return false;
-		}
-	}
-
 	FVector ClosestBoxSurfacePoint(const FDistanceTarget& Target, const FVector& Probe, bool bOverlapIsZero)
 	{
 		FVector LocalProbe = Target.Transform.InverseTransformPosition(Probe);
@@ -179,7 +154,8 @@ namespace
 				BestDistance = FMath::Min(BestDistance, GetDistanceToTarget(Probe, Target));
 			}
 
-			return CompareDistance(BestDistance, Threshold, Tolerance, Factory->Comparison);
+			return PCGUtilsDynMeshSelectionComparison::Compare(
+				BestDistance, Threshold, Tolerance, Factory->Comparison);
 		}
 
 	private:
@@ -306,20 +282,8 @@ FText UPCGDynMeshDistanceSelectionFactoryProviderSettings::GetNodeTooltipText() 
 
 FString UPCGDynMeshDistanceSelectionFactoryProviderSettings::GetAdditionalTitleInformation() const
 {
-	const TCHAR* Operator = TEXT("?");
-	switch (Comparison)
-	{
-	case EPCGUtilsDynMeshDistanceComparison::StrictlyEqual: Operator = TEXT("=="); break;
-	case EPCGUtilsDynMeshDistanceComparison::StrictlyNotEqual: Operator = TEXT("!="); break;
-	case EPCGUtilsDynMeshDistanceComparison::EqualOrGreater: Operator = TEXT(">="); break;
-	case EPCGUtilsDynMeshDistanceComparison::EqualOrSmaller: Operator = TEXT("<="); break;
-	case EPCGUtilsDynMeshDistanceComparison::StrictlyGreater: Operator = TEXT(">"); break;
-	case EPCGUtilsDynMeshDistanceComparison::StrictlySmaller: Operator = TEXT("<"); break;
-	case EPCGUtilsDynMeshDistanceComparison::NearlyEqual: Operator = TEXT("~="); break;
-	case EPCGUtilsDynMeshDistanceComparison::NearlyNotEqual: Operator = TEXT("!~="); break;
-	default: break;
-	}
-	return FString::Printf(TEXT("Distance %s %.3f"), Operator, DistanceThreshold);
+	return FString::Printf(TEXT("Distance %s %.3f"),
+		PCGUtilsDynMeshSelectionComparison::GetOperator(Comparison), DistanceThreshold);
 }
 #endif
 

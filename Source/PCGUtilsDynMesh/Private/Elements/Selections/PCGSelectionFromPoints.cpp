@@ -34,7 +34,8 @@ FPCGElementPtr UPCGSelectionFromPointsSettings::CreateElement() const
 }
 
 bool FPCGSelectionFromPointsElement::CreateSelection(const UPCGDynamicMeshData*,
-	const UE::Geometry::FDynamicMesh3& Mesh, FPCGContext* Context,
+	const UE::Geometry::FDynamicMesh3& Mesh, const FPCGDynamicMeshSelectionCandidates& Candidates,
+	FPCGContext* Context,
 	UE::Geometry::FGeometrySelection& OutSelection) const
 {
 	const UPCGSelectionFromPointsSettings* Settings = Context->GetInputSettings<UPCGSelectionFromPointsSettings>();
@@ -45,6 +46,15 @@ bool FPCGSelectionFromPointsElement::CreateSelection(const UPCGDynamicMeshData*,
 	{
 		PCGLog::LogErrorOnGraph(LOCTEXT("EmptyAttribute", "Selection From Points requires a Vertex Index Attribute name."), Context);
 		return false;
+	}
+
+	TSet<int32> RestrictedVertexIDs;
+	if (Candidates.IsRestricted())
+	{
+		Candidates.ProcessVertices([&RestrictedVertexIDs](int32 VertexID)
+		{
+			RestrictedVertexIDs.Add(VertexID);
+		});
 	}
 
 	int32 InvalidIndexCount = 0;
@@ -69,7 +79,10 @@ bool FPCGSelectionFromPointsElement::CreateSelection(const UPCGDynamicMeshData*,
 			const int32 VertexID = Attribute->GetValueFromItemKey(Entry);
 			if (Mesh.IsVertex(VertexID))
 			{
-				OutSelection.Selection.Add(UE::Geometry::FGeoSelectionID::MeshVertex(VertexID).Encoded());
+				if (!Candidates.IsRestricted() || RestrictedVertexIDs.Contains(VertexID))
+				{
+					OutSelection.Selection.Add(UE::Geometry::FGeoSelectionID::MeshVertex(VertexID).Encoded());
+				}
 			}
 			else
 			{

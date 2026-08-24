@@ -36,7 +36,8 @@ FPCGElementPtr UPCGSelectionFromSplineSettings::CreateElement() const
 }
 
 bool FPCGSelectionFromSplineElement::CreateSelection(const UPCGDynamicMeshData*,
-	const UE::Geometry::FDynamicMesh3& Mesh, FPCGContext* Context,
+	const UE::Geometry::FDynamicMesh3& Mesh, const FPCGDynamicMeshSelectionCandidates& Candidates,
+	FPCGContext* Context,
 	UE::Geometry::FGeometrySelection& OutSelection) const
 {
 	using namespace UE::Geometry;
@@ -76,7 +77,7 @@ bool FPCGSelectionFromSplineElement::CreateSelection(const UPCGDynamicMeshData*,
 	// endpoint - exactly the signal Flat caps need, without approximating the spline with a sample count.
 	constexpr float KeyEpsilon = UE_KINDA_SMALL_NUMBER;
 
-	for (const int32 VertexID : Mesh.VertexIndicesItr())
+	Candidates.ProcessVertices([&](int32 VertexID)
 	{
 		const FVector WorldPos = ActorTransform.TransformPosition(Mesh.GetVertex(VertexID));
 		const float ClosestKey = Spline.FindInputKeyClosestToWorldLocation(WorldPos);
@@ -84,7 +85,7 @@ bool FPCGSelectionFromSplineElement::CreateSelection(const UPCGDynamicMeshData*,
 
 		if (FVector::Dist(WorldPos, ClosestWorldPos) > Radius)
 		{
-			continue;
+			return;
 		}
 
 		if (bFlatCaps)
@@ -93,20 +94,20 @@ bool FPCGSelectionFromSplineElement::CreateSelection(const UPCGDynamicMeshData*,
 			{
 				if (FVector::DotProduct(WorldPos - StartWorldPos, StartWorldTangent) < 0.0)
 				{
-					continue; // beyond the flat start cap
+					return; // beyond the flat start cap
 				}
 			}
 			else if (ClosestKey >= EndInputKey - KeyEpsilon)
 			{
 				if (FVector::DotProduct(WorldPos - EndWorldPos, EndWorldTangent) > 0.0)
 				{
-					continue; // beyond the flat end cap
+					return; // beyond the flat end cap
 				}
 			}
 		}
 
 		OutSelection.Selection.Add(FGeoSelectionID::MeshVertex(VertexID).Encoded());
-	}
+	});
 
 	return true;
 }

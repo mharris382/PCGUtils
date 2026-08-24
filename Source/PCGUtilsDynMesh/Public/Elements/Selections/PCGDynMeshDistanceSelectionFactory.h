@@ -5,6 +5,7 @@
 
 #include "CoreMinimal.h"
 #include "Factories/PCGUtilsDynMeshFactoryProvider.h"
+#include "Factories/PCGUtilsDynMeshSelectionComparison.h"
 #include "Factories/PCGUtilsDynMeshSelectionFactory.h"
 
 #include "PCGDynMeshDistanceSelectionFactory.generated.h"
@@ -15,19 +16,6 @@ namespace PCGDynMeshDistanceSelectionFactoryConstants
 {
 	inline const FName TargetsInputPin = TEXT("Targets");
 }
-
-UENUM(BlueprintType)
-enum class EPCGUtilsDynMeshDistanceComparison : uint8
-{
-	StrictlyEqual UMETA(DisplayName="Equal"),
-	StrictlyNotEqual UMETA(DisplayName="Not Equal"),
-	EqualOrGreater UMETA(DisplayName="Greater or Equal"),
-	EqualOrSmaller UMETA(DisplayName="Less or Equal"),
-	StrictlyGreater UMETA(DisplayName="Greater"),
-	StrictlySmaller UMETA(DisplayName="Less"),
-	NearlyEqual UMETA(DisplayName="Nearly Equal"),
-	NearlyNotEqual UMETA(DisplayName="Nearly Not Equal")
-};
 
 UENUM(BlueprintType)
 enum class EPCGUtilsDynMeshTargetDistanceMode : uint8

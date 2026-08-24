@@ -44,7 +44,7 @@ FText UPCGSelectByNormalSettings::GetDefaultNodeTitle() const
 
 FText UPCGSelectByNormalSettings::GetNodeTooltipText() const
 {
-	return LOCTEXT("Tooltip", "Selects Dynamic Mesh triangles or vertices whose normal is aligned with a reference direction, within a Dot Threshold. Intersects with an incoming selection, if any.");
+	return LOCTEXT("Tooltip", "Selects Dynamic Mesh triangles or vertices whose normal is aligned with a reference direction, within a Dot Threshold. If an incoming selection is supplied, only its converted candidates are evaluated.");
 }
 #endif
 
@@ -54,7 +54,8 @@ FPCGElementPtr UPCGSelectByNormalSettings::CreateElement() const
 }
 
 bool FPCGSelectByNormalElement::ComputeMatchSelection(const UPCGDynamicMeshData* MeshData,
-	const UE::Geometry::FDynamicMesh3& Mesh, FPCGContext* Context,
+	const UE::Geometry::FDynamicMesh3& Mesh, const FPCGDynamicMeshSelectionCandidates& Candidates,
+	FPCGContext* Context,
 	UE::Geometry::FGeometrySelection& OutSelection) const
 {
 	using namespace UE::Geometry;
@@ -75,14 +76,14 @@ bool FPCGSelectByNormalElement::ComputeMatchSelection(const UPCGDynamicMeshData*
 	{
 		OutSelection.InitializeTypes(EGeometryElementType::Face, EGeometryTopologyType::Triangle);
 
-		for (const int32 TriangleID : Mesh.TriangleIndicesItr())
+		Candidates.ProcessTriangles([&Mesh, &OutSelection, &ReferenceDirection, DotThreshold](int32 TriangleID)
 		{
 			const FVector TriNormal(Mesh.GetTriNormal(TriangleID));
 			if (FVector::DotProduct(TriNormal, ReferenceDirection) >= DotThreshold)
 			{
 				OutSelection.Selection.Add(FGeoSelectionID::MeshTriangle(TriangleID).Encoded());
 			}
-		}
+		});
 	}
 	else
 	{
@@ -90,21 +91,21 @@ bool FPCGSelectByNormalElement::ComputeMatchSelection(const UPCGDynamicMeshData*
 
 		const FDynamicMeshNormalOverlay* Normals = Mesh.HasAttributes() ? Mesh.Attributes()->PrimaryNormals() : nullptr;
 
-		for (const int32 VertexID : Mesh.VertexIndicesItr())
+		Candidates.ProcessVertices([&Mesh, Normals, &OutSelection, &ReferenceDirection, DotThreshold](int32 VertexID)
 		{
 			FVector3f VertexNormal = Normals
 				? SelectByNormal_GetFirstVertexOverlayElement<FDynamicMeshNormalOverlay, FVector3f>(Mesh, Normals, VertexID, FVector3f::UnitZ())
 				: (Mesh.HasVertexNormals() ? Mesh.GetVertexNormal(VertexID) : FVector3f::UnitZ());
 			if (!VertexNormal.Normalize())
 			{
-				continue; // degenerate normal
+				return; // degenerate normal
 			}
 
 			if (FVector::DotProduct(FVector(VertexNormal), ReferenceDirection) >= DotThreshold)
 			{
 				OutSelection.Selection.Add(FGeoSelectionID::MeshVertex(VertexID).Encoded());
 			}
-		}
+		});
 	}
 
 	return true;

@@ -26,7 +26,8 @@ FPCGElementPtr UPCGEdgeDirectionSettings::CreateElement() const
 }
 
 bool FPCGEdgeDirectionElement::ComputeMatchSelection(const UPCGDynamicMeshData* MeshData,
-	const UE::Geometry::FDynamicMesh3& Mesh, FPCGContext* Context,
+	const UE::Geometry::FDynamicMesh3& Mesh, const FPCGDynamicMeshSelectionCandidates& Candidates,
+	FPCGContext* Context,
 	UE::Geometry::FGeometrySelection& OutSelection) const
 {
 	using namespace UE::Geometry;
@@ -72,13 +73,14 @@ bool FPCGEdgeDirectionElement::ComputeMatchSelection(const UPCGDynamicMeshData* 
 	const double CosParallelThreshold = FMath::Cos(ToleranceRad);
 	const double SinPerpendicularThreshold = FMath::Sin(ToleranceRad);
 
-	for (const int32 EdgeID : Mesh.EdgeIndicesItr())
+	Candidates.ProcessEdges([&Mesh, &OutSelection, &ReferenceDirection, Settings,
+		CosParallelThreshold, SinPerpendicularThreshold](int32 EdgeID)
 	{
 		const FIndex2i EdgeV = Mesh.GetEdgeV(EdgeID);
 		FVector EdgeDirection(Mesh.GetVertex(EdgeV.B) - Mesh.GetVertex(EdgeV.A));
 		if (!EdgeDirection.Normalize())
 		{
-			continue; // degenerate (zero-length) edge
+			return; // degenerate (zero-length) edge
 		}
 
 		const double Dot = FMath::Abs(FVector::DotProduct(EdgeDirection, ReferenceDirection));
@@ -90,7 +92,7 @@ bool FPCGEdgeDirectionElement::ComputeMatchSelection(const UPCGDynamicMeshData* 
 		{
 			PCGDynamicMeshSelectionFilterHelpers::AddEdgeToSelection(Mesh, EdgeID, OutSelection);
 		}
-	}
+	});
 
 	return true;
 }

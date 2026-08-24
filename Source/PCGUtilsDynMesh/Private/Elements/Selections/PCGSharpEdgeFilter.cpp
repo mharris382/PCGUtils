@@ -2,10 +2,7 @@
 
 #include "Data/PCGDynamicMeshData.h"
 #include "DynamicMesh/DynamicMesh3.h"
-#include "GeometryScript/GeometryScriptSelectionTypes.h"
-#include "GeometryScript/MeshSelectionFunctions.h"
 #include "PCGContext.h"
-#include "UDynamicMesh.h"
 
 #define LOCTEXT_NAMESPACE "PCGSharpEdgeFilter"
 
@@ -27,31 +24,32 @@ FPCGElementPtr UPCGSharpEdgeFilterSettings::CreateElement() const
 }
 
 bool FPCGSharpEdgeFilterElement::ComputeMatchSelection(const UPCGDynamicMeshData* MeshData,
-	const UE::Geometry::FDynamicMesh3& Mesh, FPCGContext* Context,
+	const UE::Geometry::FDynamicMesh3& Mesh, const FPCGDynamicMeshSelectionCandidates& Candidates,
+	FPCGContext* Context,
 	UE::Geometry::FGeometrySelection& OutSelection) const
 {
 	using namespace UE::Geometry;
 
 	const UPCGSharpEdgeFilterSettings* Settings = Context->GetInputSettings<UPCGSharpEdgeFilterSettings>();
-	check(Settings && MeshData);
+	check(Settings);
 
 	OutSelection.InitializeTypes(EGeometryElementType::Edge, EGeometryTopologyType::Triangle);
+	const double CosThreshold = FMath::Cos(FMath::DegreesToRadians(
+		static_cast<double>(Settings->MinimumSharpAngleDegrees)));
 
-	// SelectMeshSharpEdges only reads the mesh (via UDynamicMesh::ProcessMesh, a const-mesh callback) despite the
-	// BlueprintCallable signature requiring a non-const pointer; this const_cast does not mutate the mesh.
-	UDynamicMesh* TargetMesh = const_cast<UDynamicMesh*>(MeshData->GetDynamicMesh());
-
-	FGeometryScriptMeshSelection SharpSelection;
-	UGeometryScriptLibrary_MeshSelectionFunctions::SelectMeshSharpEdges(TargetMesh, SharpSelection, Settings->MinimumSharpAngleDegrees);
-
-	TArray<int32> EdgeIDs;
-	SharpSelection.ConvertToMeshIndexArray(Mesh, EdgeIDs, EGeometryScriptIndexType::Edge);
-
-	TSet<int32> UniqueEdgeIDs(EdgeIDs);
-	for (const int32 EdgeID : UniqueEdgeIDs)
+	Candidates.ProcessEdges([&Mesh, &OutSelection, CosThreshold](int32 EdgeID)
 	{
-		PCGDynamicMeshSelectionFilterHelpers::AddEdgeToSelection(Mesh, EdgeID, OutSelection);
-	}
+		const FIndex2i EdgeTriangles = Mesh.GetEdgeT(EdgeID);
+		if (EdgeTriangles.B == INDEX_NONE)
+		{
+			return; // Match GeometryScript: open mesh boundaries are not sharp edges.
+		}
+
+		if (Mesh.GetTriNormal(EdgeTriangles.A).Dot(Mesh.GetTriNormal(EdgeTriangles.B)) <= CosThreshold)
+		{
+			PCGDynamicMeshSelectionFilterHelpers::AddEdgeToSelection(Mesh, EdgeID, OutSelection);
+		}
+	});
 
 	return true;
 }
