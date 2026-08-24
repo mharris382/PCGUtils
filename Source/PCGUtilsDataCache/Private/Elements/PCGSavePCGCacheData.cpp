@@ -120,7 +120,7 @@ bool FPCGSavePCGCacheDataElement::ExecuteInternal(FPCGContext* Context) const
 	}
 	else
 	{
-		PCGE_LOG_C(Log, GraphAndLog, Context, FText::Format(LOCTEXT("SaveSucceeded", "Saved PCG cache asset '{0}'."), FText::FromString(ObjectPath.ToString())));
+		PCGE_LOG_C(Log, LogOnly, Context, FText::Format(LOCTEXT("SaveSucceeded", "Saved PCG cache asset '{0}'."), FText::FromString(ObjectPath.ToString())));
 	}
 
 	return true;
