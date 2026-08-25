@@ -14,7 +14,6 @@ public:
 	static FName GetStyleSetName();
 	static const ISlateStyle& Get();
 
-	static const FName DynamicMeshToPointsIcon;
 	static const FName SelectionFactoryInputPinIcon;
 	static const FName SelectionFactoryOutputPinIcon;
 

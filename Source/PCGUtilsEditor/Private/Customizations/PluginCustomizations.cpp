@@ -1,8 +1,10 @@
 ﻿#include "Customizations/PluginCustomizations.h"
 #include "Customizations/PCGOverrideGraphCustomization.h"
+#include "Customizations/PCGUtilsGraphBatchDetails.h"
 #include "PropertyEditorModule.h"
 #include "AssetToolsModule.h"
 #include "DetailLayoutBuilder.h"
+#include "Data/PCGUtilsGraphBatch.h"
 #include "Elements/PCGDynamicMeshSelectionProcessBase.h"
 #include "IDetailCustomization.h"
 
@@ -49,6 +51,9 @@ namespace PluginCustomizations
 			UPCGDynamicMeshSelectionProcessBaseSettings::StaticClass()->GetFName(),
 			FOnGetDetailCustomizationInstance::CreateStatic(
 				&FPCGDynamicMeshSelectionProcessBaseCustomization::MakeInstance));
+		PropEd.RegisterCustomClassLayout(
+			UPCGUtilsGraphBatch::StaticClass()->GetFName(),
+			FOnGetDetailCustomizationInstance::CreateStatic(&FPCGUtilsGraphBatchDetails::MakeInstance));
 		PropEd.NotifyCustomizationModuleChanged();
 	}
 
@@ -60,6 +65,7 @@ namespace PluginCustomizations
 			PropertyEditor.UnregisterCustomPropertyTypeLayout("PCGOverrideGraph");
 			PropertyEditor.UnregisterCustomClassLayout(
 				UPCGDynamicMeshSelectionProcessBaseSettings::StaticClass()->GetFName());
+			PropertyEditor.UnregisterCustomClassLayout(UPCGUtilsGraphBatch::StaticClass()->GetFName());
 			PropertyEditor.NotifyCustomizationModuleChanged();
 		}
 	}
