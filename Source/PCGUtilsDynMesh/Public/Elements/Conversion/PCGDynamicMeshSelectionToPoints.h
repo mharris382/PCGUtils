@@ -1,6 +1,7 @@
 #pragma once
 
 #include "CoreMinimal.h"
+#include "PCGCommon.h"
 #include "PCGSettings.h"
 
 #include "PCGDynamicMeshSelectionToPoints.generated.h"
@@ -17,6 +18,12 @@ public:
 	virtual FText GetDefaultNodeTitle() const override;
 	virtual FText GetNodeTooltipText() const override;
 	virtual FLinearColor GetNodeTitleColor() const override { return FLinearColor(0.413f, 0.25f ,1.0f, 1.0f);	}
+	virtual bool ShouldDrawNodeCompact() const override { return true; }
+	virtual bool GetCompactNodeIcon(FName& OutCompactNodeIcon) const override
+	{
+		OutCompactNodeIcon = PCGNodeConstants::Icons::CompactNodeConvert;
+		return true;
+	}
 #endif
 
 	/** Transform mesh-local vertex positions and normals into the PCG target actor's world space. */

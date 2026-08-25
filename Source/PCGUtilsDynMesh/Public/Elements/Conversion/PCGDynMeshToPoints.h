@@ -1,6 +1,7 @@
 #pragma once
 
 #include "CoreMinimal.h"
+#include "PCGCommon.h"
 #include "PCGContext.h"
 #include "PCGSettings.h"
 #include "Elements/PCGDynamicMeshBaseElement.h"
@@ -23,7 +24,7 @@ public:
 	virtual bool ShouldDrawNodeCompact() const override { return true; }
 	virtual bool GetCompactNodeIcon(FName& OutCompactNodeIcon) const override
 	{
-		OutCompactNodeIcon = TEXT("PCGUtils.DynamicMeshToPoints");
+		OutCompactNodeIcon = PCGNodeConstants::Icons::CompactNodeConvert;
 		return true;
 	}
 	virtual FName GetDefaultNodeName() const override { return FName(TEXT("DynMsh|Point")); }

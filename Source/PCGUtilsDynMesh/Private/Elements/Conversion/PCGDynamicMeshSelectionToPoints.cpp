@@ -8,6 +8,7 @@
 #include "Factories/PCGUtilsDynMeshDomainSelectionFactory.h"
 #include "DynamicMesh/DynamicMeshAttributeSet.h"
 #include "GameFramework/Actor.h"
+#include "Metadata/PCGMetadata.h"
 #include "PCGContext.h"
 #include "PCGPin.h"
 #include "UDynamicMesh.h"
@@ -19,6 +20,22 @@ namespace
 {
 	const FName SelectionToPointsInputPin = TEXT("Selection");
 	const FName SelectionToPointsOutputPin = TEXT("Points");
+	const FName SelectionDomainAttributeName = TEXT("SelectionDomain");
+
+	const TCHAR* GetSelectionDomainDisplayName(UE::Geometry::EGeometryElementType ElementType)
+	{
+		switch (ElementType)
+		{
+		case UE::Geometry::EGeometryElementType::Vertex:
+			return TEXT("Vertex");
+		case UE::Geometry::EGeometryElementType::Edge:
+			return TEXT("Edge");
+		case UE::Geometry::EGeometryElementType::Face:
+			return TEXT("Triangle");
+		default:
+			return TEXT("Unknown");
+		}
+	}
 
 	template<typename OverlayType, typename ValueType>
 	ValueType SelectionToPoints_GetFirstVertexOverlayElement(const UE::Geometry::FDynamicMesh3& Mesh,
@@ -54,7 +71,7 @@ FText UPCGDynamicMeshSelectionToPointsSettings::GetDefaultNodeTitle() const
 
 FText UPCGDynamicMeshSelectionToPointsSettings::GetNodeTooltipText() const
 {
-	return LOCTEXT("Tooltip", "Converts the incoming vertex, edge, or triangle selection to vertices and outputs one PCG point for each unique selected source-mesh vertex.");
+	return LOCTEXT("Tooltip", "Converts the incoming vertex, edge, or triangle selection to vertices and outputs one PCG point for each unique selected source-mesh vertex. The source selection domain is written to the SelectionDomain @Data attribute and a readable data tag.");
 }
 #endif
 
@@ -169,9 +186,28 @@ bool FPCGDynamicMeshSelectionToPointsElement::ExecuteInternal(FPCGContext* Conte
 			BoundsMax[Index] = FVector::ZeroVector;
 		}
 
+		const UE::Geometry::EGeometryElementType SelectionElementType =
+			SelectionData->GetSelection().ElementType;
+		const int32 SelectionDomainValue = static_cast<int32>(SelectionElementType);
+		if (UPCGMetadata* Metadata = OutputData->MutableMetadata())
+		{
+			if (FPCGMetadataAttribute<int32>* SelectionDomainAttribute =
+				Metadata->FindOrCreateAttribute<int32>(
+					FPCGAttributeIdentifier(SelectionDomainAttributeName, PCGMetadataDomainID::Data),
+					SelectionDomainValue,
+					/*bAllowsInterpolation=*/false,
+					/*bOverrideParent=*/false,
+					/*bOverwriteIfTypeMismatch=*/true))
+			{
+				SelectionDomainAttribute->SetValue(PCGInvalidEntryKey, SelectionDomainValue);
+			}
+		}
+
 		FPCGTaggedData& Output = Context->OutputData.TaggedData.Emplace_GetRef(Input);
 		Output.Data = OutputData;
 		Output.Pin = SelectionToPointsOutputPin;
+		Output.Tags.Add(FString::Printf(
+			TEXT("Selection Domain: %s"), GetSelectionDomainDisplayName(SelectionElementType)));
 	}
 	return true;
 }
