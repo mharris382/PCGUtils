@@ -15,6 +15,8 @@ public:
 	static const ISlateStyle& Get();
 
 	static const FName DynamicMeshToPointsIcon;
+	static const FName SelectionFactoryInputPinIcon;
+	static const FName SelectionFactoryOutputPinIcon;
 
 private:
 	static TSharedRef<FSlateStyleSet> Create();

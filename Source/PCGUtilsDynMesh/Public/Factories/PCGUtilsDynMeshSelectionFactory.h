@@ -89,3 +89,13 @@ namespace PCGUtilsDynMeshFactories
 {
 	PCGUTILSDYNMESH_API const TSet<FPCGDataTypeBaseId>& GetSelectionFactoryTypes();
 }
+
+namespace PCGUtilsDynMeshSelectionFactories
+{
+	/** Evaluates one factory across its requested domain and materializes the matching mesh elements. */
+	PCGUTILSDYNMESH_API bool EvaluateFactory(
+		const UPCGUtilsDynMeshSelectionFactoryData* Factory,
+		const FPCGUtilsDynMeshSelectionEvaluationContext& EvaluationContext,
+		FPCGContext* Context,
+		UE::Geometry::FGeometrySelection& OutSelection);
+}

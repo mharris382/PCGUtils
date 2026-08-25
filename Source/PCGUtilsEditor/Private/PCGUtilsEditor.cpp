@@ -1,6 +1,9 @@
 #include "PCGUtilsEditor.h"
 #include "PCGUtilsEditorStyle.h"
+#include "PCGModule.h"
 #include "Customizations/PluginCustomizations.h"
+#include "Data/Registry/PCGDataTypeRegistry.h"
+#include "Factories/PCGUtilsDynMeshSelectionFactory.h"
 #include "Visualizers/PCGMarkerComponentVisualizer.h"
 #include "Visualizers/PCGSplineComponentVisualizer.h"
 #include "Visualizers/PCGChildSplineComponentVisualizer.h"
@@ -17,6 +20,7 @@
 void FPCGUtilsEditor::StartupModule()
 {
 	FPCGUtilsEditorStyle::Initialize();
+	RegisterPinIcons();
 	PluginCustomizations::RegisterCustomizations();
 
 	if (GUnrealEd)
@@ -51,7 +55,37 @@ void FPCGUtilsEditor::ShutdownModule()
 		GUnrealEd->UnregisterComponentVisualizer(UShapePathComponent::StaticClass()->GetFName());
 	}
 
+	UnregisterPinIcons();
 	FPCGUtilsEditorStyle::Shutdown();
+}
+
+void FPCGUtilsEditor::RegisterPinIcons()
+{
+	FPCGModule::GetMutableDataTypeRegistry().RegisterPinIconsFunction(
+		FPCGUtilsDynMeshSelectionFactoryDataTypeInfo::AsId(),
+		[](const FPCGDataTypeIdentifier&, const FPCGPinProperties&, const bool bIsInput)
+		{
+			const FSlateBrush* Brush = FPCGUtilsEditorStyle::Get().GetBrush(
+				bIsInput
+					? FPCGUtilsEditorStyle::SelectionFactoryInputPinIcon
+					: FPCGUtilsEditorStyle::SelectionFactoryOutputPinIcon);
+
+			return MakeTuple(Brush, Brush);
+		});
+
+	bPinIconsRegistered = true;
+}
+
+void FPCGUtilsEditor::UnregisterPinIcons()
+{
+	if (!bPinIconsRegistered || !FModuleManager::Get().IsModuleLoaded(TEXT("PCG")))
+	{
+		return;
+	}
+
+	FPCGModule::GetMutableDataTypeRegistry().UnregisterPinIconsFunction(
+		FPCGUtilsDynMeshSelectionFactoryDataTypeInfo::AsId());
+	bPinIconsRegistered = false;
 }
 
 #undef LOCTEXT_NAMESPACE

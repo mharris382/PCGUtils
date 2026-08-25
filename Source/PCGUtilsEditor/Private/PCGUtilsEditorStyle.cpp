@@ -9,6 +9,8 @@
 TSharedPtr<FSlateStyleSet> FPCGUtilsEditorStyle::StyleInstance;
 
 const FName FPCGUtilsEditorStyle::DynamicMeshToPointsIcon(TEXT("PCGUtils.DynamicMeshToPoints"));
+const FName FPCGUtilsEditorStyle::SelectionFactoryInputPinIcon(TEXT("PCGUtils.Pin.IN_SelectionFactory"));
+const FName FPCGUtilsEditorStyle::SelectionFactoryOutputPinIcon(TEXT("PCGUtils.Pin.OUT_SelectionFactory"));
 
 void FPCGUtilsEditorStyle::Initialize()
 {
@@ -69,5 +71,13 @@ TSharedRef<FSlateStyleSet> FPCGUtilsEditorStyle::Create()
 		new FSlateVectorImageBrush(
 			Style->RootToContentDir(TEXT("Icons/DynamicMeshToPoints"), TEXT(".svg")),
 			FVector2D(28.0f, 28.0f)));
+	Style->Set(SelectionFactoryInputPinIcon,
+		new FSlateVectorImageBrush(
+			Style->RootToContentDir(TEXT("Icons/PCGUtils_Pin_IN_SelectionFactory"), TEXT(".svg")),
+			FVector2D(22.0f, 22.0f)));
+	Style->Set(SelectionFactoryOutputPinIcon,
+		new FSlateVectorImageBrush(
+			Style->RootToContentDir(TEXT("Icons/PCGUtils_Pin_OUT_SelectionFactory"), TEXT(".svg")),
+			FVector2D(22.0f, 22.0f)));
 	return Style;
 }

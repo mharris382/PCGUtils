@@ -3,6 +3,7 @@
 
 #include "Factories/PCGUtilsDynMeshSelectionFactory.h"
 
+#include "DynamicMesh/DynamicMesh3.h"
 #include "PCGContext.h"
 
 PCG_DEFINE_TYPE_INFO(FPCGUtilsDynMeshSelectionFactoryDataTypeInfo, UPCGUtilsDynMeshSelectionFactoryData)
@@ -43,4 +44,67 @@ namespace PCGUtilsDynMeshFactories
 		static const TSet<FPCGDataTypeBaseId> Types = {FPCGUtilsDynMeshSelectionFactoryDataTypeInfo::AsId()};
 		return Types;
 	}
+}
+
+bool PCGUtilsDynMeshSelectionFactories::EvaluateFactory(
+	const UPCGUtilsDynMeshSelectionFactoryData* Factory,
+	const FPCGUtilsDynMeshSelectionEvaluationContext& EvaluationContext,
+	FPCGContext* Context,
+	UE::Geometry::FGeometrySelection& OutSelection)
+{
+	using namespace UE::Geometry;
+	if (!Factory || !Factory->SupportsDomain(EvaluationContext.Domain))
+	{
+		return false;
+	}
+
+	TSharedPtr<FPCGUtilsDynMeshSelectionOperation> Operation = Factory->CreateOperation(Context);
+	if (!Operation || !Operation->Initialize(EvaluationContext))
+	{
+		return false;
+	}
+
+	const FDynamicMesh3& Mesh = EvaluationContext.Mesh;
+	const EGeometryElementType ElementType = EvaluationContext.Domain.ElementType;
+	OutSelection.InitializeTypes(ElementType, EvaluationContext.Domain.TopologyType);
+	if (ElementType == EGeometryElementType::Vertex)
+	{
+		for (const int32 VertexID : Mesh.VertexIndicesItr())
+		{
+			if (Operation->TestElement(VertexID))
+			{
+				OutSelection.Selection.Add(FGeoSelectionID::MeshVertex(VertexID).Encoded());
+			}
+		}
+		return true;
+	}
+
+	if (ElementType == EGeometryElementType::Edge)
+	{
+		for (const int32 EdgeID : Mesh.EdgeIndicesItr())
+		{
+			if (Operation->TestElement(EdgeID))
+			{
+				Mesh.EnumerateTriEdgeIDsFromEdgeID(EdgeID, [&OutSelection](FMeshTriEdgeID TriEdgeID)
+				{
+					OutSelection.Selection.Add(FGeoSelectionID::MeshEdge(TriEdgeID).Encoded());
+				});
+			}
+		}
+		return true;
+	}
+
+	if (ElementType == EGeometryElementType::Face)
+	{
+		for (const int32 TriangleID : Mesh.TriangleIndicesItr())
+		{
+			if (Operation->TestElement(TriangleID))
+			{
+				OutSelection.Selection.Add(FGeoSelectionID::MeshTriangle(TriangleID).Encoded());
+			}
+		}
+		return true;
+	}
+
+	return false;
 }
