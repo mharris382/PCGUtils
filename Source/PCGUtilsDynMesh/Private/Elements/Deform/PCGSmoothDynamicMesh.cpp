@@ -8,6 +8,7 @@
 #include "GeometryScript/MeshDeformFunctions.h"
 #include "GeometryScript/MeshNormalsFunctions.h"
 #include "Materials/MaterialInterface.h"
+#include "MeshTarget/PCGUtilsMeshTargetFunctions.h"
 #include "PCGContext.h"
 #include "PCGUtilsDynMesh.h"
 #include "PCGPin.h"
@@ -111,7 +112,7 @@ namespace
 #if WITH_EDITOR
 FText UPCGSmoothDynamicMeshSettings::GetDefaultNodeTitle() const
 {
-	return LOCTEXT("NodeTitle", "Smooth Dynamic Mesh");
+	return LOCTEXT("NodeTitle", "Smooth DynMesh");
 }
 
 FText UPCGSmoothDynamicMeshSettings::GetNodeTooltipText() const
@@ -124,7 +125,10 @@ FText UPCGSmoothDynamicMeshSettings::GetNodeTooltipText() const
 
 TArray<FPCGPinProperties> UPCGSmoothDynamicMeshSettings::InputPinProperties() const
 {
-	return {FPCGPinProperties(PCGPinConstants::DefaultInputLabel, EPCGDataType::DynamicMesh, true, true)};
+	TArray<FPCGPinProperties> Pins = Super::InputPinProperties();
+	Pins[0] = FPCGUtilsMeshTargetFunctions::MakeMeshInputPinProperties(PCGPinConstants::DefaultInputLabel);
+	Pins[0].SetRequiredPin();
+	return Pins;
 }
 
 TArray<FPCGPinProperties> UPCGSmoothDynamicMeshSettings::OutputPinProperties() const
@@ -156,7 +160,13 @@ bool FPCGSmoothDynamicMeshElement::ExecuteInternal(FPCGContext* Context) const
 
 	for (const FPCGTaggedData& Input : Context->InputData.GetInputsByPin(PCGPinConstants::DefaultInputLabel))
 	{
-		const UPCGDynamicMeshData* InputData = Cast<const UPCGDynamicMeshData>(Input.Data);
+		FPCGUtilsMeshTargetHandle Handle = FPCGUtilsMeshTargetFunctions::CreateTarget(
+			Input.Data, EPCGUtilsMeshTargetPreparation::FullMeshCopy, Context, Settings);
+		if (!Handle.IsValid())
+		{
+			continue;
+		}
+		const UPCGDynamicMeshData* InputData = Handle.GetSourceMeshData();
 		const UDynamicMesh* SourceObject = InputData ? InputData->GetDynamicMesh() : nullptr;
 		const UE::Geometry::FDynamicMesh3* SourceMesh = SourceObject ? SourceObject->GetMeshPtr() : nullptr;
 		if (!SourceMesh)
@@ -233,15 +243,7 @@ bool FPCGSmoothDynamicMeshElement::ExecuteInternal(FPCGContext* Context) const
 			}
 		}
 
-		TArray<UMaterialInterface*> Materials;
-		Materials.Reserve(InputData->GetMaterials().Num());
-		for (UMaterialInterface* Material : InputData->GetMaterials())
-		{
-			Materials.Add(Material);
-		}
-
-		UDynamicMesh* WorkingMesh = FPCGContext::NewObject_AnyThread<UDynamicMesh>(Context);
-		WorkingMesh->SetMesh(*SourceMesh);
+		UDynamicMesh* WorkingMesh = Handle.GetTargetMesh();
 
 		if (Iterations > 0)
 		{
@@ -308,11 +310,12 @@ bool FPCGSmoothDynamicMeshElement::ExecuteInternal(FPCGContext* Context) const
 				ResultMesh ? ResultMesh->TriangleCount() : 0);
 		}
 
-		UPCGDynamicMeshData* OutputData = FPCGContext::NewObject_AnyThread<UPCGDynamicMeshData>(Context);
-		OutputData->Initialize(WorkingMesh, /*bCanTakeOwnership=*/true, Materials);
-		FPCGTaggedData& Output = Context->OutputData.TaggedData.Emplace_GetRef(Input);
-		Output.Data = OutputData;
-		Output.Pin = PCGPinConstants::DefaultOutputLabel;
+		FPCGUtilsMeshTargetFunctions::RestoreVertexPositions(Handle, Settings->SelectionBlend);
+		if (Settings->bRecomputeNormalsAfterSmoothing)
+		{
+			FPCGUtilsMeshTargetFunctions::RecomputeSelectionAffectedNormals(Handle);
+		}
+		FPCGUtilsMeshTargetFunctions::EmitOutput(Context, Input, Handle);
 	}
 
 	return true;

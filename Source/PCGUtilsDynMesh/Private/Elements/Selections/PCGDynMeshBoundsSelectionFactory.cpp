@@ -75,14 +75,14 @@ namespace
 			if (InvalidPointCount > 0)
 			{
 				PCGLog::LogWarningOnGraph(FText::Format(
-					LOCTEXT("InvalidPointBounds", "Bounds Selection Factory skipped {0} point(s) with invalid (inverted) bounds."),
+					LOCTEXT("InvalidPointBounds", "Select Bounds skipped {0} point(s) with invalid (inverted) bounds."),
 					FText::AsNumber(InvalidPointCount)), Context);
 			}
 
 			if (Bounds.IsEmpty())
 			{
 				PCGLog::LogErrorOnGraph(
-					LOCTEXT("NoValidBounds", "Bounds Selection Factory requires at least one point with valid bounds."), Context);
+					LOCTEXT("NoValidBounds", "Select Bounds requires at least one point with valid bounds."), Context);
 				return false;
 			}
 
@@ -219,12 +219,12 @@ void UPCGDynMeshBoundsSelectionFactoryData::AddToCrc(FArchiveCrc32& Ar, bool bFu
 #if WITH_EDITOR
 FText UPCGDynMeshBoundsSelectionFactoryProviderSettings::GetDefaultNodeTitle() const
 {
-	return LOCTEXT("Title", "Bounds Selection Factory");
+	return LOCTEXT("Title", "Select Bounds");
 }
 
 TArray<FText> UPCGDynMeshBoundsSelectionFactoryProviderSettings::GetNodeTitleAliases() const
 {
-	return {LOCTEXT("PointBoundsAlias", "Point Bounds Selection Factory")};
+	return {LOCTEXT("PointBoundsAlias", "Select Bounds")};
 }
 
 FText UPCGDynMeshBoundsSelectionFactoryProviderSettings::GetNodeTooltipText() const
@@ -266,7 +266,7 @@ UPCGUtilsDynMeshFactoryData* UPCGDynMeshBoundsSelectionFactoryProviderSettings::
 
 	if (Inputs.IsEmpty())
 	{
-		PCGLog::LogErrorOnGraph(LOCTEXT("MissingPoints", "Bounds Selection Factory requires point data on its Points pin."), InContext);
+		PCGLog::LogErrorOnGraph(LOCTEXT("MissingPoints", "Select Bounds requires point data on its Points pin."), InContext);
 		return nullptr;
 	}
 

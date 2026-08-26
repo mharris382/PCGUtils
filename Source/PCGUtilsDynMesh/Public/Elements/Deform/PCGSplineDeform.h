@@ -3,7 +3,7 @@
 #include "CoreMinimal.h"
 #include "Components/SplineMeshComponent.h"
 #include "MeshTarget/PCGUtilsMeshTargetTypes.h"
-#include "PCGSettings.h"
+#include "Elements/PCGUtilsDynMeshProcessBase.h"
 
 #include "PCGSplineDeform.generated.h"
 
@@ -65,8 +65,8 @@ enum class EPCGUtilsSplineDeformOutOfRangeMode : uint8
  * frame is still derived from the complete source mesh bounds, not the selection, so narrowing the selection
  * never changes where the mesh maps onto the spline.
  */
-UCLASS(BlueprintType, ClassGroup=(Procedural), Category="PCGUtils|Dynamic Mesh")
-class PCGUTILSDYNMESH_API UPCGSplineDeformSettings : public UPCGSettings
+UCLASS(BlueprintType, ClassGroup=(Procedural), Category="PCGUtils|DynMesh")
+class PCGUTILSDYNMESH_API UPCGSplineDeformSettings : public UPCGUtilsDynMeshProcessBaseSettings
 {
 	GENERATED_BODY()
 
@@ -142,7 +142,7 @@ protected:
 	virtual FPCGElementPtr CreateElement() const override;
 };
 
-class PCGUTILSDYNMESH_API FPCGSplineDeformElement : public IPCGElement
+class PCGUTILSDYNMESH_API FPCGSplineDeformElement : public FPCGUtilsDynMeshProcessBaseElement
 {
 public:
 	/** Resolving the target actor for spline/mesh coordinate-space conversion requires the game thread. */

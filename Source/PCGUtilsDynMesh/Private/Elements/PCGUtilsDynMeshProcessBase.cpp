@@ -1,4 +1,4 @@
-#include "Elements/PCGDynamicMeshSelectionProcessBase.h"
+#include "Elements/PCGUtilsDynMeshProcessBase.h"
 
 #include "Data/PCGDynamicMeshData.h"
 #include "Data/PCGDynamicMeshSelectionData.h"
@@ -9,10 +9,22 @@
 #include "Materials/MaterialInterface.h"
 #include "PCGContext.h"
 #include "PCGPin.h"
+#include "PCGNode.h"
 #include "UDynamicMesh.h"
 #include "Utils/PCGLogErrors.h"
 
-#define LOCTEXT_NAMESPACE "PCGDynamicMeshSelectionProcessBase"
+#define LOCTEXT_NAMESPACE "PCGUtilsDynMeshProcessBase"
+
+void UPCGUtilsDynMeshProcessBaseSettings::ApplyDeprecationBeforeUpdatePins(
+	UPCGNode* InOutNode, TArray<TObjectPtr<UPCGPin>>& InputPins,
+	TArray<TObjectPtr<UPCGPin>>& OutputPins)
+{
+	Super::ApplyDeprecationBeforeUpdatePins(InOutNode, InputPins, OutputPins);
+	if (InOutNode)
+	{
+		InOutNode->RenameInputPin(TEXT("Selection Factory"), PCGUtilsDynMeshProcessConstants::SelectionFactoryInputPin);
+	}
+}
 
 namespace
 {
@@ -69,31 +81,157 @@ namespace
 	}
 }
 
-TArray<FPCGPinProperties> UPCGDynamicMeshSelectionProcessBaseSettings::InputPinProperties() const
+TArray<FPCGPinProperties> UPCGUtilsDynMeshProcessBaseSettings::InputPinProperties() const
 {
 	FPCGDataTypeIdentifier InputTypes(EPCGDataType::DynamicMesh);
 	InputTypes |= FPCGDataTypeIdentifier(UPCGDynamicMeshSelectionData::StaticClass());
 	TArray<FPCGPinProperties> Pins;
-	Pins.Emplace_GetRef(PCGDynamicMeshSelectionProcessConstants::InputPin, MoveTemp(InputTypes), true, true).SetRequiredPin();
+	Pins.Emplace_GetRef(PCGUtilsDynMeshProcessConstants::InputPin, MoveTemp(InputTypes), true, true).SetRequiredPin();
 	Pins.Emplace(
-		PCGDynamicMeshSelectionProcessConstants::SelectionFactoryInputPin,
+		PCGUtilsDynMeshProcessConstants::SelectionFactoryInputPin,
 		FPCGUtilsDynMeshSelectionFactoryDataTypeInfo::AsId(), false, false);
 	return Pins;
 }
 
-TArray<FPCGPinProperties> UPCGDynamicMeshSelectionProcessBaseSettings::OutputPinProperties() const
+TArray<FPCGPinProperties> UPCGUtilsDynMeshProcessBaseSettings::OutputPinProperties() const
 {
 	FPCGDataTypeIdentifier OutputTypes(EPCGDataType::DynamicMesh);
 	OutputTypes |= FPCGDataTypeIdentifier(UPCGDynamicMeshSelectionData::StaticClass());
 	return {FPCGPinProperties(
-		PCGDynamicMeshSelectionProcessConstants::OutputPin, MoveTemp(OutputTypes), true, true)};
+		PCGUtilsDynMeshProcessConstants::OutputPin, MoveTemp(OutputTypes), true, true)};
 }
 
-bool FPCGDynamicMeshSelectionProcessBaseElement::ExecuteInternal(FPCGContext* Context) const
+const UPCGData* FPCGUtilsDynMeshResolvedInput::GetData() const
+{
+	return SelectionData ? static_cast<const UPCGData*>(SelectionData) : static_cast<const UPCGData*>(MeshData);
+}
+
+FPCGUtilsDynMeshResolvedInput FPCGUtilsDynMeshProcessFunctions::ResolveInput(
+	const UPCGData* InputData, const UPCGUtilsDynMeshProcessBaseSettings* Settings, FPCGContext* Context)
+{
+	check(Settings);
+	check(Context);
+
+	FPCGUtilsDynMeshResolvedInput Result;
+	const UPCGDynamicMeshSelectionData* InputSelection = Cast<const UPCGDynamicMeshSelectionData>(InputData);
+	Result.MeshData = InputSelection ? InputSelection->GetSourceMeshData() : Cast<const UPCGDynamicMeshData>(InputData);
+	const UDynamicMesh* SourceObject = Result.MeshData ? Result.MeshData->GetDynamicMesh() : nullptr;
+	const UE::Geometry::FDynamicMesh3* SourceMesh = SourceObject ? SourceObject->GetMeshPtr() : nullptr;
+	if (!SourceMesh)
+	{
+		PCGLog::LogWarningOnGraph(
+			LOCTEXT("ResolveInvalidInput", "DynMesh process skipped an input with no valid source mesh."), Context);
+		Result.MeshData = nullptr;
+		return Result;
+	}
+
+	const TArray<FPCGTaggedData>& FactoryPinInputs = Context->InputData.GetInputsByPin(
+		PCGUtilsDynMeshProcessConstants::SelectionFactoryInputPin);
+	const UPCGUtilsDynMeshSelectionFactoryData* SelectionFactory = nullptr;
+	if (!FactoryPinInputs.IsEmpty())
+	{
+		TArray<TObjectPtr<const UPCGUtilsDynMeshSelectionFactoryData>> SelectionFactories;
+		if (!PCGUtilsDynMeshFactories::GetInputFactories(
+			Context, PCGUtilsDynMeshProcessConstants::SelectionFactoryInputPin,
+			SelectionFactories, PCGUtilsDynMeshFactories::GetSelectionFactoryTypes(), false))
+		{
+			Result.MeshData = nullptr;
+			return Result;
+		}
+		if (SelectionFactories.Num() != 1)
+		{
+			PCGLog::LogErrorOnGraph(
+				LOCTEXT("ResolveRequiresOneFactory", "DynMesh process accepts at most one Selector input."), Context);
+			Result.MeshData = nullptr;
+			return Result;
+		}
+		SelectionFactory = SelectionFactories[0];
+	}
+
+	if (Settings->RequiresSelection() && !InputSelection && !SelectionFactory)
+	{
+		PCGLog::LogErrorOnGraph(
+			LOCTEXT("ResolveSelectionRequired", "This DynMesh process requires either DynMesh Selection data or a connected Selector."),
+			Context);
+		Result.MeshData = nullptr;
+		return Result;
+	}
+
+	UE::Geometry::EGeometryElementType RequiredElementType = UE::Geometry::EGeometryElementType::Face;
+	const bool bRequiresDomain = Settings->GetRequiredSelectionDomain(RequiredElementType);
+	if (!InputSelection && !SelectionFactory)
+	{
+		return Result;
+	}
+
+	const UE::Geometry::EGeometryElementType EffectiveElementType = bRequiresDomain
+		? RequiredElementType
+		: (SelectionFactory
+			? ToGeometryElementType(Settings->SelectionFactoryEvaluationDomain)
+			: InputSelection->GetSelection().ElementType);
+
+	UE::Geometry::FGeometrySelection WorkingSelection;
+	bool bHasSelection = false;
+	if (InputSelection)
+	{
+		if (InputSelection->GetSelection().ElementType == EffectiveElementType)
+		{
+			WorkingSelection = InputSelection->GetSelection();
+		}
+		else if (!PCGUtilsDynMeshSelectionDomains::ConvertSelection(
+			Result.MeshData, *SourceMesh, InputSelection->GetSelection(), EffectiveElementType,
+			Settings->AllowPartialSelectionDomainInclusion(), WorkingSelection))
+		{
+			PCGLog::LogErrorOnGraph(
+				LOCTEXT("ResolveDomainConversionFailed", "DynMesh process could not convert its selection input to the required domain."),
+				Context);
+			Result.MeshData = nullptr;
+			return Result;
+		}
+		bHasSelection = true;
+	}
+
+	if (SelectionFactory)
+	{
+		FPCGUtilsDynMeshSelectionDomain FactoryDomain;
+		FactoryDomain.ElementType = EffectiveElementType;
+		FactoryDomain.TopologyType = UE::Geometry::EGeometryTopologyType::Triangle;
+		FPCGUtilsDynMeshSelectionEvaluationContext EvaluationContext(Result.MeshData, *SourceMesh, FactoryDomain);
+		UE::Geometry::FGeometrySelectorSelection;
+		if (!PCGUtilsDynMeshSelectionFactories::EvaluateFactory(
+			SelectionFactory, EvaluationContext, Context, FactorySelection))
+		{
+			PCGLog::LogErrorOnGraph(
+				LOCTEXT("ResolveFactoryEvaluationFailed", "DynMesh process could not evaluate its Selector."), Context);
+			Result.MeshData = nullptr;
+			return Result;
+		}
+		if (bHasSelection)
+		{
+			WorkingSelection.Selection = WorkingSelection.Selection.Intersect(FactorySelection.Selection);
+		}
+		else
+		{
+			WorkingSelection = MoveTemp(FactorySelection);
+			bHasSelection = true;
+		}
+	}
+
+	if (bHasSelection)
+	{
+		UPCGDynamicMeshSelectionData* ResolvedSelection =
+			FPCGContext::NewObject_AnyThread<UPCGDynamicMeshSelectionData>(Context);
+		ResolvedSelection->Initialize(Result.MeshData, MoveTemp(WorkingSelection));
+		Result.SelectionData = ResolvedSelection;
+	}
+	return Result;
+}
+
+bool FPCGUtilsDynMeshProcessBaseElement::ExecuteInternal(FPCGContext* Context) const
 {
 	check(Context);
-	const UPCGDynamicMeshSelectionProcessBaseSettings* Settings =
-		Context->GetInputSettings<UPCGDynamicMeshSelectionProcessBaseSettings>();
+	const UPCGUtilsDynMeshProcessBaseSettings* Settings =
+		Context->GetInputSettings<UPCGUtilsDynMeshProcessBaseSettings>();
 	check(Settings);
 
 	UE::Geometry::EGeometryElementType RequiredSelectionElementType =
@@ -102,13 +240,13 @@ bool FPCGDynamicMeshSelectionProcessBaseElement::ExecuteInternal(FPCGContext* Co
 		Settings->GetRequiredSelectionDomain(RequiredSelectionElementType);
 
 	const TArray<FPCGTaggedData>& FactoryPinInputs = Context->InputData.GetInputsByPin(
-		PCGDynamicMeshSelectionProcessConstants::SelectionFactoryInputPin);
+		PCGUtilsDynMeshProcessConstants::SelectionFactoryInputPin);
 	const UPCGUtilsDynMeshSelectionFactoryData* SelectionFactory = nullptr;
 	if (!FactoryPinInputs.IsEmpty())
 	{
 		TArray<TObjectPtr<const UPCGUtilsDynMeshSelectionFactoryData>> SelectionFactories;
 		if (!PCGUtilsDynMeshFactories::GetInputFactories(
-			Context, PCGDynamicMeshSelectionProcessConstants::SelectionFactoryInputPin,
+			Context, PCGUtilsDynMeshProcessConstants::SelectionFactoryInputPin,
 			SelectionFactories, PCGUtilsDynMeshFactories::GetSelectionFactoryTypes(), false))
 		{
 			return true;
@@ -116,14 +254,14 @@ bool FPCGDynamicMeshSelectionProcessBaseElement::ExecuteInternal(FPCGContext* Co
 		if (SelectionFactories.Num() != 1)
 		{
 			PCGLog::LogErrorOnGraph(
-				LOCTEXT("RequiresOneSelectionFactory", "Dynamic Mesh processor accepts at most one Selection Factory input."),
+				LOCTEXT("RequiresOneSelectionFactory", "DynMesh processor accepts at most one Selector input."),
 				Context);
 			return true;
 		}
 		SelectionFactory = SelectionFactories[0];
 	}
 
-	for (const FPCGTaggedData& Input : Context->InputData.GetInputsByPin(PCGDynamicMeshSelectionProcessConstants::InputPin))
+	for (const FPCGTaggedData& Input : Context->InputData.GetInputsByPin(PCGUtilsDynMeshProcessConstants::InputPin))
 	{
 		const UPCGDynamicMeshSelectionData* SelectionData = Cast<const UPCGDynamicMeshSelectionData>(Input.Data);
 		const UPCGDynamicMeshData* SourceData = SelectionData
@@ -132,7 +270,14 @@ bool FPCGDynamicMeshSelectionProcessBaseElement::ExecuteInternal(FPCGContext* Co
 		const UE::Geometry::FDynamicMesh3* SourceMesh = SourceObject ? SourceObject->GetMeshPtr() : nullptr;
 		if (!SourceMesh)
 		{
-			PCGLog::LogWarningOnGraph(LOCTEXT("InvalidInput", "Dynamic Mesh processor skipped an input with no valid source mesh."), Context);
+			PCGLog::LogWarningOnGraph(LOCTEXT("InvalidInput", "DynMesh processor skipped an input with no valid source mesh."), Context);
+			continue;
+		}
+		if (Settings->RequiresSelection() && !SelectionData && !SelectionFactory)
+		{
+			PCGLog::LogErrorOnGraph(
+				LOCTEXT("SelectionRequired", "This DynMesh process requires either DynMesh Selection data or a connected Selector."),
+				Context);
 			continue;
 		}
 
@@ -175,7 +320,7 @@ bool FPCGDynamicMeshSelectionProcessBaseElement::ExecuteInternal(FPCGContext* Co
 					Settings->AllowPartialSelectionDomainInclusion(), WorkingSelection))
 				{
 					PCGLog::LogErrorOnGraph(
-						LOCTEXT("SelectionDomainConversionFailed", "Dynamic Mesh processor could not convert its selection input to the domain required by the process."),
+						LOCTEXT("SelectionDomainConversionFailed", "DynMesh processor could not convert its selection input to the domain required by the process."),
 						Context);
 					continue;
 				}
@@ -199,12 +344,12 @@ bool FPCGDynamicMeshSelectionProcessBaseElement::ExecuteInternal(FPCGContext* Co
 			FactoryDomain.TopologyType = UE::Geometry::EGeometryTopologyType::Triangle;
 			FPCGUtilsDynMeshSelectionEvaluationContext EvaluationContext(
 				OutputData, *OutputMesh, FactoryDomain);
-			UE::Geometry::FGeometrySelection FactorySelection;
+			UE::Geometry::FGeometrySelectorSelection;
 			if (!PCGUtilsDynMeshSelectionFactories::EvaluateFactory(
 				SelectionFactory, EvaluationContext, Context, FactorySelection))
 			{
 				PCGLog::LogErrorOnGraph(FText::Format(
-					LOCTEXT("SelectionFactoryEvaluationFailed", "Dynamic Mesh processor could not evaluate Selection Factory '{0}' in its effective selection domain."),
+					LOCTEXT("SelectionFactoryEvaluationFailed", "DynMesh processor could not evaluate Selector '{0}' in its effective selection domain."),
 					FText::FromString(SelectionFactory->GetClass()->GetName())), Context);
 				continue;
 			}
@@ -256,7 +401,7 @@ bool FPCGDynamicMeshSelectionProcessBaseElement::ExecuteInternal(FPCGContext* Co
 					*ProcessedMesh, OutputElementType, OutputSelection))
 				{
 					PCGLog::LogErrorOnGraph(
-						LOCTEXT("CompleteSelectionOutputFailed", "Dynamic Mesh processor could not create its full-mesh selection output."),
+						LOCTEXT("CompleteSelectionOutputFailed", "DynMesh processor could not create its full-mesh selection output."),
 						Context);
 					continue;
 				}
@@ -270,7 +415,7 @@ bool FPCGDynamicMeshSelectionProcessBaseElement::ExecuteInternal(FPCGContext* Co
 		{
 			Output.Data = OutputData;
 		}
-		Output.Pin = PCGDynamicMeshSelectionProcessConstants::OutputPin;
+		Output.Pin = PCGUtilsDynMeshProcessConstants::OutputPin;
 	}
 	return true;
 }

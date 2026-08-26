@@ -23,7 +23,7 @@ enum class EPCGUtilsSplineSelectionCapMode : uint8
  * Creates a Dynamic Mesh vertex selection containing every vertex within Radius of a PCG spline's centerline -
  * conceptually a tube swept along the spline. Uses the same coordinate-space conversion as Spline Deform.
  */
-UCLASS(BlueprintType, ClassGroup=(Procedural), Category="PCGUtils|Dynamic Mesh|Selections")
+UCLASS(BlueprintType, ClassGroup=(Procedural), Category="PCGUtils|DynMesh|Selections")
 class PCGUTILSDYNMESH_API UPCGSelectionFromSplineSettings : public UPCGDynamicMeshSelectionBaseSettings
 {
 	GENERATED_BODY()

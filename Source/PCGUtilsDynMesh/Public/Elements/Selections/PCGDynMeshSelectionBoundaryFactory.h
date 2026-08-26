@@ -4,16 +4,17 @@
 
 #include "CoreMinimal.h"
 #include "Factories/PCGUtilsDynMeshDomainSelectionFactory.h"
+#include "Elements/Selections/PCGSelectionBoundaryEdges.h"
 
 #include "PCGDynMeshSelectionBoundaryFactory.generated.h"
 
 namespace PCGDynMeshSelectionBoundaryFactoryConstants
 {
-	inline const FName RegionFactoryInputPin = TEXT("Region Factory");
+	inline const FName RegionFactoryInputPin = TEXT("Region Selector");
 }
 
-/** Edge-output factory that computes the boundary of the region selected by one child factory. */
-UCLASS(BlueprintType, ClassGroup=(Procedural), Category="PCGUtils|Dynamic Mesh|Selections")
+/** Edge-output factory that computes the boundary of the region selected by one child selector. */
+UCLASS(BlueprintType, ClassGroup=(Procedural), Category="PCGUtils|DynMesh|Selections")
 class PCGUTILSDYNMESH_API UPCGDynMeshSelectionBoundaryFactoryData
 	: public UPCGUtilsDynMeshDomainSelectionFactoryData
 {
@@ -35,13 +36,18 @@ protected:
 	virtual void AddToCrc(FArchiveCrc32& Ar, bool bFullDataCrc) const override;
 };
 
-UCLASS(BlueprintType, ClassGroup=(Procedural), Category="PCGUtils|Dynamic Mesh|Selections")
+UCLASS(BlueprintType, ClassGroup=(Procedural), Category="PCGUtils|DynMesh|Selections",
+	meta=(DeprecatedNode, DeprecationMessage="Use Select Boundary with Operation Mode set to Selector."))
 class PCGUTILSDYNMESH_API UPCGDynMeshSelectionBoundaryFactoryProviderSettings
-	: public UPCGUtilsDynMeshDomainSelectionFactoryProviderSettings
+	: public UPCGSelectionBoundaryEdgesSettings
 {
 	GENERATED_BODY()
 
 public:
+	UPCGDynMeshSelectionBoundaryFactoryProviderSettings()
+	{
+		OperationMode = EPCGUtilsDynMeshSelectionOperationMode::Selector;
+	}
 #if WITH_EDITOR
 	virtual FName GetDefaultNodeName() const override { return TEXT("DynMeshSelectionBoundaryFactory"); }
 	virtual FText GetDefaultNodeTitle() const override;
@@ -49,18 +55,4 @@ public:
 	virtual FText GetNodeTooltipText() const override;
 #endif
 
-	/** Do not include region-boundary edges that are also open boundaries of the mesh itself. */
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Selection", meta=(PCG_Overridable))
-	bool bExcludeMeshBoundaryEdges = false;
-
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Selection", AdvancedDisplay, meta=(PCG_Overridable))
-	int32 Priority = 0;
-
-	virtual FName GetMainOutputPin() const override;
-	virtual UPCGUtilsDynMeshFactoryData* CreateFactory(
-		FPCGContext* InContext, UPCGUtilsDynMeshFactoryData* InFactory = nullptr) const override;
-
-protected:
-	virtual const FPCGDataTypeBaseId& GetFactoryTypeId() const override;
-	virtual TArray<FPCGPinProperties> InputPinProperties() const override;
 };

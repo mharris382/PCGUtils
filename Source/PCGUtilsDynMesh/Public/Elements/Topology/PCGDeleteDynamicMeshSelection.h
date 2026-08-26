@@ -1,7 +1,7 @@
 #pragma once
 
 #include "CoreMinimal.h"
-#include "PCGSettings.h"
+#include "Elements/PCGUtilsDynMeshProcessBase.h"
 
 #include "PCGDeleteDynamicMeshSelection.generated.h"
 
@@ -16,14 +16,22 @@ enum class EPCGDeleteDynamicMeshSelectionMode : uint8
 	Vertices
 };
 
-UCLASS(BlueprintType, ClassGroup=(Procedural), Category="PCGUtils|Dynamic Mesh")
-class PCGUTILSDYNMESH_API UPCGDeleteDynamicMeshSelectionSettings : public UPCGSettings
+UCLASS(BlueprintType, ClassGroup=(Procedural), Category="PCGUtils|DynMesh")
+class PCGUTILSDYNMESH_API UPCGDeleteDynamicMeshSelectionSettings : public UPCGUtilsDynMeshProcessBaseSettings
 {
 	GENERATED_BODY()
 
 public:
+	virtual bool RequiresSelection() const override { return true; }
+	virtual bool GetRequiredSelectionDomain(UE::Geometry::EGeometryElementType& OutElementType) const override
+	{
+		OutElementType = DeleteMode == EPCGDeleteDynamicMeshSelectionMode::Triangles
+			? UE::Geometry::EGeometryElementType::Face : UE::Geometry::EGeometryElementType::Vertex;
+		return true;
+	}
+
 #if WITH_EDITOR
-	virtual FName GetDefaultNodeName() const override { return TEXT("DeleteDynamicMeshSelection"); }
+	virtual FName GetDefaultNodeName() const override { return TEXT("DeleteDynMeshSelection"); }
 	virtual FText GetDefaultNodeTitle() const override;
 	virtual FText GetNodeTooltipText() const override;
 	virtual FLinearColor GetNodeTitleColor() const override { return FLinearColor(0.413f, 0.25f ,1.0f, 1.0f);	}
@@ -40,7 +48,7 @@ public:
 	EPCGDeleteDynamicMeshSelectionMode DeleteMode = EPCGDeleteDynamicMeshSelectionMode::Triangles;
 };
 
-class PCGUTILSDYNMESH_API FPCGDeleteDynamicMeshSelectionElement : public IPCGElement
+class PCGUTILSDYNMESH_API FPCGDeleteDynamicMeshSelectionElement : public FPCGUtilsDynMeshProcessBaseElement
 {
 protected:
 	virtual bool ExecuteInternal(FPCGContext* Context) const override;

@@ -48,7 +48,7 @@ namespace
 	void SetVertexColorOne(FPCGContext* Context, const UPCGSetVertexColorSettings* Settings, const FPCGTaggedData& Input)
 	{
 		FPCGUtilsMeshTargetHandle Handle = FPCGUtilsMeshTargetFunctions::CreateTarget(
-			Input.Data, EPCGUtilsMeshTargetPreparation::FullMeshCopy, Context);
+			Input.Data, EPCGUtilsMeshTargetPreparation::FullMeshCopy, Context, Settings);
 		if (!Handle.IsValid())
 		{
 			return;
@@ -93,7 +93,10 @@ FText UPCGSetVertexColorSettings::GetNodeTooltipText() const
 
 TArray<FPCGPinProperties> UPCGSetVertexColorSettings::InputPinProperties() const
 {
-	return {FPCGUtilsMeshTargetFunctions::MakeMeshInputPinProperties(SetVertexColorMeshPin)};
+	TArray<FPCGPinProperties> Pins = Super::InputPinProperties();
+	Pins[0] = FPCGUtilsMeshTargetFunctions::MakeMeshInputPinProperties(SetVertexColorMeshPin);
+	Pins[0].SetRequiredPin();
+	return Pins;
 }
 
 TArray<FPCGPinProperties> UPCGSetVertexColorSettings::OutputPinProperties() const

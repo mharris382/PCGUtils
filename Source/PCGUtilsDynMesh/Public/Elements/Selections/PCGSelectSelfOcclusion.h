@@ -39,7 +39,7 @@ enum class EPCGDynMeshSelfOcclusionResult : uint8
  * inclusive conversion rules and only those candidates are traced. This makes a cheap selector such as Select by
  * Normal an effective pruning pass before the more expensive self-occlusion queries.
  */
-UCLASS(BlueprintType, ClassGroup=(Procedural), Category="PCGUtils|Dynamic Mesh|Selections")
+UCLASS(BlueprintType, ClassGroup=(Procedural), Category="PCGUtils|DynMesh|Selections")
 class PCGUTILSDYNMESH_API UPCGSelectSelfOcclusionSettings : public UPCGDynamicMeshSelectionFilterBaseSettings
 {
 	GENERATED_BODY()

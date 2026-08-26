@@ -2,7 +2,7 @@
 
 #include "CoreMinimal.h"
 #include "DynamicMesh/DynamicMeshAttributeSet.h"
-#include "Elements/PCGDynamicMeshSelectionProcessBase.h"
+#include "Elements/PCGUtilsDynMeshProcessBase.h"
 
 #include "PCGDynamicMeshUVProcessBase.generated.h"
 
@@ -15,9 +15,9 @@ namespace UE::Geometry
 }
 
 /** Common settings for UV operations that accept either a Dynamic Mesh or a Dynamic Mesh Selection. */
-UCLASS(Abstract, BlueprintType, ClassGroup=(Procedural), Category="PCGUtils|Dynamic Mesh|UV")
+UCLASS(Abstract, BlueprintType, ClassGroup=(Procedural), Category="PCGUtils|DynMesh|UV")
 class PCGUTILSDYNMESH_API UPCGDynamicMeshUVProcessBaseSettings
-	: public UPCGDynamicMeshSelectionProcessBaseSettings
+	: public UPCGUtilsDynMeshProcessBaseSettings
 {
 	GENERATED_BODY()
 
@@ -35,7 +35,7 @@ public:
  * Existing overlay triangles outside the region are never cleared or rebuilt by this base.
  */
 class PCGUTILSDYNMESH_API FPCGDynamicMeshUVProcessBaseElement
-	: public FPCGDynamicMeshSelectionProcessBaseElement
+	: public FPCGUtilsDynMeshProcessBaseElement
 {
 protected:
 	virtual bool ProcessMesh(UPCGDynamicMeshData* MeshData,

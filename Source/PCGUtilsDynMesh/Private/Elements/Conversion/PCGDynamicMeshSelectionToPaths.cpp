@@ -8,6 +8,7 @@
 #include "GeometryScript/GeometryScriptSelectionTypes.h"
 #include "GeometryScript/MeshSelectionQueryFunctions.h"
 #include "Metadata/PCGMetadata.h"
+#include "MeshTarget/PCGUtilsMeshTargetFunctions.h"
 #include "PCGContext.h"
 #include "PCGPin.h"
 #include "UDynamicMesh.h"
@@ -68,7 +69,7 @@ namespace
 #if WITH_EDITOR
 FText UPCGDynamicMeshSelectionToPathsSettings::GetDefaultNodeTitle() const
 {
-	return LOCTEXT("Title", "Dynamic Mesh Selection To Paths");
+	return LOCTEXT("Title", "DynMesh Selection To Paths");
 }
 
 FText UPCGDynamicMeshSelectionToPathsSettings::GetNodeTooltipText() const
@@ -81,8 +82,10 @@ FText UPCGDynamicMeshSelectionToPathsSettings::GetNodeTooltipText() const
 
 TArray<FPCGPinProperties> UPCGDynamicMeshSelectionToPathsSettings::InputPinProperties() const
 {
-	return {FPCGPinProperties(SelectionToPathsInputPin,
-		FPCGDataTypeIdentifier(UPCGDynamicMeshSelectionData::StaticClass()), true, true)};
+	TArray<FPCGPinProperties> Pins = Super::InputPinProperties();
+	Pins[0] = FPCGUtilsMeshTargetFunctions::MakeMeshInputPinProperties(SelectionToPathsInputPin);
+	Pins[0].SetRequiredPin();
+	return Pins;
 }
 
 TArray<FPCGPinProperties> UPCGDynamicMeshSelectionToPathsSettings::OutputPinProperties() const
@@ -112,8 +115,14 @@ bool FPCGDynamicMeshSelectionToPathsElement::ExecuteInternal(FPCGContext* Contex
 
 	for (const FPCGTaggedData& Input : Context->InputData.GetInputsByPin(SelectionToPathsInputPin))
 	{
-		const UPCGDynamicMeshSelectionData* SelectionData = Cast<const UPCGDynamicMeshSelectionData>(Input.Data);
-		const UPCGDynamicMeshData* MeshData = SelectionData ? SelectionData->GetSourceMeshData() : nullptr;
+		const FPCGUtilsDynMeshResolvedInput ResolvedInput =
+			FPCGUtilsDynMeshProcessFunctions::ResolveInput(Input.Data, Settings, Context);
+		if (!ResolvedInput.IsValid())
+		{
+			continue;
+		}
+		const UPCGDynamicMeshSelectionData* SelectionData = ResolvedInput.SelectionData;
+		const UPCGDynamicMeshData* MeshData = ResolvedInput.MeshData;
 		const UDynamicMesh* DynamicMesh = MeshData ? MeshData->GetDynamicMesh() : nullptr;
 		if (!DynamicMesh || !DynamicMesh->GetMeshPtr())
 		{

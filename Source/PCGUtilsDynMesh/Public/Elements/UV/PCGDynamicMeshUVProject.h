@@ -29,7 +29,7 @@ struct FPCGDynamicMeshUVProjectContext : public FPCGContext
 };
 
 /** Projects planar UVs from one or more projector points. */
-UCLASS(BlueprintType, ClassGroup=(Procedural), Category="PCGUtils|Dynamic Mesh|UV")
+UCLASS(BlueprintType, ClassGroup=(Procedural), Category="PCGUtils|DynMesh|UV")
 class PCGUTILSDYNMESH_API UPCGDynamicMeshUVProjectSettings
 	: public UPCGDynamicMeshUVProcessBaseSettings
 {

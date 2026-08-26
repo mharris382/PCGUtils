@@ -6,15 +6,55 @@ These conventions should be followed when adding new PCG elements, data types, s
 
 ---
 
+## Core Product Principles
+
+`PCGUtilsDynMesh` exists to make DynMesh processing feel native to PCG rather than like a thin collection of
+unrelated Geometry Script wrappers. Every design and review must preserve these priorities:
+
+1. Make DynMesh data PCG-native and graph-friendly, including consistent handling of PCG world space versus
+   DynMesh local space.
+2. Expose Geometry Script's capabilities comprehensively through PCG.
+3. Port useful procedural operations from Blender when Geometry Script has no equivalent. Follow the original
+   open-source algorithm and license obligations rather than guessing at equivalent behavior.
+4. Make practically every operation selection-aware unless partial application is semantically invalid.
+
+The fourth point is a default requirement, not an optional enhancement. A process node should consume either
+bare DynMesh data or DynMesh Selection data through one input. It should also expose the optional `Selector`
+input so a selection can be generated inline. An exception must be documented in the node when applying
+the operation to only part of a mesh does not make sense (for example, changing the coordinate system of only
+some vertices).
+
+---
+
+## The Four Geometry Script Selection Shapes
+
+Before implementing an operation, identify its Geometry Script API shape:
+
+1. **Whole-mesh and selection overloads:** dispatch to the matching overload.
+2. **One function with an optional selection/no-selection policy:** pass the effective selection and select the
+   appropriate no-selection behavior.
+3. **Selection required:** override `RequiresSelection()` on `UPCGUtilsDynMeshProcessBaseSettings`. The process
+   accepts materialized DynMesh Selection data or bare DynMesh data plus a Selector. Bare DynMesh data
+   without either must fail with a graph error in the shared resolver.
+4. **Whole-mesh only:** use `FPCGUtilsMeshTargetHandle` to operate on a temporary region or full copy, then restore
+   the applicable result domain to the untouched source mesh.
+
+Do not implement separate ad hoc input paths for these cases. The process base resolves materialized selections,
+selector selections, domain conversion, and intersection; the Mesh Target layer handles temporary working meshes
+and restoration.
+
+---
+
 ## Elements Must Build On the Existing DynMesh Base Classes
 
 Do not derive a new PCG element's Settings/Element pair directly from `UPCGSettings`/`IPCGElement` when an existing PCGUtilsDynMesh (or engine) base class already models the shape of its input. Building a new node "from scratch" in parallel to the module's existing infrastructure - instead of extending it - is not acceptable, even if the from-scratch version works. Before writing a new Settings/Element pair, search the module for something that already fits; do not assume it must be written fresh.
 
-* `UPCGDynamicMeshBaseSettings` / `IPCGDynamicMeshBaseElement` - **an engine base**, not module code. It lives in `Elements/PCGDynamicMeshBaseElement.h` inside the `PCGGeometryScriptInterop` plugin (already a `PCGUtilsDynMesh.Build.cs` dependency) and resolves correctly as long as no PCGUtilsDynMesh file reuses that same relative path - do not create a file at `Elements/PCGDynamicMeshBaseElement.h` inside this module, it will collide with the engine header of the same name and fail to build. It fixes "Add Node" categorization (see below) and provides a `CopyOrSteal()` static helper. Every other base below derives from it (directly or transitively); use it directly only when none of the more specific bases fit but the element still operates on Dynamic Mesh / Dynamic Mesh Selection data (eg Bevel Edges, whose actual mesh resolution goes through `PCGUtilsMeshTargetFunctions` below, but whose Settings/Element still derive from this for the categorization fix).
-* `UPCGDynamicMeshSelectionBaseSettings` / `FPCGDynamicMeshSelectionBaseElement` (`Selections/PCGDynamicMeshSelectionBase.h`) - authors a brand-new selection from a bare Dynamic Mesh input only (eg Selection From Points, Selection From Spline).
+* `UPCGDynamicMeshBaseSettings` / `IPCGDynamicMeshBaseElement` - **an engine base**, not module code. It lives in `Elements/PCGDynamicMeshBaseElement.h` inside the `PCGGeometryScriptInterop` plugin (already a `PCGUtilsDynMesh.Build.cs` dependency) and resolves correctly as long as no PCGUtilsDynMesh file reuses that same relative path. It fixes "Add Node" categorization and provides `CopyOrSteal()`. Use it directly only when no more specific base fits.
+* `UPCGDynamicMeshSelectionBaseSettings` / `FPCGDynamicMeshSelectionBaseElement` (`Selections/PCGDynamicMeshSelectionBase.h`) - authors a brand-new selection from a bare DynMesh input only.
 * `UPCGDynamicMeshSelectionFilterBaseSettings` / `FPCGDynamicMeshSelectionFilterBaseElement` (`Selections/PCGDynamicMeshSelectionFilterBase.h`) - computes a selection while accepting either a bare Mesh or an existing Selection to intersect with (eg Sharp Edge Filter, Edge Direction, Select in Point Bounds). Read-only - never copies the mesh.
-* `UPCGDynamicMeshSelectionProcessBaseSettings` / `FPCGDynamicMeshSelectionProcessBaseElement` (`PCGDynamicMeshSelectionProcessBase.h`) - a lighter-weight mutation base: unconditionally deep-copies the source mesh once, then hands the derived element `ProcessMesh(UPCGDynamicMeshData* MeshData, const UPCGDynamicMeshSelectionData* SelectionData, FPCGContext*)` to mutate directly (eg Material). Fine for a mutation with no topology-preservation/region concerns.
-* **`FPCGUtilsMeshTargetFunctions` / `FPCGUtilsMeshTargetHandle`** (`MeshTarget/PCGUtilsMeshTargetHandle.h`, `PCGUtilsMeshTargetFunctions.h`) - the module's primary, most mature infrastructure for mutation operations that accept either a whole Dynamic Mesh or a Mesh Selection (Remesh, Warp, Spline Deform, Bevel Edges). Prefer this over `UPCGDynamicMeshSelectionProcessBaseSettings` for any new mutating element - see "Resolving Mesh-or-Selection Input" below. It is a set of static helpers, not a Settings/Element base class, so pair it with `UPCGDynamicMeshBaseSettings` / `IPCGDynamicMeshBaseElement` (or a plain `UPCGSettings`/`IPCGElement`, matching the existing Remesh/Warp/Spline Deform precedent) for the actual class hierarchy.
+* `UPCGUtilsDynMeshProcessBaseSettings` / `FPCGUtilsDynMeshProcessBaseElement` (`PCGUtilsDynMeshProcessBase.h`) - the required base contract for a process/query/conversion that consumes DynMesh or DynMesh Selection data. It owns the unified input and optional Selector pin, selection requirement/domain policy, and shared resolution. Its default element executor deep-copies and calls `ProcessMesh(...)`; specialized executors may override `ExecuteInternal()` but must still use `FPCGUtilsDynMeshProcessFunctions::ResolveInput()` or pass their settings to `CreateTarget()`.
+* `UPCGUtilsDynMeshSelectionOperationSettings` / `FPCGUtilsDynMeshSelectionOperationElement` - the shared base for operations that modify an existing selection. The same node must support materialized `Selection` mode and reusable `Selector` decorator mode. Do not create parallel standalone and provider nodes for the same operation.
+* **`FPCGUtilsMeshTargetFunctions` / `FPCGUtilsMeshTargetHandle`** (`MeshTarget/PCGUtilsMeshTargetHandle.h`, `PCGUtilsMeshTargetFunctions.h`) - the working-mesh/restoration layer for cases that cannot use the default process executor. It complements the process base; it is not an alternative to the process settings contract. Handle-based nodes derive from `UPCGUtilsDynMeshProcessBaseSettings`, expose the inherited Selector pin, and call `CreateTarget(..., Settings)` so materialized and selector selections are resolved consistently.
 
 **Exception:** an element that sources its own data rather than operating on an existing DynMesh/Selection input - eg a "Get Actor Data"-style acquisition element - has nothing to model against these bases and may derive directly from `UPCGSettings`/`IPCGElement`. This is the only routine exception; it is not a general escape hatch for "the base class didn't fit my exact use case."
 
@@ -22,9 +62,12 @@ Do not derive a new PCG element's Settings/Element pair directly from `UPCGSetti
 
 ## Resolving Mesh-or-Selection Input: Use `FPCGUtilsMeshTargetHandle`
 
-For a **mutating** element that accepts either a whole Dynamic Mesh or a Mesh Selection, resolve the input through `FPCGUtilsMeshTargetFunctions::CreateTarget()` (`MeshTarget/PCGUtilsMeshTargetFunctions.h`) and the `FPCGUtilsMeshTargetHandle` it returns. Do not hand-roll `Cast<UPCGDynamicMeshSelectionData>(Input.Data)` / `GetSourceMeshData()` / manual `FDynamicMesh3` copying again for this shape of element - that logic already exists, and is already used by Remesh, Warp, and Spline Deform.
+For a **mutating** element that accepts either a whole DynMesh or a DynMesh Selection, resolve the input through
+`FPCGUtilsMeshTargetFunctions::CreateTarget(Input.Data, Preparation, Context, Settings)`. Passing the process
+settings is mandatory: it applies a connected Selector and domain conversion before target preparation.
+Do not hand-roll `Cast<UPCGDynamicMeshSelectionData>` / `GetSourceMeshData()` / manual copying.
 
-**An element should not care whether its input was a bare Dynamic Mesh or an existing Selection** - the handle decides what that requires:
+**An element should not care whether its input was a bare DynMesh or an existing Selection** - the handle decides what that requires:
 
 * `Handle.IsSelection()` - true if the input was already a Selection; use this to decide whether `Handle.GetSelection()` holds real data.
 * `Handle.GetSelection() -> const FGeometryScriptMeshSelection&` - the canonical selection for a Selection source. For a bare-Mesh source it is empty, so an element whose GeometryScript call always requires *some* selection (eg `ApplyMeshBevelEdgeSelection`) must synthesize one itself in that case - `UGeometryScriptLibrary_MeshSelectionFunctions::CreateSelectAllMeshSelection(Handle.GetTargetMesh(), Selection, SelectionType)` does this directly against the handle's already-created target mesh, at no extra copy cost (see Bevel Edges).
@@ -39,15 +82,36 @@ A `UPCGDynamicMeshSelectionData` input pin must accept vertex, edge, and triangl
 
 When an operation requires a specific domain, convert the incoming selection internally with GeometryScript's `ConvertMeshSelection` semantics. Use `PCGUtilsDynMeshSelectionDomains::ConvertSelection()` rather than hand-rolling incident-element conversion. Inclusive conversion (`bAllowPartialInclusion = true`) is the default; expose the restrictive full-inclusion behavior only as an advanced setting when it is useful.
 
-The same rule applies to selection factories. A factory whose predicate is natively meaningful in only one domain must derive its data/provider classes from `UPCGUtilsDynMeshDomainSelectionFactoryData` and `UPCGUtilsDynMeshDomainSelectionFactoryProviderSettings`. Implement only the native predicate; the base materializes and converts it automatically when `Build DynMesh Selection` or another factory requests a different domain.
+The same rule applies to selectors. A selector whose predicate is natively meaningful in only one domain uses the internal `UPCGUtilsDynMeshDomainSelectionFactoryData` and `UPCGUtilsDynMeshDomainSelectionFactoryProviderSettings` types. Implement only the native predicate; the base materializes and converts it automatically when `Build DynMesh Selection` or another selector requests a different domain.
 
-Processes derived from `UPCGDynamicMeshSelectionProcessBaseSettings` opt into the same behavior by overriding `GetRequiredSelectionDomain()`. Return `true` and the native vertex, edge, or face element type required by `ProcessMesh()`; the base converts selection-data inputs automatically before invoking the process. This requirement never applies when the input is a complete `UPCGDynamicMeshData`, because a complete mesh has no selection domain. Leave the default `false` behavior for processes that support every domain or intentionally interpret the incoming domain themselves. Override `AllowPartialSelectionDomainInclusion()` only when the process requires restrictive full-inclusion conversion.
+Processes derived from `UPCGUtilsDynMeshProcessBaseSettings` opt into the same behavior by overriding `GetRequiredSelectionDomain()`. Return `true` and the native vertex, edge, or face element type required by the operation. Override `AllowPartialSelectionDomainInclusion()` only when the process requires restrictive full-inclusion conversion.
 
-`UPCGDynamicMeshSelectionProcessBaseSettings` also exposes one optional, single-connection `Selection Factory` pin. When connected, the factory result becomes the process selection for a complete mesh input, or is intersected with an incoming selection-data input. A domain required by `GetRequiredSelectionDomain()` takes precedence; otherwise the base uses the explicit `SelectionFactoryEvaluationDomain` setting. The editor hides that setting for subclasses that require a domain. When the factory pin is disconnected and the process requires no domain, incoming selections are passed through unchanged. `bOutputSelectionData` is disabled by default; when enabled, the process returns the effective selection tied to the processed mesh instead of bare Dynamic Mesh data. A whole-mesh input with no factory produces a full-mesh selection in the required domain, or the configured evaluation domain when the subclass has no requirement.
+`UPCGUtilsDynMeshProcessBaseSettings` exposes one optional, single-connection `Selector` pin. When connected, the selector result becomes the process selection for a complete mesh input, or intersects an incoming selection-data input. A domain required by `GetRequiredSelectionDomain()` takes precedence; otherwise the base uses `SelectionFactoryEvaluationDomain`. For selection-only operations, override `RequiresSelection()`; never enforce this independently inside each element.
 
 This is a user-facing graph contract: selection wires communicate mesh-element membership, not a hidden compatibility requirement. Domain conversion is an implementation detail and must not produce mysterious empty results or runtime-only domain errors.
 
+## Coordinate-Space Contract
+
+PCG-authored points, splines, and bounds are world-space by default; DynMesh geometry is target-actor-local by
+default. Nodes that combine them must use `PCGUtilsDynMeshSpaceHelpers`/`PCGUtilsSplineHelpers` and expose a clear
+conversion setting where inference is not possible. Never scatter bespoke target-actor transform code through a
+new element.
+
+The engine `UPCGDynamicMeshData` type does not record coordinate-space provenance. Until PCGUtils introduces a
+space-aware data wrapper or metadata contract, do not claim that an arbitrary mesh's space can be inferred
+perfectly. Treat local space as the module default, preserve explicit To World/To Local nodes, and document any
+node that intentionally operates in world space. A future process-base space policy should centralize input and
+output conversion once provenance is representable.
+
 ## Naming: Prefer `DynMesh`
+
+`Factory` is implementation-only vocabulary. The graph, palette, pin labels, data display names, tooltips,
+errors, and user documentation always call reusable selection predicates `Selectors`. Existing reflected C++
+types containing `Factory` remain until a redirect-backed rename is safe; never copy that term into display text.
+
+Selection operations that can either materialize or decorate a selection use the shared selection-operation base.
+When a Selector implementation supersedes a standalone materialized node, preserve the old class for serialized
+graphs but mark it deprecated and direct users to the unified node.
 
 For project-owned filenames, class names, node names, and related identifiers, prefer the shorter term:
 
@@ -71,7 +135,10 @@ Avoid unnecessarily verbose names such as:
 
 This does **not** mean renaming Unreal Engine API types such as `UDynamicMesh` or `FDynamicMesh3`. Use the engine's official type names when referring to engine APIs.
 
-The convention applies to names introduced by PCGUtilsDynMesh.
+The convention applies to filenames, C++ identifiers, pin display names, data-type display names, node names,
+node titles, categories, tooltips, and documentation introduced by PCGUtilsDynMesh. Existing Unreal Engine API
+names remain unchanged. When compatibility prevents renaming an existing reflected class immediately, change its
+user-facing node/data display names now and schedule the C++ rename with Core Redirects separately.
 
 ---
 
@@ -110,7 +177,7 @@ This applies to types such as:
 
 * DynMesh data
 * DynMesh selections
-* operation/factory data
+* operation/provider data
 * other module-specific PCG data types
 
 The exact color can vary by data family, but it must intentionally distinguish the type from generic/Any PCG data.

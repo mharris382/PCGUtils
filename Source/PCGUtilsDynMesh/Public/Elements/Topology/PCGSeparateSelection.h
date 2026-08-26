@@ -1,7 +1,7 @@
 #pragma once
 
 #include "CoreMinimal.h"
-#include "Elements/PCGDynamicMeshBaseElement.h"
+#include "Elements/PCGUtilsDynMeshProcessBase.h"
 
 #include "PCGSeparateSelection.generated.h"
 
@@ -22,12 +22,20 @@ enum class EPCGDynMeshSeparationMode : uint8
  * opposite side deleted via GeometryScript - no region extraction/weld is involved, since the two halves are meant
  * to end up as separate meshes rather than being recombined.
  */
-UCLASS(BlueprintType, ClassGroup=(Procedural), Category="PCGUtils|Dynamic Mesh")
-class PCGUTILSDYNMESH_API UPCGSeparateSelectionSettings : public UPCGDynamicMeshBaseSettings
+UCLASS(BlueprintType, ClassGroup=(Procedural), Category="PCGUtils|DynMesh")
+class PCGUTILSDYNMESH_API UPCGSeparateSelectionSettings : public UPCGUtilsDynMeshProcessBaseSettings
 {
 	GENERATED_BODY()
 
 public:
+	virtual bool RequiresSelection() const override { return true; }
+	virtual bool GetRequiredSelectionDomain(UE::Geometry::EGeometryElementType& OutElementType) const override
+	{
+		OutElementType = SeparationMode == EPCGDynMeshSeparationMode::Triangles
+			? UE::Geometry::EGeometryElementType::Face : UE::Geometry::EGeometryElementType::Vertex;
+		return true;
+	}
+
 #if WITH_EDITOR
 	virtual FName GetDefaultNodeName() const override { return TEXT("SeparateSelection"); }
 	virtual FText GetDefaultNodeTitle() const override;
@@ -45,7 +53,7 @@ protected:
 	virtual FPCGElementPtr CreateElement() const override;
 };
 
-class PCGUTILSDYNMESH_API FPCGSeparateSelectionElement : public IPCGDynamicMeshBaseElement
+class PCGUTILSDYNMESH_API FPCGSeparateSelectionElement : public FPCGUtilsDynMeshProcessBaseElement
 {
 protected:
 	virtual bool ExecuteInternal(FPCGContext* Context) const override;

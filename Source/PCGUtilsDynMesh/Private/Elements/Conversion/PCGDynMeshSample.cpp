@@ -310,9 +310,9 @@ FText UPCGDynMeshSampleSettings::GetNodeTooltipText() const
 
 TArray<FPCGPinProperties> UPCGDynMeshSampleSettings::InputPinProperties() const
 {
-	TArray<FPCGPinProperties> Pins;
-	FPCGPinProperties& MeshPin = Pins.Add_GetRef(FPCGUtilsMeshTargetFunctions::MakeMeshInputPinProperties(SampleInputPin, true, true));
-	MeshPin.SetRequiredPin();
+	TArray<FPCGPinProperties> Pins = Super::InputPinProperties();
+	Pins[0] = FPCGUtilsMeshTargetFunctions::MakeMeshInputPinProperties(SampleInputPin, true, true);
+	Pins[0].SetRequiredPin();
 	return Pins;
 }
 
@@ -340,14 +340,15 @@ bool FPCGDynMeshSampleElement::ExecuteInternal(FPCGContext* Context) const
 	{
 		// Resolve the source DynMesh and, for a Selection input, the triangle set to restrict sampling to -
 		// reusing the same Selection/DynMesh resolution used throughout PCGUtilsDynMesh (see
-		// PCGDynamicMeshSelectionProcessBase) rather than duplicating it here.
-		const UPCGDynamicMeshSelectionData* SelectionData = Cast<const UPCGDynamicMeshSelectionData>(Input.Data);
-		const UPCGDynamicMeshData* SourceData = SelectionData ? SelectionData->GetSourceMeshData() : Cast<const UPCGDynamicMeshData>(Input.Data);
-		if (!SourceData)
+		// PCGUtilsDynMeshProcessBase) rather than duplicating it here.
+		const FPCGUtilsDynMeshResolvedInput ResolvedInput =
+			FPCGUtilsDynMeshProcessFunctions::ResolveInput(Input.Data, Settings, Context);
+		if (!ResolvedInput.IsValid())
 		{
-			PCGLog::LogErrorOnGraph(LOCTEXT("InvalidInput", "Sample DynMesh skipped an input that is neither a Dynamic Mesh nor a valid Dynamic Mesh Selection."), Context);
 			continue;
 		}
+		const UPCGDynamicMeshSelectionData* SelectionData = ResolvedInput.SelectionData;
+		const UPCGDynamicMeshData* SourceData = ResolvedInput.MeshData;
 
 		const UDynamicMesh* SourceObject = SourceData->GetDynamicMesh();
 		const FDynamicMesh3* SourceMesh = SourceObject ? SourceObject->GetMeshPtr() : nullptr;

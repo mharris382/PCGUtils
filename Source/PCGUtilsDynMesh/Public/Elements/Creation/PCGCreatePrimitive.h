@@ -23,7 +23,7 @@ enum class EPCGCreatePrimitiveSeedPlacement : uint8
  * The primitive type and its options are configured via the inline Primitive object; this node itself only
  * handles seed iteration, coordinate-space conversion, and per-seed placement transforms.
  */
-UCLASS(BlueprintType, ClassGroup=(Procedural), Category="PCGUtils|Dynamic Mesh")
+UCLASS(BlueprintType, ClassGroup=(Procedural), Category="PCGUtils|DynMesh")
 class PCGUTILSDYNMESH_API UPCGCreatePrimitiveSettings : public UPCGSettings
 {
 	GENERATED_BODY()

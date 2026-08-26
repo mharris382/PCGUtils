@@ -7,6 +7,7 @@
 #include "GeometryScript/MeshBasicEditFunctions.h"
 #include "GeometryScript/MeshSelectionFunctions.h"
 #include "Materials/MaterialInterface.h"
+#include "MeshTarget/PCGUtilsMeshTargetFunctions.h"
 #include "PCGContext.h"
 #include "PCGPin.h"
 #include "UDynamicMesh.h"
@@ -47,8 +48,14 @@ namespace
 
 	void SeparateOne(FPCGContext* Context, const UPCGSeparateSelectionSettings* Settings, const FPCGTaggedData& Input)
 	{
-		const UPCGDynamicMeshSelectionData* SelectionData = Cast<const UPCGDynamicMeshSelectionData>(Input.Data);
-		const UPCGDynamicMeshData* SourceData = SelectionData ? SelectionData->GetSourceMeshData() : nullptr;
+		const FPCGUtilsDynMeshResolvedInput ResolvedInput =
+			FPCGUtilsDynMeshProcessFunctions::ResolveInput(Input.Data, Settings, Context);
+		if (!ResolvedInput.IsValid())
+		{
+			return;
+		}
+		const UPCGDynamicMeshSelectionData* SelectionData = ResolvedInput.SelectionData;
+		const UPCGDynamicMeshData* SourceData = ResolvedInput.MeshData;
 		const UDynamicMesh* SourceObject = SourceData ? SourceData->GetDynamicMesh() : nullptr;
 		const UE::Geometry::FDynamicMesh3* SourceMesh = SourceObject ? SourceObject->GetMeshPtr() : nullptr;
 		if (!SourceMesh)
@@ -115,8 +122,9 @@ FText UPCGSeparateSelectionSettings::GetNodeTooltipText() const
 
 TArray<FPCGPinProperties> UPCGSeparateSelectionSettings::InputPinProperties() const
 {
-	TArray<FPCGPinProperties> Pins;
-	Pins.Emplace_GetRef(SeparateSelectionInputPin, FPCGDataTypeIdentifier(UPCGDynamicMeshSelectionData::StaticClass()), true, true).SetRequiredPin();
+	TArray<FPCGPinProperties> Pins = Super::InputPinProperties();
+	Pins[0] = FPCGUtilsMeshTargetFunctions::MakeMeshInputPinProperties(SeparateSelectionInputPin);
+	Pins[0].SetRequiredPin();
 	return Pins;
 }
 

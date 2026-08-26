@@ -8,6 +8,7 @@
 struct FPCGTaggedData;
 struct FPCGPinProperties;
 class UPCGData;
+class UPCGUtilsDynMeshProcessBaseSettings;
 
 /**
  * Shared infrastructure for PCG Dynamic Mesh elements that need to operate on either a whole Dynamic Mesh or a
@@ -38,7 +39,8 @@ public:
 	 * Always produces a *working copy*; the original PCG data is never mutated.
 	 */
 	static FPCGUtilsMeshTargetHandle CreateTarget(
-		const UPCGData* InputData, EPCGUtilsMeshTargetPreparation Preparation, FPCGContext* Context);
+		const UPCGData* InputData, EPCGUtilsMeshTargetPreparation Preparation, FPCGContext* Context,
+		const UPCGUtilsDynMeshProcessBaseSettings* ProcessSettings = nullptr);
 
 	/**
 	 * Finalizes a handle created with EPCGUtilsMeshTargetPreparation::Region: for a Selection source,

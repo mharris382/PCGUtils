@@ -217,8 +217,9 @@ FText UPCGSplineDeformSettings::GetNodeTooltipText() const
 
 TArray<FPCGPinProperties> UPCGSplineDeformSettings::InputPinProperties() const
 {
-	TArray<FPCGPinProperties> Pins;
-	Pins.Add(FPCGUtilsMeshTargetFunctions::MakeMeshInputPinProperties(SplineDeformMeshPin));
+	TArray<FPCGPinProperties> Pins = Super::InputPinProperties();
+	Pins[0] = FPCGUtilsMeshTargetFunctions::MakeMeshInputPinProperties(SplineDeformMeshPin);
+	Pins[0].SetRequiredPin();
 	Pins.Emplace_GetRef(SplineDeformSplinePin, EPCGDataType::Spline, true, true).SetRequiredPin();
 	return Pins;
 }
@@ -286,7 +287,7 @@ bool FPCGSplineDeformElement::ExecuteInternal(FPCGContext* Context) const
 	for (const FPCGTaggedData& Input : Context->InputData.GetInputsByPin(SplineDeformMeshPin))
 	{
 		FPCGUtilsMeshTargetHandle Handle = FPCGUtilsMeshTargetFunctions::CreateTarget(
-			Input.Data, EPCGUtilsMeshTargetPreparation::FullMeshCopy, Context);
+			Input.Data, EPCGUtilsMeshTargetPreparation::FullMeshCopy, Context, Settings);
 		if (!Handle.IsValid())
 		{
 			continue;

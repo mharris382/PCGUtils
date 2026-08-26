@@ -2,7 +2,7 @@
 
 #include "CoreMinimal.h"
 #include "GeometryScript/GeometryScriptSelectionTypes.h"
-#include "PCGSettings.h"
+#include "Elements/PCGDynamicMeshBaseElement.h"
 #include "Selections/GeometrySelection.h"
 
 #include "PCGDynamicMeshSelectionBase.generated.h"
@@ -44,8 +44,8 @@ namespace PCGDynamicMeshSelectionConstants
 }
 
 /** Common pin contract for nodes that author a selection from a PCG Dynamic Mesh or narrow an existing selection. */
-UCLASS(Abstract, BlueprintType, ClassGroup=(Procedural), Category="PCGUtils|Dynamic Mesh|Selections")
-class PCGUTILSDYNMESH_API UPCGDynamicMeshSelectionBaseSettings : public UPCGSettings
+UCLASS(Abstract, BlueprintType, ClassGroup=(Procedural), Category="PCGUtils|DynMesh|Selections")
+class PCGUTILSDYNMESH_API UPCGDynamicMeshSelectionBaseSettings : public UPCGDynamicMeshBaseSettings
 {
 	GENERATED_BODY()
 
@@ -55,7 +55,7 @@ protected:
 };
 
 /** Executes the common mesh validation and selection-data creation path. */
-class PCGUTILSDYNMESH_API FPCGDynamicMeshSelectionBaseElement : public IPCGElement
+class PCGUTILSDYNMESH_API FPCGDynamicMeshSelectionBaseElement : public IPCGDynamicMeshBaseElement
 {
 protected:
 	virtual bool ExecuteInternal(FPCGContext* Context) const override;

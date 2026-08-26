@@ -19,7 +19,8 @@ namespace PCGSelectInPointBoundsConstants
  * If fed an existing Dynamic Mesh Selection (rather than a bare Dynamic Mesh), the result is intersected with it,
  * so this node can either seed a new selection from a mesh or narrow down an already-filtered one.
  */
-UCLASS(BlueprintType, ClassGroup=(Procedural), Category="PCGUtils|Dynamic Mesh|Selections")
+UCLASS(BlueprintType, ClassGroup=(Procedural), Category="PCGUtils|DynMesh|Selections",
+	meta=(DeprecatedNode, DeprecationMessage="Use Select Bounds (Selector) and Build DynMesh Selection."))
 class PCGUTILSDYNMESH_API UPCGSelectInPointBoundsSettings : public UPCGDynamicMeshSelectionFilterBaseSettings
 {
 	GENERATED_BODY()

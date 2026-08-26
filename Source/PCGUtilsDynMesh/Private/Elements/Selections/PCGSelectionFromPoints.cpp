@@ -12,12 +12,12 @@
 #if WITH_EDITOR
 FText UPCGSelectionFromPointsSettings::GetDefaultNodeTitle() const
 {
-	return LOCTEXT("Title", "Selection From Points");
+	return LOCTEXT("Title", "DEPRECATED: Selection From Points");
 }
 
 FText UPCGSelectionFromPointsSettings::GetNodeTooltipText() const
 {
-	return LOCTEXT("Tooltip", "Creates a Dynamic Mesh vertex selection from vertex-index attributes on the supplied points.");
+	return LOCTEXT("Tooltip", "Deprecated materialized-selection node. Use the Select from Points selector with Build DynMesh Selection.");
 }
 #endif
 

@@ -40,7 +40,7 @@ namespace
 			if (!Factory->RegionFactory->SupportsDomain(SourceDomain))
 			{
 				PCGLog::LogErrorOnGraph(
-					LOCTEXT("UnsupportedSourceDomain", "The boundary factory could not adapt its child to the required triangle region domain."),
+					LOCTEXT("UnsupportedSourceDomain", "Select Boundary could not adapt its child selector to the required triangle region domain."),
 					Context);
 				return false;
 			}
@@ -52,7 +52,7 @@ namespace
 			if (!RegionOperation || !RegionOperation->Initialize(*SourceEvaluationContext))
 			{
 				PCGLog::LogErrorOnGraph(
-					LOCTEXT("ChildInitializationFailed", "Selection Boundary Factory could not initialize its child region operation."),
+					LOCTEXT("ChildInitializationFailed", "Select Boundary could not initialize its child region operation."),
 					Context);
 				return false;
 			}
@@ -135,43 +135,24 @@ void UPCGDynMeshSelectionBoundaryFactoryData::AddToCrc(FArchiveCrc32& Ar, bool b
 #if WITH_EDITOR
 FText UPCGDynMeshSelectionBoundaryFactoryProviderSettings::GetDefaultNodeTitle() const
 {
-	return LOCTEXT("Title", "Selection Boundary Factory");
+	return LOCTEXT("Title", "DEPRECATED: Select Boundary Provider");
 }
 
 TArray<FText> UPCGDynMeshSelectionBoundaryFactoryProviderSettings::GetNodeTitleAliases() const
 {
 	return {
-		LOCTEXT("BoundaryEdgesAlias", "Boundary Edges Selection Factory"),
-		LOCTEXT("OutlineAlias", "Selection Outline Factory")
+		LOCTEXT("BoundaryEdgesAlias", "Boundary Edges Selector"),
+		LOCTEXT("OutlineAlias", "Selection Outline Selector")
 	};
 }
 
 FText UPCGDynMeshSelectionBoundaryFactoryProviderSettings::GetNodeTooltipText() const
 {
-	return LOCTEXT("Tooltip", "Evaluates one child factory, converts its result to a triangle region, and finds that region's boundary edges. The edge result is converted implicitly when the consuming Build node requests another domain.");
+	return LOCTEXT("Tooltip", "Deprecated compatibility node. Use Select Boundary with Operation Mode set to Selector.");
 }
 #endif
 
-FName UPCGDynMeshSelectionBoundaryFactoryProviderSettings::GetMainOutputPin() const
-{
-	return PCGUtilsDynMeshSelectionFactoryConstants::OutputPin;
-}
-
-const FPCGDataTypeBaseId& UPCGDynMeshSelectionBoundaryFactoryProviderSettings::GetFactoryTypeId() const
-{
-	return FPCGUtilsDynMeshSelectionFactoryDataTypeInfo::AsId();
-}
-
-TArray<FPCGPinProperties> UPCGDynMeshSelectionBoundaryFactoryProviderSettings::InputPinProperties() const
-{
-	TArray<FPCGPinProperties> Pins;
-	Pins.Emplace_GetRef(
-		PCGDynMeshSelectionBoundaryFactoryConstants::RegionFactoryInputPin,
-		FPCGUtilsDynMeshSelectionFactoryDataTypeInfo::AsId(), false, false).SetRequiredPin();
-	return Pins;
-}
-
-UPCGUtilsDynMeshFactoryData* UPCGDynMeshSelectionBoundaryFactoryProviderSettings::CreateFactory(
+UPCGUtilsDynMeshFactoryData* UPCGSelectionBoundaryEdgesSettings::CreateFactory(
 	FPCGContext* InContext, UPCGUtilsDynMeshFactoryData* InFactory) const
 {
 	TArray<TObjectPtr<const UPCGUtilsDynMeshSelectionFactoryData>> RegionFactories;
@@ -185,7 +166,7 @@ UPCGUtilsDynMeshFactoryData* UPCGDynMeshSelectionBoundaryFactoryProviderSettings
 	if (RegionFactories.Num() != 1)
 	{
 		PCGLog::LogErrorOnGraph(
-			LOCTEXT("RequiresOneFactory", "Selection Boundary Factory requires exactly one child region factory."),
+			LOCTEXT("RequiresOneFactory", "Select Boundary requires exactly one region selector in Selector mode."),
 			InContext);
 		return nullptr;
 	}

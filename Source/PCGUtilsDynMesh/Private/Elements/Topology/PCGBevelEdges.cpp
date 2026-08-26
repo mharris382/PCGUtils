@@ -17,7 +17,7 @@ namespace
 	void BevelOne(FPCGContext* Context, const UPCGBevelEdgesSettings* Settings, const FPCGTaggedData& Input)
 	{
 		FPCGUtilsMeshTargetHandle Handle = FPCGUtilsMeshTargetFunctions::CreateTarget(
-			Input.Data, EPCGUtilsMeshTargetPreparation::FullMeshCopy, Context);
+			Input.Data, EPCGUtilsMeshTargetPreparation::FullMeshCopy, Context, Settings);
 		if (!Handle.IsValid())
 		{
 			return;
@@ -74,7 +74,10 @@ FText UPCGBevelEdgesSettings::GetNodeTooltipText() const
 
 TArray<FPCGPinProperties> UPCGBevelEdgesSettings::InputPinProperties() const
 {
-	return {FPCGUtilsMeshTargetFunctions::MakeMeshInputPinProperties(BevelMeshPin)};
+	TArray<FPCGPinProperties> Pins = Super::InputPinProperties();
+	Pins[0] = FPCGUtilsMeshTargetFunctions::MakeMeshInputPinProperties(BevelMeshPin);
+	Pins[0].SetRequiredPin();
+	return Pins;
 }
 
 TArray<FPCGPinProperties> UPCGBevelEdgesSettings::OutputPinProperties() const

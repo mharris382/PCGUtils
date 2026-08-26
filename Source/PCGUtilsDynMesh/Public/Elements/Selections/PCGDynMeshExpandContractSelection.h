@@ -3,18 +3,43 @@
 #pragma once
 
 #include "CoreMinimal.h"
-#include "Elements/PCGDynamicMeshBaseElement.h"
+#include "Elements/Selections/PCGUtilsDynMeshSelectionOperationBase.h"
 
 #include "PCGDynMeshExpandContractSelection.generated.h"
 
 namespace PCGDynMeshExpandContractSelectionConstants
 {
 	inline const FName SelectionPin = TEXT("Selection");
+	inline const FName SeedSelectorPin = TEXT("Seed Selector");
 }
 
+UCLASS(BlueprintType, ClassGroup=(Procedural), Category="PCGUtils|DynMesh|Selections")
+class PCGUTILSDYNMESH_API UPCGDynMeshExpandContractSelectionFactoryData
+	: public UPCGUtilsDynMeshSelectionFactoryData
+{
+	GENERATED_BODY()
+
+public:
+	UPROPERTY()
+	TObjectPtr<const UPCGUtilsDynMeshSelectionFactoryData> SeedFactory;
+
+	UPROPERTY()
+	int32 Iterations = 1;
+
+	UPROPERTY()
+	bool bContract = false;
+
+	UPROPERTY()
+	bool bOnlyExpandToFaceNeighbours = false;
+
+protected:
+	virtual TSharedPtr<FPCGUtilsDynMeshSelectionOperation> CreateOperationInternal() const override;
+	virtual void AddToCrc(FArchiveCrc32& Ar, bool bFullDataCrc) const override;
+};
+
 /** Grows or shrinks an existing DynMesh selection across connected mesh elements. */
-UCLASS(BlueprintType, ClassGroup=(Procedural), Category="PCGUtils|Dynamic Mesh|Selections")
-class PCGUTILSDYNMESH_API UPCGDynMeshExpandContractSelectionSettings : public UPCGDynamicMeshBaseSettings
+UCLASS(BlueprintType, ClassGroup=(Procedural), Category="PCGUtils|DynMesh|Selections")
+class PCGUTILSDYNMESH_API UPCGDynMeshExpandContractSelectionSettings : public UPCGUtilsDynMeshSelectionOperationSettings
 {
 	GENERATED_BODY()
 
@@ -45,14 +70,16 @@ public:
 		meta=(PCG_Overridable, EditCondition="!bContract", EditConditionHides))
 	bool bOnlyExpandToFaceNeighbours = false;
 
-protected:
-	virtual TArray<FPCGPinProperties> InputPinProperties() const override;
-	virtual TArray<FPCGPinProperties> OutputPinProperties() const override;
-	virtual FPCGElementPtr CreateElement() const override;
-};
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Selection", AdvancedDisplay, meta=(PCG_Overridable))
+	int32 Priority = 0;
 
-class PCGUTILSDYNMESH_API FPCGDynMeshExpandContractSelectionElement : public IPCGDynamicMeshBaseElement
-{
+	virtual UPCGUtilsDynMeshFactoryData* CreateFactory(
+		FPCGContext* InContext, UPCGUtilsDynMeshFactoryData* InFactory = nullptr) const override;
+
 protected:
-	virtual bool ExecuteInternal(FPCGContext* Context) const override;
+	virtual TArray<FPCGPinProperties> SelectorInputPinProperties() const override;
+	virtual bool ProcessSelection(
+		const UPCGDynamicMeshSelectionData* SelectionData,
+		FPCGContext* Context,
+		UE::Geometry::FGeometrySelection& OutSelection) const override;
 };

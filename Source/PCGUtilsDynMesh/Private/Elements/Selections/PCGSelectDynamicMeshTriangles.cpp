@@ -1,20 +1,15 @@
 #include "Elements/Selections/PCGSelectDynamicMeshTriangles.h"
 
 #include "Data/PCGDynamicMeshData.h"
-#include "Data/PCGDynamicMeshSelectionData.h"
 #include "DynamicMesh/DynamicMesh3.h"
 #include "PCGContext.h"
 #include "PCGPin.h"
-#include "UDynamicMesh.h"
 #include "Utils/PCGLogErrors.h"
 
 #define LOCTEXT_NAMESPACE "PCGSelectDynamicMeshTriangles"
 
 namespace
 {
-	const FName SelectMeshPin = TEXT("Mesh");
-	const FName SelectSelectionPin = TEXT("Selection");
-
 	bool MatchesEdgeLength(const UE::Geometry::FDynamicMesh3& Mesh, int32 TriangleID,
 		double ThresholdSquared, int32 MinimumMatchingEdges)
 	{
@@ -54,24 +49,15 @@ FText UPCGSelectDynamicMeshTrianglesSettings::GetNodeTooltipText() const
 }
 #endif
 
-TArray<FPCGPinProperties> UPCGSelectDynamicMeshTrianglesSettings::InputPinProperties() const
-{
-	return {FPCGPinProperties(SelectMeshPin, EPCGDataType::DynamicMesh, true, true)};
-}
-
-TArray<FPCGPinProperties> UPCGSelectDynamicMeshTrianglesSettings::OutputPinProperties() const
-{
-	return {FPCGPinProperties(SelectSelectionPin, FPCGDataTypeIdentifier(UPCGDynamicMeshSelectionData::StaticClass()), true, true)};
-}
-
 FPCGElementPtr UPCGSelectDynamicMeshTrianglesSettings::CreateElement() const
 {
 	return MakeShared<FPCGSelectDynamicMeshTrianglesElement>();
 }
 
-bool FPCGSelectDynamicMeshTrianglesElement::ExecuteInternal(FPCGContext* Context) const
+bool FPCGSelectDynamicMeshTrianglesElement::ComputeMatchSelection(const UPCGDynamicMeshData*,
+	const UE::Geometry::FDynamicMesh3& Mesh, const FPCGDynamicMeshSelectionCandidates& Candidates,
+	FPCGContext* Context, UE::Geometry::FGeometrySelection& OutSelection) const
 {
-	check(Context);
 	const UPCGSelectDynamicMeshTrianglesSettings* Settings = Context->GetInputSettings<UPCGSelectDynamicMeshTrianglesSettings>();
 	check(Settings);
 
@@ -79,43 +65,23 @@ bool FPCGSelectDynamicMeshTrianglesElement::ExecuteInternal(FPCGContext* Context
 	if (Settings->Mode == EPCGDynamicMeshTriangleSelectionMode::FaceNormal && !ReferenceNormal.Normalize())
 	{
 		PCGLog::LogErrorOnGraph(LOCTEXT("ZeroReferenceNormal", "Select Mesh Triangles requires a non-zero Reference Normal."), Context);
-		return true;
+		return false;
 	}
 
 	const double ThresholdSquared = FMath::Square(FMath::Max(0.0, Settings->EdgeLengthThreshold));
 	const int32 MinimumEdges = FMath::Clamp(Settings->MinimumMatchingEdges, 1, 3);
-	for (const FPCGTaggedData& Input : Context->InputData.GetInputsByPin(SelectMeshPin))
+	OutSelection.InitializeTypes(UE::Geometry::EGeometryElementType::Face, UE::Geometry::EGeometryTopologyType::Triangle);
+	Candidates.ProcessTriangles([&](const int32 TriangleID)
 	{
-		const UPCGDynamicMeshData* MeshData = Cast<const UPCGDynamicMeshData>(Input.Data);
-		const UDynamicMesh* DynamicMesh = MeshData ? MeshData->GetDynamicMesh() : nullptr;
-		const UE::Geometry::FDynamicMesh3* Mesh = DynamicMesh ? DynamicMesh->GetMeshPtr() : nullptr;
-		if (!Mesh)
+		bool bSelected = Settings->Mode == EPCGDynamicMeshTriangleSelectionMode::EdgeLength
+			? MatchesEdgeLength(Mesh, TriangleID, ThresholdSquared, MinimumEdges)
+			: MatchesFaceNormal(Mesh, TriangleID, ReferenceNormal, FMath::Clamp(Settings->MinimumDotProduct, -1.0, 1.0));
+		bSelected ^= Settings->bInvertSelection;
+		if (bSelected)
 		{
-			PCGLog::LogWarningOnGraph(LOCTEXT("InvalidMesh", "Select Mesh Triangles skipped an invalid Dynamic Mesh input."), Context);
-			continue;
+			OutSelection.Selection.Add(UE::Geometry::FGeoSelectionID::MeshTriangle(TriangleID).Encoded());
 		}
-
-		UE::Geometry::FGeometrySelection Selection;
-		Selection.InitializeTypes(UE::Geometry::EGeometryElementType::Face, UE::Geometry::EGeometryTopologyType::Triangle);
-		for (const int32 TriangleID : Mesh->TriangleIndicesItr())
-		{
-			bool bSelected = Settings->Mode == EPCGDynamicMeshTriangleSelectionMode::EdgeLength
-				? MatchesEdgeLength(*Mesh, TriangleID, ThresholdSquared, MinimumEdges)
-				: MatchesFaceNormal(*Mesh, TriangleID, ReferenceNormal, FMath::Clamp(Settings->MinimumDotProduct, -1.0, 1.0));
-			bSelected ^= Settings->bInvertSelection;
-			if (bSelected)
-			{
-				Selection.Selection.Add(UE::Geometry::FGeoSelectionID::MeshTriangle(TriangleID).Encoded());
-			}
-		}
-
-		UPCGDynamicMeshSelectionData* OutputData = FPCGContext::NewObject_AnyThread<UPCGDynamicMeshSelectionData>(Context);
-		OutputData->Initialize(MeshData, MoveTemp(Selection));
-		FPCGTaggedData& Output = Context->OutputData.TaggedData.Emplace_GetRef(Input);
-		Output.Data = OutputData;
-		Output.Pin = SelectSelectionPin;
-	}
-
+	});
 	return true;
 }
 

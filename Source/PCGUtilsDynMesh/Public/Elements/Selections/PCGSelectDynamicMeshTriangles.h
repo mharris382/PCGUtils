@@ -1,7 +1,7 @@
 #pragma once
 
 #include "CoreMinimal.h"
-#include "PCGSettings.h"
+#include "Elements/Selections/PCGDynamicMeshSelectionFilterBase.h"
 
 #include "PCGSelectDynamicMeshTriangles.generated.h"
 
@@ -12,14 +12,14 @@ enum class EPCGDynamicMeshTriangleSelectionMode : uint8
 	FaceNormal
 };
 
-UCLASS(BlueprintType, ClassGroup=(Procedural), Category="PCGUtils|Dynamic Mesh")
-class PCGUTILSDYNMESH_API UPCGSelectDynamicMeshTrianglesSettings : public UPCGSettings
+UCLASS(BlueprintType, ClassGroup=(Procedural), Category="PCGUtils|DynMesh")
+class PCGUTILSDYNMESH_API UPCGSelectDynamicMeshTrianglesSettings : public UPCGDynamicMeshSelectionFilterBaseSettings
 {
 	GENERATED_BODY()
 
 public:
 #if WITH_EDITOR
-	virtual FName GetDefaultNodeName() const override { return TEXT("SelectDynamicMeshTriangles"); }
+	virtual FName GetDefaultNodeName() const override { return TEXT("SelectDynMeshTriangles"); }
 	virtual FText GetDefaultNodeTitle() const override;
 	virtual FText GetNodeTooltipText() const override;
 	virtual FLinearColor GetNodeTitleColor() const override { return FLinearColor(0.413f, 0.25f ,1.0f, 1.0f);	}
@@ -49,13 +49,13 @@ public:
 	bool bInvertSelection = false;
 
 protected:
-	virtual TArray<FPCGPinProperties> InputPinProperties() const override;
-	virtual TArray<FPCGPinProperties> OutputPinProperties() const override;
 	virtual FPCGElementPtr CreateElement() const override;
 };
 
-class PCGUTILSDYNMESH_API FPCGSelectDynamicMeshTrianglesElement : public IPCGElement
+class PCGUTILSDYNMESH_API FPCGSelectDynamicMeshTrianglesElement : public FPCGDynamicMeshSelectionFilterBaseElement
 {
 protected:
-	virtual bool ExecuteInternal(FPCGContext* Context) const override;
+	virtual bool ComputeMatchSelection(const UPCGDynamicMeshData* MeshData,
+		const UE::Geometry::FDynamicMesh3& Mesh, const FPCGDynamicMeshSelectionCandidates& Candidates,
+		FPCGContext* Context, UE::Geometry::FGeometrySelection& OutSelection) const override;
 };

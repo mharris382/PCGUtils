@@ -25,7 +25,7 @@ namespace PCGUtilsDynMeshSelectionDomains
  * The runtime wrapper evaluates the native predicate once and implicitly converts it when the consuming Build node
  * requests another vertex/edge/face domain.
  */
-UCLASS(Abstract, BlueprintType, ClassGroup=(Procedural), Category="PCGUtils|Dynamic Mesh|Selections")
+UCLASS(Abstract, BlueprintType, ClassGroup=(Procedural), Category="PCGUtils|DynMesh|Selections")
 class PCGUTILSDYNMESH_API UPCGUtilsDynMeshDomainSelectionFactoryData
 	: public UPCGUtilsDynMeshSelectionFactoryData
 {
@@ -53,7 +53,7 @@ protected:
 };
 
 /** Provider counterpart that exposes the conversion policy shared by domain-specific factories. */
-UCLASS(Abstract, BlueprintType, ClassGroup=(Procedural), Category="PCGUtils|Dynamic Mesh|Selections")
+UCLASS(Abstract, BlueprintType, ClassGroup=(Procedural), Category="PCGUtils|DynMesh|Selections")
 class PCGUTILSDYNMESH_API UPCGUtilsDynMeshDomainSelectionFactoryProviderSettings
 	: public UPCGUtilsDynMeshFactoryProviderSettings
 {

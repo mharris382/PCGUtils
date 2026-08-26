@@ -13,12 +13,12 @@
 #if WITH_EDITOR
 FText UPCGSelectInPointBoundsSettings::GetDefaultNodeTitle() const
 {
-	return LOCTEXT("Title", "Select in Point Bounds");
+	return LOCTEXT("Title", "DEPRECATED: Select in Point Bounds");
 }
 
 FText UPCGSelectInPointBoundsSettings::GetNodeTooltipText() const
 {
-	return LOCTEXT("Tooltip", "Selects Dynamic Mesh elements whose test position falls inside the oriented bounding box of one or more PCG points. If an incoming selection is supplied, only its converted candidates are evaluated.");
+	return LOCTEXT("Tooltip", "Deprecated materialized-selection node. Use the Select Bounds selector with Build DynMesh Selection.");
 }
 #endif
 

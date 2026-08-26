@@ -1,7 +1,8 @@
 #pragma once
 
 #include "CoreMinimal.h"
-#include "PCGSettings.h"
+#include "Elements/PCGUtilsDynMeshProcessBase.h"
+#include "MeshTarget/PCGUtilsMeshTargetTypes.h"
 
 #include "PCGSmoothDynamicMesh.generated.h"
 
@@ -31,14 +32,14 @@ enum class EPCGUtilsDynamicMeshSmoothingMethod : uint8
  *
  * Each input Dynamic Mesh is processed independently; inputs are never merged or unioned together.
  */
-UCLASS(BlueprintType, ClassGroup=(Procedural), Category="PCGUtils|Dynamic Mesh")
-class PCGUTILSDYNMESH_API UPCGSmoothDynamicMeshSettings : public UPCGSettings
+UCLASS(BlueprintType, ClassGroup=(Procedural), Category="PCGUtils|DynMesh")
+class PCGUTILSDYNMESH_API UPCGSmoothDynamicMeshSettings : public UPCGUtilsDynMeshProcessBaseSettings
 {
 	GENERATED_BODY()
 
 public:
 #if WITH_EDITOR
-	virtual FName GetDefaultNodeName() const override { return TEXT("SmoothDynamicMesh"); }
+	virtual FName GetDefaultNodeName() const override { return TEXT("SmoothDynMesh"); }
 	virtual FText GetDefaultNodeTitle() const override;
 	virtual FText GetNodeTooltipText() const override;
 	virtual FLinearColor GetNodeTitleColor() const override { return FLinearColor(0.413f, 0.25f, 1.0f, 1.0f); }
@@ -92,6 +93,10 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Smoothing", meta=(PCG_Overridable))
 	bool bRecomputeNormalsAfterSmoothing = true;
 
+	/** Controls how selected vertex positions are blended back when the input is a selection or factory. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Selection", meta=(PCG_Overridable, ShowOnlyInnerProperties))
+	FPCGUtilsSelectionBlendOptions SelectionBlend;
+
 	/** Taubin's positive/expansion pass factor. */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Smoothing|Taubin", meta=(PCG_Overridable, ClampMin="0.0", ClampMax="1.0",
 		EditCondition="SmoothingMethod==EPCGUtilsDynamicMeshSmoothingMethod::TaubinNoShrink", EditConditionHides))
@@ -112,7 +117,7 @@ protected:
 	virtual FPCGElementPtr CreateElement() const override;
 };
 
-class PCGUTILSDYNMESH_API FPCGSmoothDynamicMeshElement : public IPCGElement
+class PCGUTILSDYNMESH_API FPCGSmoothDynamicMeshElement : public FPCGUtilsDynMeshProcessBaseElement
 {
 protected:
 	virtual bool ExecuteInternal(FPCGContext* Context) const override;

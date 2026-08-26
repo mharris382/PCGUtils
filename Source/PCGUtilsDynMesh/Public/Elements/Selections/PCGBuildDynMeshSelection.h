@@ -16,7 +16,7 @@ enum class EPCGUtilsDynMeshSelectionElementType : uint8
 };
 
 /** Evaluates a tree of selection factories against a DynMesh and emits existing materialized selection data. */
-UCLASS(BlueprintType, ClassGroup=(Procedural), Category="PCGUtils|Dynamic Mesh|Selections")
+UCLASS(BlueprintType, ClassGroup=(Procedural), Category="PCGUtils|DynMesh|Selections")
 class PCGUTILSDYNMESH_API UPCGBuildDynMeshSelectionSettings
 	: public UPCGDynamicMeshSelectionBaseSettings
 {

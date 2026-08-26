@@ -3,7 +3,7 @@
 #include "CoreMinimal.h"
 #include "GeometryScript/MeshDeformFunctions.h"
 #include "MeshTarget/PCGUtilsMeshTargetTypes.h"
-#include "PCGSettings.h"
+#include "Elements/PCGUtilsDynMeshProcessBase.h"
 
 #include "PCGWarp.generated.h"
 
@@ -40,8 +40,8 @@ enum class EPCGUtilsWarpControlMode : uint8
  * warp's lower/upper extent along the point's local Z axis) - multiple inputs apply sequentially to the same
  * target mesh before the result is restored once.
  */
-UCLASS(BlueprintType, ClassGroup=(Procedural), Category="PCGUtils|Dynamic Mesh")
-class PCGUTILSDYNMESH_API UPCGWarpSettings : public UPCGSettings
+UCLASS(BlueprintType, ClassGroup=(Procedural), Category="PCGUtils|DynMesh")
+class PCGUTILSDYNMESH_API UPCGWarpSettings : public UPCGUtilsDynMeshProcessBaseSettings
 {
 	GENERATED_BODY()
 
@@ -152,7 +152,7 @@ protected:
 	virtual FPCGElementPtr CreateElement() const override;
 };
 
-class PCGUTILSDYNMESH_API FPCGWarpElement : public IPCGElement
+class PCGUTILSDYNMESH_API FPCGWarpElement : public FPCGUtilsDynMeshProcessBaseElement
 {
 public:
 	/** Resolving the target actor for control-point local-space conversion requires the game thread. */

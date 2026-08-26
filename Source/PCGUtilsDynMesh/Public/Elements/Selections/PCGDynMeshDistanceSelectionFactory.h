@@ -34,7 +34,7 @@ enum class EPCGUtilsDynMeshDistanceMetric : uint8
 };
 
 /** Selection factory comparing each mesh element's distance to its nearest target PCG point. */
-UCLASS(BlueprintType, ClassGroup=(Procedural), Category="PCGUtils|Dynamic Mesh|Selections")
+UCLASS(BlueprintType, ClassGroup=(Procedural), Category="PCGUtils|DynMesh|Selections")
 class PCGUTILSDYNMESH_API UPCGDynMeshDistanceSelectionFactoryData
 	: public UPCGUtilsDynMeshSelectionFactoryData
 {
@@ -72,7 +72,7 @@ protected:
 	virtual void AddToCrc(FArchiveCrc32& Ar, bool bFullDataCrc) const override;
 };
 
-UCLASS(BlueprintType, ClassGroup=(Procedural), Category="PCGUtils|Dynamic Mesh|Selections")
+UCLASS(BlueprintType, ClassGroup=(Procedural), Category="PCGUtils|DynMesh|Selections")
 class PCGUTILSDYNMESH_API UPCGDynMeshDistanceSelectionFactoryProviderSettings
 	: public UPCGUtilsDynMeshFactoryProviderSettings
 {

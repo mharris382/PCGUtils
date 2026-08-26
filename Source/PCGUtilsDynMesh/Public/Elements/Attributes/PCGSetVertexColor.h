@@ -1,7 +1,7 @@
 #pragma once
 
 #include "CoreMinimal.h"
-#include "Elements/PCGDynamicMeshBaseElement.h"
+#include "Elements/PCGUtilsDynMeshProcessBase.h"
 #include "GeometryScript/GeometryScriptTypes.h"
 
 #include "PCGSetVertexColor.generated.h"
@@ -13,8 +13,8 @@
  * MeshTarget/PCGUtilsMeshTargetFunctions.h) - the same infrastructure Bevel Edges is built on, since
  * SetMeshSelectionVertexColor is itself selection-aware and needs no region extraction/weld.
  */
-UCLASS(BlueprintType, ClassGroup=(Procedural), Category="PCGUtils|Dynamic Mesh")
-class PCGUTILSDYNMESH_API UPCGSetVertexColorSettings : public UPCGDynamicMeshBaseSettings
+UCLASS(BlueprintType, ClassGroup=(Procedural), Category="PCGUtils|DynMesh")
+class PCGUTILSDYNMESH_API UPCGSetVertexColorSettings : public UPCGUtilsDynMeshProcessBaseSettings
 {
 	GENERATED_BODY()
 
@@ -58,7 +58,7 @@ protected:
 	virtual FPCGElementPtr CreateElement() const override;
 };
 
-class PCGUTILSDYNMESH_API FPCGSetVertexColorElement : public IPCGDynamicMeshBaseElement
+class PCGUTILSDYNMESH_API FPCGSetVertexColorElement : public FPCGUtilsDynMeshProcessBaseElement
 {
 protected:
 	virtual bool ExecuteInternal(FPCGContext* Context) const override;

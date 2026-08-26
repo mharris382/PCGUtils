@@ -15,7 +15,7 @@ namespace PCGDynMeshSelectionFromPointsFactoryConstants
 }
 
 /** Selection factory that matches vertex IDs read from an integer attribute on PCG points. */
-UCLASS(BlueprintType, ClassGroup=(Procedural), Category="PCGUtils|Dynamic Mesh|Selections")
+UCLASS(BlueprintType, ClassGroup=(Procedural), Category="PCGUtils|DynMesh|Selections")
 class PCGUTILSDYNMESH_API UPCGDynMeshSelectionFromPointsFactoryData
 	: public UPCGUtilsDynMeshDomainSelectionFactoryData
 {
@@ -37,7 +37,7 @@ protected:
 	virtual void AddToCrc(FArchiveCrc32& Ar, bool bFullDataCrc) const override;
 };
 
-UCLASS(BlueprintType, ClassGroup=(Procedural), Category="PCGUtils|Dynamic Mesh|Selections")
+UCLASS(BlueprintType, ClassGroup=(Procedural), Category="PCGUtils|DynMesh|Selections")
 class PCGUTILSDYNMESH_API UPCGDynMeshSelectionFromPointsFactoryProviderSettings
 	: public UPCGUtilsDynMeshDomainSelectionFactoryProviderSettings
 {

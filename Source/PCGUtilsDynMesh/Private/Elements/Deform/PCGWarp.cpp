@@ -220,8 +220,9 @@ EPCGChangeType UPCGWarpSettings::GetChangeTypeForProperty(FPropertyChangedEvent&
 
 TArray<FPCGPinProperties> UPCGWarpSettings::InputPinProperties() const
 {
-	TArray<FPCGPinProperties> Pins;
-	Pins.Add(FPCGUtilsMeshTargetFunctions::MakeMeshInputPinProperties(WarpMeshPin));
+	TArray<FPCGPinProperties> Pins = Super::InputPinProperties();
+	Pins[0] = FPCGUtilsMeshTargetFunctions::MakeMeshInputPinProperties(WarpMeshPin);
+	Pins[0].SetRequiredPin();
 	if (ControlMode == EPCGUtilsWarpControlMode::PointData)
 	{
 		Pins.Emplace(WarpControlsPin, EPCGDataType::Point, true, true);
@@ -254,7 +255,7 @@ bool FPCGWarpElement::ExecuteInternal(FPCGContext* Context) const
 	for (const FPCGTaggedData& Input : Context->InputData.GetInputsByPin(WarpMeshPin))
 	{
 		FPCGUtilsMeshTargetHandle Handle = FPCGUtilsMeshTargetFunctions::CreateTarget(
-			Input.Data, EPCGUtilsMeshTargetPreparation::FullMeshCopy, Context);
+			Input.Data, EPCGUtilsMeshTargetPreparation::FullMeshCopy, Context, Settings);
 		if (!Handle.IsValid())
 		{
 			continue;

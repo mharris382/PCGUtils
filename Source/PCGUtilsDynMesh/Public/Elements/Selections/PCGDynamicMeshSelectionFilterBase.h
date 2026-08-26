@@ -26,7 +26,7 @@ namespace PCGDynamicMeshSelectionFilterConstants
  * able to consume either kind of upstream data through a single pin, matching how PCG selection-consuming nodes
  * elsewhere in this module resolve their source mesh from the selection itself rather than a separate Mesh pin.
  */
-UCLASS(Abstract, BlueprintType, ClassGroup=(Procedural), Category="PCGUtils|Dynamic Mesh|Selections")
+UCLASS(Abstract, BlueprintType, ClassGroup=(Procedural), Category="PCGUtils|DynMesh|Selections")
 class PCGUTILSDYNMESH_API UPCGDynamicMeshSelectionFilterBaseSettings : public UPCGDynamicMeshBaseSettings
 {
 	GENERATED_BODY()

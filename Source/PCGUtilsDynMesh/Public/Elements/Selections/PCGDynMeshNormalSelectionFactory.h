@@ -9,7 +9,7 @@
 #include "PCGDynMeshNormalSelectionFactory.generated.h"
 
 /** Selection factory that tests triangle or vertex normals, according to the final Build node's domain. */
-UCLASS(BlueprintType, ClassGroup=(Procedural), Category="PCGUtils|Dynamic Mesh|Selections")
+UCLASS(BlueprintType, ClassGroup=(Procedural), Category="PCGUtils|DynMesh|Selections")
 class PCGUTILSDYNMESH_API UPCGDynMeshNormalSelectionFactoryData
 	: public UPCGUtilsDynMeshSelectionFactoryData
 {
@@ -29,7 +29,7 @@ protected:
 	virtual void AddToCrc(FArchiveCrc32& Ar, bool bFullDataCrc) const override;
 };
 
-UCLASS(BlueprintType, ClassGroup=(Procedural), Category="PCGUtils|Dynamic Mesh|Selections")
+UCLASS(BlueprintType, ClassGroup=(Procedural), Category="PCGUtils|DynMesh|Selections")
 class PCGUTILSDYNMESH_API UPCGDynMeshNormalSelectionFactoryProviderSettings
 	: public UPCGUtilsDynMeshFactoryProviderSettings
 {

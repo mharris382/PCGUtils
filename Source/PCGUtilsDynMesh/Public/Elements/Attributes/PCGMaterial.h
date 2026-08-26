@@ -1,14 +1,14 @@
 #pragma once
 
 #include "CoreMinimal.h"
-#include "Elements/PCGDynamicMeshSelectionProcessBase.h"
+#include "Elements/PCGUtilsDynMeshProcessBase.h"
 #include "Materials/MaterialInterface.h"
 
 #include "PCGMaterial.generated.h"
 
 /** Assigns a material to an entire Dynamic Mesh or appends it for a mesh selection. */
-UCLASS(BlueprintType, ClassGroup=(Procedural), Category="PCGUtils|Dynamic Mesh")
-class PCGUTILSDYNMESH_API UPCGMaterialSettings : public UPCGDynamicMeshSelectionProcessBaseSettings
+UCLASS(BlueprintType, ClassGroup=(Procedural), Category="PCGUtils|DynMesh")
+class PCGUTILSDYNMESH_API UPCGMaterialSettings : public UPCGUtilsDynMeshProcessBaseSettings
 {
 	GENERATED_BODY()
 
@@ -32,7 +32,7 @@ protected:
 	virtual FPCGElementPtr CreateElement() const override;
 };
 
-class PCGUTILSDYNMESH_API FPCGMaterialElement : public FPCGDynamicMeshSelectionProcessBaseElement
+class PCGUTILSDYNMESH_API FPCGMaterialElement : public FPCGUtilsDynMeshProcessBaseElement
 {
 protected:
 	virtual bool ProcessMesh(UPCGDynamicMeshData* MeshData,

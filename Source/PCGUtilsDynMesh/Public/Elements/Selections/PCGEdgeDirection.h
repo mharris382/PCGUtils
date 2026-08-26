@@ -37,7 +37,7 @@ enum class EPCGDynMeshDirectionSpace : uint8
  * direction against a reference direction. Edge winding is ignored - only the line the edge lies along matters,
  * per Abs(Dot(EdgeDirection, ReferenceDirection)).
  */
-UCLASS(BlueprintType, ClassGroup=(Procedural), Category="PCGUtils|Dynamic Mesh|Selections")
+UCLASS(BlueprintType, ClassGroup=(Procedural), Category="PCGUtils|DynMesh|Selections")
 class PCGUTILSDYNMESH_API UPCGEdgeDirectionSettings : public UPCGDynamicMeshSelectionFilterBaseSettings
 {
 	GENERATED_BODY()

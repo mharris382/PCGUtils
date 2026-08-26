@@ -135,7 +135,7 @@ namespace
 	void RemeshOne(FPCGContext* Context, const UPCGRemeshSettings* Settings, const FPCGTaggedData& Input)
 	{
 		FPCGUtilsMeshTargetHandle Handle = FPCGUtilsMeshTargetFunctions::CreateTarget(
-			Input.Data, EPCGUtilsMeshTargetPreparation::Region, Context);
+			Input.Data, EPCGUtilsMeshTargetPreparation::Region, Context, Settings);
 		if (!Handle.IsValid())
 		{
 			return;
@@ -179,7 +179,10 @@ FText UPCGRemeshSettings::GetNodeTooltipText() const
 
 TArray<FPCGPinProperties> UPCGRemeshSettings::InputPinProperties() const
 {
-	return {FPCGUtilsMeshTargetFunctions::MakeMeshInputPinProperties(MeshPin)};
+	TArray<FPCGPinProperties> Pins = Super::InputPinProperties();
+	Pins[0] = FPCGUtilsMeshTargetFunctions::MakeMeshInputPinProperties(MeshPin);
+	Pins[0].SetRequiredPin();
+	return Pins;
 }
 
 TArray<FPCGPinProperties> UPCGRemeshSettings::OutputPinProperties() const

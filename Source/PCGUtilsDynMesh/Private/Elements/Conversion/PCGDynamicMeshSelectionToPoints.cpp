@@ -9,6 +9,7 @@
 #include "DynamicMesh/DynamicMeshAttributeSet.h"
 #include "GameFramework/Actor.h"
 #include "Metadata/PCGMetadata.h"
+#include "MeshTarget/PCGUtilsMeshTargetFunctions.h"
 #include "PCGContext.h"
 #include "PCGPin.h"
 #include "UDynamicMesh.h"
@@ -66,7 +67,7 @@ namespace
 #if WITH_EDITOR
 FText UPCGDynamicMeshSelectionToPointsSettings::GetDefaultNodeTitle() const
 {
-	return LOCTEXT("Title", "Dynamic Mesh Selection To Points");
+	return LOCTEXT("Title", "DynMesh Selection To Points");
 }
 
 FText UPCGDynamicMeshSelectionToPointsSettings::GetNodeTooltipText() const
@@ -77,8 +78,10 @@ FText UPCGDynamicMeshSelectionToPointsSettings::GetNodeTooltipText() const
 
 TArray<FPCGPinProperties> UPCGDynamicMeshSelectionToPointsSettings::InputPinProperties() const
 {
-	return {FPCGPinProperties(SelectionToPointsInputPin,
-		FPCGDataTypeIdentifier(UPCGDynamicMeshSelectionData::StaticClass()), true, true)};
+	TArray<FPCGPinProperties> Pins = Super::InputPinProperties();
+	Pins[0] = FPCGUtilsMeshTargetFunctions::MakeMeshInputPinProperties(SelectionToPointsInputPin);
+	Pins[0].SetRequiredPin();
+	return Pins;
 }
 
 TArray<FPCGPinProperties> UPCGDynamicMeshSelectionToPointsSettings::OutputPinProperties() const
@@ -100,8 +103,14 @@ bool FPCGDynamicMeshSelectionToPointsElement::ExecuteInternal(FPCGContext* Conte
 
 	for (const FPCGTaggedData& Input : Context->InputData.GetInputsByPin(SelectionToPointsInputPin))
 	{
-		const UPCGDynamicMeshSelectionData* SelectionData = Cast<const UPCGDynamicMeshSelectionData>(Input.Data);
-		const UPCGDynamicMeshData* MeshData = SelectionData ? SelectionData->GetSourceMeshData() : nullptr;
+		const FPCGUtilsDynMeshResolvedInput ResolvedInput =
+			FPCGUtilsDynMeshProcessFunctions::ResolveInput(Input.Data, Settings, Context);
+		if (!ResolvedInput.IsValid())
+		{
+			continue;
+		}
+		const UPCGDynamicMeshSelectionData* SelectionData = ResolvedInput.SelectionData;
+		const UPCGDynamicMeshData* MeshData = ResolvedInput.MeshData;
 		const UDynamicMesh* DynamicMesh = MeshData ? MeshData->GetDynamicMesh() : nullptr;
 		const UE::Geometry::FDynamicMesh3* Mesh = DynamicMesh ? DynamicMesh->GetMeshPtr() : nullptr;
 		if (!Mesh)

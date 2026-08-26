@@ -1,7 +1,7 @@
 #pragma once
 
 #include "CoreMinimal.h"
-#include "PCGSettings.h"
+#include "Elements/PCGDynamicMeshBaseElement.h"
 
 #include "PCGDynMeshActorSpaceTransform.generated.h"
 
@@ -13,8 +13,8 @@ enum class EPCGDynMeshActorSpaceTransformDirection : uint8
 };
 
 /** Transforms Dynamic Mesh data between actor-local and world space. Exposed only through ToWorld and ToLocal aliases. */
-UCLASS(BlueprintType, ClassGroup=(Procedural), Category="PCGUtils|Dynamic Mesh")
-class PCGUTILSDYNMESH_API UPCGDynMeshActorSpaceTransformSettings : public UPCGSettings
+UCLASS(BlueprintType, ClassGroup=(Procedural), Category="PCGUtils|DynMesh")
+class PCGUTILSDYNMESH_API UPCGDynMeshActorSpaceTransformSettings : public UPCGDynamicMeshBaseSettings
 {
 	GENERATED_BODY()
 
@@ -49,7 +49,7 @@ private:
 	EPCGDynMeshActorSpaceTransformDirection Direction = EPCGDynMeshActorSpaceTransformDirection::ToWorld;
 };
 
-class PCGUTILSDYNMESH_API FPCGDynMeshActorSpaceTransformElement : public IPCGElement
+class PCGUTILSDYNMESH_API FPCGDynMeshActorSpaceTransformElement : public IPCGDynamicMeshBaseElement
 {
 public:
 	virtual bool CanExecuteOnlyOnMainThread(FPCGContext* Context) const override { return true; }

@@ -90,7 +90,7 @@ namespace
 			if (!Factory->SeedFactory->SupportsDomain(InSelectionContext.Domain))
 			{
 				PCGLog::LogErrorOnGraph(
-					LOCTEXT("UnsupportedSeedDomain", "Expand To Connected Factory could not adapt its child seed factory to the operation's internal domain."),
+					LOCTEXT("UnsupportedSeedDomain", "Select Connected could not adapt its child seed selector to the operation's internal domain."),
 					Context);
 				return false;
 			}
@@ -100,7 +100,7 @@ namespace
 			if (!SeedOperation || !SeedOperation->Initialize(InSelectionContext))
 			{
 				PCGLog::LogErrorOnGraph(
-					LOCTEXT("SeedInitializationFailed", "Expand To Connected Factory could not initialize its child seed operation."),
+					LOCTEXT("SeedInitializationFailed", "Select Connected could not initialize its child seed operation."),
 					Context);
 				return false;
 			}
@@ -123,7 +123,7 @@ namespace
 				Factory->ConnectionType, ConnectedTriangleIDs))
 			{
 				PCGLog::LogErrorOnGraph(
-					LOCTEXT("FactoryExpansionFailed", "Expand To Connected Factory could not generate its connected triangle region."),
+					LOCTEXT("FactoryExpansionFailed", "Select Connected could not generate its connected triangle region."),
 					Context);
 				return false;
 			}
@@ -144,7 +144,7 @@ namespace
 #if WITH_EDITOR
 FText UPCGDynMeshExpandToConnectedSelectionSettings::GetDefaultNodeTitle() const
 {
-	return LOCTEXT("ElementTitle", "Expand Selection to Connected");
+	return LOCTEXT("ElementTitle", "Select Connected");
 }
 
 TArray<FText> UPCGDynMeshExpandToConnectedSelectionSettings::GetNodeTitleAliases() const
@@ -157,25 +157,30 @@ TArray<FText> UPCGDynMeshExpandToConnectedSelectionSettings::GetNodeTitleAliases
 
 FText UPCGDynMeshExpandToConnectedSelectionSettings::GetNodeTooltipText() const
 {
-	return LOCTEXT("ElementTooltip", "Expands an incoming selection to complete connected regions, optionally constrained by PolyGroup or Material ID. Vertex and edge inputs are processed through triangles and converted back to their incoming domain.");
+	return LOCTEXT("ElementTooltip", "Expands an incoming selection or selector to complete connected regions. Vertex and edge selections are processed through triangles and converted back to the requested domain.");
+}
+
+FString UPCGDynMeshExpandToConnectedSelectionSettings::GetAdditionalTitleInformation() const
+{
+	return GetConnectionTypeName(ConnectionType);
 }
 
 FText UPCGDynMeshExpandToConnectedSelectionFactoryProviderSettings::GetDefaultNodeTitle() const
 {
-	return LOCTEXT("FactoryTitle", "Expand Selection to Connected Factory");
+	return LOCTEXT("FactoryTitle", "DEPRECATED: Select Connected Provider");
 }
 
 TArray<FText> UPCGDynMeshExpandToConnectedSelectionFactoryProviderSettings::GetNodeTitleAliases() const
 {
 	return {
-		LOCTEXT("FactoryComponentAlias", "Connected Component Selection Factory"),
-		LOCTEXT("FactoryFloodAlias", "Flood Selection Factory")
+		LOCTEXT("FactoryComponentAlias", "Connected Component Selector"),
+		LOCTEXT("FactoryFloodAlias", "Flood Selector")
 	};
 }
 
 FText UPCGDynMeshExpandToConnectedSelectionFactoryProviderSettings::GetNodeTooltipText() const
 {
-	return LOCTEXT("FactoryTooltip", "Evaluates one child factory as seeds, converts them to triangles when necessary, expands them to complete connected regions, and converts the cached result to the consuming Build domain.");
+	return LOCTEXT("FactoryTooltip", "Deprecated compatibility node. Use Select Connected with Operation Mode set to Selector.");
 }
 
 FString UPCGDynMeshExpandToConnectedSelectionFactoryProviderSettings::GetAdditionalTitleInformation() const
@@ -184,102 +189,55 @@ FString UPCGDynMeshExpandToConnectedSelectionFactoryProviderSettings::GetAdditio
 }
 #endif
 
-TArray<FPCGPinProperties> UPCGDynMeshExpandToConnectedSelectionSettings::InputPinProperties() const
+TArray<FPCGPinProperties> UPCGDynMeshExpandToConnectedSelectionSettings::SelectorInputPinProperties() const
 {
 	TArray<FPCGPinProperties> Pins;
 	Pins.Emplace_GetRef(
-		PCGDynMeshExpandToConnectedSelectionConstants::SelectionPin,
-		FPCGDataTypeIdentifier(UPCGDynamicMeshSelectionData::StaticClass()), true, true).SetRequiredPin();
+		PCGDynMeshExpandToConnectedSelectionConstants::SeedFactoryInputPin,
+		FPCGUtilsDynMeshSelectionFactoryDataTypeInfo::AsId(), false, false).SetRequiredPin();
 	return Pins;
 }
 
-TArray<FPCGPinProperties> UPCGDynMeshExpandToConnectedSelectionSettings::OutputPinProperties() const
+bool UPCGDynMeshExpandToConnectedSelectionSettings::ProcessSelection(
+	const UPCGDynamicMeshSelectionData* SelectionData,
+	FPCGContext* Context,
+	UE::Geometry::FGeometrySelection& OutSelection) const
 {
-	return {FPCGPinProperties(
-		PCGDynMeshExpandToConnectedSelectionConstants::SelectionPin,
-		FPCGDataTypeIdentifier(UPCGDynamicMeshSelectionData::StaticClass()), true, true)};
-}
-
-FPCGElementPtr UPCGDynMeshExpandToConnectedSelectionSettings::CreateElement() const
-{
-	return MakeShared<FPCGDynMeshExpandToConnectedSelectionElement>();
-}
-
-bool FPCGDynMeshExpandToConnectedSelectionElement::ExecuteInternal(FPCGContext* Context) const
-{
-	check(Context);
-	const UPCGDynMeshExpandToConnectedSelectionSettings* Settings =
-		Context->GetInputSettings<UPCGDynMeshExpandToConnectedSelectionSettings>();
-	check(Settings);
-
-	for (const FPCGTaggedData& Input : Context->InputData.GetInputsByPin(
-		PCGDynMeshExpandToConnectedSelectionConstants::SelectionPin))
+	const UPCGDynamicMeshData* MeshData = SelectionData ? SelectionData->GetSourceMeshData() : nullptr;
+	const UDynamicMesh* DynamicMesh = MeshData ? MeshData->GetDynamicMesh() : nullptr;
+	const UE::Geometry::FDynamicMesh3* Mesh = DynamicMesh ? DynamicMesh->GetMeshPtr() : nullptr;
+	if (!SelectionData || !MeshData || !Mesh)
 	{
-		const UPCGDynamicMeshSelectionData* SelectionData = Cast<const UPCGDynamicMeshSelectionData>(Input.Data);
-		const UPCGDynamicMeshData* MeshData = SelectionData ? SelectionData->GetSourceMeshData() : nullptr;
-		const UDynamicMesh* DynamicMesh = MeshData ? MeshData->GetDynamicMesh() : nullptr;
-		const UE::Geometry::FDynamicMesh3* Mesh = DynamicMesh ? DynamicMesh->GetMeshPtr() : nullptr;
-		if (!SelectionData || !MeshData || !Mesh)
-		{
-			PCGLog::LogWarningOnGraph(
-				LOCTEXT("InvalidSelection", "Expand Selection to Connected skipped an invalid selection or source mesh."),
-				Context);
-			continue;
-		}
-
-		UE::Geometry::FGeometrySelection TriangleSeedSelection;
-		if (!PCGUtilsDynMeshSelectionDomains::ConvertSelection(
-			MeshData, *Mesh, SelectionData->GetSelection(),
-			UE::Geometry::EGeometryElementType::Face, Settings->bAllowPartialInclusion,
-			TriangleSeedSelection))
-		{
-			PCGLog::LogErrorOnGraph(
-				LOCTEXT("SeedConversionFailed", "Expand Selection to Connected could not convert the incoming selection to its required triangle domain."),
-				Context);
-			continue;
-		}
-
-		TSet<int32> ConnectedTriangleIDs;
-		if (!ExpandToConnectedTriangles(
-			MeshData, *Mesh, TriangleSeedSelection, Settings->ConnectionType, ConnectedTriangleIDs))
-		{
-			PCGLog::LogErrorOnGraph(
-				LOCTEXT("ElementExpansionFailed", "Expand Selection to Connected could not generate its connected triangle region."),
-				Context);
-			continue;
-		}
-
-		UE::Geometry::FGeometrySelection TriangleResultSelection;
-		TriangleResultSelection.InitializeTypes(
-			UE::Geometry::EGeometryElementType::Face,
-			UE::Geometry::EGeometryTopologyType::Triangle);
-		for (const int32 TriangleID : ConnectedTriangleIDs)
-		{
-			TriangleResultSelection.Selection.Add(
-				UE::Geometry::FGeoSelectionID::MeshTriangle(TriangleID).Encoded());
-		}
-
-		UE::Geometry::FGeometrySelection ResultSelection;
-		if (!PCGUtilsDynMeshSelectionDomains::ConvertSelection(
-			MeshData, *Mesh, TriangleResultSelection,
-			SelectionData->GetSelection().ElementType, Settings->bAllowPartialInclusion,
-			ResultSelection))
-		{
-			PCGLog::LogErrorOnGraph(
-				LOCTEXT("ResultConversionFailed", "Expand Selection to Connected could not convert its triangle result back to the incoming selection domain."),
-				Context);
-			continue;
-		}
-
-		UPCGDynamicMeshSelectionData* OutputData =
-			FPCGContext::NewObject_AnyThread<UPCGDynamicMeshSelectionData>(Context);
-		OutputData->Initialize(MeshData, MoveTemp(ResultSelection));
-		FPCGTaggedData& Output = Context->OutputData.TaggedData.Emplace_GetRef(Input);
-		Output.Data = OutputData;
-		Output.Pin = PCGDynMeshExpandToConnectedSelectionConstants::SelectionPin;
+		return false;
 	}
 
-	return true;
+	UE::Geometry::FGeometrySelection TriangleSeedSelection;
+	if (!PCGUtilsDynMeshSelectionDomains::ConvertSelection(
+		MeshData, *Mesh, SelectionData->GetSelection(),
+		UE::Geometry::EGeometryElementType::Face, bAllowPartialInclusion, TriangleSeedSelection))
+	{
+		PCGLog::LogErrorOnGraph(LOCTEXT("SeedConversionFailed", "Select Connected could not convert the incoming selection to triangles."), Context);
+		return false;
+	}
+
+	TSet<int32> ConnectedTriangleIDs;
+	if (!ExpandToConnectedTriangles(MeshData, *Mesh, TriangleSeedSelection, ConnectionType, ConnectedTriangleIDs))
+	{
+		PCGLog::LogErrorOnGraph(LOCTEXT("ElementExpansionFailed", "Select Connected could not generate the connected region."), Context);
+		return false;
+	}
+
+	UE::Geometry::FGeometrySelection TriangleResultSelection;
+	TriangleResultSelection.InitializeTypes(
+		UE::Geometry::EGeometryElementType::Face, UE::Geometry::EGeometryTopologyType::Triangle);
+	for (const int32 TriangleID : ConnectedTriangleIDs)
+	{
+		TriangleResultSelection.Selection.Add(UE::Geometry::FGeoSelectionID::MeshTriangle(TriangleID).Encoded());
+	}
+
+	return PCGUtilsDynMeshSelectionDomains::ConvertSelection(
+		MeshData, *Mesh, TriangleResultSelection, SelectionData->GetSelection().ElementType,
+		bAllowPartialInclusion, OutSelection);
 }
 
 TSharedPtr<FPCGUtilsDynMeshSelectionOperation>
@@ -301,29 +259,8 @@ void UPCGDynMeshExpandToConnectedSelectionFactoryData::AddToCrc(
 	}
 }
 
-FName UPCGDynMeshExpandToConnectedSelectionFactoryProviderSettings::GetMainOutputPin() const
-{
-	return PCGUtilsDynMeshSelectionFactoryConstants::OutputPin;
-}
-
-const FPCGDataTypeBaseId&
-UPCGDynMeshExpandToConnectedSelectionFactoryProviderSettings::GetFactoryTypeId() const
-{
-	return FPCGUtilsDynMeshSelectionFactoryDataTypeInfo::AsId();
-}
-
-TArray<FPCGPinProperties>
-UPCGDynMeshExpandToConnectedSelectionFactoryProviderSettings::InputPinProperties() const
-{
-	TArray<FPCGPinProperties> Pins;
-	Pins.Emplace_GetRef(
-		PCGDynMeshExpandToConnectedSelectionConstants::SeedFactoryInputPin,
-		FPCGUtilsDynMeshSelectionFactoryDataTypeInfo::AsId(), false, false).SetRequiredPin();
-	return Pins;
-}
-
 UPCGUtilsDynMeshFactoryData*
-UPCGDynMeshExpandToConnectedSelectionFactoryProviderSettings::CreateFactory(
+UPCGDynMeshExpandToConnectedSelectionSettings::CreateFactory(
 	FPCGContext* InContext, UPCGUtilsDynMeshFactoryData* InFactory) const
 {
 	TArray<TObjectPtr<const UPCGUtilsDynMeshSelectionFactoryData>> SeedFactories;
@@ -337,7 +274,7 @@ UPCGDynMeshExpandToConnectedSelectionFactoryProviderSettings::CreateFactory(
 	if (SeedFactories.Num() != 1)
 	{
 		PCGLog::LogErrorOnGraph(
-			LOCTEXT("RequiresOneSeedFactory", "Expand Selection to Connected Factory requires exactly one child seed factory."),
+			LOCTEXT("RequiresOneSeedFactory", "Select Connected requires exactly one seed selector in Selector mode."),
 			InContext);
 		return nullptr;
 	}

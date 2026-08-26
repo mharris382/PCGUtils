@@ -17,7 +17,7 @@ namespace PCGDynMeshBoundsSelectionFactoryConstants
 }
 
 /** Selection factory that tests mesh elements against the oriented bounds of one or more PCG points. */
-UCLASS(BlueprintType, ClassGroup=(Procedural), Category="PCGUtils|Dynamic Mesh|Selections")
+UCLASS(BlueprintType, ClassGroup=(Procedural), Category="PCGUtils|DynMesh|Selections")
 class PCGUTILSDYNMESH_API UPCGDynMeshBoundsSelectionFactoryData
 	: public UPCGUtilsDynMeshSelectionFactoryData
 {
@@ -40,7 +40,7 @@ protected:
 	virtual void AddToCrc(FArchiveCrc32& Ar, bool bFullDataCrc) const override;
 };
 
-UCLASS(BlueprintType, ClassGroup=(Procedural), Category="PCGUtils|Dynamic Mesh|Selections")
+UCLASS(BlueprintType, ClassGroup=(Procedural), Category="PCGUtils|DynMesh|Selections")
 class PCGUTILSDYNMESH_API UPCGDynMeshBoundsSelectionFactoryProviderSettings
 	: public UPCGUtilsDynMeshFactoryProviderSettings
 {

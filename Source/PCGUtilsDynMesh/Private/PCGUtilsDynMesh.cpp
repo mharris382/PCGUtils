@@ -35,10 +35,10 @@ void FPCGUtilsDynMeshModule::ShutdownModule()
 #if WITH_EDITOR
 void FPCGUtilsDynMeshModule::RegisterPinColors()
 {
-	// A soft, desaturated gold-yellow evoking Blender's selected-element highlight color,
-	// without the harsher fully-saturated brightness of Blender's actual selection yellow.
-	static const FLinearColor DynamicMeshSelectionPinColor(0.85f, 0.68f, 0.15f, 1.0f);
-	static const FLinearColor DynamicMeshSelectionFactoryPinColor(0.58f, 0.32f, 0.86f, 1.0f);
+	// Blender-inspired selection yellow. Convert from the authored sRGB hex value so Slate receives
+	// the correct linear color, and share it across materialized selections and selection factories.
+	static const FLinearColor DynamicMeshSelectionPinColor =
+		FLinearColor::FromSRGBColor(FColor::FromHex(TEXT("EDD76CFF")));
 
 	FPCGModule::GetMutableDataTypeRegistry().RegisterPinColorFunction(
 		FPCGDataTypeInfoDynamicMeshSelection::AsId(),
@@ -46,7 +46,7 @@ void FPCGUtilsDynMeshModule::RegisterPinColors()
 
 	FPCGModule::GetMutableDataTypeRegistry().RegisterPinColorFunction(
 		FPCGUtilsDynMeshSelectionFactoryDataTypeInfo::AsId(),
-		[](const FPCGDataTypeIdentifier&) { return DynamicMeshSelectionFactoryPinColor; });
+		[](const FPCGDataTypeIdentifier&) { return DynamicMeshSelectionPinColor; });
 }
 
 void FPCGUtilsDynMeshModule::OnPreExit()

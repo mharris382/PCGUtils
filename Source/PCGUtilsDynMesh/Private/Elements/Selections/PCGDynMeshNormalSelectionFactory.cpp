@@ -63,7 +63,7 @@ namespace
 			if (!ReferenceDirection.Normalize())
 			{
 				PCGLog::LogErrorOnGraph(
-					LOCTEXT("ZeroReferenceDirection", "Normal Selection Factory requires a non-zero Reference Direction."),
+					LOCTEXT("ZeroReferenceDirection", "Select by Normal requires a non-zero Reference Direction."),
 					Context);
 				return false;
 			}
@@ -138,7 +138,7 @@ void UPCGDynMeshNormalSelectionFactoryData::AddToCrc(FArchiveCrc32& Ar, bool bFu
 #if WITH_EDITOR
 FText UPCGDynMeshNormalSelectionFactoryProviderSettings::GetDefaultNodeTitle() const
 {
-	return LOCTEXT("Title", "Normal Selection Factory");
+	return LOCTEXT("Title", "Select by Normal");
 }
 
 FText UPCGDynMeshNormalSelectionFactoryProviderSettings::GetNodeTooltipText() const

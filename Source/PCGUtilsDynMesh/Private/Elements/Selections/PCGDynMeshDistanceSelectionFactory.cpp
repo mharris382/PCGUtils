@@ -127,14 +127,14 @@ namespace
 			if (InvalidPointCount > 0)
 			{
 				PCGLog::LogWarningOnGraph(FText::Format(
-					LOCTEXT("InvalidTargetBounds", "Distance Selection Factory skipped {0} target point(s) with invalid (inverted) bounds."),
+					LOCTEXT("InvalidTargetBounds", "Select by Distance skipped {0} target point(s) with invalid (inverted) bounds."),
 					FText::AsNumber(InvalidPointCount)), Context);
 			}
 
 			if (Targets.IsEmpty())
 			{
 				PCGLog::LogErrorOnGraph(
-					LOCTEXT("NoValidTargets", "Distance Selection Factory requires at least one valid target point."), Context);
+					LOCTEXT("NoValidTargets", "Select by Distance requires at least one valid target point."), Context);
 				return false;
 			}
 			return true;
@@ -264,14 +264,14 @@ void UPCGDynMeshDistanceSelectionFactoryData::AddToCrc(FArchiveCrc32& Ar, bool b
 #if WITH_EDITOR
 FText UPCGDynMeshDistanceSelectionFactoryProviderSettings::GetDefaultNodeTitle() const
 {
-	return LOCTEXT("Title", "Distance Selection Factory");
+	return LOCTEXT("Title", "Select by Distance");
 }
 
 TArray<FText> UPCGDynMeshDistanceSelectionFactoryProviderSettings::GetNodeTitleAliases() const
 {
 	return {
-		LOCTEXT("ProximityAlias", "Proximity Selection Factory"),
-		LOCTEXT("RangeAlias", "Range Selection Factory")
+		LOCTEXT("ProximityAlias", "Proximity Selector"),
+		LOCTEXT("RangeAlias", "Range Selector")
 	};
 }
 
@@ -320,7 +320,7 @@ UPCGUtilsDynMeshFactoryData* UPCGDynMeshDistanceSelectionFactoryProviderSettings
 
 	if (Inputs.IsEmpty())
 	{
-		PCGLog::LogErrorOnGraph(LOCTEXT("MissingTargets", "Distance Selection Factory requires point data on its Targets pin."), InContext);
+		PCGLog::LogErrorOnGraph(LOCTEXT("MissingTargets", "Select by Distance requires point data on its Targets pin."), InContext);
 		return nullptr;
 	}
 

@@ -17,7 +17,7 @@ class USplineMeshComponent;
  * PCG graph. This is a read-only extraction: source components, their static meshes, and their materials are
  * never created, modified, hidden, attached/detached, or destroyed.
  */
-UCLASS(BlueprintType, ClassGroup = (Procedural), Category = "PCGUtils|Dynamic Mesh")
+UCLASS(BlueprintType, ClassGroup = (Procedural), Category = "PCGUtils|DynMesh")
 class PCGUTILSDYNMESH_API UPCGGetSplineMeshDataSettings : public UPCGDataFromActorSettings
 {
 	GENERATED_BODY()

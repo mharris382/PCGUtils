@@ -263,7 +263,7 @@ bool FPCGDynamicMeshUVProjectElement::ExecuteInternal(FPCGContext* Context) cons
 		ResolveProjectors(ProjectContext);
 	}
 
-	return FPCGDynamicMeshSelectionProcessBaseElement::ExecuteInternal(Context);
+	return FPCGUtilsDynMeshProcessBaseElement::ExecuteInternal(Context);
 }
 
 void FPCGDynamicMeshUVProjectElement::ResolveProjectors(

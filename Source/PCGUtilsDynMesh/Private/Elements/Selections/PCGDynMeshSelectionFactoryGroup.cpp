@@ -140,23 +140,23 @@ FText UPCGDynMeshSelectionFactoryGroupProviderSettings::GetDefaultNodeTitle() co
 	case EPCGUtilsDynMeshSelectionFactoryGroupMode::Not:
 		return LOCTEXT("NotTitle", "NOT");
 	default:
-		return LOCTEXT("Title", "Selection Factory Group");
+		return LOCTEXT("Title", "Selection Logic");
 	}
 }
 
 FText UPCGDynMeshSelectionFactoryGroupProviderSettings::GetNodeTooltipText() const
 {
-	return LOCTEXT("Tooltip", "Combines child DynMesh selection factories into a nested AND, OR, or NOT predicate.");
+	return LOCTEXT("Tooltip", "Combines child DynMesh selectors into a nested AND, OR, or NOT predicate.");
 }
 
 TArray<FText> UPCGDynMeshSelectionFactoryGroupProviderSettings::GetNodeTitleAliases() const
 {
 	return {
-		LOCTEXT("AndAlias", "Intersect Selection Factories"),
-		LOCTEXT("IntersectAlias", "Selection Factory Intersect"),
-		LOCTEXT("OrAlias", "Add Selection Factories"),
-		LOCTEXT("UnionAlias", "Union Selection Factories"),
-		LOCTEXT("NotAlias", "Invert Selection Factory")
+		LOCTEXT("AndAlias", "Intersect Selectors"),
+		LOCTEXT("IntersectAlias", "Intersect Selectors"),
+		LOCTEXT("OrAlias", "Add Selectors"),
+		LOCTEXT("UnionAlias", "Union Selectors"),
+		LOCTEXT("NotAlias", "Invert Selector")
 	};
 }
 
@@ -165,14 +165,14 @@ UPCGDynMeshSelectionFactoryGroupProviderSettings::GetPreconfiguredInfo() const
 {
 	return {
 		{static_cast<int32>(EPCGUtilsDynMeshSelectionFactoryGroupMode::And),
-			LOCTEXT("AndPreconfiguredTitle", "Selection Factory AND"),
-			LOCTEXT("AndPreconfiguredTooltip", "Keeps an element only when every child selection factory passes.")},
+			LOCTEXT("AndPreconfiguredTitle", "Selectors AND"),
+			LOCTEXT("AndPreconfiguredTooltip", "Keeps an element only when every child selector passes.")},
 		{static_cast<int32>(EPCGUtilsDynMeshSelectionFactoryGroupMode::Or),
-			LOCTEXT("OrPreconfiguredTitle", "Selection Factory OR"),
-			LOCTEXT("OrPreconfiguredTooltip", "Keeps an element when any child selection factory passes.")},
+			LOCTEXT("OrPreconfiguredTitle", "Selectors OR"),
+			LOCTEXT("OrPreconfiguredTooltip", "Keeps an element when any child selector passes.")},
 		{static_cast<int32>(EPCGUtilsDynMeshSelectionFactoryGroupMode::Not),
-			LOCTEXT("NotPreconfiguredTitle", "Selection Factory NOT"),
-			LOCTEXT("NotPreconfiguredTooltip", "Inverts the result of one child selection factory.")}
+			LOCTEXT("NotPreconfiguredTitle", "Selector NOT"),
+			LOCTEXT("NotPreconfiguredTooltip", "Inverts the result of one child selector.")}
 	};
 }
 
@@ -188,7 +188,7 @@ void UPCGDynMeshSelectionFactoryGroupProviderSettings::ApplyPreconfiguredSetting
 		Mode = static_cast<EPCGUtilsDynMeshSelectionFactoryGroupMode>(PreconfiguredInfo.PreconfiguredIndex);
 		break;
 	default:
-		ensureMsgf(false, TEXT("Unknown DynMesh Selection Factory Group preconfiguration index: %d"),
+		ensureMsgf(false, TEXT("Unknown DynMesh Selection Logic preconfiguration index: %d"),
 			PreconfiguredInfo.PreconfiguredIndex);
 		break;
 	}
@@ -228,7 +228,7 @@ UPCGUtilsDynMeshFactoryData* UPCGDynMeshSelectionFactoryGroupProviderSettings::C
 	if (Mode == EPCGUtilsDynMeshSelectionFactoryGroupMode::Not && Children.Num() != 1)
 	{
 		PCGLog::LogErrorOnGraph(
-			LOCTEXT("NotRequiresOneChild", "A NOT selection-factory group requires exactly one child factory."),
+			LOCTEXT("NotRequiresOneChild", "A NOT selector group requires exactly one child selector."),
 			InContext);
 		return nullptr;
 	}

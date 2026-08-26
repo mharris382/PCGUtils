@@ -10,7 +10,7 @@
 class UPCGDynamicMeshData;
 struct FPCGContext;
 
-USTRUCT(meta=(PCG_DataTypeDisplayName="Dynamic Mesh Selection"))
+USTRUCT(meta=(PCG_DataTypeDisplayName="DynMesh Selection"))
 struct FPCGDataTypeInfoDynamicMeshSelection : public FPCGDataTypeInfo
 {
 	GENERATED_BODY()

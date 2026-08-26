@@ -11,7 +11,8 @@ namespace PCGSelectionFromPointsConstants
 }
 
 /** Creates a dynamic-mesh vertex selection from vertex IDs stored on PCG points. */
-UCLASS(BlueprintType, ClassGroup=(Procedural), Category="PCGUtils|Dynamic Mesh|Selections")
+UCLASS(BlueprintType, ClassGroup=(Procedural), Category="PCGUtils|DynMesh|Selections",
+	meta=(DeprecatedNode, DeprecationMessage="Use Select from Points (Selector) and Build DynMesh Selection."))
 class PCGUTILSDYNMESH_API UPCGSelectionFromPointsSettings : public UPCGDynamicMeshSelectionBaseSettings
 {
 	GENERATED_BODY()

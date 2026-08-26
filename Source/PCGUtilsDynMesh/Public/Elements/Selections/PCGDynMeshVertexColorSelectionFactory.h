@@ -26,7 +26,7 @@ enum class EPCGUtilsDynMeshVertexColorChannel : uint8
 };
 
 /** Selection factory that evaluates averaged Dynamic Mesh vertex colors. */
-UCLASS(BlueprintType, ClassGroup=(Procedural), Category="PCGUtils|Dynamic Mesh|Selections")
+UCLASS(BlueprintType, ClassGroup=(Procedural), Category="PCGUtils|DynMesh|Selections")
 class PCGUTILSDYNMESH_API UPCGDynMeshVertexColorSelectionFactoryData
 	: public UPCGUtilsDynMeshSelectionFactoryData
 {
@@ -61,7 +61,7 @@ protected:
 	virtual void AddToCrc(FArchiveCrc32& Ar, bool bFullDataCrc) const override;
 };
 
-UCLASS(BlueprintType, ClassGroup=(Procedural), Category="PCGUtils|Dynamic Mesh|Selections")
+UCLASS(BlueprintType, ClassGroup=(Procedural), Category="PCGUtils|DynMesh|Selections")
 class PCGUTILSDYNMESH_API UPCGDynMeshVertexColorSelectionFactoryProviderSettings
 	: public UPCGUtilsDynMeshFactoryProviderSettings
 {

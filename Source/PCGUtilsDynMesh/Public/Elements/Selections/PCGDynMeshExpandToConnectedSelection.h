@@ -3,7 +3,7 @@
 #pragma once
 
 #include "CoreMinimal.h"
-#include "Elements/PCGDynamicMeshBaseElement.h"
+#include "Elements/Selections/PCGUtilsDynMeshSelectionOperationBase.h"
 #include "Factories/PCGUtilsDynMeshDomainSelectionFactory.h"
 #include "GeometryScript/MeshSelectionFunctions.h"
 
@@ -12,12 +12,12 @@
 namespace PCGDynMeshExpandToConnectedSelectionConstants
 {
 	inline const FName SelectionPin = TEXT("Selection");
-	inline const FName SeedFactoryInputPin = TEXT("Seed Factory");
+	inline const FName SeedFactoryInputPin = TEXT("Seed Selector");
 }
 
 /** Expands a materialized triangle selection to complete connected regions. */
-UCLASS(BlueprintType, ClassGroup=(Procedural), Category="PCGUtils|Dynamic Mesh|Selections")
-class PCGUTILSDYNMESH_API UPCGDynMeshExpandToConnectedSelectionSettings : public UPCGDynamicMeshBaseSettings
+UCLASS(BlueprintType, ClassGroup=(Procedural), Category="PCGUtils|DynMesh|Selections")
+class PCGUTILSDYNMESH_API UPCGDynMeshExpandToConnectedSelectionSettings : public UPCGUtilsDynMeshSelectionOperationSettings
 {
 	GENERATED_BODY()
 
@@ -27,6 +27,7 @@ public:
 	virtual FText GetDefaultNodeTitle() const override;
 	virtual TArray<FText> GetNodeTitleAliases() const override;
 	virtual FText GetNodeTooltipText() const override;
+	virtual FString GetAdditionalTitleInformation() const override;
 	virtual FLinearColor GetNodeTitleColor() const override { return FLinearColor(0.413f, 0.25f, 1.0f, 1.0f); }
 #endif
 
@@ -34,24 +35,22 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Selection", meta=(PCG_Overridable))
 	EGeometryScriptTopologyConnectionType ConnectionType = EGeometryScriptTopologyConnectionType::Geometric;
 
-	/** Include a triangle when any incident source element is selected. Disable to require full inclusion. */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Selection", AdvancedDisplay, meta=(PCG_Overridable))
-	bool bAllowPartialInclusion = true;
+	int32 Priority = 0;
+
+	virtual UPCGUtilsDynMeshFactoryData* CreateFactory(
+		FPCGContext* InContext, UPCGUtilsDynMeshFactoryData* InFactory = nullptr) const override;
 
 protected:
-	virtual TArray<FPCGPinProperties> InputPinProperties() const override;
-	virtual TArray<FPCGPinProperties> OutputPinProperties() const override;
-	virtual FPCGElementPtr CreateElement() const override;
+	virtual TArray<FPCGPinProperties> SelectorInputPinProperties() const override;
+	virtual bool ProcessSelection(
+		const UPCGDynamicMeshSelectionData* SelectionData,
+		FPCGContext* Context,
+		UE::Geometry::FGeometrySelection& OutSelection) const override;
 };
 
-class PCGUTILSDYNMESH_API FPCGDynMeshExpandToConnectedSelectionElement : public IPCGDynamicMeshBaseElement
-{
-protected:
-	virtual bool ExecuteInternal(FPCGContext* Context) const override;
-};
-
-/** Factory that caches the connected triangle regions reached from one child seed factory. */
-UCLASS(BlueprintType, ClassGroup=(Procedural), Category="PCGUtils|Dynamic Mesh|Selections")
+/** Factory that caches the connected triangle regions reached from one child seed selector. */
+UCLASS(BlueprintType, ClassGroup=(Procedural), Category="PCGUtils|DynMesh|Selections")
 class PCGUTILSDYNMESH_API UPCGDynMeshExpandToConnectedSelectionFactoryData
 	: public UPCGUtilsDynMeshDomainSelectionFactoryData
 {
@@ -73,13 +72,18 @@ protected:
 	virtual void AddToCrc(FArchiveCrc32& Ar, bool bFullDataCrc) const override;
 };
 
-UCLASS(BlueprintType, ClassGroup=(Procedural), Category="PCGUtils|Dynamic Mesh|Selections")
+UCLASS(BlueprintType, ClassGroup=(Procedural), Category="PCGUtils|DynMesh|Selections",
+	meta=(DeprecatedNode, DeprecationMessage="Use Select Connected with Operation Mode set to Selector."))
 class PCGUTILSDYNMESH_API UPCGDynMeshExpandToConnectedSelectionFactoryProviderSettings
-	: public UPCGUtilsDynMeshDomainSelectionFactoryProviderSettings
+	: public UPCGDynMeshExpandToConnectedSelectionSettings
 {
 	GENERATED_BODY()
 
 public:
+	UPCGDynMeshExpandToConnectedSelectionFactoryProviderSettings()
+	{
+		OperationMode = EPCGUtilsDynMeshSelectionOperationMode::Selector;
+	}
 #if WITH_EDITOR
 	virtual FName GetDefaultNodeName() const override { return TEXT("DynMeshExpandToConnectedSelectionFactory"); }
 	virtual FText GetDefaultNodeTitle() const override;
@@ -88,18 +92,4 @@ public:
 	virtual FString GetAdditionalTitleInformation() const override;
 #endif
 
-	/** Constraint that triangles must satisfy while traversing away from the child factory's seed selection. */
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Selection", meta=(PCG_Overridable))
-	EGeometryScriptTopologyConnectionType ConnectionType = EGeometryScriptTopologyConnectionType::Geometric;
-
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Selection", AdvancedDisplay, meta=(PCG_Overridable))
-	int32 Priority = 0;
-
-	virtual FName GetMainOutputPin() const override;
-	virtual UPCGUtilsDynMeshFactoryData* CreateFactory(
-		FPCGContext* InContext, UPCGUtilsDynMeshFactoryData* InFactory = nullptr) const override;
-
-protected:
-	virtual const FPCGDataTypeBaseId& GetFactoryTypeId() const override;
-	virtual TArray<FPCGPinProperties> InputPinProperties() const override;
 };

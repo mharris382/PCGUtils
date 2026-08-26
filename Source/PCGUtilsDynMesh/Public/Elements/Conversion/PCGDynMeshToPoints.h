@@ -13,7 +13,7 @@ namespace PCGDynMeshToPointsConstants
 	const FName InDynamicMeshLabel = TEXT("In Dynamic Mesh");
 }
 
-UCLASS(BlueprintType, ClassGroup = (Procedural), Category="PCGUtils|Dynamic Mesh")
+UCLASS(BlueprintType, ClassGroup = (Procedural), Category="PCGUtils|DynMesh")
 class PCGUTILSDYNMESH_API UPCGDynMeshToPointsSettings : public UPCGDynamicMeshBaseSettings
 {
 	GENERATED_BODY()
@@ -27,10 +27,10 @@ public:
 		OutCompactNodeIcon = PCGNodeConstants::Icons::CompactNodeConvert;
 		return true;
 	}
-	virtual FName GetDefaultNodeName() const override { return FName(TEXT("DynMsh|Point")); }
+	virtual FName GetDefaultNodeName() const override { return FName(TEXT("DynMesh|Point")); }
 	virtual FText GetDefaultNodeTitle() const override
 	{
-		return NSLOCTEXT("PCGUtils", "DynMeshToPoints_Title", "Dynamic Mesh To Points");
+		return NSLOCTEXT("PCGUtils", "DynMeshToPoints_Title", "DynMesh To Points");
 	}
 	virtual FText GetNodeTooltipText() const override
 	{

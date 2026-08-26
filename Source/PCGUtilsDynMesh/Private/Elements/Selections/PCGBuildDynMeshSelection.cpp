@@ -20,7 +20,7 @@ FText UPCGBuildDynMeshSelectionSettings::GetDefaultNodeTitle() const
 
 FText UPCGBuildDynMeshSelectionSettings::GetNodeTooltipText() const
 {
-	return LOCTEXT("Tooltip", "Evaluates reusable selection factories against each DynMesh and outputs materialized DynMesh Selection data.");
+	return LOCTEXT("Tooltip", "Evaluates reusable selectors against each DynMesh and outputs materialized DynMesh Selection data.");
 }
 #endif
 
@@ -84,7 +84,7 @@ bool FPCGBuildDynMeshSelectionElement::CreateSelection(
 		if (!Factory->SupportsDomain(Domain))
 		{
 			PCGLog::LogErrorOnGraph(FText::Format(
-				LOCTEXT("UnsupportedDomain", "Selection factory '{0}' does not support the Build node's element domain."),
+				LOCTEXT("UnsupportedDomain", "Selector '{0}' does not support the Build node's element domain."),
 				FText::FromString(Factory->GetClass()->GetName())), Context);
 			return false;
 		}
@@ -93,7 +93,7 @@ bool FPCGBuildDynMeshSelectionElement::CreateSelection(
 		if (!Operation || !Operation->Initialize(EvaluationContext))
 		{
 			PCGLog::LogErrorOnGraph(FText::Format(
-				LOCTEXT("OperationInitializationFailed", "Selection factory '{0}' could not initialize its operation."),
+				LOCTEXT("OperationInitializationFailed", "Selector '{0}' could not initialize its operation."),
 				FText::FromString(Factory->GetClass()->GetName())), Context);
 			return false;
 		}

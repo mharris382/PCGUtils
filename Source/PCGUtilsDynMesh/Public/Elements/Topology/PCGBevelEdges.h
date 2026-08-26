@@ -1,7 +1,7 @@
 #pragma once
 
 #include "CoreMinimal.h"
-#include "Elements/PCGDynamicMeshBaseElement.h"
+#include "Elements/PCGUtilsDynMeshProcessBase.h"
 
 #include "PCGBevelEdges.generated.h"
 
@@ -13,8 +13,8 @@
  * Does not output a selection - beveling changes mesh topology, so the input selection's element IDs are no
  * longer valid afterward.
  */
-UCLASS(BlueprintType, ClassGroup=(Procedural), Category="PCGUtils|Dynamic Mesh")
-class PCGUTILSDYNMESH_API UPCGBevelEdgesSettings : public UPCGDynamicMeshBaseSettings
+UCLASS(BlueprintType, ClassGroup=(Procedural), Category="PCGUtils|DynMesh")
+class PCGUTILSDYNMESH_API UPCGBevelEdgesSettings : public UPCGUtilsDynMeshProcessBaseSettings
 {
 	GENERATED_BODY()
 
@@ -53,7 +53,7 @@ protected:
 	virtual FPCGElementPtr CreateElement() const override;
 };
 
-class PCGUTILSDYNMESH_API FPCGBevelEdgesElement : public IPCGDynamicMeshBaseElement
+class PCGUTILSDYNMESH_API FPCGBevelEdgesElement : public FPCGUtilsDynMeshProcessBaseElement
 {
 protected:
 	virtual bool ExecuteInternal(FPCGContext* Context) const override;

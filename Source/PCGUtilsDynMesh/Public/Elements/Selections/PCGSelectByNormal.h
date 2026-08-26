@@ -22,7 +22,8 @@ enum class EPCGDynMeshNormalSelectionElementType : uint8
  * overlay when present, then a baked per-vertex normal, matching the fallback chain used elsewhere in this module
  * (eg Dynamic Mesh Selection To Points, Dynamic Mesh Sample).
  */
-UCLASS(BlueprintType, ClassGroup=(Procedural), Category="PCGUtils|Dynamic Mesh|Selections")
+UCLASS(BlueprintType, ClassGroup=(Procedural), Category="PCGUtils|DynMesh|Selections",
+	meta=(DeprecatedNode, DeprecationMessage="Use Select by Normal (Selector) and Build DynMesh Selection."))
 class PCGUTILSDYNMESH_API UPCGSelectByNormalSettings : public UPCGDynamicMeshSelectionFilterBaseSettings
 {
 	GENERATED_BODY()

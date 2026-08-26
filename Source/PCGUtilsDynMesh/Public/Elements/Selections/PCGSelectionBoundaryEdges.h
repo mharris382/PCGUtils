@@ -3,7 +3,7 @@
 #pragma once
 
 #include "CoreMinimal.h"
-#include "Elements/PCGDynamicMeshBaseElement.h"
+#include "Elements/Selections/PCGUtilsDynMeshSelectionOperationBase.h"
 
 #include "PCGSelectionBoundaryEdges.generated.h"
 
@@ -14,8 +14,8 @@ namespace PCGSelectionBoundaryEdgesConstants
 }
 
 /** Converts an existing DynMesh selection into the edge selection around its triangle-region boundary. */
-UCLASS(BlueprintType, ClassGroup=(Procedural), Category="PCGUtils|Dynamic Mesh|Selections")
-class PCGUTILSDYNMESH_API UPCGSelectionBoundaryEdgesSettings : public UPCGDynamicMeshBaseSettings
+UCLASS(BlueprintType, ClassGroup=(Procedural), Category="PCGUtils|DynMesh|Selections")
+class PCGUTILSDYNMESH_API UPCGSelectionBoundaryEdgesSettings : public UPCGUtilsDynMeshSelectionOperationSettings
 {
 	GENERATED_BODY()
 
@@ -32,18 +32,16 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Selection", meta=(PCG_Overridable))
 	bool bExcludeMeshBoundaryEdges = false;
 
-	/** Include a triangle when any incident source element is selected. Disable to require full inclusion. */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Selection", AdvancedDisplay, meta=(PCG_Overridable))
-	bool bAllowPartialInclusion = true;
+	int32 Priority = 0;
+
+	virtual UPCGUtilsDynMeshFactoryData* CreateFactory(
+		FPCGContext* InContext, UPCGUtilsDynMeshFactoryData* InFactory = nullptr) const override;
 
 protected:
-	virtual TArray<FPCGPinProperties> InputPinProperties() const override;
-	virtual TArray<FPCGPinProperties> OutputPinProperties() const override;
-	virtual FPCGElementPtr CreateElement() const override;
-};
-
-class PCGUTILSDYNMESH_API FPCGSelectionBoundaryEdgesElement : public IPCGDynamicMeshBaseElement
-{
-protected:
-	virtual bool ExecuteInternal(FPCGContext* Context) const override;
+	virtual TArray<FPCGPinProperties> SelectorInputPinProperties() const override;
+	virtual bool ProcessSelection(
+		const UPCGDynamicMeshSelectionData* SelectionData,
+		FPCGContext* Context,
+		UE::Geometry::FGeometrySelection& OutSelection) const override;
 };

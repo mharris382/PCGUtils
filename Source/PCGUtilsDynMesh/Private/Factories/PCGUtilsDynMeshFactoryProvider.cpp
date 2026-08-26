@@ -6,9 +6,22 @@
 #include "Factories/PCGUtilsDynMeshFactoryData.h"
 #include "PCGContext.h"
 #include "PCGPin.h"
+#include "PCGNode.h"
 #include "Utils/PCGLogErrors.h"
 
 #define LOCTEXT_NAMESPACE "PCGUtilsDynMeshFactoryProvider"
+
+void UPCGUtilsDynMeshFactoryProviderSettings::ApplyDeprecationBeforeUpdatePins(
+	UPCGNode* InOutNode, TArray<TObjectPtr<UPCGPin>>& InputPins,
+	TArray<TObjectPtr<UPCGPin>>& OutputPins)
+{
+	Super::ApplyDeprecationBeforeUpdatePins(InOutNode, InputPins, OutputPins);
+	if (InOutNode)
+	{
+		InOutNode->RenameInputPin(TEXT("Factories"), TEXT("Selectors"));
+		InOutNode->RenameOutputPin(TEXT("Selection Factory"), TEXT("Selector"));
+	}
+}
 
 FName UPCGUtilsDynMeshFactoryProviderSettings::GetMainOutputPin() const
 {
@@ -58,7 +71,7 @@ bool FPCGUtilsDynMeshFactoryProviderElement::ExecuteInternal(FPCGContext* Contex
 
 	if (!Factory->Prepare(Context))
 	{
-		PCGLog::LogErrorOnGraph(LOCTEXT("FactoryPreparationFailed", "Factory preparation failed."), Context);
+		PCGLog::LogErrorOnGraph(LOCTEXT("FactoryPreparationFailed", "Provider preparation failed."), Context);
 		return true;
 	}
 

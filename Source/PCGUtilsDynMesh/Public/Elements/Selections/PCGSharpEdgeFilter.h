@@ -11,7 +11,7 @@
  * SelectMeshSharpEdges - no equivalent already existed in PCGUtilsDynMesh, so this reuses the engine
  * implementation rather than reimplementing dihedral-angle logic.
  */
-UCLASS(BlueprintType, ClassGroup=(Procedural), Category="PCGUtils|Dynamic Mesh|Selections")
+UCLASS(BlueprintType, ClassGroup=(Procedural), Category="PCGUtils|DynMesh|Selections")
 class PCGUTILSDYNMESH_API UPCGSharpEdgeFilterSettings : public UPCGDynamicMeshSelectionFilterBaseSettings
 {
 	GENERATED_BODY()

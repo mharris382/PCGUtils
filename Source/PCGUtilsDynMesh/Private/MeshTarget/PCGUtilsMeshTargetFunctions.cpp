@@ -6,6 +6,7 @@
 #include "DynamicMesh/DynamicMeshAttributeSet.h"
 #include "DynamicMesh/MeshNormals.h"
 #include "GeometryScript/GeometryScriptSelectionTypes.h"
+#include "Elements/PCGUtilsDynMeshProcessBase.h"
 #include "Operations/MeshRegionOperator.h"
 #include "PCGContext.h"
 #include "PCGUtilsDynMesh.h"
@@ -231,8 +232,19 @@ FPCGUtilsMeshTargetHandle FPCGUtilsMeshTargetFunctions::CreateSelectionTarget(
 }
 
 FPCGUtilsMeshTargetHandle FPCGUtilsMeshTargetFunctions::CreateTarget(
-	const UPCGData* InputData, EPCGUtilsMeshTargetPreparation Preparation, FPCGContext* Context)
+	const UPCGData* InputData, EPCGUtilsMeshTargetPreparation Preparation, FPCGContext* Context,
+	const UPCGUtilsDynMeshProcessBaseSettings* ProcessSettings)
 {
+	if (ProcessSettings)
+	{
+		const FPCGUtilsDynMeshResolvedInput ResolvedInput =
+			FPCGUtilsDynMeshProcessFunctions::ResolveInput(InputData, ProcessSettings, Context);
+		if (!ResolvedInput.IsValid())
+		{
+			return FPCGUtilsMeshTargetHandle();
+		}
+		InputData = ResolvedInput.GetData();
+	}
 	if (const UPCGDynamicMeshData* FullMeshData = Cast<const UPCGDynamicMeshData>(InputData))
 	{
 		return CreateFullMeshTarget(FullMeshData, Preparation, Context);

@@ -6,6 +6,7 @@
 #include "GeometryScript/GeometryScriptSelectionTypes.h"
 #include "GeometryScript/MeshBasicEditFunctions.h"
 #include "Materials/MaterialInterface.h"
+#include "MeshTarget/PCGUtilsMeshTargetFunctions.h"
 #include "PCGContext.h"
 #include "PCGPin.h"
 #include "UDynamicMesh.h"
@@ -33,7 +34,10 @@ FText UPCGDeleteDynamicMeshSelectionSettings::GetNodeTooltipText() const
 
 TArray<FPCGPinProperties> UPCGDeleteDynamicMeshSelectionSettings::InputPinProperties() const
 {
-	return {FPCGPinProperties(DeleteSelectionPin, FPCGDataTypeIdentifier(UPCGDynamicMeshSelectionData::StaticClass()), true, true)};
+	TArray<FPCGPinProperties> Pins = Super::InputPinProperties();
+	Pins[0] = FPCGUtilsMeshTargetFunctions::MakeMeshInputPinProperties(DeleteSelectionPin);
+	Pins[0].SetRequiredPin();
+	return Pins;
 }
 
 TArray<FPCGPinProperties> UPCGDeleteDynamicMeshSelectionSettings::OutputPinProperties() const
@@ -55,8 +59,14 @@ bool FPCGDeleteDynamicMeshSelectionElement::ExecuteInternal(FPCGContext* Context
 
 	for (const FPCGTaggedData& Input : Context->InputData.GetInputsByPin(DeleteSelectionPin))
 	{
-		const UPCGDynamicMeshSelectionData* SelectionData = Cast<const UPCGDynamicMeshSelectionData>(Input.Data);
-		const UPCGDynamicMeshData* SourceData = SelectionData ? SelectionData->GetSourceMeshData() : nullptr;
+		const FPCGUtilsDynMeshResolvedInput ResolvedInput =
+			FPCGUtilsDynMeshProcessFunctions::ResolveInput(Input.Data, Settings, Context);
+		if (!ResolvedInput.IsValid())
+		{
+			continue;
+		}
+		const UPCGDynamicMeshSelectionData* SelectionData = ResolvedInput.SelectionData;
+		const UPCGDynamicMeshData* SourceData = ResolvedInput.MeshData;
 		const UDynamicMesh* SourceObject = SourceData ? SourceData->GetDynamicMesh() : nullptr;
 		const UE::Geometry::FDynamicMesh3* SourceMesh = SourceObject ? SourceObject->GetMeshPtr() : nullptr;
 		if (!SourceMesh)

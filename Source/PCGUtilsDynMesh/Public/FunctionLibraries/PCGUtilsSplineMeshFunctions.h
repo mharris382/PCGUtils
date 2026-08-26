@@ -38,7 +38,7 @@ public:
 	 * @param bConvertToLocalSpace		If true, output vertices are expressed in ReferenceActorContext's local
 	 *									space. If false, output vertices are expressed in world space.
 	 */
-	UFUNCTION(BlueprintCallable, Category = "PCGUtils|Dynamic Mesh|Spline Mesh")
+	UFUNCTION(BlueprintCallable, Category = "PCGUtils|DynMesh|Spline Mesh")
 	static UDynamicMesh* SplineMeshComponentToDynamicMesh(
 		AActor* ReferenceActorContext,
 		USplineMeshComponent* TargetComponent,

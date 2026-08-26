@@ -2,7 +2,7 @@
 
 #include "CoreMinimal.h"
 #include "GeometryScript/MeshRemeshFunctions.h"
-#include "PCGSettings.h"
+#include "Elements/PCGUtilsDynMeshProcessBase.h"
 
 #include "PCGRemesh.generated.h"
 
@@ -21,8 +21,8 @@ enum class EPCGRemeshMode : uint8
  * (with its outer boundary held fixed) and welded back into the untouched remainder of the source mesh, via the
  * shared PCGUtilsDynMesh Mesh Target Handle infrastructure (see MeshTarget/PCGUtilsMeshTargetFunctions.h).
  */
-UCLASS(BlueprintType, ClassGroup=(Procedural), Category="PCGUtils|Dynamic Mesh")
-class PCGUTILSDYNMESH_API UPCGRemeshSettings : public UPCGSettings
+UCLASS(BlueprintType, ClassGroup=(Procedural), Category="PCGUtils|DynMesh")
+class PCGUTILSDYNMESH_API UPCGRemeshSettings : public UPCGUtilsDynMeshProcessBaseSettings
 {
 	GENERATED_BODY()
 
@@ -69,7 +69,7 @@ protected:
 	virtual FPCGElementPtr CreateElement() const override;
 };
 
-class PCGUTILSDYNMESH_API FPCGRemeshElement : public IPCGElement
+class PCGUTILSDYNMESH_API FPCGRemeshElement : public FPCGUtilsDynMeshProcessBaseElement
 {
 protected:
 	virtual bool ExecuteInternal(FPCGContext* Context) const override;

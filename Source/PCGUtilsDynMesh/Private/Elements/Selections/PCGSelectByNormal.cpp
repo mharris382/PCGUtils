@@ -39,12 +39,12 @@ namespace
 #if WITH_EDITOR
 FText UPCGSelectByNormalSettings::GetDefaultNodeTitle() const
 {
-	return LOCTEXT("Title", "Select by Normal");
+	return LOCTEXT("Title", "DEPRECATED: Select by Normal");
 }
 
 FText UPCGSelectByNormalSettings::GetNodeTooltipText() const
 {
-	return LOCTEXT("Tooltip", "Selects Dynamic Mesh triangles or vertices whose normal is aligned with a reference direction, within a Dot Threshold. If an incoming selection is supplied, only its converted candidates are evaluated.");
+	return LOCTEXT("Tooltip", "Deprecated materialized-selection node. Use the Select by Normal selector with Build DynMesh Selection.");
 }
 #endif
 

@@ -17,7 +17,7 @@ enum class EPCGUtilsDynMeshSelectionFactoryGroupMode : uint8
 };
 
 /** Composite factory holding direct UObject references to its child selection factories. */
-UCLASS(BlueprintType, ClassGroup=(Procedural), Category="PCGUtils|Dynamic Mesh|Selections")
+UCLASS(BlueprintType, ClassGroup=(Procedural), Category="PCGUtils|DynMesh|Selections")
 class PCGUTILSDYNMESH_API UPCGDynMeshSelectionFactoryGroupData
 	: public UPCGUtilsDynMeshSelectionFactoryData
 {
@@ -37,7 +37,7 @@ protected:
 	virtual void AddToCrc(FArchiveCrc32& Ar, bool bFullDataCrc) const override;
 };
 
-UCLASS(BlueprintType, ClassGroup=(Procedural), Category="PCGUtils|Dynamic Mesh|Selections")
+UCLASS(BlueprintType, ClassGroup=(Procedural), Category="PCGUtils|DynMesh|Selections")
 class PCGUTILSDYNMESH_API UPCGDynMeshSelectionFactoryGroupProviderSettings
 	: public UPCGUtilsDynMeshFactoryProviderSettings
 {

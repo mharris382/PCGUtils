@@ -96,7 +96,7 @@ namespace
 			else
 			{
 				PCGLog::LogErrorOnGraph(
-					LOCTEXT("MissingVertexColors", "Vertex Color Selection Factory requires a mesh with vertex colors."),
+					LOCTEXT("MissingVertexColors", "Select by Vertex Color requires a mesh with vertex colors."),
 					Context);
 				return false;
 			}
@@ -245,14 +245,14 @@ void UPCGDynMeshVertexColorSelectionFactoryData::AddToCrc(FArchiveCrc32& Ar, boo
 #if WITH_EDITOR
 FText UPCGDynMeshVertexColorSelectionFactoryProviderSettings::GetDefaultNodeTitle() const
 {
-	return LOCTEXT("Title", "Vertex Color Selection Factory");
+	return LOCTEXT("Title", "Select by Vertex Color");
 }
 
 TArray<FText> UPCGDynMeshVertexColorSelectionFactoryProviderSettings::GetNodeTitleAliases() const
 {
 	return {
-		LOCTEXT("ColorAlias", "Color Selection Factory"),
-		LOCTEXT("MeshColorAlias", "Mesh Color Selection Factory")
+		LOCTEXT("ColorAlias", "Color Selector"),
+		LOCTEXT("MeshColorAlias", "Mesh Color Selector")
 	};
 }
 

@@ -1,7 +1,7 @@
 #pragma once
 
 #include "CoreMinimal.h"
-#include "PCGSettings.h"
+#include "Elements/PCGUtilsDynMeshProcessBase.h"
 
 #include "PCGDynamicMeshSelectionToPaths.generated.h"
 
@@ -9,14 +9,21 @@
  * Converts the boundary loops of a Dynamic Mesh Selection's implied triangle region into ordered PCG point data.
  * Each output data item is a closed PCGEx-compatible path (its first point is not repeated at the end).
  */
-UCLASS(BlueprintType, ClassGroup=(Procedural), Category="PCGUtils|Dynamic Mesh")
-class PCGUTILSDYNMESH_API UPCGDynamicMeshSelectionToPathsSettings : public UPCGSettings
+UCLASS(BlueprintType, ClassGroup=(Procedural), Category="PCGUtils|DynMesh")
+class PCGUTILSDYNMESH_API UPCGDynamicMeshSelectionToPathsSettings : public UPCGUtilsDynMeshProcessBaseSettings
 {
 	GENERATED_BODY()
 
 public:
+	virtual bool RequiresSelection() const override { return true; }
+	virtual bool GetRequiredSelectionDomain(UE::Geometry::EGeometryElementType& OutElementType) const override
+	{
+		OutElementType = UE::Geometry::EGeometryElementType::Face;
+		return true;
+	}
+
 #if WITH_EDITOR
-	virtual FName GetDefaultNodeName() const override { return TEXT("DynamicMeshSelectionToPaths"); }
+	virtual FName GetDefaultNodeName() const override { return TEXT("DynMeshSelectionToPaths"); }
 	virtual FText GetDefaultNodeTitle() const override;
 	virtual FText GetNodeTooltipText() const override;
 	virtual FLinearColor GetNodeTitleColor() const override { return FLinearColor(0.413f, 0.25f, 1.0f, 1.0f); }
@@ -47,7 +54,7 @@ protected:
 	virtual FPCGElementPtr CreateElement() const override;
 };
 
-class PCGUTILSDYNMESH_API FPCGDynamicMeshSelectionToPathsElement : public IPCGElement
+class PCGUTILSDYNMESH_API FPCGDynamicMeshSelectionToPathsElement : public FPCGUtilsDynMeshProcessBaseElement
 {
 public:
 	virtual bool CanExecuteOnlyOnMainThread(FPCGContext* Context) const override { return true; }

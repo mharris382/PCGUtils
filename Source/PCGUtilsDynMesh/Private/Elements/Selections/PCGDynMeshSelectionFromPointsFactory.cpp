@@ -32,7 +32,7 @@ namespace
 			if (Factory->VertexIndexAttribute.IsNone())
 			{
 				PCGLog::LogErrorOnGraph(
-					LOCTEXT("EmptyAttribute", "Selection From Points Factory requires a Vertex Index Attribute name."),
+					LOCTEXT("EmptyAttribute", "Select from Points requires a Vertex Index Attribute name."),
 					Context);
 				return false;
 			}
@@ -48,7 +48,7 @@ namespace
 				if (!Data || !Attribute)
 				{
 					PCGLog::LogWarningOnGraph(FText::Format(
-						LOCTEXT("MissingAttribute", "Selection From Points Factory skipped point data without the integer attribute '{0}'."),
+						LOCTEXT("MissingAttribute", "Select from Points skipped point data without the integer attribute '{0}'."),
 						FText::FromName(Factory->VertexIndexAttribute)), Context);
 					continue;
 				}
@@ -72,7 +72,7 @@ namespace
 			if (InvalidIndexCount > 0)
 			{
 				PCGLog::LogWarningOnGraph(FText::Format(
-					LOCTEXT("InvalidIndices", "Selection From Points Factory ignored {0} invalid or stale vertex indices."),
+					LOCTEXT("InvalidIndices", "Select from Points ignored {0} invalid or stale vertex indices."),
 					FText::AsNumber(InvalidIndexCount)), Context);
 			}
 
@@ -109,14 +109,14 @@ void UPCGDynMeshSelectionFromPointsFactoryData::AddToCrc(FArchiveCrc32& Ar, bool
 #if WITH_EDITOR
 FText UPCGDynMeshSelectionFromPointsFactoryProviderSettings::GetDefaultNodeTitle() const
 {
-	return LOCTEXT("Title", "Selection From Points Factory");
+	return LOCTEXT("Title", "Select from Points");
 }
 
 TArray<FText> UPCGDynMeshSelectionFromPointsFactoryProviderSettings::GetNodeTitleAliases() const
 {
 	return {
-		LOCTEXT("VertexIDsAlias", "Vertex IDs Selection Factory"),
-		LOCTEXT("PointIndicesAlias", "Point Indices Selection Factory")
+		LOCTEXT("VertexIDsAlias", "Vertex IDs Selector"),
+		LOCTEXT("PointIndicesAlias", "Point Indices Selector")
 	};
 }
 
@@ -166,7 +166,7 @@ UPCGUtilsDynMeshFactoryData* UPCGDynMeshSelectionFromPointsFactoryProviderSettin
 	if (Inputs.IsEmpty())
 	{
 		PCGLog::LogErrorOnGraph(
-			LOCTEXT("MissingPoints", "Selection From Points Factory requires point data on its Points pin."), InContext);
+			LOCTEXT("MissingPoints", "Select from Points requires point data on its Points pin."), InContext);
 		return nullptr;
 	}
 

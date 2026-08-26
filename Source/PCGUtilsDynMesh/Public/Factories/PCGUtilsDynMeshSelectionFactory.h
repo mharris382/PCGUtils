@@ -19,11 +19,11 @@ class UPCGDynamicMeshData;
 
 namespace PCGUtilsDynMeshSelectionFactoryConstants
 {
-	inline const FName OutputPin = TEXT("Selection Factory");
-	inline const FName FactoriesInputPin = TEXT("Factories");
+	inline const FName OutputPin = TEXT("Selector");
+	inline const FName FactoriesInputPin = TEXT("Selectors");
 }
 
-/** The homogeneous element/topology domain in which a factory tree is evaluated. */
+/** The homogeneous element/topology domain in which a selector tree is evaluated. */
 struct PCGUTILSDYNMESH_API FPCGUtilsDynMeshSelectionDomain
 {
 	UE::Geometry::EGeometryElementType ElementType = UE::Geometry::EGeometryElementType::Face;
@@ -46,7 +46,7 @@ struct PCGUTILSDYNMESH_API FPCGUtilsDynMeshSelectionEvaluationContext
 	FPCGUtilsDynMeshSelectionDomain Domain;
 };
 
-USTRUCT(meta=(PCG_DataTypeDisplayName="DynMesh Selection Factory"))
+USTRUCT(meta=(PCG_DataTypeDisplayName="DynMesh Selector"))
 struct FPCGUtilsDynMeshSelectionFactoryDataTypeInfo : public FPCGUtilsDynMeshFactoryDataTypeInfo
 {
 	GENERATED_BODY()

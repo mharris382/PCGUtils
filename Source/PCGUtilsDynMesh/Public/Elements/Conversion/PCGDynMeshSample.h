@@ -1,7 +1,7 @@
 #pragma once
 
 #include "CoreMinimal.h"
-#include "PCGSettings.h"
+#include "Elements/PCGUtilsDynMeshProcessBase.h"
 #include "Elements/PCGMeshSampler.h"
 #include "GeometryScript/MeshSamplingFunctions.h"
 
@@ -18,14 +18,14 @@
  * the source geometry is always resolved directly from PCGUtilsDynMesh data, never loaded/converted from a
  * Static/Skeletal Mesh.
  */
-UCLASS(BlueprintType, ClassGroup=(Procedural), Category="PCGUtils|Dynamic Mesh")
-class PCGUTILSDYNMESH_API UPCGDynMeshSampleSettings : public UPCGSettings
+UCLASS(BlueprintType, ClassGroup=(Procedural), Category="PCGUtils|DynMesh")
+class PCGUTILSDYNMESH_API UPCGDynMeshSampleSettings : public UPCGUtilsDynMeshProcessBaseSettings
 {
 	GENERATED_BODY()
 
 public:
 #if WITH_EDITOR
-	virtual FName GetDefaultNodeName() const override { return TEXT("DynMsh|Sample"); }
+	virtual FName GetDefaultNodeName() const override { return TEXT("DynMesh|Sample"); }
 	virtual FText GetDefaultNodeTitle() const override;
 	virtual FText GetNodeTooltipText() const override;
 	virtual FLinearColor GetNodeTitleColor() const override { return FLinearColor(0.413f, 0.25f, 1.0f, 1.0f); }
@@ -117,7 +117,7 @@ protected:
 	virtual FPCGElementPtr CreateElement() const override;
 };
 
-class PCGUTILSDYNMESH_API FPCGDynMeshSampleElement : public IPCGElement
+class PCGUTILSDYNMESH_API FPCGDynMeshSampleElement : public FPCGUtilsDynMeshProcessBaseElement
 {
 public:
 	// Loading target-actor transforms and reading from the source DynMesh should stay on the main thread,

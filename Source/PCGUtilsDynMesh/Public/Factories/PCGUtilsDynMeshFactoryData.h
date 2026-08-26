@@ -11,7 +11,7 @@
 
 struct FPCGContext;
 
-USTRUCT(meta=(PCG_DataTypeDisplayName="DynMesh Factory"))
+USTRUCT(meta=(PCG_DataTypeDisplayName="DynMesh Provider"))
 struct FPCGUtilsDynMeshFactoryDataTypeInfo : public FPCGDataTypeInfo
 {
 	GENERATED_BODY()
@@ -23,7 +23,7 @@ struct FPCGUtilsDynMeshFactoryDataTypeInfo : public FPCGDataTypeInfo
  * Base UObject transported through PCG pins. Factory instances are immutable after their provider emits them;
  * mutable, mesh-specific state belongs on the non-UObject operation created by a derived factory.
  */
-UCLASS(Abstract, BlueprintType, ClassGroup=(Procedural), Category="PCGUtils|DynMesh|Factories")
+UCLASS(Abstract, BlueprintType, ClassGroup=(Procedural), Category="PCGUtils|DynMesh|Providers")
 class PCGUTILSDYNMESH_API UPCGUtilsDynMeshFactoryData : public UPCGData
 {
 	GENERATED_BODY()
