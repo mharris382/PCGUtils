@@ -6,6 +6,7 @@
 #include "PCGModule.h"
 #include "Data/Registry/PCGDataTypeRegistry.h"
 #include "Data/PCGDynamicMeshSelectionData.h"
+#include "Factories/PCGUtilsDynMeshPrimitiveFactory.h"
 #include "Factories/PCGUtilsDynMeshSelectionFactory.h"
 #include "Misc/CoreDelegates.h"
 #endif
@@ -40,6 +41,11 @@ void FPCGUtilsDynMeshModule::RegisterPinColors()
 	static const FLinearColor DynamicMeshSelectionPinColor =
 		FLinearColor::FromSRGBColor(FColor::FromHex(TEXT("EDD76CFF")));
 
+	// Copper/orange, distinct from the selection yellow, to read as "geometry-producing" rather than
+	// "selection-predicate".
+	static const FLinearColor PrimitiveBuilderPinColor =
+		FLinearColor::FromSRGBColor(FColor::FromHex(TEXT("D97B3FFF")));
+
 	FPCGModule::GetMutableDataTypeRegistry().RegisterPinColorFunction(
 		FPCGDataTypeInfoDynamicMeshSelection::AsId(),
 		[](const FPCGDataTypeIdentifier&) { return DynamicMeshSelectionPinColor; });
@@ -47,12 +53,17 @@ void FPCGUtilsDynMeshModule::RegisterPinColors()
 	FPCGModule::GetMutableDataTypeRegistry().RegisterPinColorFunction(
 		FPCGUtilsDynMeshSelectionFactoryDataTypeInfo::AsId(),
 		[](const FPCGDataTypeIdentifier&) { return DynamicMeshSelectionPinColor; });
+
+	FPCGModule::GetMutableDataTypeRegistry().RegisterPinColorFunction(
+		FPCGUtilsDynMeshPrimitiveFactoryDataTypeInfo::AsId(),
+		[](const FPCGDataTypeIdentifier&) { return PrimitiveBuilderPinColor; });
 }
 
 void FPCGUtilsDynMeshModule::OnPreExit()
 {
 	FPCGModule::GetMutableDataTypeRegistry().UnregisterPinColorFunction(FPCGDataTypeInfoDynamicMeshSelection::AsId());
 	FPCGModule::GetMutableDataTypeRegistry().UnregisterPinColorFunction(FPCGUtilsDynMeshSelectionFactoryDataTypeInfo::AsId());
+	FPCGModule::GetMutableDataTypeRegistry().UnregisterPinColorFunction(FPCGUtilsDynMeshPrimitiveFactoryDataTypeInfo::AsId());
 }
 #endif
 

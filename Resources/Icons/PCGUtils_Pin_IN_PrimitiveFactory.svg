@@ -1,0 +1,24 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg id="Layer_8_copy" data-name="Layer 8 copy" xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" viewBox="0 0 63.7 63.6">
+  <defs>
+    <style>
+      .cls-1 {
+        fill: #fff;
+      }
+
+      .cls-2 {
+        filter: url(#drop-shadow-1);
+      }
+    </style>
+    <filter id="drop-shadow-1" x="0" y=".24" width="63.41" height="62.37" filterUnits="userSpaceOnUse">
+      <feOffset dx="1" dy="1"/>
+      <feGaussianBlur result="blur" stdDeviation="0"/>
+      <feFlood flood-color="#231f20" flood-opacity="1"/>
+      <feComposite in2="blur" operator="in"/>
+      <feComposite in="SourceGraphic"/>
+    </filter>
+  </defs>
+  <g class="cls-2">
+    <path class="cls-1" d="M51.35,14.84l2.92,2.6v-6.23c0-.65.53-1.18,1.18-1.18h1.99L50.55.24l-6.89,9.79h1.99c.65,0,1.18.53,1.18,1.18v3.3h3.7c.31,0,.61.13.82.33h0ZM17.92,54.92l-3.22-2.87c-.26-.23-.39-.55-.39-.89v-3.69h-3.34c-.65,0-1.18-.53-1.18-1.18v-1.99L0,51.2l9.78,6.89v-1.99c0-.65.53-1.18,1.18-1.18h6.96,0ZM46.93,47.13v-15.78h-14.77v15.78h14.77ZM46.93,28.99v-5.75h-21.97l6.47,5.75h15.51,0ZM49.3,24.69v4.3h4.83l-4.83-4.3ZM49.3,31.36v16.43l6.76,6.01v-22.44h-6.76ZM54.13,55.25l-6.47-5.75h-15.5v5.75h21.97ZM29.79,49.5h-4.83l4.83,4.3v-4.3ZM23.02,47.13h6.77v-16.43l-6.77-6.01v22.44h0ZM21.84,20.87h26.27c.28,0,.56.1.78.3l9.1,8.08c.27.22.43.55.43.93v26.27c0,.65-.53,1.18-1.18,1.18h-26.27c-.28,0-.56-.1-.79-.3l-9.09-8.08c-.27-.21-.44-.55-.44-.92v-26.27c0-.65.54-1.18,1.18-1.18h0ZM62.41,27.84l-12.34-10.96H16.67v33.76l12.34,10.97h33.4V27.84Z"/>
+  </g>
+</svg>

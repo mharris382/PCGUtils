@@ -4,6 +4,8 @@
 #include "Data/PCGDynamicMeshData.h"
 #include "DynamicMesh/DynamicMesh3.h"
 #include "Elements/Creation/CreatePrimitive/PCGCreatePrimitiveSettingsBase.h"
+#include "Factories/PCGUtilsDynMeshFactories.h"
+#include "Factories/PCGUtilsDynMeshPrimitiveFactory.h"
 #include "GameFramework/Actor.h"
 #include "GeometryScript/MeshBasicEditFunctions.h"
 #include "PCGContext.h"
@@ -74,6 +76,25 @@ namespace
 		}
 		return SeedTransform;
 	}
+
+	/** Resolves the target-actor transform used to convert seed points into the mesh's local space. */
+	FTransform ResolveSeedActorTransform(FPCGContext* Context, bool bConvertSeedsToLocalSpace)
+	{
+		FTransform ActorTransform = FTransform::Identity;
+		if (bConvertSeedsToLocalSpace)
+		{
+			if (const AActor* TargetActor = Context->GetTargetActor(nullptr))
+			{
+				ActorTransform = TargetActor->GetActorTransform();
+			}
+			else
+			{
+				PCGLog::LogWarningOnGraph(LOCTEXT("MissingTargetActor",
+					"Create Primitive could not resolve a target actor; seed positions remain in their original space."), Context);
+			}
+		}
+		return ActorTransform;
+	}
 }
 
 UPCGCreatePrimitiveSettings::UPCGCreatePrimitiveSettings(const FObjectInitializer& ObjectInitializer)
@@ -91,15 +112,17 @@ FText UPCGCreatePrimitiveSettings::GetDefaultNodeTitle() const
 FText UPCGCreatePrimitiveSettings::GetNodeTooltipText() const
 {
 	return LOCTEXT("NodeTooltip",
-		"Generates a Geometry Script primitive as Dynamic Mesh data. With Use Seed Points enabled, one copy of "
-		"the primitive is appended per point on the Seeds pin, placed either by the seed's transform or fitted "
-		"to the seed's bounds.");
+		"Generates a Geometry Script primitive as Dynamic Mesh data. In legacy mode, one copy of the inline "
+		"primitive is appended per point on the Seeds pin. In Builder mode (bUseLegacyMode disabled), the "
+		"primitive and its fitting/alignment come from a connected Primitive Builder instead.");
 }
 
 EPCGChangeType UPCGCreatePrimitiveSettings::GetChangeTypeForProperty(FPropertyChangedEvent& PropertyChangedEvent) const
 {
 	EPCGChangeType ChangeType = Super::GetChangeTypeForProperty(PropertyChangedEvent);
-	if (PropertyChangedEvent.GetMemberPropertyName() == GET_MEMBER_NAME_CHECKED(UPCGCreatePrimitiveSettings, bUseSeedPoints))
+	const FName PropertyName = PropertyChangedEvent.GetMemberPropertyName();
+	if (PropertyName == GET_MEMBER_NAME_CHECKED(UPCGCreatePrimitiveSettings, bUseSeedPoints) ||
+		PropertyName == GET_MEMBER_NAME_CHECKED(UPCGCreatePrimitiveSettings, bUseLegacyMode))
 	{
 		ChangeType |= EPCGChangeType::Structural;
 	}
@@ -110,9 +133,19 @@ EPCGChangeType UPCGCreatePrimitiveSettings::GetChangeTypeForProperty(FPropertyCh
 TArray<FPCGPinProperties> UPCGCreatePrimitiveSettings::InputPinProperties() const
 {
 	TArray<FPCGPinProperties> Pins;
-	if (bUseSeedPoints)
+	if (bUseLegacyMode)
 	{
-		Pins.Emplace(SeedsPin, EPCGDataType::Point, true, true);
+		if (bUseSeedPoints)
+		{
+			Pins.Emplace(SeedsPin, EPCGDataType::Point, true, true);
+		}
+	}
+	else
+	{
+		Pins.Emplace_GetRef(SeedsPin, EPCGDataType::Point, true, true).SetRequiredPin();
+		Pins.Emplace_GetRef(
+			PCGUtilsDynMeshPrimitiveFactoryConstants::OutputPin,
+			FPCGUtilsDynMeshPrimitiveFactoryDataTypeInfo::AsId(), false, false).SetRequiredPin();
 	}
 	return Pins;
 }
@@ -135,6 +168,11 @@ bool FPCGCreatePrimitiveElement::ExecuteInternal(FPCGContext* Context) const
 	const UPCGCreatePrimitiveSettings* Settings = Context->GetInputSettings<UPCGCreatePrimitiveSettings>();
 	check(Settings);
 
+	return Settings->bUseLegacyMode ? ExecuteLegacy(Context, Settings) : ExecuteBuilder(Context, Settings);
+}
+
+bool FPCGCreatePrimitiveElement::ExecuteLegacy(FPCGContext* Context, const UPCGCreatePrimitiveSettings* Settings) const
+{
 	const UPCGCreatePrimitiveSettingsBase* PrimitiveSettings = Settings->Primitive;
 
 	// Generate the primitive once at the identity transform; this both serves as the entire output when seed
@@ -155,19 +193,7 @@ bool FPCGCreatePrimitiveElement::ExecuteInternal(FPCGContext* Context) const
 	{
 		OutputMesh = FPCGContext::NewObject_AnyThread<UDynamicMesh>(Context);
 
-		FTransform ActorTransform = FTransform::Identity;
-		if (Settings->bConvertSeedsToLocalSpace)
-		{
-			if (const AActor* TargetActor = Context->GetTargetActor(nullptr))
-			{
-				ActorTransform = TargetActor->GetActorTransform();
-			}
-			else
-			{
-				PCGLog::LogWarningOnGraph(LOCTEXT("MissingTargetActor",
-					"Create Primitive could not resolve a target actor; seed positions remain in their original space."), Context);
-			}
-		}
+		const FTransform ActorTransform = ResolveSeedActorTransform(Context, Settings->bConvertSeedsToLocalSpace);
 
 		bool bHavePrimitiveBounds = false;
 		UE::Geometry::FAxisAlignedBox3d PrimitiveBounds;
@@ -219,6 +245,77 @@ bool FPCGCreatePrimitiveElement::ExecuteInternal(FPCGContext* Context) const
 			UGeometryScriptLibrary_MeshBasicEditFunctions::AppendMeshTransformed(
 				OutputMesh, ReferenceMesh, PlacementTransforms, FTransform::Identity);
 		}
+	}
+
+	UPCGDynamicMeshData* OutputData = FPCGContext::NewObject_AnyThread<UPCGDynamicMeshData>(Context);
+	OutputData->Initialize(OutputMesh, /*bCanTakeOwnership=*/true, TArray<UMaterialInterface*>{});
+	FPCGTaggedData& Output = Context->OutputData.TaggedData.Emplace_GetRef();
+	Output.Data = OutputData;
+	Output.Pin = PCGPinConstants::DefaultOutputLabel;
+
+	return true;
+}
+
+bool FPCGCreatePrimitiveElement::ExecuteBuilder(FPCGContext* Context, const UPCGCreatePrimitiveSettings* Settings) const
+{
+	TArray<TObjectPtr<const UPCGUtilsDynMeshPrimitiveFactoryData>> Factories;
+	if (!PCGUtilsDynMeshFactories::GetInputFactories(
+		Context, PCGUtilsDynMeshPrimitiveFactoryConstants::OutputPin, Factories,
+		PCGUtilsDynMeshFactories::GetPrimitiveBuilderFactoryTypes(), /*bRequired=*/true))
+	{
+		return true;
+	}
+
+	if (Factories.Num() != 1)
+	{
+		PCGLog::LogErrorOnGraph(LOCTEXT("RequiresOneBuilder", "Create Primitive accepts exactly one Builder input."), Context);
+		return true;
+	}
+
+	const TSharedPtr<FPCGUtilsDynMeshPrimitiveOperation> Operation = Factories[0]->CreateOperation(Context);
+	if (!Operation)
+	{
+		PCGLog::LogErrorOnGraph(LOCTEXT("BuilderOperationFailed", "Create Primitive could not create an operation from its Builder input."), Context);
+		return true;
+	}
+
+	const FTransform ActorTransform = ResolveSeedActorTransform(Context, Settings->bConvertSeedsToLocalSpace);
+	UDynamicMesh* OutputMesh = FPCGContext::NewObject_AnyThread<UDynamicMesh>(Context);
+	int32 SeedCount = 0;
+
+	for (const FPCGTaggedData& SeedInput : Context->InputData.GetInputsByPin(SeedsPin))
+	{
+		const UPCGBasePointData* SeedPointData = Cast<const UPCGBasePointData>(SeedInput.Data);
+		if (!SeedPointData)
+		{
+			PCGLog::LogWarningOnGraph(LOCTEXT("InvalidSeedInput", "Create Primitive skipped a Seeds input that was not Point Data."), Context);
+			continue;
+		}
+
+		const int32 NumPoints = SeedPointData->GetNumPoints();
+		const auto TransformRange = SeedPointData->GetConstTransformValueRange();
+		const auto BoundsMinRange = SeedPointData->GetConstBoundsMinValueRange();
+		const auto BoundsMaxRange = SeedPointData->GetConstBoundsMaxValueRange();
+
+		for (int32 PointIndex = 0; PointIndex < NumPoints; ++PointIndex)
+		{
+			const FTransform SeedTransform = Settings->bConvertSeedsToLocalSpace
+				? TransformRange[PointIndex].GetRelativeTransform(ActorTransform)
+				: TransformRange[PointIndex];
+			const FBox SeedLocalBounds(BoundsMinRange[PointIndex], BoundsMaxRange[PointIndex]);
+
+			if (UDynamicMesh* SeedMesh = Operation->BuildMesh(SeedTransform, SeedLocalBounds))
+			{
+				UGeometryScriptLibrary_MeshBasicEditFunctions::AppendMeshTransformed(
+					OutputMesh, SeedMesh, TArray<FTransform>{FTransform::Identity}, FTransform::Identity);
+			}
+			++SeedCount;
+		}
+	}
+
+	if (SeedCount == 0)
+	{
+		PCGLog::LogWarningOnGraph(LOCTEXT("NoSeeds", "Create Primitive (Builder mode) received no seed points."), Context);
 	}
 
 	UPCGDynamicMeshData* OutputData = FPCGContext::NewObject_AnyThread<UPCGDynamicMeshData>(Context);
