@@ -7,56 +7,66 @@
 
 #include "PCGUtilsPrimitiveFittingDetails.generated.h"
 
+// The ActionIcon UMETA on each enumerator drives the inline icon-button row rendered by
+// FPCGUtilsInlineEnumCustomization (PCGUtilsEditor). Icon set ported, with the enums, from
+// PCGExtendedToolkit. Keep the values in sync with FPCGUtilsEditorStyle::RegisterActionIcons.
+
 UENUM(BlueprintType)
 enum class EPCGUtilsFitMode : uint8
 {
 	/** No scaling; the primitive keeps its native size (after LocalTransform). */
-	None,
+	None UMETA(DisplayName = "None", ActionIcon = "STF_None"),
 	/** The same scale factor is applied to all three axes. */
-	Uniform,
+	Uniform UMETA(DisplayName = "Uniform", ActionIcon = "STF_Uniform"),
 	/** Each axis picks its own scale-to-fit strategy. */
-	Individual
+	Individual UMETA(DisplayName = "Individual", ActionIcon = "STF_Individual")
 };
 
 UENUM(BlueprintType)
 enum class EPCGUtilsScaleToFit : uint8
 {
 	/** Do not scale this axis. */
-	None,
+	None UMETA(DisplayName = "None", ActionIcon = "Fit_None"),
 	/** Stretch to exactly fill the target bounds on this axis. */
-	Fill,
+	Fill UMETA(DisplayName = "Fill", ActionIcon = "Fit_Fill"),
 	/** Use the smallest of the three per-axis fill ratios (keeps the primitive from overflowing any axis). */
-	Min,
+	Min UMETA(DisplayName = "Min", ActionIcon = "Fit_Min"),
 	/** Use the largest of the three per-axis fill ratios (guarantees the primitive fills at least one axis). */
-	Max,
+	Max UMETA(DisplayName = "Max", ActionIcon = "Fit_Max"),
 	/** Use the average of the three per-axis fill ratios. */
-	Avg
+	Avg UMETA(DisplayName = "Average", ActionIcon = "Fit_Average")
 };
 
 UENUM(BlueprintType)
 enum class EPCGUtilsJustifyFrom : uint8
 {
-	Min,
-	Center,
-	Max,
+	/** The min corner of the primitive's own bounds. */
+	Min UMETA(DisplayName = "Min", ActionIcon = "From_Min"),
+	/** The center of the primitive's own bounds. */
+	Center UMETA(DisplayName = "Center", ActionIcon = "From_Center"),
+	/** The max corner of the primitive's own bounds. */
+	Max UMETA(DisplayName = "Max", ActionIcon = "From_Max"),
 	/** The primitive's own local origin, unmoved. */
-	Pivot,
+	Pivot UMETA(DisplayName = "Pivot", ActionIcon = "From_Pivot"),
 	/** A fixed 0-1 fraction along the primitive's own bounds (0 = min, 0.5 = center, 1 = max). */
-	Custom
+	Custom UMETA(DisplayName = "Custom", ActionIcon = "From_Custom")
 };
 
 UENUM(BlueprintType)
 enum class EPCGUtilsJustifyTo : uint8
 {
 	/** Mirrors whichever anchor 'From' selected, onto the target bounds. */
-	Same,
-	Min,
-	Center,
-	Max,
+	Same UMETA(DisplayName = "Same", ActionIcon = "To_Same"),
+	/** The min corner of the target bounds. */
+	Min UMETA(DisplayName = "Min", ActionIcon = "To_Min"),
+	/** The center of the target bounds. */
+	Center UMETA(DisplayName = "Center", ActionIcon = "To_Center"),
+	/** The max corner of the target bounds. */
+	Max UMETA(DisplayName = "Max", ActionIcon = "To_Max"),
 	/** The seed's own local origin. */
-	Pivot,
+	Pivot UMETA(DisplayName = "Pivot", ActionIcon = "To_Pivot"),
 	/** A fixed 0-1 fraction along the target bounds (0 = min, 0.5 = center, 1 = max). */
-	Custom
+	Custom UMETA(DisplayName = "Custom", ActionIcon = "To_Custom")
 };
 
 namespace PCGUtilsFitting

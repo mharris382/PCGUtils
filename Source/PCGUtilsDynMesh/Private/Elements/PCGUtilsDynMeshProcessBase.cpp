@@ -197,7 +197,7 @@ FPCGUtilsDynMeshResolvedInput FPCGUtilsDynMeshProcessFunctions::ResolveInput(
 		FactoryDomain.ElementType = EffectiveElementType;
 		FactoryDomain.TopologyType = UE::Geometry::EGeometryTopologyType::Triangle;
 		FPCGUtilsDynMeshSelectionEvaluationContext EvaluationContext(Result.MeshData, *SourceMesh, FactoryDomain);
-		UE::Geometry::FGeometrySelectorSelection;
+		UE::Geometry::FGeometrySelection FactorySelection;
 		if (!PCGUtilsDynMeshSelectionFactories::EvaluateFactory(
 			SelectionFactory, EvaluationContext, Context, FactorySelection))
 		{
@@ -344,7 +344,7 @@ bool FPCGUtilsDynMeshProcessBaseElement::ExecuteInternal(FPCGContext* Context) c
 			FactoryDomain.TopologyType = UE::Geometry::EGeometryTopologyType::Triangle;
 			FPCGUtilsDynMeshSelectionEvaluationContext EvaluationContext(
 				OutputData, *OutputMesh, FactoryDomain);
-			UE::Geometry::FGeometrySelectorSelection;
+			UE::Geometry::FGeometrySelection FactorySelection;
 			if (!PCGUtilsDynMeshSelectionFactories::EvaluateFactory(
 				SelectionFactory, EvaluationContext, Context, FactorySelection))
 			{

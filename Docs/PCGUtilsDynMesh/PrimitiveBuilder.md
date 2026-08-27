@@ -144,6 +144,21 @@ already attribute-getter-free "Lean" structs there as the porting base (`FPCGExL
   instead of through a `PCGExData::FFacade`/`TargetIndex` lookup, since PCGUtilsDynMesh has no `FFacade`
   equivalent and seed data already arrives as plain `TPCGValueRange`s in `PCGCreatePrimitive.cpp`.
 
+### Editor: inline icon buttons for the fitting enums
+
+Ported from PCGExtendedToolkit's editor module alongside the runtime structs (creator's permission on file):
+
+- **Icons** - `Resources/Icons/PCGUtils_Editor_{STF_*,Fit_*,From_*,To_*}.svg`, renamed copies of
+  `PCGExtendedToolkit/Resources/Icons/PCGEx_Editor_*.svg`. Registered as `PCGUtils.ActionIcon.<Name>` brushes
+  (plus the shared `PCGUtils.ActionIcon` button style) in `FPCGUtilsEditorStyle::RegisterActionIcons`.
+- **Customization** - `PCGUtilsEditor/…/Customizations/Enums/PCGUtilsInlineEnumCustomization.{h,cpp}`, a
+  renamed + trimmed port of `PCGExInlineEnumCustomization` (radio-group path only). Renders an enum-typed
+  property as a row of icon buttons driven by each enumerator's `UMETA(ActionIcon=…)`.
+- **Registration** - `PluginCustomizations::Register/UnregisterCustomizations` registers the customization by
+  type name for `EPCGUtilsFitMode`, `EPCGUtilsScaleToFit`, `EPCGUtilsJustifyFrom`, `EPCGUtilsJustifyTo`. The
+  `ActionIcon` meta on those enums (in `PCGUtilsPrimitiveFittingDetails.h`) must stay in sync with the icon
+  keys registered in the style.
+
 ### The leaf node
 
 `Elements/Creation/PrimitiveBuilder/PCGPrimitiveBuilderFactory.h/.cpp`:

@@ -19,5 +19,6 @@ public:
 
 private:
 	static TSharedRef<FSlateStyleSet> Create();
+	static void RegisterActionIcons(const TSharedRef<FSlateStyleSet>& Style);
 	static TSharedPtr<FSlateStyleSet> StyleInstance;
 };
