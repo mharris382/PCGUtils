@@ -1,11 +1,14 @@
 #include "Elements/Topology/PCGBevelEdges.h"
 
+#include "Data/PCGDynamicMeshData.h"
+#include "Data/PCGDynamicMeshSelectionData.h"
 #include "GeometryScript/GeometryScriptSelectionTypes.h"
 #include "GeometryScript/MeshModelingFunctions.h"
 #include "GeometryScript/MeshSelectionFunctions.h"
 #include "MeshTarget/PCGUtilsMeshTargetFunctions.h"
 #include "PCGContext.h"
 #include "PCGPin.h"
+#include "UDynamicMesh.h"
 #include "Utils/PCGLogErrors.h"
 
 #define LOCTEXT_NAMESPACE "PCGBevelEdges"
@@ -13,51 +16,6 @@
 namespace
 {
 	const FName BevelMeshPin = TEXT("Mesh");
-
-	void BevelOne(FPCGContext* Context, const UPCGBevelEdgesSettings* Settings, const FPCGTaggedData& Input)
-	{
-		FPCGUtilsMeshTargetHandle Handle = FPCGUtilsMeshTargetFunctions::CreateTarget(
-			Input.Data, EPCGUtilsMeshTargetPreparation::FullMeshCopy, Context, Settings);
-		if (!Handle.IsValid())
-		{
-			return;
-		}
-
-		// ApplyMeshBevelEdgeSelection already handles the "which edges" scoping itself, so unlike Remesh/Warp this
-		// operates on the whole FullMeshCopy target directly - no Region extraction/weld is needed here.
-		FGeometryScriptMeshSelection Selection;
-		if (Handle.IsSelection())
-		{
-			Selection = Handle.GetSelection();
-		}
-		else
-		{
-			// Bevel always needs a selection, even for a bare Dynamic Mesh input - select every edge rather than
-			// forcing the graph author to add an explicit "select all" step first.
-			UGeometryScriptLibrary_MeshSelectionFunctions::CreateSelectAllMeshSelection(
-				Handle.GetTargetMesh(), Selection, EGeometryScriptMeshSelectionType::Edges);
-		}
-
-		if (Selection.GetSelectionType() != EGeometryScriptMeshSelectionType::Edges)
-		{
-			PCGLog::LogErrorOnGraph(LOCTEXT("NonEdgeSelection", "Bevel Edges requires an Edge selection."), Context);
-			return;
-		}
-
-		if (!Handle.IsEmptySelectionNoOp())
-		{
-			FGeometryScriptMeshBevelSelectionOptions BevelOptions;
-			BevelOptions.BevelDistance = Settings->BevelDistance;
-			BevelOptions.bInferMaterialID = Settings->bInferMaterialID;
-			BevelOptions.SetMaterialID = Settings->SetMaterialID;
-			BevelOptions.Subdivisions = Settings->Subdivisions;
-			BevelOptions.RoundWeight = Settings->RoundWeight;
-
-			UGeometryScriptLibrary_MeshModelingFunctions::ApplyMeshBevelEdgeSelection(Handle.GetTargetMesh(), Selection, BevelOptions);
-		}
-
-		FPCGUtilsMeshTargetFunctions::EmitOutput(Context, Input, Handle);
-	}
 }
 
 #if WITH_EDITOR
@@ -72,17 +30,9 @@ FText UPCGBevelEdgesSettings::GetNodeTooltipText() const
 }
 #endif
 
-TArray<FPCGPinProperties> UPCGBevelEdgesSettings::InputPinProperties() const
+FName UPCGBevelEdgesSettings::GetMainInputPinLabel() const
 {
-	TArray<FPCGPinProperties> Pins = Super::InputPinProperties();
-	Pins[0] = FPCGUtilsMeshTargetFunctions::MakeMeshInputPinProperties(BevelMeshPin);
-	Pins[0].SetRequiredPin();
-	return Pins;
-}
-
-TArray<FPCGPinProperties> UPCGBevelEdgesSettings::OutputPinProperties() const
-{
-	return {FPCGPinProperties(PCGPinConstants::DefaultOutputLabel, EPCGDataType::DynamicMesh, true, true)};
+	return BevelMeshPin;
 }
 
 FPCGElementPtr UPCGBevelEdgesSettings::CreateElement() const
@@ -90,18 +40,58 @@ FPCGElementPtr UPCGBevelEdgesSettings::CreateElement() const
 	return MakeShared<FPCGBevelEdgesElement>();
 }
 
-bool FPCGBevelEdgesElement::ExecuteInternal(FPCGContext* Context) const
+TSharedPtr<const FPCGUtilsDynMeshProcessOperation> UPCGBevelEdgesSettings::CreateProcessOperation(
+	FPCGContext* InContext) const
 {
-	check(Context);
+	TSharedPtr<FPCGUtilsDynMeshBevelEdgesOperation> Operation = MakeShared<FPCGUtilsDynMeshBevelEdgesOperation>();
+	Operation->BevelDistance = BevelDistance;
+	Operation->Subdivisions = Subdivisions;
+	Operation->RoundWeight = RoundWeight;
+	Operation->bInferMaterialID = bInferMaterialID;
+	Operation->SetMaterialID = SetMaterialID;
+	return Operation;
+}
 
-	const UPCGBevelEdgesSettings* Settings = Context->GetInputSettings<UPCGBevelEdgesSettings>();
-	check(Settings);
-
-	for (const FPCGTaggedData& Input : Context->InputData.GetInputsByPin(BevelMeshPin))
+bool FPCGUtilsDynMeshBevelEdgesOperation::Execute(
+	const FPCGUtilsDynMeshProcessInvocation& Invocation,
+	FPCGUtilsDynMeshProcessOutcome& OutOutcome) const
+{
+	UDynamicMesh* TargetMesh = Invocation.MeshData ? Invocation.MeshData->GetMutableDynamicMesh() : nullptr;
+	if (!TargetMesh)
 	{
-		BevelOne(Context, Settings, Input);
+		return false;
 	}
 
+	// Beveling adds geometry and renumbers elements, so nothing that referenced the old topology survives.
+	OutOutcome.SelectionOutcome = EPCGUtilsDynMeshProcessSelectionOutcome::Clear;
+
+	FGeometryScriptMeshSelection Selection;
+	if (Invocation.SelectionData)
+	{
+		Selection.SetSelection(Invocation.SelectionData->GetSelection());
+	}
+	else
+	{
+		// Bevel always needs a selection, even for a bare Dynamic Mesh input - select every edge rather than
+		// forcing the graph author to add an explicit "select all" step first.
+		UGeometryScriptLibrary_MeshSelectionFunctions::CreateSelectAllMeshSelection(
+			TargetMesh, Selection, EGeometryScriptMeshSelectionType::Edges);
+	}
+
+	if (Selection.GetNumSelected() == 0)
+	{
+		// Legitimate no-op (an upstream filter found nothing this run); leave the mesh untouched.
+		return true;
+	}
+
+	FGeometryScriptMeshBevelSelectionOptions BevelOptions;
+	BevelOptions.BevelDistance = BevelDistance;
+	BevelOptions.bInferMaterialID = bInferMaterialID;
+	BevelOptions.SetMaterialID = SetMaterialID;
+	BevelOptions.Subdivisions = Subdivisions;
+	BevelOptions.RoundWeight = RoundWeight;
+
+	UGeometryScriptLibrary_MeshModelingFunctions::ApplyMeshBevelEdgeSelection(TargetMesh, Selection, BevelOptions);
 	return true;
 }
 

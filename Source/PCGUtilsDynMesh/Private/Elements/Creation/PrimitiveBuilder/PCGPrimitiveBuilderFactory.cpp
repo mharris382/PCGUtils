@@ -2,6 +2,7 @@
 
 #include "Elements/Creation/PrimitiveBuilder/PCGPrimitiveBuilderFactory.h"
 
+#include "Data/PCGDynamicMeshData.h"
 #include "DynamicMesh/DynamicMesh3.h"
 #include "Elements/Creation/CreatePrimitive/PCGCreatePrimitiveSettingsBase.h"
 #include "PCGContext.h"
@@ -34,14 +35,15 @@ namespace
 		AddAxis(Fitting.Justification.JustifyY, Fitting.Justification.bDoJustifyY);
 		AddAxis(Fitting.Justification.JustifyZ, Fitting.Justification.bDoJustifyZ);
 
-		FVector Padding = Fitting.Padding;
+		FVector PaddingMin = Fitting.PaddingMin;
+		FVector PaddingMax = Fitting.PaddingMax;
 		FVector LocalLocation = Fitting.LocalTransform.GetLocation();
 		FQuat LocalRotation = Fitting.LocalTransform.GetRotation();
 		FVector LocalScale = Fitting.LocalTransform.GetScale3D();
-		Ar << Padding << LocalLocation << LocalRotation << LocalScale;
+		Ar << PaddingMin << PaddingMax << LocalLocation << LocalRotation << LocalScale;
 	}
 
-	class FPrimitiveBuilderLeafOperation final : public FPCGUtilsDynMeshPrimitiveOperation
+	class FPrimitiveBuilderLeafOperation final : public FPCGUtilsDynMeshBuilderOperation
 	{
 	public:
 		explicit FPrimitiveBuilderLeafOperation(const UPCGPrimitiveBuilderFactoryData* InFactory)
@@ -49,31 +51,45 @@ namespace
 		{
 		}
 
-		virtual UDynamicMesh* BuildMesh(const FTransform& SeedTransform, const FBox& SeedLocalBounds) const override
+		virtual bool Build(
+			const FPCGUtilsDynMeshBuildContext& BuildContext, FPCGUtilsDynMeshBuildResult& OutResult) const override
 		{
-			UDynamicMesh* LeafMesh = FPCGContext::NewObject_AnyThread<UDynamicMesh>(Context);
+			FPCGContext* EvaluationContext = BuildContext.Context ? BuildContext.Context : Context;
+			UDynamicMesh* LeafMesh = FPCGContext::NewObject_AnyThread<UDynamicMesh>(EvaluationContext);
 			if (!Factory || !Factory->Primitive)
 			{
-				return LeafMesh;
+				PCGLog::LogErrorOnGraph(
+					LOCTEXT("LeafNoPrimitive", "Primitive Builder has no primitive type configured."), EvaluationContext);
+				return false;
 			}
 
-			const UE::Geometry::FAxisAlignedBox3d NativeBounds = GetNativeBounds();
+			const UE::Geometry::FAxisAlignedBox3d NativeBounds = GetNativeBounds(EvaluationContext);
 			const FBox CandidateBounds(FVector(NativeBounds.Min), FVector(NativeBounds.Max));
 
 			FTransform PlacementTransform;
-			Factory->Fitting.ComputeLocalTransform(SeedTransform, SeedLocalBounds, CandidateBounds, PlacementTransform);
+			Factory->Fitting.ComputeLocalTransform(
+				BuildContext.SeedTransform, BuildContext.SeedLocalBounds, CandidateBounds, PlacementTransform);
 
 			Factory->Primitive->AppendPrimitive(LeafMesh, PlacementTransform);
-			return LeafMesh;
+
+			// The leaf owns this mesh outright; every decorator above is free to mutate it in place.
+			UPCGDynamicMeshData* MeshData = FPCGContext::NewObject_AnyThread<UPCGDynamicMeshData>(EvaluationContext);
+			MeshData->Initialize(LeafMesh, /*bCanTakeOwnership=*/true, TArray<UMaterialInterface*>{});
+			OutResult.SetMeshData(MeshData);
+
+			// Record where this primitive actually landed, so decorators above can transform in the shape's
+			// own space rather than the actor's.
+			OutResult.SetBuilderFrame(PlacementTransform);
+			return true;
 		}
 
 	private:
 		/** Generates the primitive once at identity to measure its native bounds; the config is static per node, so the reference mesh is cached across every seed this operation is evaluated for. */
-		UE::Geometry::FAxisAlignedBox3d GetNativeBounds() const
+		UE::Geometry::FAxisAlignedBox3d GetNativeBounds(FPCGContext* EvaluationContext) const
 		{
 			if (!ReferenceMesh)
 			{
-				ReferenceMesh = FPCGContext::NewObject_AnyThread<UDynamicMesh>(Context);
+				ReferenceMesh = FPCGContext::NewObject_AnyThread<UDynamicMesh>(EvaluationContext);
 				Factory->Primitive->AppendPrimitive(ReferenceMesh, FTransform::Identity);
 			}
 			if (const UE::Geometry::FDynamicMesh3* MeshPtr = ReferenceMesh->GetMeshPtr())
@@ -88,7 +104,7 @@ namespace
 	};
 }
 
-TSharedPtr<FPCGUtilsDynMeshPrimitiveOperation> UPCGPrimitiveBuilderFactoryData::CreateOperationInternal() const
+TSharedPtr<FPCGUtilsDynMeshBuilderOperation> UPCGPrimitiveBuilderFactoryData::CreateOperationInternal() const
 {
 	return MakeShared<FPrimitiveBuilderLeafOperation>(this);
 }
@@ -113,43 +129,25 @@ void UPCGPrimitiveBuilderFactoryData::AddToCrc(FArchiveCrc32& Ar, bool bFullData
 	AddFittingToCrc(Ar, Fitting);
 }
 
-UPCGPrimitiveBuilderFactoryProviderSettings::UPCGPrimitiveBuilderFactoryProviderSettings(const FObjectInitializer& ObjectInitializer)
-	: Super(ObjectInitializer)
+FName UPCGPrimitiveBuilderProviderSettingsBase::GetMainOutputPin() const
 {
-	Primitive = CreateDefaultSubobject<UPCGCreatePrimitiveBoxSettings>(TEXT("DefaultPrimitive"));
+	return PCGUtilsDynMeshBuilderFactoryConstants::OutputPin;
 }
 
-#if WITH_EDITOR
-FText UPCGPrimitiveBuilderFactoryProviderSettings::GetDefaultNodeTitle() const
+const FPCGDataTypeBaseId& UPCGPrimitiveBuilderProviderSettingsBase::GetFactoryTypeId() const
 {
-	return LOCTEXT("NodeTitle", "Primitive Builder");
+	return FPCGUtilsDynMeshBuilderFactoryDataTypeInfo::AsId();
 }
 
-FText UPCGPrimitiveBuilderFactoryProviderSettings::GetNodeTooltipText() const
-{
-	return LOCTEXT("NodeTooltip",
-		"Builds a reusable Primitive Builder: one Geometry Script primitive plus how it fits, aligns, and "
-		"offsets into each seed's bounds. Feed the output into Create Primitive's Builder pin.");
-}
-#endif
-
-FName UPCGPrimitiveBuilderFactoryProviderSettings::GetMainOutputPin() const
-{
-	return PCGUtilsDynMeshPrimitiveFactoryConstants::OutputPin;
-}
-
-const FPCGDataTypeBaseId& UPCGPrimitiveBuilderFactoryProviderSettings::GetFactoryTypeId() const
-{
-	return FPCGUtilsDynMeshPrimitiveFactoryDataTypeInfo::AsId();
-}
-
-UPCGUtilsDynMeshFactoryData* UPCGPrimitiveBuilderFactoryProviderSettings::CreateFactory(
+UPCGUtilsDynMeshFactoryData* UPCGPrimitiveBuilderProviderSettingsBase::CreateFactory(
 	FPCGContext* InContext, UPCGUtilsDynMeshFactoryData* InFactory) const
 {
-	if (!Primitive)
+	// Built from this node's own properties, so any PCG override applied to them is already reflected here.
+	UPCGCreatePrimitiveSettingsBase* PrimitiveSettings = CreatePrimitiveSettings(InContext);
+	if (!PrimitiveSettings)
 	{
 		PCGLog::LogErrorOnGraph(
-			LOCTEXT("NoPrimitiveConfigured", "Primitive Builder has no primitive type configured."), InContext);
+			LOCTEXT("NoPrimitiveSettings", "This Builder could not construct its primitive options."), InContext);
 		return nullptr;
 	}
 
@@ -161,7 +159,7 @@ UPCGUtilsDynMeshFactoryData* UPCGPrimitiveBuilderFactoryProviderSettings::Create
 		return nullptr;
 	}
 
-	Factory->Primitive = Primitive;
+	Factory->Primitive = PrimitiveSettings;
 	Factory->Fitting = Fitting;
 	return Super::CreateFactory(InContext, Factory);
 }

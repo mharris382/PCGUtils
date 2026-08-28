@@ -95,16 +95,22 @@ namespace
 	 * changes where the mesh maps onto the spline.
 	 * @return false (with a warning already logged) if the source mesh is invalid or has degenerate extent along Forward Axis - the mesh is left unchanged in that case.
 	 */
-	bool DeformMesh(FPCGUtilsMeshTargetHandle& Handle, const UPCGSplineDeformSettings* Settings,
-		const FPCGSplineStruct& Spline, const FTransform& ActorTransform, double SplineLength,
-		double EffectiveRangeStart, double EffectiveRangeEnd, EPCGUtilsSplineDeformOutOfRangeMode EffectiveOutOfRangeMode,
+	bool DeformMesh(FPCGUtilsMeshTargetHandle& Handle, const FPCGUtilsDynMeshSplineDeformOperation* Settings,
 		FPCGContext* Context)
 	{
 		using namespace UE::Geometry;
 
-		const UPCGDynamicMeshData* SourceData = Handle.GetSourceMeshData();
-		const UDynamicMesh* SourceObject = SourceData ? SourceData->GetDynamicMesh() : nullptr;
-		const FDynamicMesh3* SourceMesh = SourceObject ? SourceObject->GetMeshPtr() : nullptr;
+		const FPCGSplineStruct& Spline = Settings->Spline;
+		const FTransform& ActorTransform = Settings->ActorTransform;
+		const double SplineLength = Settings->SplineLength;
+		const double EffectiveRangeStart = Settings->EffectiveRangeStart;
+		const double EffectiveRangeEnd = Settings->EffectiveRangeEnd;
+		const EPCGUtilsSplineDeformOutOfRangeMode EffectiveOutOfRangeMode = Settings->EffectiveOutOfRangeMode;
+
+		// Bounds come from the working mesh itself, read before any vertex moves. The working mesh may *be*
+		// the caller's mesh, so there is not necessarily a separate untouched source to measure instead.
+		const UDynamicMesh* TargetObject = Handle.GetTargetMesh();
+		const FDynamicMesh3* SourceMesh = TargetObject ? TargetObject->GetMeshPtr() : nullptr;
 		if (!SourceMesh)
 		{
 			PCGLog::LogWarningOnGraph(LOCTEXT("InvalidSourceMesh", "Spline Deform skipped an input with no valid source mesh."), Context);
@@ -215,18 +221,9 @@ FText UPCGSplineDeformSettings::GetNodeTooltipText() const
 }
 #endif
 
-TArray<FPCGPinProperties> UPCGSplineDeformSettings::InputPinProperties() const
+FName UPCGSplineDeformSettings::GetMainInputPinLabel() const
 {
-	TArray<FPCGPinProperties> Pins = Super::InputPinProperties();
-	Pins[0] = FPCGUtilsMeshTargetFunctions::MakeMeshInputPinProperties(SplineDeformMeshPin);
-	Pins[0].SetRequiredPin();
-	Pins.Emplace_GetRef(SplineDeformSplinePin, EPCGDataType::Spline, true, true).SetRequiredPin();
-	return Pins;
-}
-
-TArray<FPCGPinProperties> UPCGSplineDeformSettings::OutputPinProperties() const
-{
-	return {FPCGPinProperties(PCGPinConstants::DefaultOutputLabel, EPCGDataType::DynamicMesh, true, true)};
+	return SplineDeformMeshPin;
 }
 
 FPCGElementPtr UPCGSplineDeformSettings::CreateElement() const
@@ -234,88 +231,116 @@ FPCGElementPtr UPCGSplineDeformSettings::CreateElement() const
 	return MakeShared<FPCGSplineDeformElement>();
 }
 
-bool FPCGSplineDeformElement::ExecuteInternal(FPCGContext* Context) const
+TSharedPtr<const FPCGUtilsDynMeshProcessOperation> UPCGSplineDeformSettings::CreateProcessOperation(
+	FPCGContext* InContext) const
 {
-	TRACE_CPUPROFILER_EVENT_SCOPE(FPCGSplineDeformElement::ExecuteInternal);
-	check(Context);
+	TSharedPtr<FPCGUtilsDynMeshSplineDeformOperation> Operation =
+		MakeShared<FPCGUtilsDynMeshSplineDeformOperation>();
 
-	const UPCGSplineDeformSettings* Settings = Context->GetInputSettings<UPCGSplineDeformSettings>();
-	check(Settings);
+	Operation->ForwardAxis = ForwardAxis;
+	Operation->bReverseDirection = bReverseDirection;
+	Operation->MappingMode = MappingMode;
+	Operation->Anchor = Anchor;
+	Operation->DistanceOffset = DistanceOffset;
+	Operation->bUseSplineScale = bUseSplineScale;
+	Operation->bRecomputeNormals = bRecomputeNormals;
+	Operation->SelectionBlend = SelectionBlend;
 
-	const UPCGSplineData* SplineData = PCGUtilsSplineHelpers::ResolveSingleSpline(Context, SplineDeformSplinePin);
+	// The spline comes off this node's own pin and is snapshotted by value - see the class comment.
+	const UPCGSplineData* SplineData = PCGUtilsSplineHelpers::ResolveSingleSpline(InContext, SplineDeformSplinePin);
 	if (!SplineData)
 	{
-		return true;
+		return Operation;
 	}
 
 	const FPCGSplineStruct& Spline = SplineData->SplineStruct;
 	const double SplineLength = Spline.GetSplineLength();
 	if (SplineLength < UE_DOUBLE_KINDA_SMALL_NUMBER)
 	{
-		PCGLog::LogErrorOnGraph(LOCTEXT("ZeroLengthSpline", "Spline Deform: the supplied spline has effectively zero length."), Context);
-		return true;
+		PCGLog::LogErrorOnGraph(
+			LOCTEXT("ZeroLengthSpline", "Spline Deform: the supplied spline has effectively zero length."), InContext);
+		return Operation;
 	}
 
 	double EffectiveRangeStart = 0.0;
 	double EffectiveRangeEnd = SplineLength;
-	if (Settings->RangeMode == EPCGUtilsSplineDeformRangeMode::DistanceRange)
+	if (RangeMode == EPCGUtilsSplineDeformRangeMode::DistanceRange)
 	{
-		EffectiveRangeStart = FMath::Clamp((double)Settings->StartDistance, 0.0, SplineLength);
-		EffectiveRangeEnd = FMath::Clamp((double)Settings->EndDistance, 0.0, SplineLength);
+		EffectiveRangeStart = FMath::Clamp((double)StartDistance, 0.0, SplineLength);
+		EffectiveRangeEnd = FMath::Clamp((double)EndDistance, 0.0, SplineLength);
 		if (EffectiveRangeEnd <= EffectiveRangeStart)
 		{
 			PCGLog::LogErrorOnGraph(LOCTEXT("InvalidRange",
-				"Spline Deform: Start Distance must be less than End Distance once clamped to the spline length."), Context);
-			return true;
+				"Spline Deform: Start Distance must be less than End Distance once clamped to the spline length."),
+				InContext);
+			return Operation;
 		}
 	}
 
-	EPCGUtilsSplineDeformOutOfRangeMode EffectiveOutOfRangeMode = Settings->OutOfRangeMode;
+	EPCGUtilsSplineDeformOutOfRangeMode EffectiveOutOfRangeMode = OutOfRangeMode;
 	if (EffectiveOutOfRangeMode == EPCGUtilsSplineDeformOutOfRangeMode::Wrap)
 	{
-		const bool bWrapSupported = Settings->RangeMode == EPCGUtilsSplineDeformRangeMode::EntireSpline && Spline.IsClosedLoop();
+		const bool bWrapSupported =
+			RangeMode == EPCGUtilsSplineDeformRangeMode::EntireSpline && Spline.IsClosedLoop();
 		if (!bWrapSupported)
 		{
 			PCGLog::LogWarningOnGraph(LOCTEXT("WrapUnsupported",
-				"Spline Deform: Wrap requires Range Mode = Entire Spline on a closed spline; falling back to Clamp."), Context);
+				"Spline Deform: Wrap requires Range Mode = Entire Spline on a closed spline; falling back to Clamp."),
+				InContext);
 			EffectiveOutOfRangeMode = EPCGUtilsSplineDeformOutOfRangeMode::Clamp;
 		}
 	}
 
-	const FTransform ActorTransform = PCGUtilsSplineHelpers::ResolveActorTransformForSpline(Context, SplineData, Settings->bConvertSplineToLocalSpace);
+	Operation->Spline = Spline;
+	Operation->SplineLength = SplineLength;
+	Operation->EffectiveRangeStart = EffectiveRangeStart;
+	Operation->EffectiveRangeEnd = EffectiveRangeEnd;
+	Operation->EffectiveOutOfRangeMode = EffectiveOutOfRangeMode;
+	Operation->ActorTransform = PCGUtilsSplineHelpers::ResolveActorTransformForSpline(
+		InContext, SplineData, bConvertSplineToLocalSpace);
+	Operation->bIsValid = true;
+	return Operation;
+}
 
-	for (const FPCGTaggedData& Input : Context->InputData.GetInputsByPin(SplineDeformMeshPin))
+bool FPCGUtilsDynMeshSplineDeformOperation::Execute(
+	const FPCGUtilsDynMeshProcessInvocation& Invocation,
+	FPCGUtilsDynMeshProcessOutcome& OutOutcome) const
+{
+	// Deformation moves vertices without changing connectivity.
+	OutOutcome.SelectionOutcome = EPCGUtilsDynMeshProcessSelectionOutcome::Preserve;
+
+	if (!bIsValid)
 	{
-		FPCGUtilsMeshTargetHandle Handle = FPCGUtilsMeshTargetFunctions::CreateTarget(
-			Input.Data, EPCGUtilsMeshTargetPreparation::FullMeshCopy, Context, Settings);
-		if (!Handle.IsValid())
-		{
-			continue;
-		}
-
-		if (!Handle.IsEmptySelectionNoOp())
-		{
-			DeformMesh(Handle, Settings, Spline, ActorTransform, SplineLength,
-				EffectiveRangeStart, EffectiveRangeEnd, EffectiveOutOfRangeMode, Context);
-		}
-
-		FPCGUtilsMeshTargetFunctions::RestoreVertexPositions(Handle, Settings->SelectionBlend);
-
-		if (Settings->bRecomputeNormals)
-		{
-			if (Handle.IsSelection())
-			{
-				FPCGUtilsMeshTargetFunctions::RecomputeSelectionAffectedNormals(Handle);
-			}
-			else
-			{
-				UGeometryScriptLibrary_MeshNormalsFunctions::SetPerVertexNormals(Handle.GetTargetMesh());
-			}
-		}
-
-		FPCGUtilsMeshTargetFunctions::EmitOutput(Context, Input, Handle);
+		// Spline resolution already failed and logged at capture time; pass the mesh through untouched.
+		return true;
 	}
 
+	FPCGUtilsMeshTargetHandle Handle = FPCGUtilsMeshTargetFunctions::CreateTargetInPlace(
+		Invocation, EPCGUtilsMeshTargetPreparation::FullMeshCopy);
+	if (!Handle.IsValid())
+	{
+		return false;
+	}
+
+	if (!Handle.IsEmptySelectionNoOp())
+	{
+		DeformMesh(Handle, this, Invocation.Context);
+	}
+
+	// Composites straight back into Invocation.MeshData - CreateTargetInPlace adopted it as the base mesh.
+	FPCGUtilsMeshTargetFunctions::RestoreVertexPositions(Handle, SelectionBlend);
+
+	if (bRecomputeNormals)
+	{
+		if (Handle.IsSelection())
+		{
+			FPCGUtilsMeshTargetFunctions::RecomputeSelectionAffectedNormals(Handle);
+		}
+		else
+		{
+			UGeometryScriptLibrary_MeshNormalsFunctions::SetPerVertexNormals(Handle.GetTargetMesh());
+		}
+	}
 	return true;
 }
 

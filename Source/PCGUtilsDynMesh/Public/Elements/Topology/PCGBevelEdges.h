@@ -47,14 +47,47 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Bevel", meta=(PCG_Overridable, EditCondition="!bInferMaterialID", EditConditionHides))
 	int32 SetMaterialID = 0;
 
+	/**
+	 * Beveling is defined on edges. Declaring that here lets the shared resolver convert any incoming
+	 * selection domain (and any Selector's evaluation domain) to edges, instead of erroring on a triangle
+	 * selection - which is what the module's domain-agnostic pin contract requires, and what makes a
+	 * Selector usable at all in deferred mode.
+	 */
+	virtual bool GetRequiredSelectionDomain(UE::Geometry::EGeometryElementType& OutElementType) const override
+	{
+		OutElementType = UE::Geometry::EGeometryElementType::Edge;
+		return true;
+	}
+
+	virtual TSharedPtr<const FPCGUtilsDynMeshProcessOperation> CreateProcessOperation(
+		FPCGContext* InContext) const override;
+
+	virtual bool SupportsDeferredBuilderProcessing() const override { return true; }
+
 protected:
-	virtual TArray<FPCGPinProperties> InputPinProperties() const override;
-	virtual TArray<FPCGPinProperties> OutputPinProperties() const override;
+	virtual FName GetMainInputPinLabel() const override;
 	virtual FPCGElementPtr CreateElement() const override;
 };
 
+/** Uses the process base's default executor: all the work lives in the reusable operation. */
 class PCGUTILSDYNMESH_API FPCGBevelEdgesElement : public FPCGUtilsDynMeshProcessBaseElement
 {
-protected:
-	virtual bool ExecuteInternal(FPCGContext* Context) const override;
+};
+
+/**
+ * ApplyMeshBevelEdgeSelection scopes its own effect, so no Mesh Target region extraction or weld is needed -
+ * the operation bevels the mesh it was handed, which is already private to the caller.
+ */
+class PCGUTILSDYNMESH_API FPCGUtilsDynMeshBevelEdgesOperation final : public FPCGUtilsDynMeshProcessOperation
+{
+public:
+	float BevelDistance = 1.0f;
+	int32 Subdivisions = 0;
+	float RoundWeight = 1.0f;
+	bool bInferMaterialID = false;
+	int32 SetMaterialID = 0;
+
+	virtual bool Execute(
+		const FPCGUtilsDynMeshProcessInvocation& Invocation,
+		FPCGUtilsDynMeshProcessOutcome& OutOutcome) const override;
 };

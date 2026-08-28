@@ -3,12 +3,14 @@
 #include "Data/PCGBasePointData.h"
 #include "Data/PCGDynamicMeshData.h"
 #include "DynamicMesh/DynamicMesh3.h"
+#include "DynamicMesh/DynamicMeshAttributeSet.h"
 #include "Elements/Creation/CreatePrimitive/PCGCreatePrimitiveSettingsBase.h"
 #include "Factories/PCGUtilsDynMeshFactories.h"
-#include "Factories/PCGUtilsDynMeshPrimitiveFactory.h"
+#include "Factories/PCGUtilsDynMeshBuilderFactory.h"
 #include "GameFramework/Actor.h"
 #include "GeometryScript/MeshBasicEditFunctions.h"
 #include "PCGContext.h"
+#include "PCGNode.h"
 #include "PCGPin.h"
 #include "UDynamicMesh.h"
 #include "Utils/PCGLogErrors.h"
@@ -77,6 +79,32 @@ namespace
 		return SeedTransform;
 	}
 
+	/**
+	 * Rebases a freshly-built Builder result's material IDs onto the combined output material array. A no-op
+	 * for the usual case of one Builder, or of Builders that carry no materials at all.
+	 */
+	void ShiftMaterialIDs(UDynamicMesh* Mesh, int32 Offset)
+	{
+		if (Offset == 0 || !Mesh)
+		{
+			return;
+		}
+		Mesh->EditMesh([Offset](UE::Geometry::FDynamicMesh3& EditMesh)
+		{
+			if (!EditMesh.HasAttributes() || !EditMesh.Attributes()->HasMaterialID())
+			{
+				return;
+			}
+			UE::Geometry::FDynamicMeshMaterialAttribute* MaterialIDs = EditMesh.Attributes()->GetMaterialID();
+			for (const int32 TriangleID : EditMesh.TriangleIndicesItr())
+			{
+				int32 MaterialID = 0;
+				MaterialIDs->GetValue(TriangleID, &MaterialID);
+				MaterialIDs->SetValue(TriangleID, MaterialID + Offset);
+			}
+		});
+	}
+
 	/** Resolves the target-actor transform used to convert seed points into the mesh's local space. */
 	FTransform ResolveSeedActorTransform(FPCGContext* Context, bool bConvertSeedsToLocalSpace)
 	{
@@ -114,7 +142,8 @@ FText UPCGCreatePrimitiveSettings::GetNodeTooltipText() const
 	return LOCTEXT("NodeTooltip",
 		"Generates a Geometry Script primitive as Dynamic Mesh data. In legacy mode, one copy of the inline "
 		"primitive is appended per point on the Seeds pin. In Builder mode (bUseLegacyMode disabled), the "
-		"primitive and its fitting/alignment come from a connected Primitive Builder instead.");
+		"primitives and their fitting/alignment come from Builder nodes on the Builders pin instead, "
+		"split into output Dynamic Mesh data according to Output Mode - one mesh per seed by default.");
 }
 
 EPCGChangeType UPCGCreatePrimitiveSettings::GetChangeTypeForProperty(FPropertyChangedEvent& PropertyChangedEvent) const
@@ -130,6 +159,20 @@ EPCGChangeType UPCGCreatePrimitiveSettings::GetChangeTypeForProperty(FPropertyCh
 }
 #endif
 
+void UPCGCreatePrimitiveSettings::ApplyDeprecationBeforeUpdatePins(
+	UPCGNode* InOutNode, TArray<TObjectPtr<UPCGPin>>& InputPins,
+	TArray<TObjectPtr<UPCGPin>>& OutputPins)
+{
+	Super::ApplyDeprecationBeforeUpdatePins(InOutNode, InputPins, OutputPins);
+	if (InOutNode)
+	{
+		// The Builder pin became multi-connection when compound shapes landed; keep existing edges attached.
+		InOutNode->RenameInputPin(
+			PCGUtilsDynMeshBuilderFactoryConstants::OutputPin,
+			PCGUtilsDynMeshBuilderFactoryConstants::BuildersInputPin);
+	}
+}
+
 TArray<FPCGPinProperties> UPCGCreatePrimitiveSettings::InputPinProperties() const
 {
 	TArray<FPCGPinProperties> Pins;
@@ -143,9 +186,11 @@ TArray<FPCGPinProperties> UPCGCreatePrimitiveSettings::InputPinProperties() cons
 	else
 	{
 		Pins.Emplace_GetRef(SeedsPin, EPCGDataType::Point, true, true).SetRequiredPin();
+		// Multiple connections: every Builder on this pin is evaluated for every seed and appended, which is
+		// how a compound shape (column, frame, window) is expressed.
 		Pins.Emplace_GetRef(
-			PCGUtilsDynMeshPrimitiveFactoryConstants::OutputPin,
-			FPCGUtilsDynMeshPrimitiveFactoryDataTypeInfo::AsId(), false, false).SetRequiredPin();
+			PCGUtilsDynMeshBuilderFactoryConstants::BuildersInputPin,
+			FPCGUtilsDynMeshBuilderFactoryDataTypeInfo::AsId(), true, true).SetRequiredPin();
 	}
 	return Pins;
 }
@@ -258,29 +303,75 @@ bool FPCGCreatePrimitiveElement::ExecuteLegacy(FPCGContext* Context, const UPCGC
 
 bool FPCGCreatePrimitiveElement::ExecuteBuilder(FPCGContext* Context, const UPCGCreatePrimitiveSettings* Settings) const
 {
-	TArray<TObjectPtr<const UPCGUtilsDynMeshPrimitiveFactoryData>> Factories;
+	TArray<TObjectPtr<const UPCGUtilsDynMeshBuilderFactoryData>> Factories;
 	if (!PCGUtilsDynMeshFactories::GetInputFactories(
-		Context, PCGUtilsDynMeshPrimitiveFactoryConstants::OutputPin, Factories,
-		PCGUtilsDynMeshFactories::GetPrimitiveBuilderFactoryTypes(), /*bRequired=*/true))
+		Context, PCGUtilsDynMeshBuilderFactoryConstants::BuildersInputPin, Factories,
+		PCGUtilsDynMeshFactories::GetBuilderFactoryTypes(), /*bRequired=*/true))
 	{
 		return true;
 	}
 
-	if (Factories.Num() != 1)
+	// This is the materialization point: every connected Builder expression is evaluated here, once per seed.
+	// Nothing upstream of this node has touched geometry.
+	TArray<TSharedPtr<FPCGUtilsDynMeshBuilderOperation>> Operations;
+	Operations.Reserve(Factories.Num());
+	for (const UPCGUtilsDynMeshBuilderFactoryData* Factory : Factories)
 	{
-		PCGLog::LogErrorOnGraph(LOCTEXT("RequiresOneBuilder", "Create Primitive accepts exactly one Builder input."), Context);
-		return true;
+		TSharedPtr<FPCGUtilsDynMeshBuilderOperation> Operation = Factory->CreateOperation(Context);
+		if (!Operation)
+		{
+			PCGLog::LogErrorOnGraph(LOCTEXT("BuilderOperationFailed",
+				"Create Primitive could not create an operation from one of its Builder inputs."), Context);
+			return true;
+		}
+		Operations.Add(MoveTemp(Operation));
 	}
 
-	const TSharedPtr<FPCGUtilsDynMeshPrimitiveOperation> Operation = Factories[0]->CreateOperation(Context);
-	if (!Operation)
-	{
-		PCGLog::LogErrorOnGraph(LOCTEXT("BuilderOperationFailed", "Create Primitive could not create an operation from its Builder input."), Context);
-		return true;
-	}
+	const EPCGUtilsDynMeshBuilderOutputMode OutputMode = Settings->OutputMode;
+	const bool bSplitBySeed =
+		OutputMode == EPCGUtilsDynMeshBuilderOutputMode::PerSeed ||
+		OutputMode == EPCGUtilsDynMeshBuilderOutputMode::PerBuilderPerSeed;
+	const bool bSplitByBuilder =
+		OutputMode == EPCGUtilsDynMeshBuilderOutputMode::PerBuilder ||
+		OutputMode == EPCGUtilsDynMeshBuilderOutputMode::PerBuilderPerSeed;
 
 	const FTransform ActorTransform = ResolveSeedActorTransform(Context, Settings->bConvertSeedsToLocalSpace);
-	UDynamicMesh* OutputMesh = FPCGContext::NewObject_AnyThread<UDynamicMesh>(Context);
+
+	auto EmitMesh = [Context](UDynamicMesh* Mesh, const TArray<UMaterialInterface*>& Materials,
+		const FPCGTaggedData* SourceSeedInput)
+	{
+		UPCGDynamicMeshData* OutputData = FPCGContext::NewObject_AnyThread<UPCGDynamicMeshData>(Context);
+		OutputData->Initialize(Mesh, /*bCanTakeOwnership=*/true, Materials);
+		FPCGTaggedData& Output = SourceSeedInput
+			? Context->OutputData.TaggedData.Emplace_GetRef(*SourceSeedInput)
+			: Context->OutputData.TaggedData.Emplace_GetRef();
+		Output.Data = OutputData;
+		Output.Pin = PCGPinConstants::DefaultOutputLabel;
+	};
+
+	// When several Builders share one output mesh, their material IDs must be rebased onto a concatenated
+	// array. When the output is split per Builder that never arises, so each output just carries its own
+	// Builder's materials verbatim.
+	TArray<UMaterialInterface*> ComposedMaterials;
+	TArray<int32> ComposedMaterialOffsets;
+	ComposedMaterialOffsets.Init(0, Operations.Num());
+	TArray<TArray<UMaterialInterface*>> PerBuilderMaterials;
+	PerBuilderMaterials.SetNum(Operations.Num());
+	bool bMaterialLayoutResolved = false;
+
+	// Accumulators for the modes that span seeds.
+	UDynamicMesh* SingleTarget = (OutputMode == EPCGUtilsDynMeshBuilderOutputMode::Single)
+		? FPCGContext::NewObject_AnyThread<UDynamicMesh>(Context) : nullptr;
+	TArray<UDynamicMesh*> PerBuilderTargets;
+	if (OutputMode == EPCGUtilsDynMeshBuilderOutputMode::PerBuilder)
+	{
+		PerBuilderTargets.Reserve(Operations.Num());
+		for (int32 Index = 0; Index < Operations.Num(); ++Index)
+		{
+			PerBuilderTargets.Add(FPCGContext::NewObject_AnyThread<UDynamicMesh>(Context));
+		}
+	}
+
 	int32 SeedCount = 0;
 
 	for (const FPCGTaggedData& SeedInput : Context->InputData.GetInputsByPin(SeedsPin))
@@ -288,7 +379,8 @@ bool FPCGCreatePrimitiveElement::ExecuteBuilder(FPCGContext* Context, const UPCG
 		const UPCGBasePointData* SeedPointData = Cast<const UPCGBasePointData>(SeedInput.Data);
 		if (!SeedPointData)
 		{
-			PCGLog::LogWarningOnGraph(LOCTEXT("InvalidSeedInput", "Create Primitive skipped a Seeds input that was not Point Data."), Context);
+			PCGLog::LogWarningOnGraph(LOCTEXT("InvalidSeedInput",
+				"Create Primitive skipped a Seeds input that was not Point Data."), Context);
 			continue;
 		}
 
@@ -299,30 +391,82 @@ bool FPCGCreatePrimitiveElement::ExecuteBuilder(FPCGContext* Context, const UPCG
 
 		for (int32 PointIndex = 0; PointIndex < NumPoints; ++PointIndex)
 		{
-			const FTransform SeedTransform = Settings->bConvertSeedsToLocalSpace
+			FPCGUtilsDynMeshBuildContext BuildContext;
+			BuildContext.Context = Context;
+			BuildContext.SeedTransform = Settings->bConvertSeedsToLocalSpace
 				? TransformRange[PointIndex].GetRelativeTransform(ActorTransform)
 				: TransformRange[PointIndex];
-			const FBox SeedLocalBounds(BoundsMinRange[PointIndex], BoundsMaxRange[PointIndex]);
+			BuildContext.SeedLocalBounds = FBox(BoundsMinRange[PointIndex], BoundsMaxRange[PointIndex]);
+			BuildContext.SeedData = SeedPointData;
+			BuildContext.SeedIndex = PointIndex;
 
-			if (UDynamicMesh* SeedMesh = Operation->BuildMesh(SeedTransform, SeedLocalBounds))
-			{
-				UGeometryScriptLibrary_MeshBasicEditFunctions::AppendMeshTransformed(
-					OutputMesh, SeedMesh, TArray<FTransform>{FTransform::Identity}, FTransform::Identity);
-			}
 			++SeedCount;
+
+			UDynamicMesh* SeedTarget = (OutputMode == EPCGUtilsDynMeshBuilderOutputMode::PerSeed)
+				? FPCGContext::NewObject_AnyThread<UDynamicMesh>(Context) : nullptr;
+
+			for (int32 OperationIndex = 0; OperationIndex < Operations.Num(); ++OperationIndex)
+			{
+				FPCGUtilsDynMeshBuildResult BuildResult;
+				if (!Operations[OperationIndex]->Build(BuildContext, BuildResult) || !BuildResult.IsValid())
+				{
+					continue;
+				}
+
+				if (!bMaterialLayoutResolved)
+				{
+					ComposedMaterialOffsets[OperationIndex] = ComposedMaterials.Num();
+					for (UMaterialInterface* Material : BuildResult.MeshData->GetMaterials())
+					{
+						ComposedMaterials.Add(Material);
+						PerBuilderMaterials[OperationIndex].Add(Material);
+					}
+				}
+
+				UDynamicMesh* SeedMesh = BuildResult.MeshData->GetMutableDynamicMesh();
+
+				if (OutputMode == EPCGUtilsDynMeshBuilderOutputMode::PerBuilderPerSeed)
+				{
+					// The Builder's result already *is* this output; no append or ID rebasing needed.
+					EmitMesh(SeedMesh, PerBuilderMaterials[OperationIndex], &SeedInput);
+					continue;
+				}
+
+				UDynamicMesh* Target = SeedTarget ? SeedTarget
+					: (SingleTarget ? SingleTarget : PerBuilderTargets[OperationIndex]);
+
+				if (!bSplitByBuilder)
+				{
+					ShiftMaterialIDs(SeedMesh, ComposedMaterialOffsets[OperationIndex]);
+				}
+				UGeometryScriptLibrary_MeshBasicEditFunctions::AppendMeshTransformed(
+					Target, SeedMesh, TArray<FTransform>{FTransform::Identity}, FTransform::Identity);
+			}
+
+			bMaterialLayoutResolved = true;
+
+			if (SeedTarget)
+			{
+				EmitMesh(SeedTarget, ComposedMaterials, &SeedInput);
+			}
 		}
 	}
 
 	if (SeedCount == 0)
 	{
-		PCGLog::LogWarningOnGraph(LOCTEXT("NoSeeds", "Create Primitive (Builder mode) received no seed points."), Context);
+		PCGLog::LogWarningOnGraph(LOCTEXT("NoSeeds",
+			"Create Primitive (Builder mode) received no seed points."), Context);
 	}
 
-	UPCGDynamicMeshData* OutputData = FPCGContext::NewObject_AnyThread<UPCGDynamicMeshData>(Context);
-	OutputData->Initialize(OutputMesh, /*bCanTakeOwnership=*/true, TArray<UMaterialInterface*>{});
-	FPCGTaggedData& Output = Context->OutputData.TaggedData.Emplace_GetRef();
-	Output.Data = OutputData;
-	Output.Pin = PCGPinConstants::DefaultOutputLabel;
+	if (SingleTarget)
+	{
+		EmitMesh(SingleTarget, ComposedMaterials, /*SourceSeedInput=*/nullptr);
+	}
+	for (int32 Index = 0; Index < PerBuilderTargets.Num(); ++Index)
+	{
+		// Spans every seed, so no single seed input's tags apply.
+		EmitMesh(PerBuilderTargets[Index], PerBuilderMaterials[Index], /*SourceSeedInput=*/nullptr);
+	}
 
 	return true;
 }

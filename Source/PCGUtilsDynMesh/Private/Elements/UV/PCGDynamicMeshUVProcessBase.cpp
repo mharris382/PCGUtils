@@ -19,21 +19,24 @@ bool UPCGDynamicMeshUVProcessBaseSettings::GetRequiredSelectionDomain(
 	return true;
 }
 
-bool FPCGDynamicMeshUVProcessBaseElement::ProcessMesh(
-	UPCGDynamicMeshData* MeshData,
-	const UPCGDynamicMeshSelectionData* SelectionData,
-	FPCGContext* Context) const
+bool FPCGUtilsDynMeshUVProcessOperation::Execute(
+	const FPCGUtilsDynMeshProcessInvocation& Invocation,
+	FPCGUtilsDynMeshProcessOutcome& OutOutcome) const
 {
-	check(MeshData && Context);
-	const UPCGDynamicMeshUVProcessBaseSettings* Settings =
-		Context->GetInputSettings<UPCGDynamicMeshUVProcessBaseSettings>();
-	check(Settings);
+	UPCGDynamicMeshData* MeshData = Invocation.MeshData;
+	if (!MeshData)
+	{
+		return false;
+	}
 
-	if (Settings->UVLayer < 0)
+	// UVs are an overlay: vertices and triangles are untouched, so a selection remains valid.
+	OutOutcome.SelectionOutcome = EPCGUtilsDynMeshProcessSelectionOutcome::Preserve;
+
+	if (UVLayer < 0)
 	{
 		PCGLog::LogErrorOnGraph(
 			LOCTEXT("NegativeUVLayer", "Dynamic Mesh UV operation requires a non-negative UV Layer index; the mesh was left unchanged."),
-			Context);
+			Invocation.Context);
 		return true;
 	}
 
@@ -45,10 +48,10 @@ bool FPCGDynamicMeshUVProcessBaseElement::ProcessMesh(
 	}
 
 	TArray<int32> TriangleIDs;
-	if (SelectionData)
+	if (Invocation.SelectionData)
 	{
 		FGeometryScriptMeshSelection Selection;
-		Selection.SetSelection(SelectionData->GetSelection());
+		Selection.SetSelection(Invocation.SelectionData->GetSelection());
 		Selection.ConvertToMeshIndexArray(*Mesh, TriangleIDs, EGeometryScriptIndexType::Triangle);
 	}
 	else
@@ -78,10 +81,10 @@ bool FPCGDynamicMeshUVProcessBaseElement::ProcessMesh(
 	{
 		PCGLog::LogWarningOnGraph(FText::Format(
 			LOCTEXT("InvalidTriangles", "Dynamic Mesh UV operation ignored {0} invalid or stale selected triangles."),
-			FText::AsNumber(InvalidTriangleCount)), Context);
+			FText::AsNumber(InvalidTriangleCount)), Invocation.Context);
 	}
 
-	if (TriangleIDs.IsEmpty() || !ShouldProcessUVs(MeshData, SelectionData, TriangleIDs, Context))
+	if (TriangleIDs.IsEmpty() || !ShouldProcessUVs(Invocation, TriangleIDs))
 	{
 		return true;
 	}
@@ -93,21 +96,21 @@ bool FPCGDynamicMeshUVProcessBaseElement::ProcessMesh(
 
 	UE::Geometry::FDynamicMeshAttributeSet* Attributes = Mesh->Attributes();
 	check(Attributes);
-	if (Attributes->NumUVLayers() <= Settings->UVLayer)
+	if (Attributes->NumUVLayers() <= UVLayer)
 	{
-		Attributes->SetNumUVLayers(Settings->UVLayer + 1);
+		Attributes->SetNumUVLayers(UVLayer + 1);
 	}
 
-	UE::Geometry::FDynamicMeshUVOverlay* UVOverlay = Attributes->GetUVLayer(Settings->UVLayer);
+	UE::Geometry::FDynamicMeshUVOverlay* UVOverlay = Attributes->GetUVLayer(UVLayer);
 	if (!UVOverlay)
 	{
 		PCGLog::LogErrorOnGraph(
 			LOCTEXT("MissingUVOverlay", "Dynamic Mesh UV operation could not resolve the requested UV overlay."),
-			Context);
+			Invocation.Context);
 		return false;
 	}
 
-	return ProcessUVs(MeshData, *Mesh, *UVOverlay, TriangleIDs, Context);
+	return ProcessUVs(Invocation, *Mesh, *UVOverlay, TriangleIDs);
 }
 
 #undef LOCTEXT_NAMESPACE

@@ -123,201 +123,227 @@ FText UPCGSmoothDynamicMeshSettings::GetNodeTooltipText() const
 }
 #endif
 
-TArray<FPCGPinProperties> UPCGSmoothDynamicMeshSettings::InputPinProperties() const
-{
-	TArray<FPCGPinProperties> Pins = Super::InputPinProperties();
-	Pins[0] = FPCGUtilsMeshTargetFunctions::MakeMeshInputPinProperties(PCGPinConstants::DefaultInputLabel);
-	Pins[0].SetRequiredPin();
-	return Pins;
-}
-
-TArray<FPCGPinProperties> UPCGSmoothDynamicMeshSettings::OutputPinProperties() const
-{
-	return {FPCGPinProperties(PCGPinConstants::DefaultOutputLabel, EPCGDataType::DynamicMesh, true, true)};
-}
-
 FPCGElementPtr UPCGSmoothDynamicMeshSettings::CreateElement() const
 {
 	return MakeShared<FPCGSmoothDynamicMeshElement>();
 }
 
-bool FPCGSmoothDynamicMeshElement::ExecuteInternal(FPCGContext* Context) const
+TSharedPtr<const FPCGUtilsDynMeshProcessOperation> UPCGSmoothDynamicMeshSettings::CreateProcessOperation(
+	FPCGContext* InContext) const
 {
-	TRACE_CPUPROFILER_EVENT_SCOPE(FPCGSmoothDynamicMeshElement::ExecuteInternal);
-	check(Context);
-
-	const UPCGSmoothDynamicMeshSettings* Settings = Context->GetInputSettings<UPCGSmoothDynamicMeshSettings>();
-	check(Settings);
-
-	if (Settings->bPreserveUVSeams)
+	if (bPreserveUVSeams)
 	{
 		PCGLog::LogWarningOnGraph(LOCTEXT("UVSeamsNotSupported",
-			"Smooth Dynamic Mesh: Preserve UV Seams is reserved for future use and currently has no effect."), Context);
+			"Smooth Dynamic Mesh: Preserve UV Seams is reserved for future use and currently has no effect."),
+			InContext);
 	}
 
+	TSharedPtr<FPCGUtilsDynMeshSmoothOperation> Operation = MakeShared<FPCGUtilsDynMeshSmoothOperation>();
+	Operation->SmoothingMethod = SmoothingMethod;
 	// Hard safety cap independent of the UI slider range, since Iterations may arrive via a graph override.
-	const int32 Iterations = FMath::Clamp(Settings->Iterations, 0, 50);
+	Operation->Iterations = FMath::Clamp(Iterations, 0, 50);
+	Operation->Strength = Strength;
+	Operation->bPreserveBoundaries = bPreserveBoundaries;
+	Operation->BoundarySmoothingWeight = BoundarySmoothingWeight;
+	Operation->bPreserveSharpEdges = bPreserveSharpEdges;
+	Operation->SharpEdgeAngleThresholdDegrees = SharpEdgeAngleThresholdDegrees;
+	Operation->bUseSmoothWeightAttribute = bUseSmoothWeightAttribute;
+	Operation->SmoothWeightAttributeName = SmoothWeightAttributeName;
+	Operation->bRecomputeNormalsAfterSmoothing = bRecomputeNormalsAfterSmoothing;
+	Operation->SelectionBlend = SelectionBlend;
+	Operation->TaubinLambda = TaubinLambda;
+	Operation->TaubinMu = TaubinMu;
+	Operation->bLogMeshStats = bLogMeshStats;
+	return Operation;
+}
 
-	for (const FPCGTaggedData& Input : Context->InputData.GetInputsByPin(PCGPinConstants::DefaultInputLabel))
+bool FPCGUtilsDynMeshSmoothOperation::Execute(
+	const FPCGUtilsDynMeshProcessInvocation& Invocation,
+	FPCGUtilsDynMeshProcessOutcome& OutOutcome) const
+{
+	using namespace UE::Geometry;
+
+	// Smoothing moves vertices without touching connectivity, so an active selection stays valid.
+	OutOutcome.SelectionOutcome = EPCGUtilsDynMeshProcessSelectionOutcome::Preserve;
+
+	FPCGUtilsMeshTargetHandle Handle = FPCGUtilsMeshTargetFunctions::CreateTargetInPlace(
+		Invocation, EPCGUtilsMeshTargetPreparation::FullMeshCopy);
+	if (!Handle.IsValid())
 	{
-		FPCGUtilsMeshTargetHandle Handle = FPCGUtilsMeshTargetFunctions::CreateTarget(
-			Input.Data, EPCGUtilsMeshTargetPreparation::FullMeshCopy, Context, Settings);
-		if (!Handle.IsValid())
-		{
-			continue;
-		}
-		const UPCGDynamicMeshData* InputData = Handle.GetSourceMeshData();
-		const UDynamicMesh* SourceObject = InputData ? InputData->GetDynamicMesh() : nullptr;
-		const UE::Geometry::FDynamicMesh3* SourceMesh = SourceObject ? SourceObject->GetMeshPtr() : nullptr;
-		if (!SourceMesh)
-		{
-			PCGLog::LogWarningOnGraph(LOCTEXT("InvalidMesh", "Smooth Dynamic Mesh skipped an invalid Dynamic Mesh input."), Context);
-			continue;
-		}
-		if (SourceMesh->TriangleCount() == 0 || SourceMesh->VertexCount() == 0)
-		{
-			PCGLog::LogWarningOnGraph(LOCTEXT("EmptyMesh",
-				"Smooth Dynamic Mesh skipped an empty Dynamic Mesh input (no vertices/triangles)."), Context);
-			continue;
-		}
-
-		const int32 InputVertexCount = SourceMesh->VertexCount();
-		const int32 InputTriangleCount = SourceMesh->TriangleCount();
-		const int32 MaxVertexID = SourceMesh->MaxVertexID();
-
-		// Per-vertex blend factor between the original position (0) and the fully-smoothed position (1),
-		// combining boundary preservation, sharp-edge locking, and the optional smooth-weight attribute.
-		// Using a blend rather than excluding vertices from the smoothing pass itself means locked/dampened
-		// vertices end up exactly at their original position, regardless of which method produced the pass.
-		TArray<float> BlendWeight;
-		BlendWeight.Init(1.0f, MaxVertexID);
-
-		if (Settings->bPreserveBoundaries)
-		{
-			const float BoundaryWeight = FMath::Clamp(Settings->BoundarySmoothingWeight, 0.0f, 1.0f);
-			for (const int32 VertexID : SourceMesh->VertexIndicesItr())
-			{
-				// A DynamicMesh boundary edge is any edge with only one adjacent triangle, so this covers
-				// both the outer silhouette and any authored holes/openings without distinguishing them.
-				if (SourceMesh->IsBoundaryVertex(VertexID))
-				{
-					BlendWeight[VertexID] *= BoundaryWeight;
-				}
-			}
-		}
-
-		if (Settings->bPreserveSharpEdges)
-		{
-			TArray<bool> IsSharpVertex;
-			IsSharpVertex.Init(false, MaxVertexID);
-			MarkSharpEdgeVertices(*SourceMesh, Settings->SharpEdgeAngleThresholdDegrees, IsSharpVertex);
-			for (const int32 VertexID : SourceMesh->VertexIndicesItr())
-			{
-				if (IsSharpVertex[VertexID])
-				{
-					BlendWeight[VertexID] = 0.0f;
-				}
-			}
-		}
-
-		if (Settings->bUseSmoothWeightAttribute)
-		{
-			if (const FDynamicMeshWeightAttribute* WeightLayer = FindWeightMapLayer(*SourceMesh, Settings->SmoothWeightAttributeName))
-			{
-				for (const int32 VertexID : SourceMesh->VertexIndicesItr())
-				{
-					float AttributeValue = 1.0f;
-					WeightLayer->GetValue(VertexID, &AttributeValue);
-					BlendWeight[VertexID] *= FMath::Clamp(AttributeValue, 0.0f, 1.0f);
-				}
-			}
-			else
-			{
-				// Safer default: fall back to behaving as if the attribute toggle were off, rather than
-				// silently locking the whole mesh, so a missing/misnamed attribute cannot be mistaken for a
-				// no-op node.
-				PCGLog::LogWarningOnGraph(FText::Format(
-					LOCTEXT("MissingWeightAttribute",
-						"Smooth Dynamic Mesh could not find vertex weight map '{0}'; smoothing proceeded as if Use Smooth Weight Attribute were disabled."),
-					FText::FromName(Settings->SmoothWeightAttributeName)), Context);
-			}
-		}
-
-		UDynamicMesh* WorkingMesh = Handle.GetTargetMesh();
-
-		if (Iterations > 0)
-		{
-			switch (Settings->SmoothingMethod)
-			{
-			case EPCGUtilsDynamicMeshSmoothingMethod::UniformLaplacian:
-			{
-				FGeometryScriptIterativeMeshSmoothingOptions SmoothingOptions;
-				SmoothingOptions.NumIterations = Iterations;
-				SmoothingOptions.Alpha = FMath::Clamp(Settings->Strength, 0.0f, 1.0f);
-				UGeometryScriptLibrary_MeshDeformFunctions::ApplyIterativeSmoothingToMesh(
-					WorkingMesh, FGeometryScriptMeshSelection(), SmoothingOptions);
-				break;
-			}
-			case EPCGUtilsDynamicMeshSmoothingMethod::TaubinNoShrink:
-			{
-				const double Lambda = Settings->TaubinLambda;
-				const double Mu = Settings->TaubinMu;
-				WorkingMesh->EditMesh([Iterations, Lambda, Mu](UE::Geometry::FDynamicMesh3& EditMesh)
-				{
-					ApplyTaubinSmoothing(EditMesh, Iterations, Lambda, Mu);
-				});
-				break;
-			}
-			default:
-				PCGLog::LogWarningOnGraph(LOCTEXT("UnsupportedMethod",
-					"Smooth Dynamic Mesh: unsupported smoothing method, mesh passed through unsmoothed."), Context);
-				break;
-			}
-		}
-
-		WorkingMesh->EditMesh([SourceMesh, &BlendWeight](UE::Geometry::FDynamicMesh3& EditMesh)
-		{
-			for (const int32 VertexID : EditMesh.VertexIndicesItr())
-			{
-				const float Weight = BlendWeight[VertexID];
-				if (Weight >= 1.0f)
-				{
-					continue;
-				}
-				const FVector3d OriginalPos = SourceMesh->GetVertex(VertexID);
-				const FVector3d SmoothedPos = EditMesh.GetVertex(VertexID);
-				EditMesh.SetVertex(VertexID, UE::Geometry::Lerp(OriginalPos, SmoothedPos, (double)Weight));
-			}
-		});
-
-		if (Settings->bRecomputeNormalsAfterSmoothing)
-		{
-			// Smooth (area+angle weighted) per-vertex normals: shading cleanup only, does not itself remove
-			// geometric ridges - that is the job of the smoothing pass above.
-			UGeometryScriptLibrary_MeshNormalsFunctions::SetPerVertexNormals(WorkingMesh);
-		}
-
-		if (Settings->bLogMeshStats)
-		{
-			const UE::Geometry::FDynamicMesh3* ResultMesh = WorkingMesh->GetMeshPtr();
-			UE_LOG(LogPCGUtilsDynMesh, Log,
-				TEXT("Smooth Dynamic Mesh: Method=%s Iterations=%d Strength=%.3f PreserveBoundaries=%s BoundaryWeight=%.3f | InVerts=%d InTris=%d OutVerts=%d OutTris=%d"),
-				*UEnum::GetValueAsString(Settings->SmoothingMethod),
-				Iterations, Settings->Strength,
-				Settings->bPreserveBoundaries ? TEXT("true") : TEXT("false"), Settings->BoundarySmoothingWeight,
-				InputVertexCount, InputTriangleCount,
-				ResultMesh ? ResultMesh->VertexCount() : 0,
-				ResultMesh ? ResultMesh->TriangleCount() : 0);
-		}
-
-		FPCGUtilsMeshTargetFunctions::RestoreVertexPositions(Handle, Settings->SelectionBlend);
-		if (Settings->bRecomputeNormalsAfterSmoothing)
-		{
-			FPCGUtilsMeshTargetFunctions::RecomputeSelectionAffectedNormals(Handle);
-		}
-		FPCGUtilsMeshTargetFunctions::EmitOutput(Context, Input, Handle);
+		return false;
+	}
+	if (Handle.IsEmptySelectionNoOp())
+	{
+		// Nothing was selected this run. Returning here matters: the FullMeshCopy no-op path hands back the
+		// base mesh as the target, so smoothing it would silently smooth the *whole* mesh.
+		return true;
 	}
 
+	UDynamicMesh* WorkingMesh = Handle.GetTargetMesh();
+	const FDynamicMesh3* PreSmoothMesh = WorkingMesh ? WorkingMesh->GetMeshPtr() : nullptr;
+	if (!PreSmoothMesh)
+	{
+		PCGLog::LogWarningOnGraph(
+			LOCTEXT("InvalidMesh", "Smooth Dynamic Mesh skipped an invalid Dynamic Mesh input."), Invocation.Context);
+		return false;
+	}
+	if (PreSmoothMesh->TriangleCount() == 0 || PreSmoothMesh->VertexCount() == 0)
+	{
+		PCGLog::LogWarningOnGraph(LOCTEXT("EmptyMesh",
+			"Smooth Dynamic Mesh skipped an empty Dynamic Mesh input (no vertices/triangles)."), Invocation.Context);
+		return false;
+	}
+
+	const int32 InputVertexCount = PreSmoothMesh->VertexCount();
+	const int32 InputTriangleCount = PreSmoothMesh->TriangleCount();
+	const int32 MaxVertexID = PreSmoothMesh->MaxVertexID();
+
+	// Per-vertex blend factor between the original position (0) and the fully-smoothed position (1),
+	// combining boundary preservation, sharp-edge locking, and the optional smooth-weight attribute.
+	// Using a blend rather than excluding vertices from the smoothing pass itself means locked/dampened
+	// vertices end up exactly at their original position, regardless of which method produced the pass.
+	TArray<float> BlendWeight;
+	BlendWeight.Init(1.0f, MaxVertexID);
+
+	// Snapshot the pre-smoothing positions rather than reading them back from a separate source mesh: the
+	// working mesh may *be* the caller's mesh (whole-mesh input, or any deferred Builder evaluation), in
+	// which case there is no untouched copy left to compare against once smoothing has run.
+	TArray<FVector3d> OriginalPositions;
+	OriginalPositions.SetNumUninitialized(MaxVertexID);
+	for (const int32 VertexID : PreSmoothMesh->VertexIndicesItr())
+	{
+		OriginalPositions[VertexID] = PreSmoothMesh->GetVertex(VertexID);
+	}
+
+	if (bPreserveBoundaries)
+	{
+		const float BoundaryWeight = FMath::Clamp(BoundarySmoothingWeight, 0.0f, 1.0f);
+		for (const int32 VertexID : PreSmoothMesh->VertexIndicesItr())
+		{
+			// A DynamicMesh boundary edge is any edge with only one adjacent triangle, so this covers
+			// both the outer silhouette and any authored holes/openings without distinguishing them.
+			if (PreSmoothMesh->IsBoundaryVertex(VertexID))
+			{
+				BlendWeight[VertexID] *= BoundaryWeight;
+			}
+		}
+	}
+
+	if (bPreserveSharpEdges)
+	{
+		TArray<bool> IsSharpVertex;
+		IsSharpVertex.Init(false, MaxVertexID);
+		MarkSharpEdgeVertices(*PreSmoothMesh, SharpEdgeAngleThresholdDegrees, IsSharpVertex);
+		for (const int32 VertexID : PreSmoothMesh->VertexIndicesItr())
+		{
+			if (IsSharpVertex[VertexID])
+			{
+				BlendWeight[VertexID] = 0.0f;
+			}
+		}
+	}
+
+	if (bUseSmoothWeightAttribute)
+	{
+		if (const FDynamicMeshWeightAttribute* WeightLayer =
+			FindWeightMapLayer(*PreSmoothMesh, SmoothWeightAttributeName))
+		{
+			for (const int32 VertexID : PreSmoothMesh->VertexIndicesItr())
+			{
+				float AttributeValue = 1.0f;
+				WeightLayer->GetValue(VertexID, &AttributeValue);
+				BlendWeight[VertexID] *= FMath::Clamp(AttributeValue, 0.0f, 1.0f);
+			}
+		}
+		else
+		{
+			// Safer default: fall back to behaving as if the attribute toggle were off, rather than
+			// silently locking the whole mesh, so a missing/misnamed attribute cannot be mistaken for a
+			// no-op node.
+			PCGLog::LogWarningOnGraph(FText::Format(
+				LOCTEXT("MissingWeightAttribute",
+					"Smooth Dynamic Mesh could not find vertex weight map '{0}'; smoothing proceeded as if Use Smooth Weight Attribute were disabled."),
+				FText::FromName(SmoothWeightAttributeName)), Invocation.Context);
+		}
+	}
+
+	if (Iterations > 0)
+	{
+		switch (SmoothingMethod)
+		{
+		case EPCGUtilsDynamicMeshSmoothingMethod::UniformLaplacian:
+		{
+			FGeometryScriptIterativeMeshSmoothingOptions SmoothingOptions;
+			SmoothingOptions.NumIterations = Iterations;
+			SmoothingOptions.Alpha = FMath::Clamp(Strength, 0.0f, 1.0f);
+			UGeometryScriptLibrary_MeshDeformFunctions::ApplyIterativeSmoothingToMesh(
+				WorkingMesh, FGeometryScriptMeshSelection(), SmoothingOptions);
+			break;
+		}
+		case EPCGUtilsDynamicMeshSmoothingMethod::TaubinNoShrink:
+		{
+			const double Lambda = TaubinLambda;
+			const double Mu = TaubinMu;
+			const int32 LocalIterations = Iterations;
+			WorkingMesh->EditMesh([LocalIterations, Lambda, Mu](FDynamicMesh3& EditMesh)
+			{
+				ApplyTaubinSmoothing(EditMesh, LocalIterations, Lambda, Mu);
+			});
+			break;
+		}
+		default:
+			PCGLog::LogWarningOnGraph(LOCTEXT("UnsupportedMethod",
+				"Smooth Dynamic Mesh: unsupported smoothing method, mesh passed through unsmoothed."),
+				Invocation.Context);
+			break;
+		}
+	}
+
+	WorkingMesh->EditMesh([&OriginalPositions, &BlendWeight](FDynamicMesh3& EditMesh)
+	{
+		for (const int32 VertexID : EditMesh.VertexIndicesItr())
+		{
+			if (!BlendWeight.IsValidIndex(VertexID))
+			{
+				continue;
+			}
+			const float Weight = BlendWeight[VertexID];
+			if (Weight >= 1.0f)
+			{
+				continue;
+			}
+			const FVector3d SmoothedPos = EditMesh.GetVertex(VertexID);
+			EditMesh.SetVertex(VertexID, Lerp(OriginalPositions[VertexID], SmoothedPos, (double)Weight));
+		}
+	});
+
+	if (bRecomputeNormalsAfterSmoothing)
+	{
+		// Smooth (area+angle weighted) per-vertex normals: shading cleanup only, does not itself remove
+		// geometric ridges - that is the job of the smoothing pass above.
+		UGeometryScriptLibrary_MeshNormalsFunctions::SetPerVertexNormals(WorkingMesh);
+	}
+
+	if (bLogMeshStats)
+	{
+		const FDynamicMesh3* ResultMesh = WorkingMesh->GetMeshPtr();
+		UE_LOG(LogPCGUtilsDynMesh, Log,
+			TEXT("Smooth Dynamic Mesh: Method=%s Iterations=%d Strength=%.3f PreserveBoundaries=%s BoundaryWeight=%.3f | InVerts=%d InTris=%d OutVerts=%d OutTris=%d"),
+			*UEnum::GetValueAsString(SmoothingMethod),
+			Iterations, Strength,
+			bPreserveBoundaries ? TEXT("true") : TEXT("false"), BoundarySmoothingWeight,
+			InputVertexCount, InputTriangleCount,
+			ResultMesh ? ResultMesh->VertexCount() : 0,
+			ResultMesh ? ResultMesh->TriangleCount() : 0);
+	}
+
+	// Composites the result back into the caller's mesh. Nothing to emit afterwards: with CreateTargetInPlace
+	// the handle's base mesh *is* Invocation.MeshData's mesh.
+	FPCGUtilsMeshTargetFunctions::RestoreVertexPositions(Handle, SelectionBlend);
+	if (bRecomputeNormalsAfterSmoothing)
+	{
+		FPCGUtilsMeshTargetFunctions::RecomputeSelectionAffectedNormals(Handle);
+	}
 	return true;
 }
 

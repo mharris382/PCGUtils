@@ -1,6 +1,9 @@
 #include "Elements/Attributes/PCGSetVertexColor.h"
 
 #include "Data/PCGDynamicMeshData.h"
+#include "Data/PCGDynamicMeshSelectionData.h"
+#include "GeometryScript/GeometryScriptSelectionTypes.h"
+#include "UDynamicMesh.h"
 #include "GeometryScript/MeshVertexColorFunctions.h"
 #include "Metadata/PCGMetadata.h"
 #include "Metadata/PCGMetadataAttribute.h"
@@ -44,39 +47,6 @@ namespace
 		OutColor = FLinearColor(RawColor.X, RawColor.Y, RawColor.Z, RawColor.W);
 		return true;
 	}
-
-	void SetVertexColorOne(FPCGContext* Context, const UPCGSetVertexColorSettings* Settings, const FPCGTaggedData& Input)
-	{
-		FPCGUtilsMeshTargetHandle Handle = FPCGUtilsMeshTargetFunctions::CreateTarget(
-			Input.Data, EPCGUtilsMeshTargetPreparation::FullMeshCopy, Context, Settings);
-		if (!Handle.IsValid())
-		{
-			return;
-		}
-
-		FLinearColor Color = Settings->Color;
-		if (Settings->bUseDataAttributeColor
-			&& !TryGetDataAttributeColor(Handle.GetSourceMeshData(), Settings->ColorAttributeName, Color, Context))
-		{
-			return;
-		}
-
-		if (!Handle.IsEmptySelectionNoOp())
-		{
-			if (Handle.IsSelection())
-			{
-				UGeometryScriptLibrary_MeshVertexColorFunctions::SetMeshSelectionVertexColor(
-					Handle.GetTargetMesh(), Handle.GetSelection(), Color, Settings->ColorFlags, Settings->bCreateColorSeam);
-			}
-			else
-			{
-				UGeometryScriptLibrary_MeshVertexColorFunctions::SetMeshConstantVertexColor(
-					Handle.GetTargetMesh(), Color, Settings->ColorFlags, Settings->bClearExisting);
-			}
-		}
-
-		FPCGUtilsMeshTargetFunctions::EmitOutput(Context, Input, Handle);
-	}
 }
 
 #if WITH_EDITOR
@@ -91,17 +61,24 @@ FText UPCGSetVertexColorSettings::GetNodeTooltipText() const
 }
 #endif
 
-TArray<FPCGPinProperties> UPCGSetVertexColorSettings::InputPinProperties() const
+#if WITH_EDITOR
+EPCGChangeType UPCGSetVertexColorSettings::GetChangeTypeForProperty(
+	FPropertyChangedEvent& PropertyChangedEvent) const
 {
-	TArray<FPCGPinProperties> Pins = Super::InputPinProperties();
-	Pins[0] = FPCGUtilsMeshTargetFunctions::MakeMeshInputPinProperties(SetVertexColorMeshPin);
-	Pins[0].SetRequiredPin();
-	return Pins;
+	EPCGChangeType ChangeType = Super::GetChangeTypeForProperty(PropertyChangedEvent);
+	if (PropertyChangedEvent.GetMemberPropertyName() ==
+		GET_MEMBER_NAME_CHECKED(UPCGSetVertexColorSettings, bUseDataAttributeColor))
+	{
+		// Toggling attribute mode changes whether this node accepts a Builder, so its pins must rebuild.
+		ChangeType |= EPCGChangeType::Structural;
+	}
+	return ChangeType;
 }
+#endif
 
-TArray<FPCGPinProperties> UPCGSetVertexColorSettings::OutputPinProperties() const
+FName UPCGSetVertexColorSettings::GetMainInputPinLabel() const
 {
-	return {FPCGPinProperties(PCGPinConstants::DefaultOutputLabel, EPCGDataType::DynamicMesh, true, true)};
+	return SetVertexColorMeshPin;
 }
 
 FPCGElementPtr UPCGSetVertexColorSettings::CreateElement() const
@@ -109,18 +86,53 @@ FPCGElementPtr UPCGSetVertexColorSettings::CreateElement() const
 	return MakeShared<FPCGSetVertexColorElement>();
 }
 
-bool FPCGSetVertexColorElement::ExecuteInternal(FPCGContext* Context) const
+TSharedPtr<const FPCGUtilsDynMeshProcessOperation> UPCGSetVertexColorSettings::CreateProcessOperation(
+	FPCGContext* InContext) const
 {
-	check(Context);
+	TSharedPtr<FPCGUtilsDynMeshSetVertexColorOperation> Operation =
+		MakeShared<FPCGUtilsDynMeshSetVertexColorOperation>();
+	Operation->ColorFlags = ColorFlags;
+	Operation->bClearExisting = bClearExisting;
+	Operation->bCreateColorSeam = bCreateColorSeam;
+	Operation->bUseDataAttributeColor = bUseDataAttributeColor;
+	Operation->Color = Color;
+	Operation->ColorAttributeName = ColorAttributeName;
+	return Operation;
+}
 
-	const UPCGSetVertexColorSettings* Settings = Context->GetInputSettings<UPCGSetVertexColorSettings>();
-	check(Settings);
-
-	for (const FPCGTaggedData& Input : Context->InputData.GetInputsByPin(SetVertexColorMeshPin))
+bool FPCGUtilsDynMeshSetVertexColorOperation::Execute(
+	const FPCGUtilsDynMeshProcessInvocation& Invocation,
+	FPCGUtilsDynMeshProcessOutcome& OutOutcome) const
+{
+	UPCGDynamicMeshData* MeshData = Invocation.MeshData;
+	UDynamicMesh* TargetMesh = MeshData ? MeshData->GetMutableDynamicMesh() : nullptr;
+	if (!TargetMesh)
 	{
-		SetVertexColorOne(Context, Settings, Input);
+		return false;
 	}
 
+	// Colours are a per-vertex overlay; nothing about the topology changes.
+	OutOutcome.SelectionOutcome = EPCGUtilsDynMeshProcessSelectionOutcome::Preserve;
+
+	FLinearColor EffectiveColor = Color;
+	if (bUseDataAttributeColor && !TryGetDataAttributeColor(
+		Invocation.SourceMeshData, ColorAttributeName, EffectiveColor, Invocation.Context))
+	{
+		return false;
+	}
+
+	if (Invocation.SelectionData)
+	{
+		FGeometryScriptMeshSelection Selection;
+		Selection.SetSelection(Invocation.SelectionData->GetSelection());
+		UGeometryScriptLibrary_MeshVertexColorFunctions::SetMeshSelectionVertexColor(
+			TargetMesh, Selection, EffectiveColor, ColorFlags, bCreateColorSeam);
+	}
+	else
+	{
+		UGeometryScriptLibrary_MeshVertexColorFunctions::SetMeshConstantVertexColor(
+			TargetMesh, EffectiveColor, ColorFlags, bClearExisting);
+	}
 	return true;
 }
 

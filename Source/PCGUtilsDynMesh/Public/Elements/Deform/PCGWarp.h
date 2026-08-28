@@ -146,18 +146,74 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Flare", meta = (PCG_Overridable, EditCondition = "WarpType==EPCGUtilsWarpType::Flare", EditConditionHides))
 	EGeometryScriptFlareType FlareType = EGeometryScriptFlareType::SinMode;
 
+	virtual TSharedPtr<const FPCGUtilsDynMeshProcessOperation> CreateProcessOperation(
+		FPCGContext* InContext) const override;
+
+	/** Warping only moves vertices, so a Builder's active selection survives it. */
+	virtual bool SupportsDeferredBuilderProcessing() const override { return true; }
+
 protected:
-	virtual TArray<FPCGPinProperties> InputPinProperties() const override;
-	virtual TArray<FPCGPinProperties> OutputPinProperties() const override;
+	virtual FName GetMainInputPinLabel() const override;
 	virtual FPCGElementPtr CreateElement() const override;
 };
 
+/** Uses the process base's default executor: all the work lives in the reusable operation. */
 class PCGUTILSDYNMESH_API FPCGWarpElement : public FPCGUtilsDynMeshProcessBaseElement
 {
 public:
 	/** Resolving the target actor for control-point local-space conversion requires the game thread. */
 	virtual bool CanExecuteOnlyOnMainThread(FPCGContext* Context) const override { return true; }
+};
 
-protected:
-	virtual bool ExecuteInternal(FPCGContext* Context) const override;
+/** One resolved warp controller: a frame, a strength multiplier, and optional per-controller extents. */
+struct PCGUTILSDYNMESH_API FPCGUtilsDynMeshWarpController
+{
+	FTransform Orientation = FTransform::Identity;
+	float Density = 1.0f;
+	bool bHasBoundsExtents = false;
+	double BoundsLowerExtent = 0.0;
+	double BoundsUpperExtent = 0.0;
+};
+
+/**
+ * Bend / Twist / Flare space deformation.
+ *
+ * The control points come from a second PCG input pin and, optionally, the target actor's transform. Both are
+ * resolved in CreateProcessOperation() - while the Warp node itself is executing, with its own pins and its own
+ * target actor in reach - and baked into Controllers here. That is the general pattern for a process with extra
+ * inputs: capture them at authoring time, because at evaluation time the context belongs to somebody else.
+ */
+class PCGUTILSDYNMESH_API FPCGUtilsDynMeshWarpOperation final : public FPCGUtilsDynMeshProcessOperation
+{
+public:
+	TArray<FPCGUtilsDynMeshWarpController> Controllers;
+	FPCGUtilsSelectionBlendOptions SelectionBlend;
+
+	EPCGUtilsWarpType WarpType = EPCGUtilsWarpType::Bend;
+
+	float BendAngle = 45.0f;
+	float BendExtent = 50.0f;
+	bool bBendSymmetricExtents = true;
+	float BendLowerExtent = 10.0f;
+	bool bBendBidirectional = true;
+
+	float TwistAngle = 90.0f;
+	float TwistExtent = 50.0f;
+	bool bTwistSymmetricExtents = true;
+	float TwistLowerExtent = 10.0f;
+	bool bTwistBidirectional = true;
+
+	float FlarePercentX = 50.0f;
+	float FlarePercentY = 50.0f;
+	float FlareExtent = 50.0f;
+	bool bFlareSymmetricExtents = true;
+	float FlareLowerExtent = 10.0f;
+	EGeometryScriptFlareType FlareType = EGeometryScriptFlareType::SinMode;
+
+	virtual bool Execute(
+		const FPCGUtilsDynMeshProcessInvocation& Invocation,
+		FPCGUtilsDynMeshProcessOutcome& OutOutcome) const override;
+
+private:
+	void ApplyWarp(class UDynamicMesh* Mesh, const FPCGUtilsDynMeshWarpController& Controller) const;
 };

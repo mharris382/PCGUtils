@@ -6,6 +6,7 @@
 #include "GeometryScript/GeometryScriptSelectionTypes.h"
 #include "GeometryScript/MeshBasicEditFunctions.h"
 #include "Materials/MaterialInterface.h"
+#include "Factories/PCGUtilsDynMeshBuilderFactory.h"
 #include "MeshTarget/PCGUtilsMeshTargetFunctions.h"
 #include "PCGContext.h"
 #include "PCGPin.h"
@@ -32,17 +33,26 @@ FText UPCGDeleteDynamicMeshSelectionSettings::GetNodeTooltipText() const
 }
 #endif
 
-TArray<FPCGPinProperties> UPCGDeleteDynamicMeshSelectionSettings::InputPinProperties() const
+FName UPCGDeleteDynamicMeshSelectionSettings::GetMainInputPinLabel() const
 {
-	TArray<FPCGPinProperties> Pins = Super::InputPinProperties();
-	Pins[0] = FPCGUtilsMeshTargetFunctions::MakeMeshInputPinProperties(DeleteSelectionPin);
-	Pins[0].SetRequiredPin();
-	return Pins;
+	return DeleteSelectionPin;
+}
+
+FName UPCGDeleteDynamicMeshSelectionSettings::GetMainOutputPinLabel() const
+{
+	return DeleteMeshPin;
 }
 
 TArray<FPCGPinProperties> UPCGDeleteDynamicMeshSelectionSettings::OutputPinProperties() const
 {
-	return {FPCGPinProperties(DeleteMeshPin, EPCGDataType::DynamicMesh, true, true)};
+	// Deleting never produces a usable selection, so this pin only ever carries a mesh - or, in deferred mode,
+	// the Builder that will produce one.
+	FPCGDataTypeIdentifier OutputTypes(EPCGDataType::DynamicMesh);
+	if (SupportsDeferredBuilderProcessing())
+	{
+		OutputTypes |= FPCGDataTypeIdentifier(FPCGUtilsDynMeshBuilderFactoryDataTypeInfo::AsId());
+	}
+	return {FPCGPinProperties(DeleteMeshPin, MoveTemp(OutputTypes), true, true)};
 }
 
 FPCGElementPtr UPCGDeleteDynamicMeshSelectionSettings::CreateElement() const
@@ -50,79 +60,65 @@ FPCGElementPtr UPCGDeleteDynamicMeshSelectionSettings::CreateElement() const
 	return MakeShared<FPCGDeleteDynamicMeshSelectionElement>();
 }
 
-bool FPCGDeleteDynamicMeshSelectionElement::ExecuteInternal(FPCGContext* Context) const
+TSharedPtr<const FPCGUtilsDynMeshProcessOperation> UPCGDeleteDynamicMeshSelectionSettings::CreateProcessOperation(
+	FPCGContext* InContext) const
 {
-	check(Context);
+	TSharedPtr<FPCGUtilsDynMeshDeleteSelectionOperation> Operation =
+		MakeShared<FPCGUtilsDynMeshDeleteSelectionOperation>();
+	Operation->DeleteMode = DeleteMode;
+	return Operation;
+}
 
-	const UPCGDeleteDynamicMeshSelectionSettings* Settings = Context->GetInputSettings<UPCGDeleteDynamicMeshSelectionSettings>();
-	check(Settings);
-
-	for (const FPCGTaggedData& Input : Context->InputData.GetInputsByPin(DeleteSelectionPin))
+bool FPCGUtilsDynMeshDeleteSelectionOperation::Execute(
+	const FPCGUtilsDynMeshProcessInvocation& Invocation,
+	FPCGUtilsDynMeshProcessOutcome& OutOutcome) const
+{
+	UDynamicMesh* TargetMesh = Invocation.MeshData ? Invocation.MeshData->GetMutableDynamicMesh() : nullptr;
+	if (!TargetMesh || !TargetMesh->GetMeshPtr())
 	{
-		const FPCGUtilsDynMeshResolvedInput ResolvedInput =
-			FPCGUtilsDynMeshProcessFunctions::ResolveInput(Input.Data, Settings, Context);
-		if (!ResolvedInput.IsValid())
-		{
-			continue;
-		}
-		const UPCGDynamicMeshSelectionData* SelectionData = ResolvedInput.SelectionData;
-		const UPCGDynamicMeshData* SourceData = ResolvedInput.MeshData;
-		const UDynamicMesh* SourceObject = SourceData ? SourceData->GetDynamicMesh() : nullptr;
-		const UE::Geometry::FDynamicMesh3* SourceMesh = SourceObject ? SourceObject->GetMeshPtr() : nullptr;
-		if (!SourceMesh)
-		{
-			PCGLog::LogWarningOnGraph(LOCTEXT("InvalidSelectionSource", "Delete Mesh Selection skipped selection data with no valid source mesh."), Context);
-			continue;
-		}
-
-		TArray<UMaterialInterface*> Materials;
-		Materials.Reserve(SourceData->GetMaterials().Num());
-		for (UMaterialInterface* Material : SourceData->GetMaterials()) Materials.Add(Material);
-
-		// Deep-copy the source mesh into a fresh output data object, then delegate the
-		// actual deletion to GeometryScript rather than mutating FDynamicMesh3 by hand.
-		UE::Geometry::FDynamicMesh3 OutputMesh(*SourceMesh);
-		UPCGDynamicMeshData* OutputData = FPCGContext::NewObject_AnyThread<UPCGDynamicMeshData>(Context);
-		OutputData->Initialize(MoveTemp(OutputMesh), Materials);
-
-		UDynamicMesh* TargetMesh = OutputData->GetMutableDynamicMesh();
-
-		FGeometryScriptMeshSelection Selection;
-		Selection.SetSelection(SelectionData->GetSelection());
-
-		int32 NumRequested = 0;
-		int32 NumDeleted = 0;
-
-		if (Settings->DeleteMode == EPCGDeleteDynamicMeshSelectionMode::Triangles)
-		{
-			NumRequested = Selection.GetNumUniqueSelected(*TargetMesh->GetMeshPtr());
-			UGeometryScriptLibrary_MeshBasicEditFunctions::DeleteSelectedTrianglesFromMesh(TargetMesh, Selection, NumDeleted, /*bDeferChangeNotifications=*/true);
-		}
-		else
-		{
-			TArray<int32> VertexIndices;
-			Selection.ConvertToMeshIndexArray(*TargetMesh->GetMeshPtr(), VertexIndices, EGeometryScriptIndexType::Vertex);
-			NumRequested = VertexIndices.Num();
-
-			FGeometryScriptIndexList VertexList;
-			VertexList.Reset(EGeometryScriptIndexType::Vertex, VertexIndices.Num());
-			*VertexList.List = MoveTemp(VertexIndices);
-
-			UGeometryScriptLibrary_MeshBasicEditFunctions::DeleteVerticesFromMesh(TargetMesh, VertexList, NumDeleted, /*bDeferChangeNotifications=*/true);
-		}
-
-		if (NumDeleted < NumRequested)
-		{
-			PCGLog::LogWarningOnGraph(FText::Format(
-				LOCTEXT("InvalidSelectionIDs", "Delete Mesh Selection ignored {0} invalid or stale selection element(s)."),
-				FText::AsNumber(NumRequested - NumDeleted)), Context);
-		}
-
-		FPCGTaggedData& Output = Context->OutputData.TaggedData.Emplace_GetRef(Input);
-		Output.Data = OutputData;
-		Output.Pin = DeleteMeshPin;
+		return false;
+	}
+	if (!Invocation.SelectionData)
+	{
+		// RequiresSelection() means the shared resolver already errored; nothing useful left to do.
+		return false;
 	}
 
+	// Whatever the selection referred to is exactly what is being removed.
+	OutOutcome.SelectionOutcome = EPCGUtilsDynMeshProcessSelectionOutcome::Clear;
+
+	FGeometryScriptMeshSelection Selection;
+	Selection.SetSelection(Invocation.SelectionData->GetSelection());
+
+	int32 NumRequested = 0;
+	int32 NumDeleted = 0;
+
+	if (DeleteMode == EPCGDeleteDynamicMeshSelectionMode::Triangles)
+	{
+		NumRequested = Selection.GetNumUniqueSelected(*TargetMesh->GetMeshPtr());
+		UGeometryScriptLibrary_MeshBasicEditFunctions::DeleteSelectedTrianglesFromMesh(
+			TargetMesh, Selection, NumDeleted, /*bDeferChangeNotifications=*/true);
+	}
+	else
+	{
+		TArray<int32> VertexIndices;
+		Selection.ConvertToMeshIndexArray(*TargetMesh->GetMeshPtr(), VertexIndices, EGeometryScriptIndexType::Vertex);
+		NumRequested = VertexIndices.Num();
+
+		FGeometryScriptIndexList VertexList;
+		VertexList.Reset(EGeometryScriptIndexType::Vertex, VertexIndices.Num());
+		*VertexList.List = MoveTemp(VertexIndices);
+
+		UGeometryScriptLibrary_MeshBasicEditFunctions::DeleteVerticesFromMesh(
+			TargetMesh, VertexList, NumDeleted, /*bDeferChangeNotifications=*/true);
+	}
+
+	if (NumDeleted < NumRequested)
+	{
+		PCGLog::LogWarningOnGraph(FText::Format(
+			LOCTEXT("InvalidSelectionIDs", "Delete Mesh Selection ignored {0} invalid or stale selection element(s)."),
+			FText::AsNumber(NumRequested - NumDeleted)), Invocation.Context);
+	}
 	return true;
 }
 

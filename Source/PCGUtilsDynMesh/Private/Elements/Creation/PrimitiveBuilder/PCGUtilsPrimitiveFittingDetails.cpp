@@ -183,14 +183,15 @@ void FPCGUtilsFittingDetails::ComputeLocalTransform(
 	const FTransform& SeedTransform, const FBox& SeedLocalBounds, const FBox& CandidateBounds, FTransform& OutTransform) const
 {
 	// Padding insets (or, if negative, outsets) the seed bounds used as the fitting target, independently of
-	// the primitive's own geometry. Clamp per axis so an over-large padding collapses to the bounds center
-	// instead of inverting.
+	// the primitive's own geometry. Each side of each axis moves on its own: PaddingMin pushes the min corner
+	// inwards, PaddingMax pushes the max corner inwards. Clamp per axis so over-large padding collapses to the
+	// bounds center instead of inverting.
 	FBox PaddedBounds = SeedLocalBounds;
 	for (int32 Axis = 0; Axis < 3; ++Axis)
 	{
 		const double Center = (PaddedBounds.Min[Axis] + PaddedBounds.Max[Axis]) * 0.5;
-		PaddedBounds.Min[Axis] = FMath::Min(PaddedBounds.Min[Axis] + Padding[Axis], Center);
-		PaddedBounds.Max[Axis] = FMath::Max(PaddedBounds.Max[Axis] - Padding[Axis], Center);
+		PaddedBounds.Min[Axis] = FMath::Min(PaddedBounds.Min[Axis] + PaddingMin[Axis], Center);
+		PaddedBounds.Max[Axis] = FMath::Max(PaddedBounds.Max[Axis] - PaddingMax[Axis], Center);
 	}
 
 	const FVector LocalScale = LocalTransform.GetScale3D();

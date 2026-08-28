@@ -207,13 +207,20 @@ struct PCGUTILSDYNMESH_API FPCGUtilsFittingDetails
 	FPCGUtilsJustificationDetails Justification;
 
 	/**
-	 * Insets (positive) or outsets (negative) the seed's local bounds on each axis before fitting runs.
-	 * Not present in PCGExtendedToolkit's fitting model - added so two primitives built from the same seed
-	 * bounds (e.g. a box and a padded box) can be combined with a boolean subtract to produce a wall/frame
-	 * of consistent thickness.
+	 * Moves the seed's local bounds *minimum* corner inwards (positive) or outwards (negative) per axis before
+	 * fitting runs. Paired with PaddingMax so each side of each axis is independent - inset only the top of a
+	 * seed, or only one side of X, which a single symmetric padding vector cannot express.
+	 *
+	 * Not present in PCGExtendedToolkit's fitting model. Added so several primitives built from the same seed
+	 * bounds can differ only by how far each side is inset - a window frame, a wall of consistent thickness, or
+	 * a stacked column section that starts partway up its seed.
 	 */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Fitting", meta = (PCG_Overridable))
-	FVector Padding = FVector::ZeroVector;
+	FVector PaddingMin = FVector::ZeroVector;
+
+	/** Moves the seed's local bounds *maximum* corner inwards (positive) or outwards (negative) per axis. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Fitting", meta = (PCG_Overridable))
+	FVector PaddingMax = FVector::ZeroVector;
 
 	/** Offset/rotation/scale applied to the primitive's own local geometry before fitting is computed. */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Fitting", meta = (PCG_Overridable))

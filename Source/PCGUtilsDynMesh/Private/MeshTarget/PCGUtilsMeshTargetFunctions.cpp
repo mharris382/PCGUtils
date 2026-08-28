@@ -114,7 +114,8 @@ namespace
 }
 
 FPCGUtilsMeshTargetHandle FPCGUtilsMeshTargetFunctions::CreateFullMeshTarget(
-	const UPCGDynamicMeshData* SourceData, EPCGUtilsMeshTargetPreparation Preparation, FPCGContext* Context)
+	const UPCGDynamicMeshData* SourceData, EPCGUtilsMeshTargetPreparation Preparation, FPCGContext* Context,
+	UDynamicMesh* AdoptedBaseMesh)
 {
 	using namespace UE::Geometry;
 
@@ -137,8 +138,12 @@ FPCGUtilsMeshTargetHandle FPCGUtilsMeshTargetFunctions::CreateFullMeshTarget(
 		return Handle;
 	}
 
-	UDynamicMesh* WorkingMesh = FPCGContext::NewObject_AnyThread<UDynamicMesh>(Context);
-	WorkingMesh->SetMesh(*SourceMesh);
+	UDynamicMesh* WorkingMesh = AdoptedBaseMesh;
+	if (!WorkingMesh)
+	{
+		WorkingMesh = FPCGContext::NewObject_AnyThread<UDynamicMesh>(Context);
+		WorkingMesh->SetMesh(*SourceMesh);
+	}
 
 	Handle.TargetMesh = WorkingMesh;
 	Handle.BaseMesh = WorkingMesh;
@@ -147,7 +152,8 @@ FPCGUtilsMeshTargetHandle FPCGUtilsMeshTargetFunctions::CreateFullMeshTarget(
 }
 
 FPCGUtilsMeshTargetHandle FPCGUtilsMeshTargetFunctions::CreateSelectionTarget(
-	const UPCGDynamicMeshSelectionData* SelectionData, EPCGUtilsMeshTargetPreparation Preparation, FPCGContext* Context)
+	const UPCGDynamicMeshSelectionData* SelectionData, EPCGUtilsMeshTargetPreparation Preparation, FPCGContext* Context,
+	UDynamicMesh* AdoptedBaseMesh)
 {
 	using namespace UE::Geometry;
 
@@ -171,8 +177,12 @@ FPCGUtilsMeshTargetHandle FPCGUtilsMeshTargetFunctions::CreateSelectionTarget(
 		return Handle;
 	}
 
-	UDynamicMesh* WorkingMesh = FPCGContext::NewObject_AnyThread<UDynamicMesh>(Context);
-	WorkingMesh->SetMesh(*SourceMesh);
+	UDynamicMesh* WorkingMesh = AdoptedBaseMesh;
+	if (!WorkingMesh)
+	{
+		WorkingMesh = FPCGContext::NewObject_AnyThread<UDynamicMesh>(Context);
+		WorkingMesh->SetMesh(*SourceMesh);
+	}
 	Handle.BaseMesh = WorkingMesh;
 
 	Handle.Selection.SetSelection(SelectionData->GetSelection());
@@ -256,6 +266,52 @@ FPCGUtilsMeshTargetHandle FPCGUtilsMeshTargetFunctions::CreateTarget(
 
 	PCGLog::LogWarningOnGraph(LOCTEXT("UnsupportedDataType", "Mesh Target: input was neither Dynamic Mesh nor Dynamic Mesh Selection data."), Context);
 	return FPCGUtilsMeshTargetHandle();
+}
+
+FPCGUtilsMeshTargetHandle FPCGUtilsMeshTargetFunctions::CreateTarget(
+	const FPCGUtilsDynMeshResolvedInput& ResolvedInput, EPCGUtilsMeshTargetPreparation Preparation,
+	FPCGContext* Context)
+{
+	if (!ResolvedInput.IsValid())
+	{
+		return FPCGUtilsMeshTargetHandle();
+	}
+	return CreateTarget(ResolvedInput.GetData(), Preparation, Context, /*ProcessSettings=*/nullptr);
+}
+
+FPCGUtilsMeshTargetHandle FPCGUtilsMeshTargetFunctions::CreateTargetInPlace(
+	UPCGDynamicMeshData* OwnedMeshData,
+	const UPCGDynamicMeshSelectionData* EffectiveSelection,
+	EPCGUtilsMeshTargetPreparation Preparation,
+	FPCGContext* Context)
+{
+	if (!OwnedMeshData)
+	{
+		return FPCGUtilsMeshTargetHandle();
+	}
+
+	// Adopted, not copied: the caller owns this mesh exclusively, so the handle composites its result straight
+	// back into it and the operation has nothing to emit afterwards.
+	UDynamicMesh* OwnedMesh = OwnedMeshData->GetMutableDynamicMesh();
+	if (!OwnedMesh)
+	{
+		return FPCGUtilsMeshTargetHandle();
+	}
+
+	if (EffectiveSelection)
+	{
+		checkf(EffectiveSelection->GetSourceMeshData() == OwnedMeshData,
+			TEXT("CreateTargetInPlace requires a selection that already references the owned mesh data."));
+		return CreateSelectionTarget(EffectiveSelection, Preparation, Context, OwnedMesh);
+	}
+	return CreateFullMeshTarget(OwnedMeshData, Preparation, Context, OwnedMesh);
+}
+
+FPCGUtilsMeshTargetHandle FPCGUtilsMeshTargetFunctions::CreateTargetInPlace(
+	const FPCGUtilsDynMeshProcessInvocation& Invocation, EPCGUtilsMeshTargetPreparation Preparation)
+{
+	return CreateTargetInPlace(
+		Invocation.MeshData, Invocation.SelectionData, Preparation, Invocation.Context);
 }
 
 bool FPCGUtilsMeshTargetFunctions::RestoreRegion(FPCGUtilsMeshTargetHandle& Handle)

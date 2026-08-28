@@ -37,8 +37,14 @@ public:
 	virtual FLinearColor GetNodeTitleColor() const override { return FLinearColor(0.413f, 0.25f ,1.0f, 1.0f);	}
 #endif
 
+	virtual TSharedPtr<const FPCGUtilsDynMeshProcessOperation> CreateProcessOperation(
+		FPCGContext* InContext) const override;
+
+	virtual bool SupportsDeferredBuilderProcessing() const override { return true; }
+
 protected:
-	virtual TArray<FPCGPinProperties> InputPinProperties() const override;
+	virtual FName GetMainInputPinLabel() const override;
+	virtual FName GetMainOutputPinLabel() const override;
 	virtual TArray<FPCGPinProperties> OutputPinProperties() const override;
 	virtual FPCGElementPtr CreateElement() const override;
 
@@ -48,8 +54,18 @@ public:
 	EPCGDeleteDynamicMeshSelectionMode DeleteMode = EPCGDeleteDynamicMeshSelectionMode::Triangles;
 };
 
+/** Uses the process base's default executor: all the work lives in the reusable operation. */
 class PCGUTILSDYNMESH_API FPCGDeleteDynamicMeshSelectionElement : public FPCGUtilsDynMeshProcessBaseElement
 {
-protected:
-	virtual bool ExecuteInternal(FPCGContext* Context) const override;
+};
+
+/** Deletes the effective selection from the mesh, as triangles or as every vertex the selection touches. */
+class PCGUTILSDYNMESH_API FPCGUtilsDynMeshDeleteSelectionOperation final : public FPCGUtilsDynMeshProcessOperation
+{
+public:
+	EPCGDeleteDynamicMeshSelectionMode DeleteMode = EPCGDeleteDynamicMeshSelectionMode::Triangles;
+
+	virtual bool Execute(
+		const FPCGUtilsDynMeshProcessInvocation& Invocation,
+		FPCGUtilsDynMeshProcessOutcome& OutOutcome) const override;
 };

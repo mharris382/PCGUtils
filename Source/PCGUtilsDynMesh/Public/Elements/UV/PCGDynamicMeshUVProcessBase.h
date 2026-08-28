@@ -30,29 +30,38 @@ public:
 		UE::Geometry::EGeometryElementType& OutElementType) const override;
 };
 
-/**
- * Resolves the effective triangle region and requested UV overlay before delegating to a UV operation.
- * Existing overlay triangles outside the region are never cleared or rebuilt by this base.
- */
+/** Uses the process base's default executor: UV work lives in FPCGUtilsDynMeshUVProcessOperation. */
 class PCGUTILSDYNMESH_API FPCGDynamicMeshUVProcessBaseElement
 	: public FPCGUtilsDynMeshProcessBaseElement
 {
-protected:
-	virtual bool ProcessMesh(UPCGDynamicMeshData* MeshData,
-		const UPCGDynamicMeshSelectionData* SelectionData, FPCGContext* Context) const final;
+};
 
+/**
+ * Shared base for UV operations: resolves the effective triangle region and the requested UV overlay, then
+ * delegates to the derived operation. Existing overlay triangles outside the region are never cleared or
+ * rebuilt here.
+ */
+class PCGUTILSDYNMESH_API FPCGUtilsDynMeshUVProcessOperation : public FPCGUtilsDynMeshProcessOperation
+{
+public:
+	int32 UVLayer = 0;
+
+	virtual bool Execute(
+		const FPCGUtilsDynMeshProcessInvocation& Invocation,
+		FPCGUtilsDynMeshProcessOutcome& OutOutcome) const final;
+
+protected:
 	/** Called before mesh attributes or UV layers are created. Return false to pass this mesh through unchanged. */
-	virtual bool ShouldProcessUVs(UPCGDynamicMeshData* MeshData,
-		const UPCGDynamicMeshSelectionData* SelectionData,
-		TArrayView<const int32> TriangleIDs, FPCGContext* Context) const
+	virtual bool ShouldProcessUVs(
+		const FPCGUtilsDynMeshProcessInvocation& Invocation, TArrayView<const int32> TriangleIDs) const
 	{
 		return true;
 	}
 
 	/** Applies the derived UV operation to the already-resolved triangle region. */
-	virtual bool ProcessUVs(UPCGDynamicMeshData* MeshData,
+	virtual bool ProcessUVs(
+		const FPCGUtilsDynMeshProcessInvocation& Invocation,
 		UE::Geometry::FDynamicMesh3& Mesh,
 		UE::Geometry::FDynamicMeshUVOverlay& UVOverlay,
-		TArrayView<const int32> TriangleIDs,
-		FPCGContext* Context) const = 0;
+		TArrayView<const int32> TriangleIDs) const = 0;
 };

@@ -61,7 +61,9 @@ namespace PCGUtilsDynMeshFactories
 			return false;
 		}
 
-		OutFactories.Sort([](const UPCGUtilsDynMeshFactoryData& A,
+		// Stable so that, with the default equal Priority, factories keep the pin's connection order - which is
+		// the order a compound Builder is composed in and therefore user-visible.
+		OutFactories.StableSort([](const UPCGUtilsDynMeshFactoryData& A,
 			const UPCGUtilsDynMeshFactoryData& B)
 		{
 			return A.Priority < B.Priority;

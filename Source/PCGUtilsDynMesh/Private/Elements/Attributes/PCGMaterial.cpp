@@ -28,15 +28,30 @@ FPCGElementPtr UPCGMaterialSettings::CreateElement() const
 	return MakeShared<FPCGMaterialElement>();
 }
 
-bool FPCGMaterialElement::ProcessMesh(UPCGDynamicMeshData* MeshData,
-	const UPCGDynamicMeshSelectionData* SelectionData, FPCGContext* Context) const
+TSharedPtr<const FPCGUtilsDynMeshProcessOperation> UPCGMaterialSettings::CreateProcessOperation(
+	FPCGContext* InContext) const
 {
-	const UPCGMaterialSettings* Settings = Context->GetInputSettings<UPCGMaterialSettings>();
-	check(Settings && MeshData);
-	UMaterialInterface* AssignedMaterial = Settings->Material.LoadSynchronous();
+	// Soft references are resolved here, while this node executes. A deferred operation runs from a
+	// materializer's context and must not perform a synchronous load at that point.
+	TSharedPtr<FPCGUtilsDynMeshMaterialOperation> Operation = MakeShared<FPCGUtilsDynMeshMaterialOperation>();
+	Operation->AssignedMaterial = Material.LoadSynchronous();
+	Operation->DefaultMaterial = DefaultMaterial.LoadSynchronous();
+	return Operation;
+}
+
+bool FPCGUtilsDynMeshMaterialOperation::Execute(
+	const FPCGUtilsDynMeshProcessInvocation& Invocation,
+	FPCGUtilsDynMeshProcessOutcome& OutOutcome) const
+{
+	UPCGDynamicMeshData* MeshData = Invocation.MeshData;
+	if (!MeshData)
+	{
+		return false;
+	}
 	if (!AssignedMaterial)
 	{
-		PCGLog::LogWarningOnGraph(LOCTEXT("MissingMaterial", "Material has no valid material to assign."), Context);
+		PCGLog::LogWarningOnGraph(
+			LOCTEXT("MissingMaterial", "Material has no valid material to assign."), Invocation.Context);
 		return false;
 	}
 
@@ -46,6 +61,9 @@ bool FPCGMaterialElement::ProcessMesh(UPCGDynamicMeshData* MeshData,
 	{
 		return false;
 	}
+
+	// Only material IDs and the material array change; vertices and triangles are untouched.
+	OutOutcome.SelectionOutcome = EPCGUtilsDynMeshProcessSelectionOutcome::Preserve;
 
 	if (!Mesh->HasAttributes())
 	{
@@ -58,7 +76,7 @@ bool FPCGMaterialElement::ProcessMesh(UPCGDynamicMeshData* MeshData,
 	}
 	UE::Geometry::FDynamicMeshMaterialAttribute* MaterialIDs = Mesh->Attributes()->GetMaterialID();
 
-	if (!SelectionData)
+	if (!Invocation.SelectionData)
 	{
 		for (const int32 TriangleID : Mesh->TriangleIndicesItr())
 		{
@@ -82,20 +100,21 @@ bool FPCGMaterialElement::ProcessMesh(UPCGDynamicMeshData* MeshData,
 	}
 	else
 	{
-		UMaterialInterface* BaseMaterial = Settings->DefaultMaterial.LoadSynchronous();
-		Materials = {BaseMaterial, AssignedMaterial};
+		Materials = {DefaultMaterial, AssignedMaterial};
 		for (const int32 TriangleID : Mesh->TriangleIndicesItr())
 		{
 			MaterialIDs->SetValue(TriangleID, 0);
 		}
-		if (!BaseMaterial)
+		if (!DefaultMaterial)
 		{
-			PCGLog::LogWarningOnGraph(LOCTEXT("MissingDefaultMaterial", "Material created slot zero without a valid Default Material."), Context);
+			PCGLog::LogWarningOnGraph(
+				LOCTEXT("MissingDefaultMaterial", "Material created slot zero without a valid Default Material."),
+				Invocation.Context);
 		}
 	}
 
 	FGeometryScriptMeshSelection Selection;
-	Selection.SetSelection(SelectionData->GetSelection());
+	Selection.SetSelection(Invocation.SelectionData->GetSelection());
 	TArray<int32> TriangleIDs;
 	Selection.ConvertToMeshIndexArray(*Mesh, TriangleIDs, EGeometryScriptIndexType::Triangle);
 	int32 InvalidTriangleCount = 0;
@@ -114,7 +133,7 @@ bool FPCGMaterialElement::ProcessMesh(UPCGDynamicMeshData* MeshData,
 	{
 		PCGLog::LogWarningOnGraph(FText::Format(
 			LOCTEXT("InvalidTriangles", "Material ignored {0} invalid or stale selected triangles."),
-			FText::AsNumber(InvalidTriangleCount)), Context);
+			FText::AsNumber(InvalidTriangleCount)), Invocation.Context);
 	}
 	MeshData->SetMaterials(Materials);
 	return true;

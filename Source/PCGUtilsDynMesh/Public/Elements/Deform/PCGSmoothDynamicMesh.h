@@ -111,14 +111,44 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Smoothing|Debug")
 	bool bLogMeshStats = false;
 
+	virtual TSharedPtr<const FPCGUtilsDynMeshProcessOperation> CreateProcessOperation(
+		FPCGContext* InContext) const override;
+
+	/** Smoothing only moves vertices, so a Builder's active selection survives it. */
+	virtual bool SupportsDeferredBuilderProcessing() const override { return true; }
+
 protected:
-	virtual TArray<FPCGPinProperties> InputPinProperties() const override;
-	virtual TArray<FPCGPinProperties> OutputPinProperties() const override;
 	virtual FPCGElementPtr CreateElement() const override;
 };
 
+/** Uses the process base's default executor: all the work lives in the reusable operation. */
 class PCGUTILSDYNMESH_API FPCGSmoothDynamicMeshElement : public FPCGUtilsDynMeshProcessBaseElement
 {
-protected:
-	virtual bool ExecuteInternal(FPCGContext* Context) const override;
+};
+
+/**
+ * Laplacian / Taubin smoothing with per-vertex locking, run through the Mesh Target layer so a selection is
+ * blended back rather than hard-cut.
+ */
+class PCGUTILSDYNMESH_API FPCGUtilsDynMeshSmoothOperation final : public FPCGUtilsDynMeshProcessOperation
+{
+public:
+	EPCGUtilsDynamicMeshSmoothingMethod SmoothingMethod = EPCGUtilsDynamicMeshSmoothingMethod::TaubinNoShrink;
+	int32 Iterations = 5;
+	float Strength = 0.25f;
+	bool bPreserveBoundaries = true;
+	float BoundarySmoothingWeight = 0.0f;
+	bool bPreserveSharpEdges = false;
+	float SharpEdgeAngleThresholdDegrees = 45.0f;
+	bool bUseSmoothWeightAttribute = false;
+	FName SmoothWeightAttributeName;
+	bool bRecomputeNormalsAfterSmoothing = true;
+	FPCGUtilsSelectionBlendOptions SelectionBlend;
+	float TaubinLambda = 0.5f;
+	float TaubinMu = -0.53f;
+	bool bLogMeshStats = false;
+
+	virtual bool Execute(
+		const FPCGUtilsDynMeshProcessInvocation& Invocation,
+		FPCGUtilsDynMeshProcessOutcome& OutOutcome) const override;
 };

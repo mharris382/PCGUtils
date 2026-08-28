@@ -247,44 +247,24 @@ FPCGElementPtr UPCGDynamicMeshUVProjectSettings::CreateElement() const
 	return MakeShared<FPCGDynamicMeshUVProjectElement>();
 }
 
-FPCGContext* FPCGDynamicMeshUVProjectElement::CreateContext()
+TSharedPtr<const FPCGUtilsDynMeshProcessOperation> UPCGDynamicMeshUVProjectSettings::CreateProcessOperation(
+	FPCGContext* InContext) const
 {
-	return new FPCGDynamicMeshUVProjectContext();
-}
+	TSharedPtr<FPCGUtilsDynMeshUVProjectOperation> Operation = MakeShared<FPCGUtilsDynMeshUVProjectOperation>();
+	Operation->UVLayer = UVLayer;
+	Operation->UVScale = UVScale;
+	Operation->UVOffset = UVOffset;
 
-bool FPCGDynamicMeshUVProjectElement::ExecuteInternal(FPCGContext* Context) const
-{
-	FPCGDynamicMeshUVProjectContext* ProjectContext =
-		static_cast<FPCGDynamicMeshUVProjectContext*>(Context);
-	check(ProjectContext);
-
-	if (!ProjectContext->bProjectorsResolved)
-	{
-		ResolveProjectors(ProjectContext);
-	}
-
-	return FPCGUtilsDynMeshProcessBaseElement::ExecuteInternal(Context);
-}
-
-void FPCGDynamicMeshUVProjectElement::ResolveProjectors(
-	FPCGDynamicMeshUVProjectContext* Context) const
-{
-	check(Context);
-	Context->bProjectorsResolved = true;
-	Context->Projectors.Reset();
-
-	const UPCGDynamicMeshUVProjectSettings* Settings =
-		Context->GetInputSettings<UPCGDynamicMeshUVProjectSettings>();
-	check(Settings);
-
-	const TArray<FPCGTaggedData>& ProjectorInputs = Context->InputData.GetInputsByPin(
+	// Projectors are resolved once, here, from this node's own Projectors pin - not per mesh, and never from
+	// whatever context later evaluates the operation.
+	const TArray<FPCGTaggedData>& ProjectorInputs = InContext->InputData.GetInputsByPin(
 		PCGDynamicMeshUVProjectConstants::ProjectorsInputPin);
 	if (ProjectorInputs.Num() != 1)
 	{
 		PCGLog::LogErrorOnGraph(
 			LOCTEXT("RequiresOneProjectorData", "UV Project requires exactly one Point Data object on the Projectors pin."),
-			Context);
-		return;
+			InContext);
+		return Operation;
 	}
 
 	const UPCGBasePointData* PointData = Cast<const UPCGBasePointData>(ProjectorInputs[0].Data);
@@ -292,18 +272,18 @@ void FPCGDynamicMeshUVProjectElement::ResolveProjectors(
 	{
 		PCGLog::LogErrorOnGraph(
 			LOCTEXT("InvalidProjectorData", "UV Project received invalid Point Data on the Projectors pin."),
-			Context);
-		return;
+			InContext);
+		return Operation;
 	}
 
 	TArray<FVector> Directions;
 	if (!PCGAttributeAccessorHelpers::ExtractAllValues<FVector>(
-		PointData, Settings->ProjectDirection, Directions, Context))
+		PointData, ProjectDirection, Directions, InContext))
 	{
 		PCGLog::LogErrorOnGraph(FText::Format(
 			LOCTEXT("InvalidDirectionSelector", "UV Project could not resolve Project Direction selector '{0}' as a Vector."),
-			FText::FromString(Settings->ProjectDirection.ToString())), Context);
-		return;
+			FText::FromString(ProjectDirection.ToString())), InContext);
+		return Operation;
 	}
 
 	const int32 PointCount = PointData->GetNumPoints();
@@ -311,19 +291,19 @@ void FPCGDynamicMeshUVProjectElement::ResolveProjectors(
 	{
 		PCGLog::LogErrorOnGraph(
 			LOCTEXT("DirectionCountMismatch", "UV Project resolved a different number of direction values than projector points."),
-			Context);
-		return;
+			InContext);
+		return Operation;
 	}
 
 	const auto Transforms = PointData->GetConstTransformValueRange();
-	Context->Projectors.Reserve(PointCount);
+	Operation->Projectors.Reserve(PointCount);
 	int32 InvalidProjectorCount = 0;
 	for (int32 PointIndex = 0; PointIndex < PointCount; ++PointIndex)
 	{
-		FPCGDynamicMeshUVProjector& Projector = Context->Projectors.Emplace_GetRef();
+		FPCGDynamicMeshUVProjector& Projector = Operation->Projectors.Emplace_GetRef();
 		if (!BuildProjector(Transforms[PointIndex], Directions[PointIndex], Projector))
 		{
-			Context->Projectors.Pop(EAllowShrinking::No);
+			Operation->Projectors.Pop(EAllowShrinking::No);
 			++InvalidProjectorCount;
 		}
 	}
@@ -332,74 +312,61 @@ void FPCGDynamicMeshUVProjectElement::ResolveProjectors(
 	{
 		PCGLog::LogWarningOnGraph(FText::Format(
 			LOCTEXT("InvalidProjectors", "UV Project skipped {0} projector point(s) with an invalid origin, rotation, or direction."),
-			FText::AsNumber(InvalidProjectorCount)), Context);
+			FText::AsNumber(InvalidProjectorCount)), InContext);
 	}
 
-	if (Context->Projectors.IsEmpty())
+	if (Operation->Projectors.IsEmpty())
 	{
 		PCGLog::LogWarningOnGraph(
-			LOCTEXT("NoValidProjectors", "UV Project found no valid projector points; target meshes will be passed through unchanged."),
-			Context);
+			LOCTEXT("NoProjectors", "UV Project resolved no usable projector points; meshes pass through unchanged."),
+			InContext);
 	}
+
+	return Operation;
 }
 
-bool FPCGDynamicMeshUVProjectElement::ShouldProcessUVs(
-	UPCGDynamicMeshData* MeshData,
-	const UPCGDynamicMeshSelectionData* SelectionData,
-	TArrayView<const int32> TriangleIDs,
-	FPCGContext* Context) const
+bool FPCGUtilsDynMeshUVProjectOperation::ShouldProcessUVs(
+	const FPCGUtilsDynMeshProcessInvocation& Invocation, TArrayView<const int32> TriangleIDs) const
 {
-	const FPCGDynamicMeshUVProjectContext* ProjectContext =
-		static_cast<const FPCGDynamicMeshUVProjectContext*>(Context);
-	const UPCGDynamicMeshUVProjectSettings* Settings =
-		Context->GetInputSettings<UPCGDynamicMeshUVProjectSettings>();
-	check(ProjectContext && Settings);
-
-	if (Settings->UVScale.ContainsNaN() || Settings->UVOffset.ContainsNaN())
+	if (UVScale.ContainsNaN() || UVOffset.ContainsNaN())
 	{
 		PCGLog::LogErrorOnGraph(
 			LOCTEXT("InvalidUVTransform", "UV Project requires finite UV Scale and UV Offset values; the mesh was left unchanged."),
-			Context);
+			Invocation.Context);
 		return false;
 	}
 
-	return !ProjectContext->Projectors.IsEmpty();
+	return !Projectors.IsEmpty();
 }
 
-bool FPCGDynamicMeshUVProjectElement::ProcessUVs(
-	UPCGDynamicMeshData* MeshData,
+bool FPCGUtilsDynMeshUVProjectOperation::ProcessUVs(
+	const FPCGUtilsDynMeshProcessInvocation& Invocation,
 	UE::Geometry::FDynamicMesh3& Mesh,
 	UE::Geometry::FDynamicMeshUVOverlay& UVOverlay,
-	TArrayView<const int32> TriangleIDs,
-	FPCGContext* Context) const
+	TArrayView<const int32> TriangleIDs) const
 {
 	using namespace UE::Geometry;
 
-	const FPCGDynamicMeshUVProjectContext* ProjectContext =
-		static_cast<const FPCGDynamicMeshUVProjectContext*>(Context);
-	const UPCGDynamicMeshUVProjectSettings* Settings =
-		Context->GetInputSettings<UPCGDynamicMeshUVProjectSettings>();
-	check(ProjectContext && Settings && !ProjectContext->Projectors.IsEmpty());
-
 	// PCG point positions/directions are world-space. Dynamic Mesh data has no embedded data transform and follows
 	// this module's target-actor-local convention, so transform raw vertices once into the common world space.
+	// This holds in deferred mode too: a realized Builder result is already in the same actor-local space.
 	const FTransform MeshToWorld = PCGUtilsDynMeshSpaceHelpers::ResolveMeshActorTransform(
-		Context, MeshData, /*bConvertToLocalSpace=*/true);
+		Invocation.Context, Invocation.MeshData, /*bConvertToLocalSpace=*/true);
 	const FProjectionApplyResult Result = ApplyProjection(
-		Mesh, UVOverlay, TriangleIDs, ProjectContext->Projectors,
-		MeshToWorld, Settings->UVScale, Settings->UVOffset);
+		Mesh, UVOverlay, TriangleIDs, Projectors, MeshToWorld, UVScale, UVOffset);
 
 	if (Result.DegenerateTriangleCount > 0)
 	{
 		PCGLog::LogWarningOnGraph(FText::Format(
 			LOCTEXT("DegenerateTriangles", "UV Project left {0} degenerate triangle(s) unchanged because a facing normal could not be computed."),
-			FText::AsNumber(Result.DegenerateTriangleCount)), Context);
+			FText::AsNumber(Result.DegenerateTriangleCount)), Invocation.Context);
 	}
+
 	if (Result.OverlayFailureCount > 0)
 	{
 		PCGLog::LogWarningOnGraph(FText::Format(
 			LOCTEXT("OverlayFailures", "UV Project could not assign UV overlay elements to {0} triangle(s)."),
-			FText::AsNumber(Result.OverlayFailureCount)), Context);
+			FText::AsNumber(Result.OverlayFailureCount)), Invocation.Context);
 	}
 
 	return true;

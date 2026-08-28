@@ -23,19 +23,10 @@ namespace
 	 * optional bounds-derived extents and a strength multiplier. Built once per controller in ResolveControllers,
 	 * then applied to the target mesh in order by ApplyWarp.
 	 */
-	struct FWarpController
-	{
-		// Position + rotation only; Geometry Script's warp frame (FFrame3d) has no scale component, so control
-		// point / Orientation scale is deliberately not carried here - point scale instead only feeds bounds
-		// inference below, avoiding double-applying it.
-		FTransform Orientation = FTransform::Identity;
-
-		float Density = 1.0f;
-
-		bool bHasBoundsExtents = false;
-		double BoundsLowerExtent = 0.0;
-		double BoundsUpperExtent = 0.0;
-	};
+	// Position + rotation only; Geometry Script's warp frame (FFrame3d) has no scale component, so control
+	// point / Orientation scale is deliberately not carried in the controller - point scale instead only feeds
+	// bounds inference below, avoiding double-applying it.
+	using FWarpController = FPCGUtilsDynMeshWarpController;
 
 	/** Position + rotation only, matching how Geometry Script's warp ops actually consume the orientation transform (see FFrame3d(const FTransform&), which discards scale entirely). */
 	FTransform MakeWarpFrame(const FTransform& SourceTransform)
@@ -123,74 +114,6 @@ namespace
 		return Controllers;
 	}
 
-	void ApplyWarp(UDynamicMesh* Mesh, const UPCGWarpSettings* Settings, const FWarpController& Controller)
-	{
-		switch (Settings->WarpType)
-		{
-		case EPCGUtilsWarpType::Bend:
-		{
-			FGeometryScriptBendWarpOptions Options;
-			Options.bSymmetricExtents = Settings->bBendSymmetricExtents;
-			Options.LowerExtent = Settings->BendLowerExtent;
-			Options.bBidirectional = Settings->bBendBidirectional;
-
-			float Extent = Settings->BendExtent;
-			if (Controller.bHasBoundsExtents)
-			{
-				Options.bSymmetricExtents = false;
-				Options.LowerExtent = Controller.BoundsLowerExtent;
-				Extent = Controller.BoundsUpperExtent;
-			}
-
-			UGeometryScriptLibrary_MeshDeformFunctions::ApplyBendWarpToMesh(
-				Mesh, Options, Controller.Orientation, Settings->BendAngle * Controller.Density, Extent);
-			break;
-		}
-		case EPCGUtilsWarpType::Twist:
-		{
-			FGeometryScriptTwistWarpOptions Options;
-			Options.bSymmetricExtents = Settings->bTwistSymmetricExtents;
-			Options.LowerExtent = Settings->TwistLowerExtent;
-			Options.bBidirectional = Settings->bTwistBidirectional;
-
-			float Extent = Settings->TwistExtent;
-			if (Controller.bHasBoundsExtents)
-			{
-				Options.bSymmetricExtents = false;
-				Options.LowerExtent = Controller.BoundsLowerExtent;
-				Extent = Controller.BoundsUpperExtent;
-			}
-
-			UGeometryScriptLibrary_MeshDeformFunctions::ApplyTwistWarpToMesh(
-				Mesh, Options, Controller.Orientation, Settings->TwistAngle * Controller.Density, Extent);
-			break;
-		}
-		case EPCGUtilsWarpType::Flare:
-		{
-			FGeometryScriptFlareWarpOptions Options;
-			Options.bSymmetricExtents = Settings->bFlareSymmetricExtents;
-			Options.LowerExtent = Settings->FlareLowerExtent;
-			Options.FlareType = Settings->FlareType;
-
-			float Extent = Settings->FlareExtent;
-			if (Controller.bHasBoundsExtents)
-			{
-				Options.bSymmetricExtents = false;
-				Options.LowerExtent = Controller.BoundsLowerExtent;
-				Extent = Controller.BoundsUpperExtent;
-			}
-
-			UGeometryScriptLibrary_MeshDeformFunctions::ApplyFlareWarpToMesh(
-				Mesh, Options, Controller.Orientation,
-				Settings->FlarePercentX * Controller.Density, Settings->FlarePercentY * Controller.Density, Extent);
-			break;
-		}
-		default:
-			checkNoEntry();
-			break;
-		}
-	}
-
 }
 
 #if WITH_EDITOR
@@ -218,21 +141,9 @@ EPCGChangeType UPCGWarpSettings::GetChangeTypeForProperty(FPropertyChangedEvent&
 }
 #endif
 
-TArray<FPCGPinProperties> UPCGWarpSettings::InputPinProperties() const
+FName UPCGWarpSettings::GetMainInputPinLabel() const
 {
-	TArray<FPCGPinProperties> Pins = Super::InputPinProperties();
-	Pins[0] = FPCGUtilsMeshTargetFunctions::MakeMeshInputPinProperties(WarpMeshPin);
-	Pins[0].SetRequiredPin();
-	if (ControlMode == EPCGUtilsWarpControlMode::PointData)
-	{
-		Pins.Emplace(WarpControlsPin, EPCGDataType::Point, true, true);
-	}
-	return Pins;
-}
-
-TArray<FPCGPinProperties> UPCGWarpSettings::OutputPinProperties() const
-{
-	return {FPCGPinProperties(PCGPinConstants::DefaultOutputLabel, EPCGDataType::DynamicMesh, true, true)};
+	return WarpMeshPin;
 }
 
 FPCGElementPtr UPCGWarpSettings::CreateElement() const
@@ -240,41 +151,131 @@ FPCGElementPtr UPCGWarpSettings::CreateElement() const
 	return MakeShared<FPCGWarpElement>();
 }
 
-bool FPCGWarpElement::ExecuteInternal(FPCGContext* Context) const
+TSharedPtr<const FPCGUtilsDynMeshProcessOperation> UPCGWarpSettings::CreateProcessOperation(
+	FPCGContext* InContext) const
 {
-	TRACE_CPUPROFILER_EVENT_SCOPE(FPCGWarpElement::ExecuteInternal);
-	check(Context);
+	TSharedPtr<FPCGUtilsDynMeshWarpOperation> Operation = MakeShared<FPCGUtilsDynMeshWarpOperation>();
 
-	const UPCGWarpSettings* Settings = Context->GetInputSettings<UPCGWarpSettings>();
-	check(Settings);
+	// Controllers are resolved once, here, from this node's own control-point pin and target actor - not
+	// per mesh, and never from whatever context later evaluates the operation.
+	Operation->Controllers = ResolveControllers(InContext, this);
 
-	// Controllers are resolved once and applied identically (and in the same order) to every Mesh input, rather
-	// than being re-resolved per mesh.
-	const TArray<FWarpController> Controllers = ResolveControllers(Context, Settings);
+	Operation->SelectionBlend = SelectionBlend;
+	Operation->WarpType = WarpType;
+	Operation->BendAngle = BendAngle;
+	Operation->BendExtent = BendExtent;
+	Operation->bBendSymmetricExtents = bBendSymmetricExtents;
+	Operation->BendLowerExtent = BendLowerExtent;
+	Operation->bBendBidirectional = bBendBidirectional;
+	Operation->TwistAngle = TwistAngle;
+	Operation->TwistExtent = TwistExtent;
+	Operation->bTwistSymmetricExtents = bTwistSymmetricExtents;
+	Operation->TwistLowerExtent = TwistLowerExtent;
+	Operation->bTwistBidirectional = bTwistBidirectional;
+	Operation->FlarePercentX = FlarePercentX;
+	Operation->FlarePercentY = FlarePercentY;
+	Operation->FlareExtent = FlareExtent;
+	Operation->bFlareSymmetricExtents = bFlareSymmetricExtents;
+	Operation->FlareLowerExtent = FlareLowerExtent;
+	Operation->FlareType = FlareType;
+	return Operation;
+}
 
-	for (const FPCGTaggedData& Input : Context->InputData.GetInputsByPin(WarpMeshPin))
+void FPCGUtilsDynMeshWarpOperation::ApplyWarp(
+	UDynamicMesh* Mesh, const FPCGUtilsDynMeshWarpController& Controller) const
+{
+	switch (WarpType)
 	{
-		FPCGUtilsMeshTargetHandle Handle = FPCGUtilsMeshTargetFunctions::CreateTarget(
-			Input.Data, EPCGUtilsMeshTargetPreparation::FullMeshCopy, Context, Settings);
-		if (!Handle.IsValid())
+	case EPCGUtilsWarpType::Bend:
+	{
+		FGeometryScriptBendWarpOptions Options;
+		Options.bSymmetricExtents = bBendSymmetricExtents;
+		Options.LowerExtent = BendLowerExtent;
+		Options.bBidirectional = bBendBidirectional;
+
+		float Extent = BendExtent;
+		if (Controller.bHasBoundsExtents)
 		{
-			continue;
+			Options.bSymmetricExtents = false;
+			Options.LowerExtent = Controller.BoundsLowerExtent;
+			Extent = Controller.BoundsUpperExtent;
 		}
 
-		if (!Handle.IsEmptySelectionNoOp())
+		UGeometryScriptLibrary_MeshDeformFunctions::ApplyBendWarpToMesh(
+			Mesh, Options, Controller.Orientation, BendAngle * Controller.Density, Extent);
+		break;
+	}
+	case EPCGUtilsWarpType::Twist:
+	{
+		FGeometryScriptTwistWarpOptions Options;
+		Options.bSymmetricExtents = bTwistSymmetricExtents;
+		Options.LowerExtent = TwistLowerExtent;
+		Options.bBidirectional = bTwistBidirectional;
+
+		float Extent = TwistExtent;
+		if (Controller.bHasBoundsExtents)
 		{
-			UDynamicMesh* Mesh = Handle.GetTargetMesh();
-			for (const FWarpController& Controller : Controllers)
-			{
-				ApplyWarp(Mesh, Settings, Controller);
-			}
+			Options.bSymmetricExtents = false;
+			Options.LowerExtent = Controller.BoundsLowerExtent;
+			Extent = Controller.BoundsUpperExtent;
 		}
 
-		FPCGUtilsMeshTargetFunctions::RestoreVertexPositions(Handle, Settings->SelectionBlend);
-		FPCGUtilsMeshTargetFunctions::RecomputeSelectionAffectedNormals(Handle);
-		FPCGUtilsMeshTargetFunctions::EmitOutput(Context, Input, Handle);
+		UGeometryScriptLibrary_MeshDeformFunctions::ApplyTwistWarpToMesh(
+			Mesh, Options, Controller.Orientation, TwistAngle * Controller.Density, Extent);
+		break;
+	}
+	case EPCGUtilsWarpType::Flare:
+	{
+		FGeometryScriptFlareWarpOptions Options;
+		Options.bSymmetricExtents = bFlareSymmetricExtents;
+		Options.LowerExtent = FlareLowerExtent;
+		Options.FlareType = FlareType;
+
+		float Extent = FlareExtent;
+		if (Controller.bHasBoundsExtents)
+		{
+			Options.bSymmetricExtents = false;
+			Options.LowerExtent = Controller.BoundsLowerExtent;
+			Extent = Controller.BoundsUpperExtent;
+		}
+
+		UGeometryScriptLibrary_MeshDeformFunctions::ApplyFlareWarpToMesh(
+			Mesh, Options, Controller.Orientation,
+			FlarePercentX * Controller.Density, FlarePercentY * Controller.Density, Extent);
+		break;
+	}
+	default:
+		checkNoEntry();
+		break;
+	}
+}
+
+bool FPCGUtilsDynMeshWarpOperation::Execute(
+	const FPCGUtilsDynMeshProcessInvocation& Invocation,
+	FPCGUtilsDynMeshProcessOutcome& OutOutcome) const
+{
+	// Space deformation moves vertices without changing connectivity.
+	OutOutcome.SelectionOutcome = EPCGUtilsDynMeshProcessSelectionOutcome::Preserve;
+
+	FPCGUtilsMeshTargetHandle Handle = FPCGUtilsMeshTargetFunctions::CreateTargetInPlace(
+		Invocation, EPCGUtilsMeshTargetPreparation::FullMeshCopy);
+	if (!Handle.IsValid())
+	{
+		return false;
 	}
 
+	if (!Handle.IsEmptySelectionNoOp())
+	{
+		UDynamicMesh* Mesh = Handle.GetTargetMesh();
+		for (const FPCGUtilsDynMeshWarpController& Controller : Controllers)
+		{
+			ApplyWarp(Mesh, Controller);
+		}
+	}
+
+	// Composites straight back into Invocation.MeshData - CreateTargetInPlace adopted it as the base mesh.
+	FPCGUtilsMeshTargetFunctions::RestoreVertexPositions(Handle, SelectionBlend);
+	FPCGUtilsMeshTargetFunctions::RecomputeSelectionAffectedNormals(Handle);
 	return true;
 }
 

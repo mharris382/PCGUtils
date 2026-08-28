@@ -23,5 +23,13 @@ public class PCGUtilsDynMesh : ModuleRules
                 "PCGGeometryScriptInterop"
             }
         );
+
+        // Write DynMesh LODs authors Static Mesh assets: it needs the asset registry to announce a newly
+        // created asset. The write itself goes through GeometryScriptingCore, which is already public above
+        // and guards its own editor-only implementation.
+        if (Target.bBuildEditor)
+        {
+            PrivateDependencyModuleNames.Add("AssetRegistry");
+        }
     }
 }

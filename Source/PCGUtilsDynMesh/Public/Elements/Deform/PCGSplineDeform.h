@@ -3,6 +3,7 @@
 #include "CoreMinimal.h"
 #include "Components/SplineMeshComponent.h"
 #include "MeshTarget/PCGUtilsMeshTargetTypes.h"
+#include "Data/PCGSplineStruct.h"
 #include "Elements/PCGUtilsDynMeshProcessBase.h"
 
 #include "PCGSplineDeform.generated.h"
@@ -136,18 +137,57 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Attributes", meta = (PCG_Overridable))
 	bool bRecomputeNormals = true;
 
+	virtual TSharedPtr<const FPCGUtilsDynMeshProcessOperation> CreateProcessOperation(
+		FPCGContext* InContext) const override;
+
+	/** Spline deformation only moves vertices, so a Builder's active selection survives it. */
+	virtual bool SupportsDeferredBuilderProcessing() const override { return true; }
+
 protected:
-	virtual TArray<FPCGPinProperties> InputPinProperties() const override;
-	virtual TArray<FPCGPinProperties> OutputPinProperties() const override;
+	virtual FName GetMainInputPinLabel() const override;
 	virtual FPCGElementPtr CreateElement() const override;
 };
 
+/** Uses the process base's default executor: all the work lives in the reusable operation. */
 class PCGUTILSDYNMESH_API FPCGSplineDeformElement : public FPCGUtilsDynMeshProcessBaseElement
 {
 public:
-	/** Resolving the target actor for spline/mesh coordinate-space conversion requires the game thread. */
+	/** Resolving the target actor for spline local-space conversion requires the game thread. */
 	virtual bool CanExecuteOnlyOnMainThread(FPCGContext* Context) const override { return true; }
+};
 
-protected:
-	virtual bool ExecuteInternal(FPCGContext* Context) const override;
+/**
+ * Bends a mesh along a spline.
+ *
+ * The spline arrives on a second PCG input pin, so it is resolved - and *copied by value* - in
+ * CreateProcessOperation() while the Spline Deform node is executing. Copying matters: holding the
+ * UPCGSplineData would be a hard UObject reference invisible to GC, and by evaluation time that data may be
+ * long gone. FPCGSplineStruct is a plain value type, so the operation owns a self-contained snapshot.
+ */
+class PCGUTILSDYNMESH_API FPCGUtilsDynMeshSplineDeformOperation final : public FPCGUtilsDynMeshProcessOperation
+{
+public:
+	/** False when the spline could not be resolved at capture time; the operation then passes meshes through. */
+	bool bIsValid = false;
+
+	FPCGSplineStruct Spline;
+	FTransform ActorTransform = FTransform::Identity;
+	double SplineLength = 0.0;
+	double EffectiveRangeStart = 0.0;
+	double EffectiveRangeEnd = 0.0;
+	EPCGUtilsSplineDeformOutOfRangeMode EffectiveOutOfRangeMode =
+		EPCGUtilsSplineDeformOutOfRangeMode::ExtendAlongTangent;
+
+	TEnumAsByte<ESplineMeshAxis::Type> ForwardAxis = ESplineMeshAxis::X;
+	bool bReverseDirection = false;
+	EPCGUtilsSplineDeformMappingMode MappingMode = EPCGUtilsSplineDeformMappingMode::FitToSpline;
+	EPCGUtilsSplineDeformAnchor Anchor = EPCGUtilsSplineDeformAnchor::Center;
+	float DistanceOffset = 0.0f;
+	bool bUseSplineScale = false;
+	bool bRecomputeNormals = true;
+	FPCGUtilsSelectionBlendOptions SelectionBlend;
+
+	virtual bool Execute(
+		const FPCGUtilsDynMeshProcessInvocation& Invocation,
+		FPCGUtilsDynMeshProcessOutcome& OutOutcome) const override;
 };

@@ -22,12 +22,6 @@ struct FPCGDynamicMeshUVProjector
 };
 
 /** Execution-local projector cache shared by every target mesh in one node execution. */
-struct FPCGDynamicMeshUVProjectContext : public FPCGContext
-{
-	bool bProjectorsResolved = false;
-	TArray<FPCGDynamicMeshUVProjector> Projectors;
-};
-
 /** Projects planar UVs from one or more projector points. */
 UCLASS(BlueprintType, ClassGroup=(Procedural), Category="PCGUtils|DynMesh|UV")
 class PCGUTILSDYNMESH_API UPCGDynamicMeshUVProjectSettings
@@ -63,28 +57,46 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="UV Project", meta=(PCG_Overridable))
 	FVector2D UVOffset = FVector2D::ZeroVector;
 
+	virtual TSharedPtr<const FPCGUtilsDynMeshProcessOperation> CreateProcessOperation(
+		FPCGContext* InContext) const override;
+
+	/** Projection writes a UV overlay only, so a Builder's active selection survives it. */
+	virtual bool SupportsDeferredBuilderProcessing() const override { return true; }
+
 protected:
 	virtual TArray<FPCGPinProperties> InputPinProperties() const override;
 	virtual FPCGElementPtr CreateElement() const override;
 };
 
+/** Uses the process base's default executor: all the work lives in the reusable operation. */
 class PCGUTILSDYNMESH_API FPCGDynamicMeshUVProjectElement
 	: public FPCGDynamicMeshUVProcessBaseElement
 {
+public:
+	/** Resolving the target actor for the mesh-to-world transform requires the game thread. */
+	virtual bool CanExecuteOnlyOnMainThread(FPCGContext* Context) const override { return true; }
+};
+
+/**
+ * Planar UV projection from one or more projector points.
+ *
+ * The projectors come from a second PCG input pin and are resolved once, in CreateProcessOperation(), while
+ * the UV Project node itself is executing - the same capture-at-authoring-time pattern Warp uses.
+ */
+class PCGUTILSDYNMESH_API FPCGUtilsDynMeshUVProjectOperation final : public FPCGUtilsDynMeshUVProcessOperation
+{
+public:
+	TArray<FPCGDynamicMeshUVProjector> Projectors;
+	FVector2D UVScale = FVector2D(0.01, 0.01);
+	FVector2D UVOffset = FVector2D::ZeroVector;
+
 protected:
-	virtual FPCGContext* CreateContext() override;
-	virtual bool ExecuteInternal(FPCGContext* Context) const override;
+	virtual bool ShouldProcessUVs(
+		const FPCGUtilsDynMeshProcessInvocation& Invocation, TArrayView<const int32> TriangleIDs) const override;
 
-	virtual bool ShouldProcessUVs(UPCGDynamicMeshData* MeshData,
-		const UPCGDynamicMeshSelectionData* SelectionData,
-		TArrayView<const int32> TriangleIDs, FPCGContext* Context) const override;
-
-	virtual bool ProcessUVs(UPCGDynamicMeshData* MeshData,
+	virtual bool ProcessUVs(
+		const FPCGUtilsDynMeshProcessInvocation& Invocation,
 		UE::Geometry::FDynamicMesh3& Mesh,
 		UE::Geometry::FDynamicMeshUVOverlay& UVOverlay,
-		TArrayView<const int32> TriangleIDs,
-		FPCGContext* Context) const override;
-
-private:
-	void ResolveProjectors(FPCGDynamicMeshUVProjectContext* Context) const;
+		TArrayView<const int32> TriangleIDs) const override;
 };

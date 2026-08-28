@@ -52,14 +52,47 @@ public:
 		EditCondition="bUseDataAttributeColor", EditConditionHides))
 	FName ColorAttributeName = "VertexColor";
 
+	virtual TSharedPtr<const FPCGUtilsDynMeshProcessOperation> CreateProcessOperation(
+		FPCGContext* InContext) const override;
+
+	/**
+	 * Setting vertex colors never changes topology, so a Builder can be decorated with it - except in
+	 * attribute mode, where the colour is read from a Data-domain attribute on the *incoming PCG data*. A
+	 * Builder subtree's result is freshly created geometry and carries no such attribute, so that mode stays
+	 * immediate-only rather than silently resolving to the fallback colour.
+	 */
+	virtual bool SupportsDeferredBuilderProcessing() const override { return !bUseDataAttributeColor; }
+
+#if WITH_EDITOR
+	virtual EPCGChangeType GetChangeTypeForProperty(FPropertyChangedEvent& PropertyChangedEvent) const override;
+#endif
+
 protected:
-	virtual TArray<FPCGPinProperties> InputPinProperties() const override;
-	virtual TArray<FPCGPinProperties> OutputPinProperties() const override;
+	virtual FName GetMainInputPinLabel() const override;
 	virtual FPCGElementPtr CreateElement() const override;
 };
 
+/** Uses the process base's default executor: all the work lives in the reusable operation. */
 class PCGUTILSDYNMESH_API FPCGSetVertexColorElement : public FPCGUtilsDynMeshProcessBaseElement
 {
-protected:
-	virtual bool ExecuteInternal(FPCGContext* Context) const override;
+};
+
+/**
+ * Sets vertex colours on a whole mesh or on just the effective selection. Both Geometry Script entry points
+ * are selection-aware in their own right, so no Mesh Target working copy is needed - the operation writes
+ * straight into the mesh it was handed, which is already private to the caller.
+ */
+class PCGUTILSDYNMESH_API FPCGUtilsDynMeshSetVertexColorOperation final : public FPCGUtilsDynMeshProcessOperation
+{
+public:
+	FGeometryScriptColorFlags ColorFlags;
+	bool bClearExisting = false;
+	bool bCreateColorSeam = false;
+	bool bUseDataAttributeColor = false;
+	FLinearColor Color = FLinearColor::White;
+	FName ColorAttributeName;
+
+	virtual bool Execute(
+		const FPCGUtilsDynMeshProcessInvocation& Invocation,
+		FPCGUtilsDynMeshProcessOutcome& OutOutcome) const override;
 };

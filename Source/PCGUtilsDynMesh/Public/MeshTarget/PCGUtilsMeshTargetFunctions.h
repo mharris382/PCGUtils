@@ -1,6 +1,7 @@
 #pragma once
 
 #include "CoreMinimal.h"
+#include "Elements/PCGUtilsDynMeshProcessOperation.h"
 #include "MeshTarget/PCGUtilsMeshTargetHandle.h"
 #include "MeshTarget/PCGUtilsMeshTargetTypes.h"
 #include "PCGPin.h"
@@ -41,6 +42,41 @@ public:
 	static FPCGUtilsMeshTargetHandle CreateTarget(
 		const UPCGData* InputData, EPCGUtilsMeshTargetPreparation Preparation, FPCGContext* Context,
 		const UPCGUtilsDynMeshProcessBaseSettings* ProcessSettings = nullptr);
+
+	/**
+	 * Deferred-friendly overload: takes input that has *already* been resolved through
+	 * FPCGUtilsDynMeshProcessFunctions::ResolveInput(), so this layer never needs a live process Settings
+	 * object. Use this from a Builder decorator, where the executing node is the materializer and the
+	 * authoring node's settings are unreachable by design.
+	 */
+	static FPCGUtilsMeshTargetHandle CreateTarget(
+		const struct FPCGUtilsDynMeshResolvedInput& ResolvedInput,
+		EPCGUtilsMeshTargetPreparation Preparation, FPCGContext* Context);
+
+	/**
+	 * The entry point for a reusable process operation (FPCGUtilsDynMeshProcessOperation).
+	 *
+	 * Unlike CreateTarget(), this does *not* copy OwnedMeshData: the caller already owns it outright - the
+	 * process base deep-copies before invoking an operation in immediate mode, and a Builder subtree's result
+	 * is private to that subtree in deferred mode. The handle's base mesh therefore *is* OwnedMeshData's mesh,
+	 * so once the matching Restore* call composites the result there is nothing to write back and no
+	 * EmitOutput() step: the operation's output is already in OwnedMeshData.
+	 *
+	 * A whole-mesh operation consequently makes zero extra copies; only Region extraction and the
+	 * FullMeshCopy-of-a-selection blend allocate a separate working mesh, exactly as they must.
+	 *
+	 * EffectiveSelection must be the already-resolved selection (domain-converted and intersected with any
+	 * Selector) and must reference OwnedMeshData. Pass null for a whole-mesh application.
+	 */
+	static FPCGUtilsMeshTargetHandle CreateTargetInPlace(
+		UPCGDynamicMeshData* OwnedMeshData,
+		const UPCGDynamicMeshSelectionData* EffectiveSelection,
+		EPCGUtilsMeshTargetPreparation Preparation,
+		FPCGContext* Context);
+
+	/** Convenience form of CreateTargetInPlace() taking everything straight off a process invocation. */
+	static FPCGUtilsMeshTargetHandle CreateTargetInPlace(
+		const FPCGUtilsDynMeshProcessInvocation& Invocation, EPCGUtilsMeshTargetPreparation Preparation);
 
 	/**
 	 * Finalizes a handle created with EPCGUtilsMeshTargetPreparation::Region: for a Selection source,
@@ -86,8 +122,15 @@ public:
 		FName OutputPin = PCGPinConstants::DefaultOutputLabel);
 
 private:
+	/**
+	 * AdoptedBaseMesh, when non-null, is used as the working/base mesh verbatim instead of allocating a copy
+	 * of the source - the caller has guaranteed it already owns it exclusively. Null preserves the copying
+	 * behaviour every existing CreateTarget() caller relies on.
+	 */
 	static FPCGUtilsMeshTargetHandle CreateFullMeshTarget(
-		const class UPCGDynamicMeshData* SourceData, EPCGUtilsMeshTargetPreparation Preparation, FPCGContext* Context);
+		const class UPCGDynamicMeshData* SourceData, EPCGUtilsMeshTargetPreparation Preparation, FPCGContext* Context,
+		UDynamicMesh* AdoptedBaseMesh = nullptr);
 	static FPCGUtilsMeshTargetHandle CreateSelectionTarget(
-		const class UPCGDynamicMeshSelectionData* SelectionData, EPCGUtilsMeshTargetPreparation Preparation, FPCGContext* Context);
+		const class UPCGDynamicMeshSelectionData* SelectionData, EPCGUtilsMeshTargetPreparation Preparation, FPCGContext* Context,
+		UDynamicMesh* AdoptedBaseMesh = nullptr);
 };

@@ -28,13 +28,33 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Material", meta=(PCG_Overridable))
 	TSoftObjectPtr<UMaterialInterface> DefaultMaterial;
 
+	virtual TSharedPtr<const FPCGUtilsDynMeshProcessOperation> CreateProcessOperation(
+		FPCGContext* InContext) const override;
+
+	/** Topology preserving and fully implemented through its operation, so a Builder can be decorated. */
+	virtual bool SupportsDeferredBuilderProcessing() const override { return true; }
+
 protected:
 	virtual FPCGElementPtr CreateElement() const override;
 };
 
+/** Uses the process base's default executor: all the work lives in the reusable operation. */
 class PCGUTILSDYNMESH_API FPCGMaterialElement : public FPCGUtilsDynMeshProcessBaseElement
 {
-protected:
-	virtual bool ProcessMesh(UPCGDynamicMeshData* MeshData,
-		const UPCGDynamicMeshSelectionData* SelectionData, FPCGContext* Context) const override;
+};
+
+/**
+ * Assigns one material to a whole mesh, or appends a material and assigns it to just the effective selection.
+ * Material assignment never changes topology, so an active Builder selection survives it.
+ */
+class PCGUTILSDYNMESH_API FPCGUtilsDynMeshMaterialOperation final : public FPCGUtilsDynMeshProcessOperation
+{
+public:
+	/** Resolved at capture time, not evaluation time: an operation must not touch the asset registry later. */
+	TObjectPtr<UMaterialInterface> AssignedMaterial;
+	TObjectPtr<UMaterialInterface> DefaultMaterial;
+
+	virtual bool Execute(
+		const FPCGUtilsDynMeshProcessInvocation& Invocation,
+		FPCGUtilsDynMeshProcessOutcome& OutOutcome) const override;
 };

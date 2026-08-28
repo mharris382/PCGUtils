@@ -42,7 +42,8 @@ namespace
 	 * has no effect on the result. bOutIsTemporary tells the caller to remove that synthesized layer afterward.
 	 */
 	FGeometryScriptWeightMapHandle ResolveAdaptiveWeightMapHandle(
-		UDynamicMesh* Mesh, const UPCGRemeshSettings* Settings, bool& bOutIsTemporary, FPCGContext* Context)
+		UDynamicMesh* Mesh, const FPCGUtilsDynMeshRemeshOperation* Settings, bool& bOutIsTemporary,
+		FPCGContext* Context)
 	{
 		using namespace UE::Geometry;
 
@@ -100,7 +101,8 @@ namespace
 	 * to Fixed and Auto Compact is deferred to the caller - see RemeshOne - without ever mutating the user's own
 	 * serialized RemeshOptions.
 	 */
-	void ApplyRemeshOperation(UDynamicMesh* Mesh, const UPCGRemeshSettings* Settings, bool bForceFixedSelectionBoundary, FPCGContext* Context)
+	void ApplyRemeshOperation(UDynamicMesh* Mesh, const FPCGUtilsDynMeshRemeshOperation* Settings,
+		bool bForceFixedSelectionBoundary, FPCGContext* Context)
 	{
 		FGeometryScriptRemeshOptions EffectiveOptions = Settings->RemeshOptions;
 		if (bForceFixedSelectionBoundary)
@@ -125,41 +127,6 @@ namespace
 		}
 	}
 
-	/**
-	 * For a Mesh Selection input, the Mesh Target Handle's target mesh is a freshly-extracted region: it has a
-	 * matching-*named* weight layer (if the source had one) but with default/zero values - extraction does not
-	 * copy per-vertex weight-map *values*, unlike overlay-based UVs/normals/colors. Seed the real values from the
-	 * source mesh via the handle's vertex correspondence before remeshing. A no-op for a whole Dynamic Mesh input
-	 * (whose target already has correct values, being a full deep copy) or when Adaptive weight maps aren't used.
-	 */
-	void RemeshOne(FPCGContext* Context, const UPCGRemeshSettings* Settings, const FPCGTaggedData& Input)
-	{
-		FPCGUtilsMeshTargetHandle Handle = FPCGUtilsMeshTargetFunctions::CreateTarget(
-			Input.Data, EPCGUtilsMeshTargetPreparation::Region, Context, Settings);
-		if (!Handle.IsValid())
-		{
-			return;
-		}
-
-		const bool bIsSelectionRegion = Handle.IsSelection() && !Handle.IsEmptySelectionNoOp();
-
-		if (!Handle.IsEmptySelectionNoOp())
-		{
-			ApplyRemeshOperation(Handle.GetTargetMesh(), Settings, bIsSelectionRegion, Context);
-		}
-
-		FPCGUtilsMeshTargetFunctions::RestoreRegion(Handle);
-
-		// AutoCompact is honored once, here, on the final merged mesh rather than during the region's own remesh
-		// pass (which is forced to skip it in ApplyRemeshOperation) - compacting the temporary region mid-pass
-		// would renumber the boundary-vertex IDs the reinsertion/weld step depends on.
-		if (bIsSelectionRegion && Settings->RemeshOptions.bAutoCompact)
-		{
-			Handle.GetTargetMesh()->EditMesh([](UE::Geometry::FDynamicMesh3& M) { M.CompactInPlace(); });
-		}
-
-		FPCGUtilsMeshTargetFunctions::EmitOutput(Context, Input, Handle);
-	}
 }
 
 #if WITH_EDITOR
@@ -177,17 +144,9 @@ FText UPCGRemeshSettings::GetNodeTooltipText() const
 }
 #endif
 
-TArray<FPCGPinProperties> UPCGRemeshSettings::InputPinProperties() const
+FName UPCGRemeshSettings::GetMainInputPinLabel() const
 {
-	TArray<FPCGPinProperties> Pins = Super::InputPinProperties();
-	Pins[0] = FPCGUtilsMeshTargetFunctions::MakeMeshInputPinProperties(MeshPin);
-	Pins[0].SetRequiredPin();
-	return Pins;
-}
-
-TArray<FPCGPinProperties> UPCGRemeshSettings::OutputPinProperties() const
-{
-	return {FPCGPinProperties(PCGPinConstants::DefaultOutputLabel, EPCGDataType::DynamicMesh, true, true)};
+	return MeshPin;
 }
 
 FPCGElementPtr UPCGRemeshSettings::CreateElement() const
@@ -195,19 +154,51 @@ FPCGElementPtr UPCGRemeshSettings::CreateElement() const
 	return MakeShared<FPCGRemeshElement>();
 }
 
-bool FPCGRemeshElement::ExecuteInternal(FPCGContext* Context) const
+TSharedPtr<const FPCGUtilsDynMeshProcessOperation> UPCGRemeshSettings::CreateProcessOperation(
+	FPCGContext* InContext) const
 {
-	TRACE_CPUPROFILER_EVENT_SCOPE(FPCGRemeshElement::ExecuteInternal);
-	check(Context);
+	TSharedPtr<FPCGUtilsDynMeshRemeshOperation> Operation = MakeShared<FPCGUtilsDynMeshRemeshOperation>();
+	Operation->Mode = Mode;
+	Operation->RemeshOptions = RemeshOptions;
+	Operation->UniformOptions = UniformOptions;
+	Operation->AdaptiveOptions = AdaptiveOptions;
+	Operation->bUseAdaptiveWeightMap = bUseAdaptiveWeightMap;
+	Operation->AdaptiveWeightMapAttributeName = AdaptiveWeightMapAttributeName;
+	return Operation;
+}
 
-	const UPCGRemeshSettings* Settings = Context->GetInputSettings<UPCGRemeshSettings>();
-	check(Settings);
+bool FPCGUtilsDynMeshRemeshOperation::Execute(
+	const FPCGUtilsDynMeshProcessInvocation& Invocation,
+	FPCGUtilsDynMeshProcessOutcome& OutOutcome) const
+{
+	// Remeshing replaces the triangulation outright, so no selection into the old topology survives it.
+	OutOutcome.SelectionOutcome = EPCGUtilsDynMeshProcessSelectionOutcome::Clear;
 
-	for (const FPCGTaggedData& Input : Context->InputData.GetInputsByPin(MeshPin))
+	FPCGUtilsMeshTargetHandle Handle = FPCGUtilsMeshTargetFunctions::CreateTargetInPlace(
+		Invocation, EPCGUtilsMeshTargetPreparation::Region);
+	if (!Handle.IsValid())
 	{
-		RemeshOne(Context, Settings, Input);
+		return false;
 	}
 
+	const bool bIsSelectionRegion = Handle.IsSelection() && !Handle.IsEmptySelectionNoOp();
+
+	if (!Handle.IsEmptySelectionNoOp())
+	{
+		ApplyRemeshOperation(Handle.GetTargetMesh(), this, bIsSelectionRegion, Invocation.Context);
+	}
+
+	FPCGUtilsMeshTargetFunctions::RestoreRegion(Handle);
+
+	// AutoCompact is honored once, here, on the final merged mesh rather than during the region's own remesh
+	// pass (which is forced to skip it in ApplyRemeshOperation) - compacting the temporary region mid-pass
+	// would renumber the boundary-vertex IDs the reinsertion/weld step depends on.
+	if (bIsSelectionRegion && RemeshOptions.bAutoCompact)
+	{
+		Handle.GetTargetMesh()->EditMesh([](UE::Geometry::FDynamicMesh3& M) { M.CompactInPlace(); });
+	}
+
+	// Nothing to emit: CreateTargetInPlace adopted Invocation.MeshData's mesh as the handle's base.
 	return true;
 }
 

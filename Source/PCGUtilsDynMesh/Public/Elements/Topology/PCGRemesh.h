@@ -63,14 +63,36 @@ public:
 		meta = (PCG_Overridable, EditCondition = "Mode==EPCGRemeshMode::Adaptive && bUseAdaptiveWeightMap", EditConditionHides))
 	FName AdaptiveWeightMapAttributeName = "RemeshDensityWeight";
 
+	virtual TSharedPtr<const FPCGUtilsDynMeshProcessOperation> CreateProcessOperation(
+		FPCGContext* InContext) const override;
+
+	virtual bool SupportsDeferredBuilderProcessing() const override { return true; }
+
 protected:
-	virtual TArray<FPCGPinProperties> InputPinProperties() const override;
-	virtual TArray<FPCGPinProperties> OutputPinProperties() const override;
+	virtual FName GetMainInputPinLabel() const override;
 	virtual FPCGElementPtr CreateElement() const override;
 };
 
+/**
+ * Uniform / Adaptive remeshing. A selection is remeshed as an extracted region with a fixed outer boundary and
+ * welded back, which is why this one still goes through the Mesh Target layer.
+ */
+class PCGUTILSDYNMESH_API FPCGUtilsDynMeshRemeshOperation final : public FPCGUtilsDynMeshProcessOperation
+{
+public:
+	EPCGRemeshMode Mode = EPCGRemeshMode::Uniform;
+	FGeometryScriptRemeshOptions RemeshOptions;
+	FGeometryScriptUniformRemeshOptions UniformOptions;
+	FGeometryScriptAdaptiveRemeshOptions AdaptiveOptions;
+	bool bUseAdaptiveWeightMap = false;
+	FName AdaptiveWeightMapAttributeName;
+
+	virtual bool Execute(
+		const FPCGUtilsDynMeshProcessInvocation& Invocation,
+		FPCGUtilsDynMeshProcessOutcome& OutOutcome) const override;
+};
+
+/** Uses the process base's default executor: all the work lives in the reusable operation. */
 class PCGUTILSDYNMESH_API FPCGRemeshElement : public FPCGUtilsDynMeshProcessBaseElement
 {
-protected:
-	virtual bool ExecuteInternal(FPCGContext* Context) const override;
 };

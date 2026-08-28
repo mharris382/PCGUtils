@@ -7,6 +7,29 @@
 
 class UPCGCreatePrimitiveSettingsBase;
 
+/**
+ * How a materializer splits the Builder expressions it evaluates into output Dynamic Mesh data.
+ *
+ * The two axes are independent: whether seeds are kept apart, and whether Builders are kept apart. Splitting
+ * by Builder also removes the need to merge material arrays, since each output then holds exactly one
+ * Builder's geometry and its material IDs already index that Builder's own array.
+ */
+UENUM(BlueprintType)
+enum class EPCGUtilsDynMeshBuilderOutputMode : uint8
+{
+	/** One DynMesh per seed point, with every connected Builder composed into it. */
+	PerSeed,
+
+	/** One DynMesh for everything: every Builder, for every seed, appended together. */
+	Single,
+
+	/** One DynMesh per connected Builder, each holding that Builder's result for every seed. */
+	PerBuilder,
+
+	/** One DynMesh per Builder per seed - the finest split, Builders x seeds outputs. */
+	PerBuilderPerSeed
+};
+
 /** How each seed point places its copy of the primitive. */
 UENUM(BlueprintType)
 enum class EPCGCreatePrimitiveSeedPlacement : uint8
@@ -23,9 +46,10 @@ enum class EPCGCreatePrimitiveSeedPlacement : uint8
  *
  * In legacy mode (default, for backwards compatibility with existing graphs), the primitive type and its
  * options are configured via the inline Primitive object, and placement uses the Transform/Bounds toggle
- * below. In Builder mode (bUseLegacyMode disabled), the primitive and its fitting/alignment are instead
- * authored upstream as a Primitive Builder and connected to the Builder pin, which supports padding, a local
- * pre-transform, and (in a future node) composing several primitives per seed.
+ * below. In Builder mode (bUseLegacyMode disabled), primitives and their fitting/alignment are instead
+ * authored upstream as Builder nodes (Box Builder, Cylinder Builder, ...) and connected to the Builders pin.
+ * Every Builder on that pin is evaluated for every seed and appended into one mesh, so a set of Builders that
+ * pad and align differently against the same seed bounds composes a compound shape.
  */
 UCLASS(BlueprintType, ClassGroup=(Procedural), Category="PCGUtils|DynMesh")
 class PCGUTILSDYNMESH_API UPCGCreatePrimitiveSettings : public UPCGSettings
@@ -69,6 +93,18 @@ public:
 	EPCGCreatePrimitiveSeedPlacement Placement = EPCGCreatePrimitiveSeedPlacement::Transform;
 
 	/**
+	 * Builder mode only. How the evaluated Builders are split across output Dynamic Mesh data.
+	 *
+	 * Per Seed (the default) gives one shape per seed, which is what lets downstream nodes treat each result
+	 * as its own object - and what makes a DynMesh-local transform mean something per seed. Single reproduces
+	 * the older merge-everything behaviour and is cheaper downstream when the seeds are only ever consumed as
+	 * one piece of geometry.
+	 */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Seeds",
+		meta = (PCG_Overridable, EditCondition = "!bUseLegacyMode", EditConditionHides))
+	EPCGUtilsDynMeshBuilderOutputMode OutputMode = EPCGUtilsDynMeshBuilderOutputMode::PerSeed;
+
+	/**
 	 * Reverts to the original single-primitive, inline-configured behavior above (Primitive/bUseSeedPoints/
 	 * Placement) for backwards compatibility with existing graphs. Disable to instead drive this node from a
 	 * Builder pin, which supports fitting/padding/alignment and (eventually) composing several primitives.
@@ -77,6 +113,9 @@ public:
 	bool bUseLegacyMode = true;
 
 protected:
+	virtual void ApplyDeprecationBeforeUpdatePins(
+		UPCGNode* InOutNode, TArray<TObjectPtr<UPCGPin>>& InputPins,
+		TArray<TObjectPtr<UPCGPin>>& OutputPins) override;
 	virtual TArray<FPCGPinProperties> InputPinProperties() const override;
 	virtual TArray<FPCGPinProperties> OutputPinProperties() const override;
 	virtual FPCGElementPtr CreateElement() const override;
@@ -95,6 +134,10 @@ private:
 	/** The original single-inline-primitive execution path, preserved verbatim for bUseLegacyMode == true. */
 	bool ExecuteLegacy(FPCGContext* Context, const class UPCGCreatePrimitiveSettings* Settings) const;
 
-	/** Resolves the Builder pin and stamps its per-seed result, for bUseLegacyMode == false. */
+	/**
+	 * Materializes every connected Builder expression once per seed and appends the results into one mesh,
+	 * for bUseLegacyMode == false. Several Builders on the pin compose a compound shape per seed - a column
+	 * is a bottom-aligned box, a mid-aligned cylinder, and a top-aligned box sharing one seed.
+	 */
 	bool ExecuteBuilder(FPCGContext* Context, const class UPCGCreatePrimitiveSettings* Settings) const;
 };
