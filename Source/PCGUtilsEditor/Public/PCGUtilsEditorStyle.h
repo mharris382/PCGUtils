@@ -16,6 +16,8 @@ public:
 
 	static const FName SelectionFactoryInputPinIcon;
 	static const FName SelectionFactoryOutputPinIcon;
+	static const FName PainterFactoryInputPinIcon;
+	static const FName PainterFactoryOutputPinIcon;
 	static const FName PrimitiveFactoryInputPinIcon;
 	static const FName PrimitiveFactoryOutputPinIcon;
 	static const FName PrimitiveFactoriesInputPinIcon;

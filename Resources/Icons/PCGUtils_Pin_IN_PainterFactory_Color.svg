@@ -1,0 +1,42 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg id="Painter" xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" viewBox="0 0 63.7 63.6">
+  <defs>
+    <style>
+      .cls-1 {
+        fill: #919191;
+      }
+
+      .cls-2 {
+        filter: url(#drop-shadow-1);
+      }
+
+      .cls-3 {
+        fill: url(#linear-gradient);
+      }
+    </style>
+    <linearGradient id="linear-gradient" x1="15.11" y1="36.26" x2="59.09" y2="36.26" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#00a8de"/>
+      <stop offset=".15" stop-color="#333391" stop-opacity=".98"/>
+      <stop offset=".37" stop-color="#e91388"/>
+      <stop offset=".52" stop-color="#eb2d2e"/>
+      <stop offset=".73" stop-color="#fde92b"/>
+      <stop offset=".88" stop-color="#009e54"/>
+      <stop offset="1" stop-color="#009e54" stop-opacity="0"/>
+    </linearGradient>
+    <filter id="drop-shadow-1" x=".81" y="19.49" width="57.53" height="24.67" filterUnits="userSpaceOnUse">
+      <feOffset dx="1" dy="1"/>
+      <feGaussianBlur result="blur" stdDeviation="0"/>
+      <feFlood flood-color="#231f20" flood-opacity="1"/>
+      <feComposite in2="blur" operator="in"/>
+      <feComposite in="SourceGraphic"/>
+    </filter>
+  </defs>
+  <g id="Layer_16_copy" data-name="Layer 16 copy">
+    <rect class="cls-3" x="14.48" y="28.97" width="43.86" height="14.56"/>
+  </g>
+  <g id="Layer_16_copy_2" data-name="Layer 16 copy 2">
+    <g class="cls-2">
+      <path class="cls-1" d="M55.6,19.54c-6.03,1.47-12.05,3.14-18.04,5-5.72,1.78-11.41,3.74-17.01,5.87l1.65,4.79c5.74-1.78,11.43-3.73,17.02-5.84,5.88-2.22,11.66-4.61,17.3-7.16.37-.17.61-.41.72-.69.13-.31.12-.68,0-1.05-.13-.37-.35-.67-.64-.83-.26-.15-.6-.19-.99-.09h0ZM.81,37.12c6.17,2.21,9.25-.08,11.97-2.1.44-.33.88-.65,1.21-.88l.97,1.39c-.46.32-.81.58-1.17.84-2.99,2.23-6.38,4.74-12.99,2.54,2.5,2.44,5.54,3.78,8.49,4.15,1.46.18,2.89.12,4.23-.16,1.32-.28,2.55-.78,3.59-1.48,1.85-1.25,3.16-3.16,3.48-5.65l-1.33-3.86c-5.63-5.61-8.3-2.96-11.51.22-1.93,1.92-4.04,4-6.95,4.99h0Z"/>
+    </g>
+  </g>
+</svg>

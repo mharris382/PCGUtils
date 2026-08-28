@@ -100,6 +100,10 @@ struct PCGUTILSDYNMESH_API FPCGUtilsDynMeshProcessInvocation
 	 */
 	const UPCGDynamicMeshData* SourceMeshData = nullptr;
 
+	/** Ordinal and count of concrete inputs being processed by the immediate node invocation. */
+	int32 InputIndex = 0;
+	int32 InputCount = 1;
+
 	/**
 	 * The Builder frame of the subtree being decorated - where its content was placed. Only set in deferred
 	 * mode; concrete PCG data carries no such record, so an operation that offers a builder-local mode needs

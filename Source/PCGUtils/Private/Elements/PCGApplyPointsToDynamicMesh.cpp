@@ -4,6 +4,7 @@
 #include "Data/PCGDynamicMeshData.h"
 #include "Data/PCGBasePointData.h"
 #include "Metadata/Accessors/PCGAttributeAccessorHelpers.h"
+#include "DynamicMesh/PCGUtilsDynMeshAttributeHelpers.h"
 
 #include "UDynamicMesh.h"
 #include "DynamicMesh/DynamicMesh3.h"
@@ -55,42 +56,6 @@ FPCGContext* FPCGApplyPointsToDynamicMeshElement::CreateContext()
 
 namespace
 {
-	/**
-	 * Ensure the mesh has an attributes set and a primary color overlay.
-	 * If the overlay is newly created (empty), initialize one element per vertex
-	 * (shared across all triangles → no seams) with a default white color.
-	 * Returns the color overlay, never null after this call.
-	 */
-	FDynamicMeshColorOverlay* EnsureColorOverlay(FDynamicMesh3* Mesh)
-	{
-		if (!Mesh->HasAttributes())
-			Mesh->EnableAttributes();
-
-		FDynamicMeshAttributeSet* Attrs = Mesh->Attributes();
-		if (!Attrs->PrimaryColors())
-			Attrs->EnablePrimaryColors();
-
-		FDynamicMeshColorOverlay* Overlay = Attrs->PrimaryColors();
-		check(Overlay);
-
-		if (Overlay->ElementCount() == 0)
-		{
-			// Build one overlay element per vertex (seamless)
-			TArray<int32> VIDToElem;
-			VIDToElem.Init(INDEX_NONE, Mesh->MaxVertexID());
-			for (int32 VID : Mesh->VertexIndicesItr())
-				VIDToElem[VID] = Overlay->AppendElement(FVector4f(1.f, 1.f, 1.f, 1.f));
-
-			for (int32 TID : Mesh->TriangleIndicesItr())
-			{
-				FIndex3i T = Mesh->GetTriangle(TID);
-				Overlay->SetTriangle(TID, FIndex3i(VIDToElem[T[0]], VIDToElem[T[1]], VIDToElem[T[2]]));
-			}
-		}
-
-		return Overlay;
-	}
-
 	/**
 	 * Ensure the mesh has a UV overlay at the given layer index.
 	 * If it doesn't exist it is created and initialized with one element per
@@ -306,7 +271,8 @@ bool FPCGApplyPointsToDynamicMeshElement::ProcessSinglePair(
 
     if (Settings->bWriteVertexColors)
     {
-        FDynamicMeshColorOverlay* ColorOverlay = EnsureColorOverlay(RawMesh);
+        FDynamicMeshColorOverlay* ColorOverlay =
+            PCGUtilsDynMeshAttributeHelpers::EnsurePrimaryColorOverlay(*RawMesh);
 
         if (Settings->VertexColorMode == EApplyPointsVertexColorMode::FullOverwrite)
         {
@@ -316,7 +282,7 @@ bool FPCGApplyPointsToDynamicMeshElement::ProcessSinglePair(
             {
             	const auto c = InPointData->GetPointPropertyValue<EPCGPointNativeProperties::Color>(PointIdx);
             	const FVector4f C = FVector4f(c.X, c.Y, c.Z, c.W);
-                SetVertexOverlayElements(RawMesh, ColorOverlay, VID, C);
+                PCGUtilsDynMeshAttributeHelpers::SetVertexColor(*RawMesh, *ColorOverlay, VID, C);
                 ++PointIdx;
             }
         }
@@ -350,7 +316,8 @@ bool FPCGApplyPointsToDynamicMeshElement::ProcessSinglePair(
             for (int32 VID : RawMesh->VertexIndicesItr())
             {
                 // Read the existing color (so we only overwrite enabled channels)
-                FVector4f NewColor = GetFirstVertexOverlayElement(RawMesh, ColorOverlay, VID, FVector4f(1.f, 1.f, 1.f, 1.f));
+                FVector4f NewColor = PCGUtilsDynMeshAttributeHelpers::GetVertexColor(
+                    *RawMesh, *ColorOverlay, VID, FVector4f(1.f, 1.f, 1.f, 1.f));
 
                 float Val = 0.f;
                 if (bHasR) { RAccessor->Get<float>(Val, PointIdx, *RKeys, EPCGAttributeAccessorFlags::AllowBroadcastAndConstructible); NewColor.X = Val; }
@@ -358,7 +325,8 @@ bool FPCGApplyPointsToDynamicMeshElement::ProcessSinglePair(
                 if (bHasB) { BAccessor->Get<float>(Val, PointIdx, *BKeys, EPCGAttributeAccessorFlags::AllowBroadcastAndConstructible); NewColor.Z = Val; }
                 if (bHasA) { AAccessor->Get<float>(Val, PointIdx, *AKeys, EPCGAttributeAccessorFlags::AllowBroadcastAndConstructible); NewColor.W = Val; }
 
-                SetVertexOverlayElements(RawMesh, ColorOverlay, VID, NewColor);
+                PCGUtilsDynMeshAttributeHelpers::SetVertexColor(
+                    *RawMesh, *ColorOverlay, VID, NewColor);
                 ++PointIdx;
             }
         }

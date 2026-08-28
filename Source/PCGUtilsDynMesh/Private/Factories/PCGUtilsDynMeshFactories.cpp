@@ -42,7 +42,7 @@ namespace PCGUtilsDynMeshFactories
 			if (!Factory || !AcceptedTypes.Contains(Factory->GetDataTypeId()))
 			{
 				PCGLog::LogErrorOnGraph(FText::Format(
-					LOCTEXT("UnsupportedFactory", "Input '{0}' is not a supported selector for pin '{1}'."),
+					LOCTEXT("UnsupportedFactory", "Input '{0}' is not a supported provider for pin '{1}'."),
 					FText::FromString(TaggedData.Data->GetClass()->GetName()), FText::FromName(InPinLabel)), InContext);
 				continue;
 			}
@@ -55,7 +55,7 @@ namespace PCGUtilsDynMeshFactories
 			if (bRequired)
 			{
 				PCGLog::LogErrorOnGraph(FText::Format(
-					LOCTEXT("MissingFactory", "Missing required selector input on pin '{0}'."),
+					LOCTEXT("MissingFactory", "Missing required provider input on pin '{0}'."),
 					FText::FromName(InPinLabel)), InContext);
 			}
 			return false;

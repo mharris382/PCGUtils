@@ -396,12 +396,22 @@ bool FPCGUtilsDynMeshProcessBaseElement::ExecuteInternal(FPCGContext* Context) c
 		EmitDeferredBuilders(Context, Settings, SelectionFactory);
 	}
 
-	for (const FPCGTaggedData& Input : Context->InputData.GetInputsByPin(Settings->GetMainInputPinLabel()))
+	const TArray<FPCGTaggedData>& ProcessInputs =
+		Context->InputData.GetInputsByPin(Settings->GetMainInputPinLabel());
+	int32 ConcreteInputCount = 0;
+	for (const FPCGTaggedData& Input : ProcessInputs)
+	{
+		ConcreteInputCount += !Input.Data ||
+			!Input.Data->IsA<UPCGUtilsDynMeshBuilderFactoryData>() ? 1 : 0;
+	}
+	int32 ConcreteInputIndex = 0;
+	for (const FPCGTaggedData& Input : ProcessInputs)
 	{
 		if (Input.Data && Input.Data->IsA<UPCGUtilsDynMeshBuilderFactoryData>())
 		{
 			continue;
 		}
+		const int32 InvocationInputIndex = ConcreteInputIndex++;
 
 		const UPCGDynamicMeshSelectionData* SelectionData = Cast<const UPCGDynamicMeshSelectionData>(Input.Data);
 		const UPCGDynamicMeshData* SourceData = SelectionData
@@ -462,6 +472,8 @@ bool FPCGUtilsDynMeshProcessBaseElement::ExecuteInternal(FPCGContext* Context) c
 			// Immediate mode still has the untouched upstream data around; hand it to the operation for
 			// anything the working copy does not carry (Data-domain attributes and the like).
 			Invocation.SourceMeshData = SourceData;
+			Invocation.InputIndex = InvocationInputIndex;
+			Invocation.InputCount = ConcreteInputCount;
 
 			FPCGUtilsDynMeshProcessOutcome Outcome;
 			bProcessed = Operation->Execute(Invocation, Outcome);

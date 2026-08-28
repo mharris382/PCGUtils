@@ -5,6 +5,7 @@
 #include "Customizations/PluginCustomizations.h"
 #include "Data/Registry/PCGDataTypeRegistry.h"
 #include "Factories/PCGUtilsDynMeshBuilderFactory.h"
+#include "Factories/PCGUtilsDynMeshPainterFactory.h"
 #include "Factories/PCGUtilsDynMeshSelectionFactory.h"
 #include "Visualizers/PCGMarkerComponentVisualizer.h"
 #include "Visualizers/PCGSplineComponentVisualizer.h"
@@ -76,6 +77,17 @@ void FPCGUtilsEditor::RegisterPinIcons()
 		});
 
 	FPCGModule::GetMutableDataTypeRegistry().RegisterPinIconsFunction(
+		FPCGUtilsDynMeshPainterFactoryDataTypeInfo::AsId(),
+		[](const FPCGDataTypeIdentifier&, const FPCGPinProperties&, const bool bIsInput)
+		{
+			const FSlateBrush* Brush = FPCGUtilsEditorStyle::Get().GetBrush(
+				bIsInput
+					? FPCGUtilsEditorStyle::PainterFactoryInputPinIcon
+					: FPCGUtilsEditorStyle::PainterFactoryOutputPinIcon);
+			return MakeTuple(Brush, Brush);
+		});
+
+	FPCGModule::GetMutableDataTypeRegistry().RegisterPinIconsFunction(
 		FPCGUtilsDynMeshBuilderFactoryDataTypeInfo::AsId(),
 		[](const FPCGDataTypeIdentifier&, const FPCGPinProperties& PinProperties, const bool bIsInput)
 		{
@@ -107,6 +119,8 @@ void FPCGUtilsEditor::UnregisterPinIcons()
 		FPCGUtilsDynMeshSelectionFactoryDataTypeInfo::AsId());
 	FPCGModule::GetMutableDataTypeRegistry().UnregisterPinIconsFunction(
 		FPCGUtilsDynMeshBuilderFactoryDataTypeInfo::AsId());
+	FPCGModule::GetMutableDataTypeRegistry().UnregisterPinIconsFunction(
+		FPCGUtilsDynMeshPainterFactoryDataTypeInfo::AsId());
 	bPinIconsRegistered = false;
 }
 

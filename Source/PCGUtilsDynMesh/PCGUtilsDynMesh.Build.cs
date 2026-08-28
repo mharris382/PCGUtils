@@ -20,7 +20,8 @@ public class PCGUtilsDynMesh : ModuleRules
                 "GeometryCore",
                 "GeometryScriptingCore",
                 "PCG",
-                "PCGGeometryScriptInterop"
+                "PCGGeometryScriptInterop",
+                "PCGUtils"
             }
         );
 
