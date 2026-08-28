@@ -1,5 +1,15 @@
 # Primitive Builder
 
+> **Status note (superseded in part).** The generic Builder architecture described under
+> "Why V1 stopped here" has since been built: the `Primitive Builder` is now a *leaf* of a general
+> **DynMesh Builder** family, `BuildMesh()` has become `Build(BuildContext, BuildResult)`, and migrated
+> process nodes accept a Builder and answer with a Builder. The shared scaffolding named below as
+> `Factories/PCGUtilsDynMeshPrimitiveFactory.*` / `UPCGUtilsDynMeshPrimitiveFactoryData` /
+> `FPCGUtilsDynMeshPrimitiveOperation` is now `Factories/PCGUtilsDynMeshBuilderFactory.*` /
+> `UPCGUtilsDynMeshBuilderFactoryData` / `FPCGUtilsDynMeshBuilderOperation`. See
+> `DynMesh Builder - Deferred Process.md` and `DynMesh_Builder_Refactor_Notes.md` at the repo root. This
+> document is rewritten as part of that task's Phase 8.
+
 `Create Primitive` can now be driven two ways: its original single-inline-primitive behavior (**legacy
 mode**, still the default), or a new **Builder** pipeline that supports per-primitive fitting, padding, and
 a local pre-transform, and is designed to grow into composing several primitives per seed. This document
