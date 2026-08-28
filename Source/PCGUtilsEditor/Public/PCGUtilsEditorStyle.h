@@ -16,6 +16,10 @@ public:
 
 	static const FName SelectionFactoryInputPinIcon;
 	static const FName SelectionFactoryOutputPinIcon;
+	static const FName PrimitiveFactoryInputPinIcon;
+	static const FName PrimitiveFactoryOutputPinIcon;
+	static const FName PrimitiveFactoriesInputPinIcon;
+	static const FName PrimitiveFactoriesOutputPinIcon;
 
 private:
 	static TSharedRef<FSlateStyleSet> Create();

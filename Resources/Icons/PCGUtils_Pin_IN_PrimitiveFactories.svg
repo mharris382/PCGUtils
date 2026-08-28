@@ -1,0 +1,41 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg id="Layer_12" data-name="Layer 12" xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" viewBox="0 0 63.7 63.6">
+  <defs>
+    <style>
+      .cls-1 {
+        fill: #fff;
+      }
+
+      .cls-2 {
+        filter: url(#drop-shadow-1);
+      }
+    </style>
+    <filter id="drop-shadow-1" x="6.72" y=".66" width="51.23" height="59.91" filterUnits="userSpaceOnUse">
+      <feOffset dx="1" dy="1"/>
+      <feGaussianBlur result="blur" stdDeviation="0"/>
+      <feFlood flood-color="#231f20" flood-opacity="1"/>
+      <feComposite in2="blur" operator="in"/>
+      <feComposite in="SourceGraphic"/>
+    </filter>
+  </defs>
+  <g class="cls-2">
+    <g>
+      <g>
+        <path class="cls-1" d="M19.19,50.52c.31,1.55.37,3.22.37,4.53s-.12,2.98-.37,4.53h26.67c.25-1.12.43-2.6.43-4.53s-.19-3.41-.43-4.53h-26.67ZM42.26,55.98h-18.67c-.5,0-.93-.43-.93-.93s.43-.93.93-.93h18.67c.5,0,.93.43.93.93s-.43.93-.93.93Z"/>
+        <path class="cls-1" d="M11.87,54.12c-.74.43-.74,1.49,0,1.92l5.52,3.29c.19-1.12.37-2.48.37-4.22s-.12-3.16-.37-4.22l-5.52,3.22Z"/>
+        <path class="cls-1" d="M50.13,50.52h-2.42c.31,1.55.37,3.22.37,4.53s-.12,2.98-.37,4.53h2.42c1.24,0,2.23-.99,2.23-2.23v-4.53c0-1.24-.99-2.29-2.23-2.29Z"/>
+      </g>
+      <g>
+        <polygon class="cls-1" points="19.68 46.24 31.03 41.1 31.03 27.89 19.68 33.04 19.68 46.24"/>
+        <polygon class="cls-1" points="19.68 20.14 31.03 25.35 31.03 12.14 19.68 6.99 19.68 20.14"/>
+        <polygon class="cls-1" points="18.88 21.56 7.9 26.59 18.88 31.67 29.85 26.59 18.88 21.56"/>
+        <polygon class="cls-1" points="6.72 41.1 18.07 46.24 18.07 33.04 6.72 27.89 6.72 41.1"/>
+        <polygon class="cls-1" points="44.8 21.56 33.82 26.59 44.8 31.67 55.77 26.59 44.8 21.56"/>
+        <polygon class="cls-1" points="32.64 41.1 43.99 46.24 43.99 33.04 32.64 27.89 32.64 41.1"/>
+        <polygon class="cls-1" points="31.84 .66 20.86 5.69 31.84 10.71 42.81 5.69 31.84 .66"/>
+        <polygon class="cls-1" points="45.6 33.04 45.6 46.24 56.95 41.1 56.95 27.89 45.6 33.04"/>
+        <polygon class="cls-1" points="32.64 25.35 43.99 20.14 43.99 6.99 32.64 12.14 32.64 25.35"/>
+      </g>
+    </g>
+  </g>
+</svg>

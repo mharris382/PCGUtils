@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<svg id="Layer_8_copy_2" data-name="Layer 8 copy 2" xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" viewBox="0 0 63.7 63.6">
+<svg id="Layer_12_copy" data-name="Layer 12 copy" xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" viewBox="0 0 63.7 63.6">
   <defs>
     <style>
       .cls-1 {
@@ -10,7 +10,7 @@
         filter: url(#drop-shadow-1);
       }
     </style>
-    <filter id="drop-shadow-1" x="1.27" y="1.81" width="62.15" height="60.79" filterUnits="userSpaceOnUse">
+    <filter id="drop-shadow-1" x="8.21" y=".53" width="48.57" height="62.16" filterUnits="userSpaceOnUse">
       <feOffset dx="1" dy="1"/>
       <feGaussianBlur result="blur" stdDeviation="0"/>
       <feFlood flood-color="#231f20" flood-opacity="1"/>
@@ -19,6 +19,17 @@
     </filter>
   </defs>
   <g class="cls-2">
-    <path class="cls-1" d="M41.71,42.26v-21.09h-19.74v21.09h19.74ZM41.71,18v-7.69H12.33l8.65,7.69h20.73,0ZM44.88,12.25v5.74h6.46l-6.46-5.74ZM44.88,21.17v21.97l9.03,8.03v-30h-9.03ZM51.34,53.11l-8.65-7.69h-20.72v7.69h29.37ZM18.8,45.43h-6.46l6.46,5.74v-5.74ZM9.76,42.26h9.05v-21.97l-9.05-8.03v30h0ZM8.17,7.15h35.12c.37,0,.75.13,1.04.4l12.16,10.8c.36.3.58.74.58,1.24v35.11c0,.87-.71,1.58-1.58,1.58H20.38c-.38,0-.75-.14-1.06-.4l-12.15-10.81c-.36-.28-.59-.73-.59-1.22V8.73c0-.87.72-1.58,1.58-1.58h0ZM62.41,16.46L45.92,1.81H1.27v45.13l16.49,14.66h44.66V16.46Z"/>
+    <g>
+      <g>
+        <path class="cls-1" d="M17.28,51.3c.36,1.78.43,3.7.43,5.2s-.14,3.42-.43,5.2h30.64c.28-1.28.5-2.99.5-5.2s-.21-3.92-.5-5.2h-30.64ZM43.78,57.56h-21.44c-.57,0-1.07-.5-1.07-1.07s.5-1.07,1.07-1.07h21.44c.57,0,1.07.5,1.07,1.07s-.5,1.07-1.07,1.07Z"/>
+        <path class="cls-1" d="M8.87,55.43c-.85.5-.85,1.71,0,2.21l6.34,3.78c.21-1.28.43-2.85.43-4.84s-.14-3.63-.43-4.84l-6.34,3.7Z"/>
+        <path class="cls-1" d="M52.83,51.3h-2.78c.36,1.78.43,3.7.43,5.2s-.14,3.42-.43,5.2h2.78c1.42,0,2.56-1.14,2.56-2.56v-5.2c0-1.42-1.14-2.64-2.56-2.64Z"/>
+      </g>
+      <g>
+        <polygon class="cls-1" points="8.21 38.64 30.42 48.83 30.42 22.98 8.21 12.91 8.21 38.64"/>
+        <polygon class="cls-1" points="32 .53 10.52 10.36 32 20.19 53.48 10.36 32 .53"/>
+        <polygon class="cls-1" points="33.58 48.83 55.79 38.64 55.79 12.91 33.58 22.98 33.58 48.83"/>
+      </g>
+    </g>
   </g>
 </svg>

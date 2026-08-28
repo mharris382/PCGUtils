@@ -1,8 +1,10 @@
 #include "PCGUtilsEditor.h"
 #include "PCGUtilsEditorStyle.h"
 #include "PCGModule.h"
+#include "PCGPin.h"
 #include "Customizations/PluginCustomizations.h"
 #include "Data/Registry/PCGDataTypeRegistry.h"
+#include "Factories/PCGUtilsDynMeshBuilderFactory.h"
 #include "Factories/PCGUtilsDynMeshSelectionFactory.h"
 #include "Visualizers/PCGMarkerComponentVisualizer.h"
 #include "Visualizers/PCGSplineComponentVisualizer.h"
@@ -73,6 +75,24 @@ void FPCGUtilsEditor::RegisterPinIcons()
 			return MakeTuple(Brush, Brush);
 		});
 
+	FPCGModule::GetMutableDataTypeRegistry().RegisterPinIconsFunction(
+		FPCGUtilsDynMeshBuilderFactoryDataTypeInfo::AsId(),
+		[](const FPCGDataTypeIdentifier&, const FPCGPinProperties& PinProperties, const bool bIsInput)
+		{
+			const bool bIsMultiple =
+				PinProperties.bAllowMultipleData || PinProperties.AllowsMultipleConnections();
+			const FName& BrushName = bIsMultiple
+				? (bIsInput
+					? FPCGUtilsEditorStyle::PrimitiveFactoriesInputPinIcon
+					: FPCGUtilsEditorStyle::PrimitiveFactoriesOutputPinIcon)
+				: (bIsInput
+					? FPCGUtilsEditorStyle::PrimitiveFactoryInputPinIcon
+					: FPCGUtilsEditorStyle::PrimitiveFactoryOutputPinIcon);
+			const FSlateBrush* Brush = FPCGUtilsEditorStyle::Get().GetBrush(BrushName);
+
+			return MakeTuple(Brush, Brush);
+		});
+
 	bPinIconsRegistered = true;
 }
 
@@ -85,6 +105,8 @@ void FPCGUtilsEditor::UnregisterPinIcons()
 
 	FPCGModule::GetMutableDataTypeRegistry().UnregisterPinIconsFunction(
 		FPCGUtilsDynMeshSelectionFactoryDataTypeInfo::AsId());
+	FPCGModule::GetMutableDataTypeRegistry().UnregisterPinIconsFunction(
+		FPCGUtilsDynMeshBuilderFactoryDataTypeInfo::AsId());
 	bPinIconsRegistered = false;
 }
 

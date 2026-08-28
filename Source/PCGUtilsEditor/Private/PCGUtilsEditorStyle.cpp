@@ -12,6 +12,10 @@ TSharedPtr<FSlateStyleSet> FPCGUtilsEditorStyle::StyleInstance;
 
 const FName FPCGUtilsEditorStyle::SelectionFactoryInputPinIcon(TEXT("PCGUtils.Pin.IN_SelectionFactory"));
 const FName FPCGUtilsEditorStyle::SelectionFactoryOutputPinIcon(TEXT("PCGUtils.Pin.OUT_SelectionFactory"));
+const FName FPCGUtilsEditorStyle::PrimitiveFactoryInputPinIcon(TEXT("PCGUtils.Pin.IN_PrimitiveFactory"));
+const FName FPCGUtilsEditorStyle::PrimitiveFactoryOutputPinIcon(TEXT("PCGUtils.Pin.OUT_PrimitiveFactory"));
+const FName FPCGUtilsEditorStyle::PrimitiveFactoriesInputPinIcon(TEXT("PCGUtils.Pin.IN_PrimitiveFactories"));
+const FName FPCGUtilsEditorStyle::PrimitiveFactoriesOutputPinIcon(TEXT("PCGUtils.Pin.OUT_PrimitiveFactories"));
 
 void FPCGUtilsEditorStyle::Initialize()
 {
@@ -56,6 +60,22 @@ TSharedRef<FSlateStyleSet> FPCGUtilsEditorStyle::Create()
 	Style->Set(SelectionFactoryOutputPinIcon,
 		new FSlateVectorImageBrush(
 			Style->RootToContentDir(TEXT("Icons/PCGUtils_Pin_OUT_SelectionFactory"), TEXT(".svg")),
+			FVector2D(22.0f, 22.0f)));
+	Style->Set(PrimitiveFactoryInputPinIcon,
+		new FSlateVectorImageBrush(
+			Style->RootToContentDir(TEXT("Icons/PCGUtils_Pin_IN_PrimitiveFactory"), TEXT(".svg")),
+			FVector2D(22.0f, 22.0f)));
+	Style->Set(PrimitiveFactoryOutputPinIcon,
+		new FSlateVectorImageBrush(
+			Style->RootToContentDir(TEXT("Icons/PCGUtils_Pin_Out_PrimitiveFactory"), TEXT(".svg")),
+			FVector2D(22.0f, 22.0f)));
+	Style->Set(PrimitiveFactoriesInputPinIcon,
+		new FSlateVectorImageBrush(
+			Style->RootToContentDir(TEXT("Icons/PCGUtils_Pin_IN_PrimitiveFactories"), TEXT(".svg")),
+			FVector2D(22.0f, 22.0f)));
+	Style->Set(PrimitiveFactoriesOutputPinIcon,
+		new FSlateVectorImageBrush(
+			Style->RootToContentDir(TEXT("Icons/PCGUtils_Pin_OUT_PrimitiveFactories"), TEXT(".svg")),
 			FVector2D(22.0f, 22.0f)));
 
 	RegisterActionIcons(Style);
