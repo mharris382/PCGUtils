@@ -26,19 +26,47 @@ enum class EPCGUtilsDynMeshPainterPointReduction : uint8
 	Multiply UMETA(DisplayName="Multiply")
 };
 
+UENUM(BlueprintType)
+enum class EPCGUtilsDynMeshPainterRadiusSource : uint8
+{
+	Bounds UMETA(DisplayName="Point Bounds"),
+	Attribute UMETA(DisplayName="Attribute")
+};
+
 USTRUCT()
 struct FPCGUtilsDynMeshPreparedPaintPoint
 {
 	GENERATED_BODY()
 
+	/** Point transform used by bounds-fitted oriented ellipsoids. */
 	UPROPERTY()
-	FVector WorldPosition = FVector::ZeroVector;
+	FTransform WorldTransform = FTransform::Identity;
+
+	UPROPERTY()
+	FVector LocalBoundsCenter = FVector::ZeroVector;
+
+	UPROPERTY()
+	FVector LocalOuterRadii = FVector::OneVector;
+
+	/** Uniform world-space radius used by Attribute mode. */
+	UPROPERTY()
+	float OuterRadius = 1.0f;
+
+	/** Inner core as a fraction of the outer shape. */
+	UPROPERTY()
+	float InnerRadiusFraction = 0.0f;
+
+	UPROPERTY()
+	float FalloffPower = 1.0f;
 
 	UPROPERTY()
 	float Value = 0.0f;
+
+	UPROPERTY()
+	bool bUseBoundsShape = true;
 };
 
-/** A scalar field made from prepared spherical brushes in PCG world space. */
+/** A scalar field made from prepared per-point spherical or ellipsoidal brushes in PCG world space. */
 UCLASS(BlueprintType, ClassGroup=(Procedural), Category="PCGUtils|DynMesh|Painters")
 class PCGUTILSDYNMESH_API UPCGDynMeshPainterFromPointsFactoryData
 	: public UPCGUtilsDynMeshPainterFactoryData
@@ -50,10 +78,29 @@ public:
 	TArray<FPCGUtilsDynMeshPreparedPaintPoint> Points;
 
 	UPROPERTY()
-	float Radius = 100.0f;
+	FPCGAttributePropertyInputSelector ValueSelector;
 
 	UPROPERTY()
-	FPCGAttributePropertyInputSelector ValueSelector;
+	EPCGUtilsDynMeshPainterRadiusSource RadiusSource =
+		EPCGUtilsDynMeshPainterRadiusSource::Bounds;
+
+	UPROPERTY()
+	FPCGAttributePropertyInputSelector RadiusSelector;
+
+	UPROPERTY()
+	bool bUseInnerRadius = false;
+
+	UPROPERTY()
+	FPCGAttributePropertyInputSelector InnerRadiusSelector;
+
+	UPROPERTY()
+	bool bUseFalloffPowerAttribute = true;
+
+	UPROPERTY()
+	FPCGAttributePropertyInputSelector FalloffPowerSelector;
+
+	UPROPERTY()
+	float ConstantFalloffPower = 1.0f;
 
 	UPROPERTY()
 	EPCGUtilsDynMeshPainterFalloff Falloff = EPCGUtilsDynMeshPainterFalloff::Smooth;
@@ -62,14 +109,14 @@ public:
 	EPCGUtilsDynMeshPainterPointReduction Reduction = EPCGUtilsDynMeshPainterPointReduction::Max;
 
 	UPROPERTY()
-	bool bClampResult = true;
+	bool bClampValue = true;
 
 protected:
 	virtual TSharedPtr<FPCGUtilsDynMeshPainterOperation> CreateOperationInternal() const override;
 	virtual void AddToCrc(FArchiveCrc32& Ar, bool bFullDataCrc) const override;
 };
 
-/** Converts PCG points into reusable spherical scalar brushes. */
+/** Converts PCG points into reusable per-point spherical or ellipsoidal scalar brushes. */
 UCLASS(BlueprintType, ClassGroup=(Procedural), Category="PCGUtils|DynMesh|Painters")
 class PCGUTILSDYNMESH_API UPCGDynMeshPainterFromPointsProviderSettings
 	: public UPCGUtilsDynMeshFactoryProviderSettings
@@ -86,22 +133,50 @@ public:
 	virtual FString GetAdditionalTitleInformation() const override;
 #endif
 
-	/** World-space radius shared by all input point brushes. */
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Painter", meta=(PCG_Overridable, ClampMin="0.0001"))
-	float Radius = 100.0f;
-
 	/** Scalar value read once per input point while the Painter is prepared. Defaults to $Density. */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Painter", meta=(PCG_Overridable))
 	FPCGAttributePropertyInputSelector ValueSelector;
 
+	/** Point Bounds creates an oriented ellipsoid from each point's transform and local bounds. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Radius", meta=(PCG_Overridable))
+	EPCGUtilsDynMeshPainterRadiusSource RadiusSource =
+		EPCGUtilsDynMeshPainterRadiusSource::Bounds;
+
+	/** Per-point uniform world-space outer radius. Defaults to the Radius attribute. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Radius",
+		meta=(PCG_Overridable, EditCondition="RadiusSource==EPCGUtilsDynMeshPainterRadiusSource::Attribute", EditConditionHides))
+	FPCGAttributePropertyInputSelector RadiusSelector;
+
+	/** Enable a solid inner core before the falloff begins. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Radius", meta=(PCG_Overridable))
+	bool bUseInnerRadius = false;
+
+	/** Per-point world-space inner radius. Defaults to the InnerRadius attribute. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Radius",
+		meta=(PCG_Overridable, EditCondition="bUseInnerRadius", EditConditionHides))
+	FPCGAttributePropertyInputSelector InnerRadiusSelector;
+
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Painter", meta=(PCG_Overridable))
 	EPCGUtilsDynMeshPainterFalloff Falloff = EPCGUtilsDynMeshPainterFalloff::Smooth;
+
+	/** Read a per-point exponent for the falloff curve. Defaults to $Steepness. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Painter",
+		meta=(PCG_Overridable, EditCondition="Falloff!=EPCGUtilsDynMeshPainterFalloff::Hard"))
+	bool bUseFalloffPowerAttribute = true;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Painter",
+		meta=(PCG_Overridable, EditCondition="Falloff!=EPCGUtilsDynMeshPainterFalloff::Hard && bUseFalloffPowerAttribute", EditConditionHides))
+	FPCGAttributePropertyInputSelector FalloffPowerSelector;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Painter",
+		meta=(PCG_Overridable, ClampMin="0.0001", EditCondition="Falloff!=EPCGUtilsDynMeshPainterFalloff::Hard && !bUseFalloffPowerAttribute", EditConditionHides))
+	float ConstantFalloffPower = 1.0f;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Painter", meta=(PCG_Overridable))
 	EPCGUtilsDynMeshPainterPointReduction Reduction = EPCGUtilsDynMeshPainterPointReduction::Max;
 
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Painter", meta=(PCG_Overridable))
-	bool bClampResult = true;
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Painter", meta=(PCG_Overridable, DisplayName="Clamp Value"))
+	bool bClampValue = true;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Painter", AdvancedDisplay, meta=(PCG_Overridable))
 	int32 Priority = 0;

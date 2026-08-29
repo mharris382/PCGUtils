@@ -32,21 +32,28 @@ bool FPCGUtilsDynMeshPainterCompositionTest::RunTest(const FString&)
 
 	UPCGDynMeshPainterFromPointsFactoryData* Brush =
 		NewObject<UPCGDynMeshPainterFromPointsFactoryData>();
-	Brush->Radius = 100.0f;
 	Brush->Falloff = EPCGUtilsDynMeshPainterFalloff::Smooth;
 	Brush->Reduction = EPCGUtilsDynMeshPainterPointReduction::Max;
-	Brush->bClampResult = true;
+	Brush->bClampValue = true;
 	FPCGUtilsDynMeshPreparedPaintPoint& Point = Brush->Points.Emplace_GetRef();
-	Point.WorldPosition = FVector::ZeroVector;
+	Point.bUseBoundsShape = false;
+	Point.OuterRadius = 100.0f;
 	Point.Value = 1.0f;
 	FPCGUtilsDynMeshPreparedPaintPoint& WeakerOverlappingPoint = Brush->Points.Emplace_GetRef();
-	WeakerOverlappingPoint.WorldPosition = FVector::ZeroVector;
+	WeakerOverlappingPoint.bUseBoundsShape = false;
+	WeakerOverlappingPoint.OuterRadius = 100.0f;
 	WeakerOverlappingPoint.Value = 0.25f;
 
 	const UPCGDynMeshPainterFromPointsProviderSettings* PointProviderDefaults =
 		NewObject<UPCGDynMeshPainterFromPointsProviderSettings>();
 	TestEqual(TEXT("Paint from Points defaults its value selector to $Density"),
 		PointProviderDefaults->ValueSelector.GetPointProperty(), EPCGPointProperties::Density);
+	TestEqual(TEXT("Paint from Points defaults to fitted point bounds"),
+		PointProviderDefaults->RadiusSource, EPCGUtilsDynMeshPainterRadiusSource::Bounds);
+	TestEqual(TEXT("Paint from Points defaults its falloff power to $Steepness"),
+		PointProviderDefaults->FalloffPowerSelector.GetPointProperty(), EPCGPointProperties::Steepness);
+	TestTrue(TEXT("Paint from Points exposes Clamp Value enabled by default"),
+		PointProviderDefaults->bClampValue);
 
 	UPCGDynMeshPainterMathFactoryData* Multiply = NewObject<UPCGDynMeshPainterMathFactoryData>();
 	Multiply->Operation = EPCGUtilsDynMeshPainterMathOperation::Multiply;
@@ -117,9 +124,10 @@ bool FPCGUtilsDynMeshPainterColorResolutionTest::RunTest(const FString&)
 
 	UPCGDynMeshPainterFromPointsFactoryData* Brush =
 		NewObject<UPCGDynMeshPainterFromPointsFactoryData>();
-	Brush->Radius = 100.0f;
 	Brush->Falloff = EPCGUtilsDynMeshPainterFalloff::Hard;
 	FPCGUtilsDynMeshPreparedPaintPoint& Point = Brush->Points.Emplace_GetRef();
+	Point.bUseBoundsShape = false;
+	Point.OuterRadius = 100.0f;
 	Point.Value = 0.8f;
 
 	UPCGDynMeshCombinePaintersFactoryData* Combine =
@@ -152,6 +160,69 @@ bool FPCGUtilsDynMeshPainterColorResolutionTest::RunTest(const FString&)
 		static_cast<uint8>(CombinedValue.ColorChannels),
 		static_cast<uint8>(EPCGUtilsDynMeshPainterColorChannel::Red |
 			EPCGUtilsDynMeshPainterColorChannel::Alpha));
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FPCGUtilsDynMeshRadialPainterShapeTest,
+	"PCGUtils.DynMesh.Painter.RadialBrushShape",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::ProductFilter)
+
+bool FPCGUtilsDynMeshRadialPainterShapeTest::RunTest(const FString&)
+{
+	using namespace UE::Geometry;
+
+	UPCGDynMeshPainterFromPointsFactoryData* Brush =
+		NewObject<UPCGDynMeshPainterFromPointsFactoryData>();
+	Brush->Falloff = EPCGUtilsDynMeshPainterFalloff::Linear;
+	Brush->Reduction = EPCGUtilsDynMeshPainterPointReduction::Max;
+	Brush->bClampValue = true;
+	FPCGUtilsDynMeshPreparedPaintPoint& Point = Brush->Points.Emplace_GetRef();
+	Point.bUseBoundsShape = true;
+	Point.LocalOuterRadii = FVector(100.0, 50.0, 25.0);
+	Point.InnerRadiusFraction = 0.5f;
+	Point.FalloffPower = 2.0f;
+	Point.Value = 1.0f;
+
+	FDynamicMesh3 Mesh;
+	const FPCGUtilsDynMeshPainterEvaluationContext EvaluationContext(nullptr, Mesh, FTransform::Identity);
+	TSharedPtr<FPCGUtilsDynMeshPainterOperation> Operation = Brush->CreateOperation(nullptr);
+	const bool bInitialized = Operation && Operation->Initialize(EvaluationContext);
+	TestTrue(TEXT("Bounds-fitted radial Painter initializes"), bInitialized);
+	if (!bInitialized)
+	{
+		return false;
+	}
+
+	FPCGUtilsDynMeshPainterSample Sample;
+	Sample.WorldPosition = FVector(25.0, 0.0, 0.0);
+	TestTrue(TEXT("Inner radius produces a solid core"),
+		FMath::IsNearlyEqual(Operation->Evaluate(Sample).Scalar, 1.0f));
+	Sample.WorldPosition = FVector(75.0, 0.0, 0.0);
+	TestTrue(TEXT("Falloff starts at the inner radius and applies its point power"),
+		FMath::IsNearlyEqual(Operation->Evaluate(Sample).Scalar, 0.25f));
+	Sample.WorldPosition = FVector(0.0, 40.0, 0.0);
+	TestTrue(TEXT("Non-uniform bounds produce ellipsoidal distance"),
+		FMath::IsNearlyEqual(Operation->Evaluate(Sample).Scalar, 0.16f, KINDA_SMALL_NUMBER));
+	Sample.WorldPosition = FVector(0.0, 0.0, 30.0);
+	TestTrue(TEXT("Samples outside the fitted ellipsoid contribute zero"),
+		FMath::IsNearlyZero(Operation->Evaluate(Sample).Scalar));
+
+	Brush->Falloff = EPCGUtilsDynMeshPainterFalloff::Hard;
+	Brush->Reduction = EPCGUtilsDynMeshPainterPointReduction::Add;
+	Point.Value = 0.75f;
+	const FPCGUtilsDynMeshPreparedPaintPoint SecondPoint = Point;
+	Brush->Points.Add(SecondPoint);
+	Sample.WorldPosition = FVector::ZeroVector;
+	Operation = Brush->CreateOperation(nullptr);
+	Operation->Initialize(EvaluationContext);
+	TestTrue(TEXT("Clamp Value clamps the reduced result to one"),
+		FMath::IsNearlyEqual(Operation->Evaluate(Sample).Scalar, 1.0f));
+	Brush->bClampValue = false;
+	Operation = Brush->CreateOperation(nullptr);
+	Operation->Initialize(EvaluationContext);
+	TestTrue(TEXT("Disabling Clamp Value preserves values above one"),
+		FMath::IsNearlyEqual(Operation->Evaluate(Sample).Scalar, 1.5f));
 	return true;
 }
 

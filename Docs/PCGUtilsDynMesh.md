@@ -107,9 +107,13 @@ by the Painter.
 
 V1 provides:
 
-- **Paint from Points**: prepares world-space PCG points as constant-radius spherical brushes. Values use a normal
-  PCG input selector (default `$Density`), with Hard/Linear/Smooth falloff, Max/Min/Add/Multiply overlap reduction,
-  and optional `[0,1]` clamping.
+- **Paint from Points**: prepares world-space PCG points as independently sized brushes. Point Bounds mode fits an
+  oriented ellipsoid to each point's transformed bounds, including non-uniform extents; Attribute mode reads a
+  uniform world-space radius from a normal input selector (default `Radius`). Values use a selector defaulting to
+  `$Density`. An optional inner-radius selector (default `InnerRadius`) creates a solid homothetic core, after which
+  Hard/Linear/Smooth falloff begins. Linear and Smooth falloff support a per-point power selector defaulting to
+  `$Steepness`, or a constant power. Max/Min/Add/Multiply overlap reduction is followed by the explicit `Clamp
+  Value` option, which clamps the final result to `[0,1]`.
 - **Axis Gradient Painter**: evaluates a clamped projection between Start and End along a normalized axis, in
   either DynMesh-local or world space, with optional inversion.
 - **Painter Math**: evaluates two child Painters directly and combines them with Add, Subtract, Multiply, Min, or
