@@ -20,12 +20,16 @@ namespace
 		FPCGMetadataAttribute<FString>* AssetNameAttribute,
 		FPCGMetadataAttribute<FString>* AssetPathAttribute,
 		const FSoftObjectPath& SourceAsset,
+		const bool bUseActualAsset,
 		const FString& Suffix)
 	{
 		check(OutputMetadata && AssetNameAttribute && AssetPathAttribute);
 
 		const PCGMetadataEntryKey OutputEntry = OutputMetadata->AddEntry();
-		const FString OutputAssetName = FString::Printf(TEXT("%s_%s"), *SourceAsset.GetAssetName(), *Suffix);
+		const FString SourceAssetName = SourceAsset.GetAssetName();
+		const FString OutputAssetName = bUseActualAsset
+			? SourceAssetName
+			: FString::Printf(TEXT("%s_%s"), *SourceAssetName, *Suffix);
 		const FString OutputAssetPath = SourceAsset.IsNull()
 			? FString()
 			: FPackageName::GetLongPackagePath(SourceAsset.GetLongPackageName());
@@ -64,7 +68,8 @@ FText UPCGGetAssetSaveParametersSettings::GetNodeTooltipText() const
 {
 	return LOCTEXT("NodeTooltip",
 		"Derives the AssetName and AssetPath strings used by PCG asset-saving nodes from an existing asset reference. "
-		"The output name is always {original name}_{suffix}; even an empty suffix leaves the underscore in place.");
+		"By default, the output name is {original name}_{suffix}; even an empty suffix leaves the underscore in place. "
+		"Enable Use Actual Asset to output the original name and allow the source asset to be modified or replaced.");
 }
 
 EPCGChangeType UPCGGetAssetSaveParametersSettings::GetChangeTypeForProperty(
@@ -130,6 +135,7 @@ bool FPCGGetAssetSaveParametersElement::ExecuteInternal(FPCGContext* InContext) 
 			AssetNameAttribute,
 			AssetPathAttribute,
 			Settings->Asset.ToSoftObjectPath(),
+			Settings->bUseActualAsset,
 			Settings->Suffix);
 	}
 	else
@@ -167,6 +173,7 @@ bool FPCGGetAssetSaveParametersElement::ExecuteInternal(FPCGContext* InContext) 
 					AssetNameAttribute,
 					AssetPathAttribute,
 					SourceAttribute->GetValueFromItemKey(InputEntry),
+					Settings->bUseActualAsset,
 					Settings->Suffix);
 			}
 		}

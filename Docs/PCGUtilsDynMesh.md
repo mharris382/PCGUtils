@@ -125,7 +125,9 @@ V1 provides:
   pair one-to-one, in order, with the DynMesh inputs evaluated by the consuming process. Every point count must
   equal the matching mesh's full vertex count and point order must remain unchanged, even when only a vertex
   selection will be painted.
-- **Paint DynMesh Vertex Color**: accepts one required `Painter` pin and exposes `Write Channels`. It makes one
+- **Paint DynMesh Vertex Color**: accepts one required `Painter` pin and exposes `Write Channels`. Its output pin is
+  typed as `Dynamic Mesh` (or DynMesh Selection when `Output Selection Data` is enabled), preserving direct
+  connections and context-sensitive graph search. It makes one
   primary vertex traversal, resolves the Painter result against the requested channels once per geometric vertex,
   and writes the final color once. A scalar is broadcast to all requested channels; a color preserves unrequested
   or undefined channels.

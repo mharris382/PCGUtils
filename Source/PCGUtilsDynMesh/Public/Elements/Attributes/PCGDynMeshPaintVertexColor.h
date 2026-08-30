@@ -53,6 +53,8 @@ public:
 
 	virtual bool GetRequiredSelectionDomain(
 		UE::Geometry::EGeometryElementType& OutElementType) const override;
+	virtual bool HasDynamicPins() const override { return true; }
+	virtual FPCGDataTypeIdentifier GetCurrentPinTypesID(const UPCGPin* InPin) const override;
 	virtual TSharedPtr<const FPCGUtilsDynMeshProcessOperation> CreateProcessOperation(
 		FPCGContext* InContext) const override;
 

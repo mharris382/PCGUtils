@@ -52,6 +52,19 @@ bool UPCGDynMeshPaintVertexColorSettings::GetRequiredSelectionDomain(
 	return true;
 }
 
+FPCGDataTypeIdentifier UPCGDynMeshPaintVertexColorSettings::GetCurrentPinTypesID(
+	const UPCGPin* InPin) const
+{
+	if (InPin && InPin->IsOutputPin())
+	{
+		return bOutputSelectionData
+			? FPCGDataTypeIdentifier(UPCGDynamicMeshSelectionData::StaticClass())
+			: FPCGDataTypeIdentifier(EPCGDataType::DynamicMesh);
+	}
+
+	return Super::GetCurrentPinTypesID(InPin);
+}
+
 FName UPCGDynMeshPaintVertexColorSettings::GetMainInputPinLabel() const
 {
 	return MeshPin;
