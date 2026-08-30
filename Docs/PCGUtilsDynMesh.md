@@ -48,6 +48,43 @@ selections and selectors are converted centrally using Geometry Script-compatibl
 | Selection-only operation | Override `RequiresSelection()` and the required domain. |
 | Whole-mesh-only operation | Operate through a Mesh Target handle and restore only the selected result domain. |
 
+## Whole-mesh processes with an operand
+
+`UPCGUtilsDynMeshOperandProcessBaseSettings` extends the process base for two-input whole-mesh operations.
+Its `InA`, optional `InB`, and `Out` pins share a single type: all DynMesh or all DynMesh Builder. Connecting
+either input or the output constrains all three pins, including connected operand-process nodes. Mixed data
+types are rejected at execution as well. This is an explicit selection exception: these solid operations do not
+support partial mesh application, so there is no Selection input, Selector pin, or selection setting/override.
+
+The base owns pairing, tag inheritance, validation, mesh duplication, and deferred Builder composition. Derived
+nodes implement `CreateProcessOperation()` and read `Invocation.OperandMeshData`; operations never capture
+the authoring context. Both Builder children evaluate against the same seed, with the primary Builder frame
+retained. Active selections in child Builders do not scope the operation and are cleared after processing.
+
+### DynMesh Boolean
+
+**DynMesh Boolean** mirrors the engine Boolean Operation, including Geometry Script operations/options,
+pairwise N:N/N:1/1:N broadcasting, sequential operands, Cartesian pairing, and A/B/Both tag inheritance.
+Both meshes must already be in the same coordinate space (normally target-actor-local).
+
+- When `InB` supplies **no data**, every primary is passed through by reference with its original tags, including
+  in B-only tag mode. No geometry work or Builder wrapper is created. This applies to every operation and pairing
+  mode, so optional subtraction cutters do not require a graph branch.
+- A **present empty mesh** still runs the selected Geometry Script operation. `Allow Empty Result` retains the
+  engine default of false; enable it if a boolean should be allowed to erase the primary mesh. Invalid data or a
+  failed Builder evaluation is an error/failure, not a missing operand to silently ignore.
+- **Assign Operand Polygroup** (off by default, Union and Subtract only) assigns surviving operand faces to one
+  fresh default-layer PolyGroup per operand application. For subtraction this identifies operand-derived cut
+  faces. Polygroups label triangles, not individual vertices; downstream selections can convert domains. Existing
+  primary groups are retained. No group is created if no operand faces survive. Automatic hole-repair faces use
+  Geometry Script's normal repair behavior and are not guaranteed to be part of the operand group.
+- **Self Union Operand** (off by default) applies Geometry Script self-union to each operand before the boolean,
+  with overrideable self-union options. Group assignment runs afterward, including any self-union repair faces.
+  Both conveniences prepare a private operand copy and never change shared upstream data.
+
+Material handling follows the vanilla element: primary material slots are retained, and this node does not merge
+or remap separate operand material-slot tables. Operand material IDs should already use the primary's slot layout.
+
 ## Mesh Target handles
 
 `FPCGUtilsMeshTargetHandle` separates selection resolution from working-mesh preparation and restoration.
@@ -55,6 +92,25 @@ Handle-based elements still derive from the process settings base and pass their
 `FPCGUtilsMeshTargetFunctions::CreateTarget(..., Settings)`, ensuring that Selector inputs are honored.
 
 ## Selection modifiers
+
+### PolyGroup Selector
+
+**Select by PolyGroup** emits a reusable `Selector`. Connect it to **Build DynMesh Selection** or any process
+node's optional `Selector` input, including processes in deferred Builder chains.
+
+- **Group IDs** selects the union of one or more IDs (default `0`). Duplicate or unknown IDs have no additional
+  effect; an empty list selects nothing. **Invert Selection** complements the face region before domain conversion.
+- **Group Layer** chooses default triangle groups (including those assigned by **DynMesh Boolean**) or an extended
+  PolyGroup layer by index. Missing layers report an error; evaluation never creates or changes mesh groups.
+- **Highest Group ID** selects the largest ID currently used by triangles in the chosen layer, evaluated separately
+  for each mesh. This can isolate a recently added boolean operand group, but it does not track provenance: if the
+  boolean passed through or produced no operand faces, it will select the highest remaining primary group instead.
+  Hole repair or subsequent edits can also create higher groups. Use explicit IDs when that distinction matters.
+- Face membership converts automatically to vertex or edge selections. **Allow Partial Inclusion** defaults to
+  true (any incident selected face); disable it to require all incident faces. Existing incoming selections are
+  intersected by the standard process resolver.
+
+### Selection operations
 
 Selection-transforming nodes derive from `UPCGUtilsDynMeshSelectionOperationSettings`. Their `Operation Mode`
 switch provides two graph forms from the same element:

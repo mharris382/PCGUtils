@@ -84,6 +84,9 @@ struct PCGUTILSDYNMESH_API FPCGUtilsDynMeshProcessInvocation
 	/** The mesh to operate on. Owned by the caller and safe to mutate in place. */
 	UPCGDynamicMeshData* MeshData = nullptr;
 
+	/** Read-only second mesh supplied by an operand process. Null for unary processes. */
+	const UPCGDynamicMeshData* OperandMeshData = nullptr;
+
 	/**
 	 * The effective selection (incoming selection intersected with any Selector, converted to the operation's
 	 * required domain), or null for a whole-mesh application.

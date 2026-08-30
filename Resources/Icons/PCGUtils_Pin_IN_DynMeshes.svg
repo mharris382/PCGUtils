@@ -1,0 +1,66 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg id="Builder" xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" viewBox="0 0 64.44 63.6">
+  <defs>
+    <style>
+      .cls-1 {
+        filter: url(#drop-shadow-2);
+      }
+
+      .cls-2 {
+        fill: #fff;
+      }
+
+      .cls-3 {
+        filter: url(#drop-shadow-1);
+      }
+
+      .cls-4 {
+        filter: url(#drop-shadow-3);
+      }
+    </style>
+    <filter id="drop-shadow-1" x="1.65" y="27.56" width="30.85" height="31.31" filterUnits="userSpaceOnUse">
+      <feOffset dx="1" dy="1"/>
+      <feGaussianBlur result="blur" stdDeviation="0"/>
+      <feFlood flood-color="#231f20" flood-opacity="1"/>
+      <feComposite in2="blur" operator="in"/>
+      <feComposite in="SourceGraphic"/>
+    </filter>
+    <filter id="drop-shadow-2" x="32.49" y="27.56" width="30.85" height="31.31" filterUnits="userSpaceOnUse">
+      <feOffset dx="1" dy="1"/>
+      <feGaussianBlur result="blur-2" stdDeviation="0"/>
+      <feFlood flood-color="#231f20" flood-opacity="1"/>
+      <feComposite in2="blur-2" operator="in"/>
+      <feComposite in="SourceGraphic"/>
+    </filter>
+    <filter id="drop-shadow-3" x="17.07" y="2.02" width="30.85" height="31.31" filterUnits="userSpaceOnUse">
+      <feOffset dx="1" dy="1"/>
+      <feGaussianBlur result="blur-3" stdDeviation="0"/>
+      <feFlood flood-color="#231f20" flood-opacity="1"/>
+      <feComposite in2="blur-3" operator="in"/>
+      <feComposite in="SourceGraphic"/>
+    </filter>
+  </defs>
+  <g id="Layer_12_copy_2" data-name="Layer 12 copy 2">
+    <g class="cls-3">
+      <g>
+        <polygon class="cls-2" points="1.65 51.47 15.59 57.87 15.59 41.65 1.65 35.33 1.65 51.47"/>
+        <polygon class="cls-2" points="16.58 27.56 3.1 33.73 16.58 39.9 30.06 33.73 16.58 27.56"/>
+        <polygon class="cls-2" points="17.57 57.87 31.51 51.47 31.51 35.33 17.57 41.65 17.57 57.87"/>
+      </g>
+    </g>
+    <g class="cls-1">
+      <g>
+        <polygon class="cls-2" points="32.49 51.47 46.43 57.87 46.43 41.65 32.49 35.33 32.49 51.47"/>
+        <polygon class="cls-2" points="47.42 27.56 33.94 33.73 47.42 39.9 60.9 33.73 47.42 27.56"/>
+        <polygon class="cls-2" points="48.41 57.87 62.35 51.47 62.35 35.33 48.41 41.65 48.41 57.87"/>
+      </g>
+    </g>
+    <g class="cls-4">
+      <g>
+        <polygon class="cls-2" points="17.07 25.93 31.01 32.33 31.01 16.11 17.07 9.79 17.07 25.93"/>
+        <polygon class="cls-2" points="32 2.02 18.52 8.19 32 14.36 45.48 8.19 32 2.02"/>
+        <polygon class="cls-2" points="32.99 32.33 46.93 25.93 46.93 9.79 32.99 16.11 32.99 32.33"/>
+      </g>
+    </g>
+  </g>
+</svg>
