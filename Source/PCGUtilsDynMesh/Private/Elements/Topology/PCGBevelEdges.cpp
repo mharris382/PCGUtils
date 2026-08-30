@@ -1,21 +1,20 @@
 #include "Elements/Topology/PCGBevelEdges.h"
 
-#include "Data/PCGDynamicMeshData.h"
-#include "Data/PCGDynamicMeshSelectionData.h"
+#include "DynamicMesh/DynamicMesh3.h"
 #include "GeometryScript/GeometryScriptSelectionTypes.h"
-#include "GeometryScript/MeshModelingFunctions.h"
-#include "GeometryScript/MeshSelectionFunctions.h"
-#include "MeshTarget/PCGUtilsMeshTargetFunctions.h"
-#include "PCGContext.h"
-#include "PCGPin.h"
-#include "UDynamicMesh.h"
-#include "Utils/PCGLogErrors.h"
+#include "Operations/MeshBevel.h"
 
 #define LOCTEXT_NAMESPACE "PCGBevelEdges"
 
 namespace
 {
 	const FName BevelMeshPin = TEXT("Mesh");
+}
+
+UPCGBevelEdgesSettings::UPCGBevelEdgesSettings()
+{
+	// Preserve the existing bare-mesh "bevel all edges" behavior. Authors can now require a selection explicitly.
+	bRequireSelection = false;
 }
 
 #if WITH_EDITOR
@@ -26,7 +25,7 @@ FText UPCGBevelEdgesSettings::GetDefaultNodeTitle() const
 
 FText UPCGBevelEdgesSettings::GetNodeTooltipText() const
 {
-	return LOCTEXT("Tooltip", "Bevels a Dynamic Mesh edge selection (or every edge, if a bare Dynamic Mesh is supplied). Does not output a selection, since beveling changes mesh topology.");
+	return LOCTEXT("Tooltip", "Bevels a DynMesh edge selection, or every edge when a bare mesh is supplied. Newly created bevel faces become the result selection. Can assign a named result PolyGroup and emit a reusable Result Selector, for DynMesh and Builder inputs.");
 }
 #endif
 
@@ -40,7 +39,7 @@ FPCGElementPtr UPCGBevelEdgesSettings::CreateElement() const
 	return MakeShared<FPCGBevelEdgesElement>();
 }
 
-TSharedPtr<const FPCGUtilsDynMeshProcessOperation> UPCGBevelEdgesSettings::CreateProcessOperation(
+TSharedPtr<FPCGUtilsDynMeshTopologyOperation> UPCGBevelEdgesSettings::CreateTopologyOperation(
 	FPCGContext* InContext) const
 {
 	TSharedPtr<FPCGUtilsDynMeshBevelEdgesOperation> Operation = MakeShared<FPCGUtilsDynMeshBevelEdgesOperation>();
@@ -52,46 +51,34 @@ TSharedPtr<const FPCGUtilsDynMeshProcessOperation> UPCGBevelEdgesSettings::Creat
 	return Operation;
 }
 
-bool FPCGUtilsDynMeshBevelEdgesOperation::Execute(
-	const FPCGUtilsDynMeshProcessInvocation& Invocation,
-	FPCGUtilsDynMeshProcessOutcome& OutOutcome) const
+bool FPCGUtilsDynMeshBevelEdgesOperation::Apply(UE::Geometry::FDynamicMesh3& Mesh,
+	const UE::Geometry::FGeometrySelection* Selection, TArray<int32>& OutResultTriangles) const
 {
-	UDynamicMesh* TargetMesh = Invocation.MeshData ? Invocation.MeshData->GetMutableDynamicMesh() : nullptr;
-	if (!TargetMesh)
+	TArray<int32> Edges;
+	if (Selection)
 	{
-		return false;
-	}
-
-	// Beveling adds geometry and renumbers elements, so nothing that referenced the old topology survives.
-	OutOutcome.SelectionOutcome = EPCGUtilsDynMeshProcessSelectionOutcome::Clear;
-
-	FGeometryScriptMeshSelection Selection;
-	if (Invocation.SelectionData)
-	{
-		Selection.SetSelection(Invocation.SelectionData->GetSelection());
+		FGeometryScriptMeshSelection ScriptSelection;
+		ScriptSelection.SetSelection(*Selection);
+		ScriptSelection.ConvertToMeshIndexArray(Mesh, Edges, EGeometryScriptIndexType::Edge);
 	}
 	else
 	{
-		// Bevel always needs a selection, even for a bare Dynamic Mesh input - select every edge rather than
-		// forcing the graph author to add an explicit "select all" step first.
-		UGeometryScriptLibrary_MeshSelectionFunctions::CreateSelectAllMeshSelection(
-			TargetMesh, Selection, EGeometryScriptMeshSelectionType::Edges);
+		for (int32 ID : Mesh.EdgeIndicesItr()) { Edges.Add(ID); }
 	}
-
-	if (Selection.GetNumSelected() == 0)
+	if (Edges.IsEmpty()) { return true; }
+	UE::Geometry::FMeshBevel Bevel;
+	Bevel.InsetDistance = BevelDistance;
+	Bevel.MaterialIDMode = bInferMaterialID ? UE::Geometry::FMeshBevel::EMaterialIDMode::InferMaterialID
+		: UE::Geometry::FMeshBevel::EMaterialIDMode::ConstantMaterialID;
+	Bevel.SetConstantMaterialID = SetMaterialID;
+	Bevel.NumSubdivisions = FMath::Clamp(Subdivisions, 0, 9999);
+	Bevel.RoundWeight = FMath::Clamp(RoundWeight, -10.0f, 10.0f);
+	Bevel.InitializeFromTriangleEdges(Mesh, Edges, [&Mesh](int32 VertexID)
 	{
-		// Legitimate no-op (an upstream filter found nothing this run); leave the mesh untouched.
-		return true;
-	}
-
-	FGeometryScriptMeshBevelSelectionOptions BevelOptions;
-	BevelOptions.BevelDistance = BevelDistance;
-	BevelOptions.bInferMaterialID = bInferMaterialID;
-	BevelOptions.SetMaterialID = SetMaterialID;
-	BevelOptions.Subdivisions = Subdivisions;
-	BevelOptions.RoundWeight = RoundWeight;
-
-	UGeometryScriptLibrary_MeshModelingFunctions::ApplyMeshBevelEdgeSelection(TargetMesh, Selection, BevelOptions);
+		return Mesh.HasTriangleGroups() && Mesh.IsGroupJunctionVertex(VertexID);
+	});
+	if (!Bevel.Apply(Mesh, nullptr)) { return false; }
+	OutResultTriangles = MoveTemp(Bevel.NewTriangles);
 	return true;
 }
 

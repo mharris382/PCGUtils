@@ -114,6 +114,7 @@ TArray<FPCGSettingsOverridableParam> UPCGUtilsDynMeshOperandProcessBaseSettings:
 	Params.RemoveAll([](const FPCGSettingsOverridableParam& Param)
 	{
 		return Param.PropertiesNames.Contains(GET_MEMBER_NAME_CHECKED(UPCGUtilsDynMeshProcessBaseSettings, SelectionFactoryEvaluationDomain)) ||
+			Param.PropertiesNames.Contains(GET_MEMBER_NAME_CHECKED(UPCGUtilsDynMeshProcessBaseSettings, bRequireSelection)) ||
 			Param.PropertiesNames.Contains(GET_MEMBER_NAME_CHECKED(UPCGUtilsDynMeshProcessBaseSettings, bOutputSelectionData));
 	});
 	return Params;

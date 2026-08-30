@@ -26,6 +26,13 @@ public:
 	FGeometryScriptGroupLayer GroupLayer;
 
 	UPROPERTY()
+	FName GroupLayerName = NAME_None;
+
+	/** A result Selector may be evaluated before its producing operation ran; an absent region selects nothing. */
+	UPROPERTY()
+	bool bAllowMissingNamedLayer = false;
+
+	UPROPERTY()
 	EPCGUtilsDynMeshPolygroupSelectionMode SelectionMode = EPCGUtilsDynMeshPolygroupSelectionMode::GroupIDs;
 
 	UPROPERTY()
@@ -61,6 +68,10 @@ public:
 	/** Default triangle groups, or an extended PolyGroup layer by index. The layer must exist on the mesh. */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Selection", meta=(PCG_Overridable))
 	FGeometryScriptGroupLayer GroupLayer;
+
+	/** Resolve an extended PolyGroup layer by name instead of index. Use a topology process's Result Polygroup Name and group ID 1. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Selection", meta=(PCG_Overridable))
+	FName GroupLayerName = NAME_None;
 
 	/** Highest Group ID selects the largest ID actually used by triangles, not the allocation counter or creation order. */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Selection", meta=(PCG_Overridable))

@@ -1,24 +1,21 @@
 #pragma once
 
 #include "CoreMinimal.h"
-#include "Elements/PCGUtilsDynMeshProcessBase.h"
+#include "Elements/PCGUtilsDynMeshTopologyProcessBase.h"
 
 #include "PCGBevelEdges.generated.h"
 
 /**
- * Bevels Dynamic Mesh data using GeometryScript's ApplyMeshBevelEdgeSelection. The Mesh input pin accepts either a
- * whole Dynamic Mesh (every edge is beveled) or a PCGUtilsDynMesh Mesh Selection (only the selected edges are
- * beveled), via the shared PCGUtilsDynMesh Mesh Target Handle infrastructure (see
- * MeshTarget/PCGUtilsMeshTargetFunctions.h) - the same infrastructure Remesh/Warp/Spline Deform are built on.
- * Does not output a selection - beveling changes mesh topology, so the input selection's element IDs are no
- * longer valid afterward.
+ * Bevels all edges or the effective edge selection using Geometry Script's underlying bevel operation.
+ * Newly created bevel faces form the result selection; the topology base handles result groups and Selectors.
  */
 UCLASS(BlueprintType, ClassGroup=(Procedural), Category="PCGUtils|DynMesh")
-class PCGUTILSDYNMESH_API UPCGBevelEdgesSettings : public UPCGUtilsDynMeshProcessBaseSettings
+class PCGUTILSDYNMESH_API UPCGBevelEdgesSettings : public UPCGUtilsDynMeshTopologyProcessBaseSettings
 {
 	GENERATED_BODY()
 
 public:
+	UPCGBevelEdgesSettings();
 #if WITH_EDITOR
 	virtual FName GetDefaultNodeName() const override { return TEXT("BevelEdges"); }
 	virtual FText GetDefaultNodeTitle() const override;
@@ -59,12 +56,8 @@ public:
 		return true;
 	}
 
-	virtual TSharedPtr<const FPCGUtilsDynMeshProcessOperation> CreateProcessOperation(
-		FPCGContext* InContext) const override;
-
-	virtual bool SupportsDeferredBuilderProcessing() const override { return true; }
-
 protected:
+	virtual TSharedPtr<FPCGUtilsDynMeshTopologyOperation> CreateTopologyOperation(FPCGContext* InContext) const override;
 	virtual FName GetMainInputPinLabel() const override;
 	virtual FPCGElementPtr CreateElement() const override;
 };
@@ -78,7 +71,7 @@ class PCGUTILSDYNMESH_API FPCGBevelEdgesElement : public FPCGUtilsDynMeshProcess
  * ApplyMeshBevelEdgeSelection scopes its own effect, so no Mesh Target region extraction or weld is needed -
  * the operation bevels the mesh it was handed, which is already private to the caller.
  */
-class PCGUTILSDYNMESH_API FPCGUtilsDynMeshBevelEdgesOperation final : public FPCGUtilsDynMeshProcessOperation
+class PCGUTILSDYNMESH_API FPCGUtilsDynMeshBevelEdgesOperation final : public FPCGUtilsDynMeshTopologyOperation
 {
 public:
 	float BevelDistance = 1.0f;
@@ -87,7 +80,7 @@ public:
 	bool bInferMaterialID = false;
 	int32 SetMaterialID = 0;
 
-	virtual bool Execute(
-		const FPCGUtilsDynMeshProcessInvocation& Invocation,
-		FPCGUtilsDynMeshProcessOutcome& OutOutcome) const override;
+protected:
+	virtual bool Apply(UE::Geometry::FDynamicMesh3& Mesh,
+		const UE::Geometry::FGeometrySelection* Selection, TArray<int32>& OutResultTriangles) const override;
 };

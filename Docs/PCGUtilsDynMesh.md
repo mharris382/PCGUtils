@@ -31,9 +31,11 @@ and intersected with that selection.
 
 ### Required selections and domains
 
-An operation that cannot run without a selection overrides `RequiresSelection()`. It then accepts either a
-materialized selection input or a whole DynMesh plus a Selector. A bare DynMesh without a selector produces
-a graph error from the shared resolver.
+The process base exposes **Require Selection**. A derived operation can also enforce the requirement by
+overriding `RequiresSelection()`. Either materialized Selection data or a connected Selector satisfies it.
+A bare DynMesh without either produces a graph warning and is skipped. Builder requirements are checked when
+the Builder is evaluated, because its child may supply an active selection. An explicit empty selection is valid
+and means no work, not the whole mesh.
 
 An operation with a native vertex, edge, or face domain overrides `GetRequiredSelectionDomain()`. Incoming
 selections and selectors are converted centrally using Geometry Script-compatible inclusive conversion. Override
@@ -47,6 +49,65 @@ selections and selectors are converted centrally using Geometry Script-compatibl
 | Optional selection/no-selection behavior | Pass the resolved selection and explicit no-selection policy. |
 | Selection-only operation | Override `RequiresSelection()` and the required domain. |
 | Whole-mesh-only operation | Operate through a Mesh Target handle and restore only the selected result domain. |
+
+## Processes that produce topology
+
+`UPCGUtilsDynMeshTopologyProcessBaseSettings` **inherits from the process base**. It adds a result-selection
+contract; it does not implement a second mesh/Builder executor. Derived operations implement
+`FPCGUtilsDynMeshTopologyOperation::Apply()` and report the result triangle IDs explicitly. The base then:
+
+1. Replaces the active selection with those faces, bound to the processed mesh. This applies to immediate
+   `Output Selection Data` and to the internal selection carried by a Builder, independent of pin presentation.
+2. Optionally assigns the result faces to one fresh default PolyGroup with **Assign Result Polygroup**.
+3. Optionally emits a reusable **Result Selector**, using the existing PolyGroup Selector and its domain adapter.
+   **Output Result Selector** automatically enables group assignment. Both options default off.
+
+The reusable Selector cannot capture a default numeric group ID: a deferred Builder has not allocated one yet,
+and separate input meshes can allocate different IDs. The base therefore also records a named extended PolyGroup
+layer, with `1` for result faces and `0` for other faces. **Result Polygroup Name** specifies this name; `None`
+generates a name from the authoring node's object path, stable across PCG property overrides and saved-graph
+reloads. A new or renamed/copied node has its own automatic name. Use an explicit name when referencing a region
+from a separate **Select by PolyGroup** node (set **Group Layer Name** to that name and **Group IDs** to `1`).
+
+Reusing an explicit name replaces that region. Empty result regions clear the named layer and produce an empty
+Selector result; there is no fallback to the highest group. The emitted Result Selector also selects nothing on
+meshes that lack its named layer. One descriptor serves all outputs and all Builder seeds without owning a mesh.
+The Result Selector pin is always declared and keeps its Selector type when `Out` becomes a Builder pin, so
+property overrides may enable it. It emits data only when enabled and a primary output was produced.
+
+This is a mesh-attribute region, not an arbitrary topology-history system. Surviving membership follows the
+engine's attribute propagation through subsequent edits. Deleting faces removes them; operations that discard
+or regenerate PolyGroup layers can lose the region. Automatic names change if the node/asset path changes.
+Named regions are independent of default group IDs, so assigning a later default group does not erase an earlier
+named region. Each retained region adds one extended integer PolyGroup layer.
+
+### Extrude, Inset and Bevel
+
+- **Extrude DynMesh Faces** uses Geometry Script's underlying linear-extrude operation and options. Its result
+  defaults to the extruded cap faces. Choose side faces or cap and border faces when needed.
+- **Inset DynMesh Faces** uses the corresponding inset/outset operation, with inner faces as its default result.
+  Border-only and combined results are also available. Negative distance outsets. UV Scale applies to the border.
+- **Bevel Edges** now reports the newly created bevel faces through the same base, replacing invalidated edge IDs.
+  Its existing bare-mesh behavior (bevel every edge) is retained. It now supports result Selection data and a
+  reusable Result Selector.
+
+Extrude and Inset enable **Require Selection** by default; Bevel leaves it off for compatibility. All three accept
+DynMesh, Selection and Builder inputs and the optional Selector. The shared resolver converts input selection
+domains and intersects incoming Selection data with an explicit Selector. Empty effective selections are no-ops.
+Geometry Script group options remain available on Extrude/Inset; shared result grouping takes precedence for the
+chosen result faces when enabled. Directions and distances use the mesh's coordinate space.
+
+To author **Select Up Face → Extrude → Inset → Extrude** with concrete meshes:
+
+1. Connect an upward normal Selector to the first Extrude's `Selector` input, and the mesh to `In`.
+2. Enable **Output Result Selector** on the first Extrude and Inset. Keep `Out` as DynMesh if downstream nodes
+   require full mesh data.
+3. Connect each node's `Out` to the next node's `In`, and its `Result Selector` to the next node's `Selector`.
+
+Alternatively, enable **Output Selection Data** and chain those results directly. In Builder mode the same
+operation settings and Selector wiring work, while `Out` remains a Builder. The Builder also carries the result
+selection internally, so the next operation can use it without an additional Selector wire. A supplied Selector
+still intersects that active selection, following the normal process contract.
 
 ## Whole-mesh processes with an operand
 
@@ -102,6 +163,8 @@ node's optional `Selector` input, including processes in deferred Builder chains
   effect; an empty list selects nothing. **Invert Selection** complements the face region before domain conversion.
 - **Group Layer** chooses default triangle groups (including those assigned by **DynMesh Boolean**) or an extended
   PolyGroup layer by index. Missing layers report an error; evaluation never creates or changes mesh groups.
+- **Group Layer Name**, when set, resolves an extended layer by name instead of using the index/default-layer
+  setting. This can retrieve a topology process's named result region using group ID `1`.
 - **Highest Group ID** selects the largest ID currently used by triangles in the chosen layer, evaluated separately
   for each mesh. This can isolate a recently added boolean operand group, but it does not track provenance: if the
   boolean passed through or produced no operand faces, it will select the highest remaining primary group instead.

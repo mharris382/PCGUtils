@@ -47,9 +47,13 @@ public:
 
 	/**
 	 * Override for operations that cannot run without a selection. A materialized Selection input or a connected
-	 * Selector satisfies the requirement; a bare DynMesh without a factory produces a graph error.
+	 * Selector satisfies the requirement; a bare DynMesh without a Selector produces a graph warning and is skipped.
 	 */
-	virtual bool RequiresSelection() const { return false; }
+	virtual bool RequiresSelection() const { return bRequireSelection; }
+
+	/** Skip an input with a warning when neither Selection data nor a Selector is supplied. An empty selection is valid. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Selector", meta=(PCG_Overridable))
+	bool bRequireSelection = false;
 
 	/** Conversion policy used whenever the base implicitly converts an incoming selection domain. */
 	virtual bool AllowPartialSelectionDomainInclusion() const { return true; }
@@ -101,6 +105,9 @@ public:
 	//~End UPCGSettings interface
 
 protected:
+	/** Emit mesh-independent companion data after immediate results and deferred Builders have been produced. */
+	virtual void EmitAdditionalOutputs(FPCGContext* Context) const {}
+
 	/**
 	 * Folds this node's configuration into a deferred Builder decorator's cache identity. The default serializes
 	 * every reflected setting, which covers any node whose operation is built purely from its own properties.

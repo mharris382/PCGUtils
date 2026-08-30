@@ -16,7 +16,9 @@ namespace
 	{
 	public:
 		explicit FPolygroupSelectionOperation(const UPCGDynMeshPolygroupSelectionFactoryData& Data)
-			: GroupLayer(Data.GroupLayer), SelectionMode(Data.SelectionMode), bInvertSelection(Data.bInvertSelection)
+			: GroupLayer(Data.GroupLayer), GroupLayerName(Data.GroupLayerName),
+			  bAllowMissingNamedLayer(Data.bAllowMissingNamedLayer),
+			  SelectionMode(Data.SelectionMode), bInvertSelection(Data.bInvertSelection)
 		{
 			for (int32 ID : Data.GroupIDs)
 			{
@@ -29,8 +31,28 @@ namespace
 			if (!FPCGUtilsDynMeshSelectionOperation::Initialize(InContext)) { return false; }
 			GroupAttribute = nullptr;
 			HighestGroupID = INDEX_NONE;
+			bMissingNamedLayer = false;
 			const UE::Geometry::FDynamicMesh3& Mesh = InContext.Mesh;
-			if (GroupLayer.bDefaultLayer)
+			if (!GroupLayerName.IsNone())
+			{
+				if (Mesh.HasAttributes())
+				{
+					for (int32 Index = 0; Index < Mesh.Attributes()->NumPolygroupLayers(); ++Index)
+					{
+						const auto* Layer = Mesh.Attributes()->GetPolygroupLayer(Index);
+						if (Layer->GetName() == GroupLayerName) { GroupAttribute = Layer; break; }
+					}
+				}
+				if (!GroupAttribute)
+				{
+					bMissingNamedLayer = true;
+					if (bAllowMissingNamedLayer) { return true; }
+					PCGLog::LogErrorOnGraph(FText::Format(LOCTEXT("MissingNamedLayer",
+						"Select by PolyGroup could not find named PolyGroup layer '{0}'."), FText::FromName(GroupLayerName)), Context);
+					return false;
+				}
+			}
+			else if (GroupLayer.bDefaultLayer)
 			{
 				if (!Mesh.HasTriangleGroups())
 				{
@@ -64,7 +86,7 @@ namespace
 
 		virtual bool TestElement(int32 ElementID) const override
 		{
-			if (!SelectionContext->Mesh.IsTriangle(ElementID)) { return false; }
+			if (bMissingNamedLayer || !SelectionContext->Mesh.IsTriangle(ElementID)) { return false; }
 			const int32 GroupID = GetGroupID(ElementID);
 			const bool bMatches = SelectionMode == EPCGUtilsDynMeshPolygroupSelectionMode::HighestGroupID
 				? HighestGroupID >= 0 && GroupID == HighestGroupID : GroupIDs.Contains(GroupID);
@@ -78,6 +100,9 @@ namespace
 		}
 
 		FGeometryScriptGroupLayer GroupLayer;
+		FName GroupLayerName;
+		bool bAllowMissingNamedLayer;
+		bool bMissingNamedLayer = false;
 		EPCGUtilsDynMeshPolygroupSelectionMode SelectionMode;
 		bool bInvertSelection;
 		TSet<int32> GroupIDs;
@@ -101,7 +126,9 @@ void UPCGDynMeshPolygroupSelectionFactoryData::AddToCrc(FArchiveCrc32& Ar, bool 
 		uint8 Mode = static_cast<uint8>(SelectionMode);
 		TArray<int32> IDs = GroupIDs;
 		bool bInvert = bInvertSelection;
-		Ar << bDefaultLayer << LayerIndex << Mode << IDs << bInvert;
+		FName LayerName = GroupLayerName;
+		bool bAllowMissing = bAllowMissingNamedLayer;
+		Ar << bDefaultLayer << LayerIndex << Mode << IDs << bInvert << LayerName << bAllowMissing;
 	}
 }
 
@@ -140,6 +167,7 @@ UPCGUtilsDynMeshFactoryData* UPCGDynMeshPolygroupSelectionFactoryProviderSetting
 	if (!Factory) { return nullptr; }
 	Factory->Priority = Priority;
 	Factory->GroupLayer = GroupLayer;
+	Factory->GroupLayerName = GroupLayerName;
 	Factory->SelectionMode = SelectionMode;
 	Factory->GroupIDs = GroupIDs;
 	Factory->bInvertSelection = bInvertSelection;

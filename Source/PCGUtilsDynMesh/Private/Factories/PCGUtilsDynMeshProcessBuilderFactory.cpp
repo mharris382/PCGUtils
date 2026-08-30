@@ -59,9 +59,7 @@ namespace
 				ChildResult.GetProcessInputData(), Factory->Selector, Factory->Policy, EvaluationContext);
 			if (!Resolved.IsValid())
 			{
-				PCGLog::LogErrorOnGraph(FText::Format(
-					LOCTEXT("DeferredResolveFailed", "Deferred DynMesh process '{0}' could not resolve its effective selection."),
-					FText::FromName(Factory->ProcessLabel)), EvaluationContext);
+				// The shared resolver already reported why this input was skipped, including warning-only requirements.
 				return false;
 			}
 

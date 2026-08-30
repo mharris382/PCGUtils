@@ -129,6 +129,12 @@ FPCGDataTypeIdentifier UPCGUtilsDynMeshProcessBaseSettings::GetCurrentPinTypesID
 	{
 		return Super::GetCurrentPinTypesID(InPin);
 	}
+	if (InPin->Properties.Label != GetMainOutputPinLabel())
+	{
+		// UPCGSettings' dynamic fallback also infers every output from the first input. Companion outputs
+		// (for example Result Selector) must retain their own declared type instead of going through it.
+		return InPin->Properties.AllowedTypes;
+	}
 
 	const FPCGDataTypeIdentifier ConnectedTypes = GetTypeUnionIDOfIncidentEdges(GetMainInputPinLabel());
 	if (!ConnectedTypes.IsValid())
@@ -206,7 +212,7 @@ FPCGUtilsDynMeshResolvedInput FPCGUtilsDynMeshProcessFunctions::ResolveInput(
 
 	if (Policy.bRequiresSelection && !InputSelection && !Selector)
 	{
-		PCGLog::LogErrorOnGraph(
+		PCGLog::LogWarningOnGraph(
 			LOCTEXT("ResolveSelectionRequired", "This DynMesh process requires either DynMesh Selection data or a connected Selector."),
 			Context);
 		Result.MeshData = nullptr;
@@ -423,13 +429,6 @@ bool FPCGUtilsDynMeshProcessBaseElement::ExecuteInternal(FPCGContext* Context) c
 			PCGLog::LogWarningOnGraph(LOCTEXT("InvalidInput", "DynMesh processor skipped an input with no valid source mesh."), Context);
 			continue;
 		}
-		if (Policy.bRequiresSelection && !SelectionData && !SelectionFactory)
-		{
-			PCGLog::LogErrorOnGraph(
-				LOCTEXT("SelectionRequired", "This DynMesh process requires either DynMesh Selection data or a connected Selector."),
-				Context);
-			continue;
-		}
 
 		TArray<UMaterialInterface*> Materials;
 		Materials.Reserve(SourceData->GetMaterials().Num());
@@ -463,6 +462,7 @@ bool FPCGUtilsDynMeshProcessBaseElement::ExecuteInternal(FPCGContext* Context) c
 		const UPCGDynamicMeshSelectionData* ProcessSelectionData = Resolved.SelectionData;
 
 		bool bProcessed = false;
+		FPCGUtilsDynMeshProcessOutcome Outcome;
 		if (Operation)
 		{
 			FPCGUtilsDynMeshProcessInvocation Invocation;
@@ -475,7 +475,6 @@ bool FPCGUtilsDynMeshProcessBaseElement::ExecuteInternal(FPCGContext* Context) c
 			Invocation.InputIndex = InvocationInputIndex;
 			Invocation.InputCount = ConcreteInputCount;
 
-			FPCGUtilsDynMeshProcessOutcome Outcome;
 			bProcessed = Operation->Execute(Invocation, Outcome);
 		}
 		else
@@ -488,6 +487,16 @@ bool FPCGUtilsDynMeshProcessBaseElement::ExecuteInternal(FPCGContext* Context) c
 			continue;
 		}
 
+		// Immediate output follows the same selection contract as the deferred Builder decorator.
+		if (Outcome.SelectionOutcome == EPCGUtilsDynMeshProcessSelectionOutcome::Replace)
+		{
+			ProcessSelectionData = Outcome.NewSelectionData;
+		}
+		else if (Outcome.SelectionOutcome == EPCGUtilsDynMeshProcessSelectionOutcome::Clear)
+		{
+			ProcessSelectionData = nullptr;
+		}
+
 		FPCGTaggedData& Output = Context->OutputData.TaggedData.Emplace_GetRef(Input);
 		if (Settings->bOutputSelectionData)
 		{
@@ -496,7 +505,7 @@ bool FPCGUtilsDynMeshProcessBaseElement::ExecuteInternal(FPCGContext* Context) c
 			{
 				OutputSelection = ProcessSelectionData->GetSelection();
 			}
-			else
+			else if (Outcome.SelectionOutcome == EPCGUtilsDynMeshProcessSelectionOutcome::Preserve)
 			{
 				const UDynamicMesh* ProcessedObject = OutputData->GetDynamicMesh();
 				const UE::Geometry::FDynamicMesh3* ProcessedMesh =
@@ -514,6 +523,12 @@ bool FPCGUtilsDynMeshProcessBaseElement::ExecuteInternal(FPCGContext* Context) c
 					continue;
 				}
 			}
+			else
+			{
+				// Cleared topology must never fall back to stale IDs or a full-mesh selection.
+				OutputSelection.InitializeTypes(UE::Geometry::EGeometryElementType::Face,
+					UE::Geometry::EGeometryTopologyType::Triangle);
+			}
 			UPCGDynamicMeshSelectionData* OutputSelectionData =
 				FPCGContext::NewObject_AnyThread<UPCGDynamicMeshSelectionData>(Context);
 			OutputSelectionData->Initialize(OutputData, MoveTemp(OutputSelection));
@@ -525,6 +540,7 @@ bool FPCGUtilsDynMeshProcessBaseElement::ExecuteInternal(FPCGContext* Context) c
 		}
 		Output.Pin = Settings->GetMainOutputPinLabel();
 	}
+	Settings->EmitAdditionalOutputs(Context);
 	return true;
 }
 
