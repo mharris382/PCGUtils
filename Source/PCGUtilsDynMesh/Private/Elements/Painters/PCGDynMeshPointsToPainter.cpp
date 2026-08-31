@@ -16,7 +16,7 @@
 
 namespace
 {
-	const FName PointsPin = TEXT("Points");
+	const FName PointsPinName = TEXT("Points");
 
 	class FPointsToPainterOperation final : public FPCGUtilsDynMeshPainterOperation
 	{
@@ -199,7 +199,7 @@ const FPCGDataTypeBaseId& UPCGDynMeshPointsToPainterProviderSettings::GetFactory
 TArray<FPCGPinProperties> UPCGDynMeshPointsToPainterProviderSettings::InputPinProperties() const
 {
 	TArray<FPCGPinProperties> Pins;
-	Pins.Emplace_GetRef(PointsPin, EPCGDataType::Point, true, true).SetRequiredPin();
+	Pins.Emplace_GetRef(PointsPinName, EPCGDataType::Point, true, true).SetRequiredPin();
 	return Pins;
 }
 
@@ -207,7 +207,7 @@ UPCGUtilsDynMeshFactoryData* UPCGDynMeshPointsToPainterProviderSettings::CreateF
 	FPCGContext* InContext, UPCGUtilsDynMeshFactoryData* InFactory) const
 {
 	TArray<TObjectPtr<const UPCGBasePointData>> PointDataSets;
-	for (const FPCGTaggedData& Input : InContext->InputData.GetInputsByPin(PointsPin))
+	for (const FPCGTaggedData& Input : InContext->InputData.GetInputsByPin(PointsPinName))
 	{
 		if (const UPCGBasePointData* PointData = Cast<const UPCGBasePointData>(Input.Data))
 		{
