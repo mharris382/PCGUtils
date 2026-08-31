@@ -6,6 +6,7 @@
 
 #include "Data/PCGBasePointData.h"
 #include "Data/PCGDynamicMeshData.h"
+#include "Data/PCGUtilsClusterInterop.h"
 #include "Data/PCGGeometryCollectionData.h"
 #include "Data/PCGPointArrayData.h"
 #include "DynamicMesh/DynamicMesh3.h"
@@ -407,6 +408,183 @@ bool FPCGUtilsFractureRoundTripTest::RunTest(const FString&)
 
 
 
+
+
+/**
+ * The cluster output must satisfy PCGEx's contract exactly, since nothing links the two plugins together and
+ * a silent mismatch would only show up as PCGEx quietly refusing to see a cluster.
+ *
+ * Decoding here deliberately mirrors PCGEx's own reader (BuildEndpointsLookup / BuildIndexedEdges) rather than
+ * re-using our writer's helpers, so the test would catch a change on either side of the convention.
+ */
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FPCGUtilsFractureClusterOutputTest,
+	"PCGUtils.Fracture.Cluster.MatchesPCGExContract",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::ProductFilter)
+
+bool FPCGUtilsFractureClusterOutputTest::RunTest(const FString&)
+{
+	using namespace PCGUtilsFractureTests;
+
+	const UPCGGeometryCollectionData* Fractured = Fracture(ToCollection(Box()), SiteGrid(3));
+	if (!TestNotNull(TEXT("Fractured"), Fractured))
+	{
+		return false;
+	}
+
+	UPCGGeometryCollectionBonesToPointsSettings* Settings =
+		NewObject<UPCGGeometryCollectionBonesToPointsSettings>();
+	Settings->bOutputToWorldSpace = false;
+	Settings->bOutputCluster = true;
+
+	const TArray<FPCGTaggedData> Outputs =
+		Run(Settings, {{PCGGeometryCollectionBonesToPointsConstants::CollectionInputPin, Fractured}});
+
+	const UPCGBasePointData* VtxData = nullptr;
+	const UPCGBasePointData* EdgesData = nullptr;
+	FString VtxPairTag;
+	FString EdgesPairTag;
+	for (const FPCGTaggedData& Tagged : Outputs)
+	{
+		const UPCGBasePointData* Points = Cast<const UPCGBasePointData>(Tagged.Data);
+		if (!Points) { continue; }
+
+		for (const FString& Tag : Tagged.Tags)
+		{
+			if (Tag.StartsWith(PCGUtilsClusterInterop::ClusterPairTagKey + TEXT(":")))
+			{
+				(Tagged.Pin == PCGGeometryCollectionBonesToPointsConstants::EdgesOutputPin
+					? EdgesPairTag : VtxPairTag) = Tag;
+			}
+		}
+
+		if (Tagged.Pin == PCGGeometryCollectionBonesToPointsConstants::EdgesOutputPin)
+		{
+			EdgesData = Points;
+			TestTrue(TEXT("Edges data carries the PCGEx edges tag"),
+				Tagged.Tags.Contains(PCGUtilsClusterInterop::EdgesTag));
+		}
+		else
+		{
+			VtxData = Points;
+			TestTrue(TEXT("Vtx data carries the PCGEx vtx tag"),
+				Tagged.Tags.Contains(PCGUtilsClusterInterop::VtxTag));
+		}
+	}
+
+	if (!TestNotNull(TEXT("Vtx half emitted"), VtxData) || !TestNotNull(TEXT("Edges half emitted"), EdgesData))
+	{
+		return false;
+	}
+
+	// The pair tag is how PCGEx knows the two halves belong together.
+	TestFalse(TEXT("A pair tag was written"), VtxPairTag.IsEmpty());
+	TestEqual(TEXT("Both halves share one pair id"), VtxPairTag, EdgesPairTag);
+
+	// Both halves must stay ordinary point data. A cluster is point data carrying tags and attributes; a
+	// bespoke subtype would narrow the pins and stop other point nodes accepting them.
+	TestTrue(TEXT("Vtx half is plain point array data"), VtxData->IsA<UPCGPointArrayData>());
+	TestTrue(TEXT("Edges half is plain point array data"), EdgesData->IsA<UPCGPointArrayData>());
+	TestEqual(TEXT("Vtx half is not a bespoke subtype"),
+		VtxData->GetClass(), UPCGPointArrayData::StaticClass());
+	TestEqual(TEXT("Edges half is not a bespoke subtype"),
+		EdgesData->GetClass(), UPCGPointArrayData::StaticClass());
+
+	// --- Decode exactly as PCGEx does -----------------------------------------------------------------
+	const FPCGMetadataDomain* VtxDomain =
+		VtxData->ConstMetadata()->GetConstMetadataDomain(PCGMetadataDomainID::Elements);
+	const FPCGMetadataAttribute<int64>* VtxAttr =
+		VtxDomain->GetConstTypedAttribute<int64>(PCGUtilsClusterInterop::VtxDataAttribute);
+	const FPCGMetadataAttribute<int32>* BoneAttr =
+		VtxDomain->GetConstTypedAttribute<int32>(PCGUtilsGeometryCollectionIdentity::BoneIndexAttribute);
+	if (!TestNotNull(TEXT("PCGEx/VData written"), VtxAttr)
+		|| !TestNotNull(TEXT("GC_BoneIndex written"), BoneAttr))
+	{
+		return false;
+	}
+
+	// BuildEndpointsLookup: VtxId -> point index, plus the expected degree.
+	TMap<uint32, int32> EndpointsLookup;
+	TArray<int32> ExpectedDegree;
+	const auto VtxEntries = VtxData->GetConstMetadataEntryValueRange();
+	for (int32 i = 0; i < VtxEntries.Num(); ++i)
+	{
+		const uint64 Packed = static_cast<uint64>(VtxAttr->GetValueFromItemKey(VtxEntries[i]));
+		const uint32 VtxId = static_cast<uint32>(Packed >> 32);
+		const uint32 Degree = static_cast<uint32>(Packed);
+		EndpointsLookup.Add(VtxId, i);
+		ExpectedDegree.Add(static_cast<int32>(Degree));
+
+		// The whole reason a selection survives a PCGEx round trip: vtx id IS the bone index.
+		TestEqual(TEXT("Vtx id equals GC_BoneIndex"),
+			static_cast<int32>(VtxId), BoneAttr->GetValueFromItemKey(VtxEntries[i]));
+	}
+	TestEqual(TEXT("Every vertex has a unique id"), EndpointsLookup.Num(), VtxData->GetNumPoints());
+
+	// BuildIndexedEdges: both endpoints must resolve through that lookup.
+	const FPCGMetadataAttribute<int64>* EdgeAttr =
+		EdgesData->ConstMetadata()->GetConstMetadataDomain(PCGMetadataDomainID::Elements)
+			->GetConstTypedAttribute<int64>(PCGUtilsClusterInterop::EdgeDataAttribute);
+	if (!TestNotNull(TEXT("PCGEx/EData written"), EdgeAttr))
+	{
+		return false;
+	}
+
+	TArray<int32> ActualDegree;
+	ActualDegree.Init(0, VtxData->GetNumPoints());
+	int32 NumUnresolved = 0;
+	const auto EdgeEntries = EdgesData->GetConstMetadataEntryValueRange();
+	for (int32 i = 0; i < EdgeEntries.Num(); ++i)
+	{
+		const uint64 Packed = static_cast<uint64>(EdgeAttr->GetValueFromItemKey(EdgeEntries[i]));
+		const int32* StartPoint = EndpointsLookup.Find(static_cast<uint32>(Packed >> 32));
+		const int32* EndPoint = EndpointsLookup.Find(static_cast<uint32>(Packed));
+		if (!StartPoint || !EndPoint)
+		{
+			++NumUnresolved;
+			continue;
+		}
+		TestNotEqual(TEXT("An edge does not connect a vertex to itself"), *StartPoint, *EndPoint);
+		ActualDegree[*StartPoint]++;
+		ActualDegree[*EndPoint]++;
+	}
+
+	TestEqual(TEXT("Every edge endpoint resolves to a vertex"), NumUnresolved, 0);
+	TestTrue(TEXT("A fractured solid produces adjacency"), EdgeEntries.Num() > 0);
+
+	// The degree PCGEx reads out of the vtx attribute has to match the edges actually present, or its
+	// adjacency allocation is wrong.
+	bool bDegreesMatch = true;
+	for (int32 i = 0; i < ActualDegree.Num(); ++i)
+	{
+		bDegreesMatch &= (ActualDegree[i] == ExpectedDegree[i]);
+	}
+	TestTrue(TEXT("Declared vertex degree matches the emitted edges"), bDegreesMatch);
+
+	// Every piece of a solid fractured into a 3x3x3 lattice touches something.
+	int32 NumIsolated = 0;
+	for (const int32 Degree : ActualDegree) { NumIsolated += (Degree == 0) ? 1 : 0; }
+	TestEqual(TEXT("No fracture piece is isolated"), NumIsolated, 0);
+
+	UE_LOG(LogPCGUtilsFracture, Log, TEXT("Cluster: %d vtx, %d edges"),
+		VtxData->GetNumPoints(), EdgesData->GetNumPoints());
+
+	// Without cluster output, neither the marking nor the edges pin should appear.
+	{
+		UPCGGeometryCollectionBonesToPointsSettings* Plain =
+			NewObject<UPCGGeometryCollectionBonesToPointsSettings>();
+		Plain->bOutputToWorldSpace = false;
+		const TArray<FPCGTaggedData> PlainOutputs =
+			Run(Plain, {{PCGGeometryCollectionBonesToPointsConstants::CollectionInputPin, Fractured}});
+		TestEqual(TEXT("Only the points pin is emitted by default"), PlainOutputs.Num(), 1);
+		if (PlainOutputs.Num() == 1)
+		{
+			TestFalse(TEXT("Points are not marked as cluster vtx by default"),
+				PlainOutputs[0].Tags.Contains(PCGUtilsClusterInterop::VtxTag));
+		}
+	}
+
+	return true;
+}
 
 /**
  * The random-damage workflow: pick exterior pieces only, prune them, and confirm the result actually changed

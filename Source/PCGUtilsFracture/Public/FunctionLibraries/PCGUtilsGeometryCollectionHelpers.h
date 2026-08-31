@@ -108,6 +108,42 @@ namespace PCGUtilsGeometryCollectionHelpers
 		const FTransform& InBoneToCollection = FTransform::Identity);
 
 	/**
+	 * One adjacency edge between two geometry-bearing bones.
+	 *
+	 * Contact fields are only filled when contact measurement was requested; they stay at zero otherwise,
+	 * because computing them requires convex hulls and is markedly more expensive than adjacency alone.
+	 */
+	struct FBoneAdjacencyEdge
+	{
+		int32 BoneA = INDEX_NONE;
+		int32 BoneB = INDEX_NONE;
+
+		/** Estimated area of the contact region between the two pieces. */
+		float ContactArea = 0.0f;
+
+		/** Width of the contact where it is thin - distinguishes a face weld from a corner touch. */
+		float SharpContactWidth = 0.0f;
+	};
+
+	/**
+	 * Builds the adjacency graph over geometry-bearing bones: which fracture pieces actually touch.
+	 *
+	 * Uses the engine's own proximity computation rather than inferring contact from bounds. Precise proximity
+	 * looks for touching vertices or touching coplanar opposite-facing triangles, which is exactly the shape
+	 * fracture cuts produce - Epic's own comment calls it out as the mode suited to their fracture tools.
+	 *
+	 * Each pair appears once, ordered so BoneA < BoneB.
+	 *
+	 * @param bComputeContact  Also measure contact area and sharp-contact width. Requires generating convex
+	 *                         hulls for every piece, so it is considerably slower than adjacency alone.
+	 * @return false if the collection has no usable proximity information.
+	 */
+	PCGUTILSFRACTURE_API bool BuildBoneAdjacency(
+		const FGeometryCollection& InCollection,
+		bool bComputeContact,
+		TArray<FBoneAdjacencyEdge>& OutEdges);
+
+	/**
 	 * Bounds of all geometry-bearing bones in collection space, computed the same way the fracture backend
 	 * computes its own: per-bone bounds transformed by the bone's global matrix.
 	 */

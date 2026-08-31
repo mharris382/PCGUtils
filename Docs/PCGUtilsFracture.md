@@ -45,7 +45,7 @@ All under the `Dynamic Mesh` palette category (the engine has no Geometry Collec
 | **Fracture GC** | `GC`, `Fracture`, `Selection` (optional) | `GC` |
 | **Uniform Voronoi Fracture** | *(none)* | `Fracture` |
 | **Voronoi Fracture From Points** | `Sites` (points) | `Fracture` |
-| **GC Bones To Points** | `GC` | `Points` |
+| **GC Bones To Points** | `GC` | `Points`, `Edges` (cluster mode) |
 | **Select Bones From Points** | `Points` | `Selection` |
 | **Prune GC** | `GC`, `Selection` | `GC` |
 | **GC To DynMesh** | `GC` | `DynMesh` |
@@ -257,6 +257,63 @@ Every `GC` data carries `CollectionId` (the lineage), `Revision` (a counter for 
 `StateId` is the authoritative check. A bone index from one state applied to another does not fail on its own —
 it silently addresses a different piece — so `Select Bones From Points` treats a mismatch as a graph error.
 Leave **Validate Source Identity** on.
+
+---
+
+## Cluster output: expanding a selection to neighbouring pieces
+
+Tick **Output Cluster** on `GC Bones To Points` and it also emits the bone adjacency graph - which fracture
+pieces actually touch - on an `Edges` pin beside the points. Together the two pins satisfy the convention
+PCGEx uses to recognise a cluster, so its entire cluster library becomes available on a fractured Geometry
+Collection:
+
+```
+GC Bones To Points  (Output Cluster on)
+  Points ──> PCGEx  Vtx
+  Edges  ──> PCGEx  Edges
+                 |
+          Flood Fill / Pathfinding / Refinement / connectivity filters
+                 |
+          Select Bones From Points  ──>  Prune GC
+```
+
+"Expand my selection to adjacent pieces" is a flood fill seeded from the selected vertices - and PCGEx's
+heuristics library drives *how* it spreads.
+
+**The vertex id is the bone index.** PCGEx's reader maps vertex id to point index, so any unique id is legal;
+using the bone index means the cluster's vertex id and `GC_BoneIndex` are the same number. A selection that has
+been through PCGEx cluster nodes still resolves through `Select Bones From Points` with no conversion step and
+no changes to that node.
+
+Adjacency comes from the engine's *precise* proximity - touching vertices, or touching coplanar opposite-facing
+triangles - which is exactly what fracture cuts produce.
+
+### Edge weights
+
+**Output Contact Area** and **Sharp Contact Width** measure how much surface each pair of pieces shares. Fed to
+a PCGEx heuristic, that turns flood fill from "spread to neighbours" into "spread along strong joins first",
+which is far closer to how damage really propagates; sharp-contact width separates a face-to-face join from a
+corner touch. Both need convex hulls for every piece, so they are markedly slower than adjacency alone and are
+off by default.
+
+### No dependency in either direction
+
+`PCGUtilsFracture` does not link against PCGExtendedToolkit. The entire cluster contract is two int64
+attributes and three tags, so it is reproduced in `PCGUtilsClusterInterop` rather than depended upon:
+
+| | Vtx (Points pin) | Edges pin |
+|---|---|---|
+| tags | `PCGEx/Vtx`, `PCGEx/Cluster:<id>` | `PCGEx/Edges`, `PCGEx/Cluster:<same id>` |
+| attribute | `PCGEx/VData` = `(BoneIndex << 32) \| Degree` | `PCGEx/EData` = `(BoneA << 32) \| BoneB` |
+
+Both halves are **ordinary point data on ordinary Point pins**. What makes them a cluster is the tags and
+attributes, not the data class - so the vertices remain usable by every other point node in the graph, and can
+be filtered, sampled or transformed like any other points before being handed to PCGEx. PCGEx declares its own
+cluster pins the same way, inputs and outputs alike.
+
+`PCGUtils.Fracture.Cluster.MatchesPCGExContract` decodes the output the way PCGEx's own reader does, so a
+change on either side of the convention shows up as a test failure rather than as PCGEx quietly not seeing a
+cluster. It also asserts the two halves stay plain point data.
 
 ---
 

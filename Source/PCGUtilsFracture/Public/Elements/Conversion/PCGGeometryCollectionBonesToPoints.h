@@ -12,6 +12,9 @@ namespace PCGGeometryCollectionBonesToPointsConstants
 {
 	inline const FName CollectionInputPin = TEXT("GC");
 	inline const FName PointsOutputPin = TEXT("Points");
+
+	/** Named to match the pin PCGEx cluster nodes expect on the other end. */
+	inline const FName EdgesOutputPin = TEXT("Edges");
 }
 
 /**
@@ -172,6 +175,55 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Attributes|Surface",
 		meta=(PCG_Overridable, EditCondition="bOutputInteriorFaceCount", EditConditionHides))
 	FName InteriorFaceCountAttributeName = PCGUtilsGeometryCollectionIdentity::InteriorFaceCountAttribute;
+
+	// --- Cluster ---------------------------------------------------------------------------------------
+
+	/**
+	 * Also emit the bone adjacency graph, so the output reads as a cluster: which fracture pieces touch which.
+	 *
+	 * The Points output gains the vertex marking and an Edges pin appears beside it. Together they satisfy the
+	 * convention PCGEx uses to recognise a cluster, which makes its whole cluster library - flood fill and its
+	 * heuristics, pathfinding, refinement, connectivity filters - usable on a fractured Geometry Collection.
+	 * Expanding a selection to neighbouring pieces is a flood fill from the selected vertices.
+	 *
+	 * The vertex id is the bone index, so a selection that has been through PCGEx cluster nodes still resolves
+	 * through Select Bones From Points unchanged.
+	 *
+	 * Adjacency comes from the engine's precise proximity - touching vertices, or touching coplanar
+	 * opposite-facing triangles - which is exactly what fracture cuts produce.
+	 */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Cluster", meta=(PCG_Overridable))
+	bool bOutputCluster = false;
+
+	/**
+	 * Measure how much surface each pair of pieces shares, as edge attributes.
+	 *
+	 * Turns flood fill from "spread to neighbours" into "spread along strong joins first", which is much closer
+	 * to how damage actually propagates. Requires generating convex hulls for every piece, so it is markedly
+	 * slower than adjacency alone.
+	 */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Cluster",
+		meta=(PCG_Overridable, EditCondition="bOutputCluster", EditConditionHides))
+	bool bOutputContactArea = false;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Cluster",
+		meta=(PCG_Overridable, EditCondition="bOutputCluster && bOutputContactArea", EditConditionHides))
+	FName ContactAreaAttributeName = TEXT("GC_ContactArea");
+
+	/** Width of the contact where it is thin - separates a face-to-face join from a corner touch. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Cluster",
+		meta=(PCG_Overridable, EditCondition="bOutputCluster", EditConditionHides))
+	bool bOutputSharpContactWidth = false;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Cluster",
+		meta=(PCG_Overridable, EditCondition="bOutputCluster && bOutputSharpContactWidth", EditConditionHides))
+	FName SharpContactWidthAttributeName = TEXT("GC_SharpContactWidth");
+
+	/** True when any edge attribute needs the (expensive) contact measurement. */
+	bool NeedsContactInfo() const
+	{
+		return bOutputCluster && (bOutputContactArea || bOutputSharpContactWidth);
+	}
 
 	/** True when any surface attribute is enabled, so the per-face pass can be skipped entirely otherwise. */
 	bool NeedsSurfaceInfo() const

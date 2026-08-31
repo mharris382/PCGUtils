@@ -201,6 +201,31 @@ Identity (`GC_BoneIndex` and the source id/revision/state trio) is the one thing
 because it is the contract with `Select Bones From Points` - a selection cannot be resolved without it. Its
 names are still exposed so they can be matched against that node.
 
+## Cluster interop
+
+`GC Bones To Points` can emit the bone adjacency graph as a PCGEx-compatible cluster. `PCGUtilsFracture` must
+**not** gain a dependency on PCGExtendedToolkit to do it - the whole contract is two int64 attributes and three
+tags, reproduced in `PCGUtilsClusterInterop` (`Data/PCGGeometryCollectionClusterData.h`) with the source files
+it was verified against listed in the comment.
+
+Two things to preserve if you touch this:
+
+- **The vertex id is the bone index, not the point index.** PCGEx's `BuildEndpointsLookup` builds a
+  VtxId -> point-index map, so any unique id is legal, and using the bone index is what lets a selection
+  survive a PCGEx round trip and still resolve through `Select Bones From Points`.
+- **The declared degree must match the emitted edges.** PCGEx sizes its adjacency from the degree packed into
+  the vtx attribute; a mismatch corrupts the cluster rather than failing loudly.
+
+- **Both halves are plain `UPCGPointArrayData` on plain Point pins.** Do not introduce a data subtype for
+  vtx or edges. A cluster is point data carrying tags and attributes, not a distinct type; subtyping narrows
+  the pin, stops other point nodes accepting the output, and buys nothing. PCGEx declares its own cluster pins
+  with `PCGEX_PIN_POINTS` on inputs *and* outputs for exactly this reason. The test asserts the output class is
+  `UPCGPointArrayData` precisely so this cannot creep back in.
+
+Adjacency uses `FGeometryCollectionProximityUtility::ComputePreciseProximity` - the static const overload,
+because the instance methods cache a Proximity attribute onto the collection and ours are immutable. Note
+`DeleteBranch` (Prune) strips that attribute anyway, so proximity is always recomputed rather than reused.
+
 ## Naming
 
 C++ spells out `GeometryCollection`; user-facing text uses `GC`. So `UPCGGeometryCollectionBonesToPointsSettings`

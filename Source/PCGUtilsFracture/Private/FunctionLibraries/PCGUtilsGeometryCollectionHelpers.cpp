@@ -4,6 +4,8 @@
 
 #include "GeometryCollection/GeometryCollection.h"
 #include "GeometryCollection/GeometryCollectionAlgo.h"
+#include "GeometryCollection/GeometryCollectionConvexUtility.h"
+#include "GeometryCollection/GeometryCollectionProximityUtility.h"
 #include "GeometryCollection/TransformCollection.h"
 
 namespace PCGUtilsGeometryCollectionHelpers
@@ -156,6 +158,103 @@ namespace PCGUtilsGeometryCollectionHelpers
 		}
 
 		return Info;
+	}
+
+	bool BuildBoneAdjacency(
+		const FGeometryCollection& InCollection,
+		bool bComputeContact,
+		TArray<FBoneAdjacencyEdge>& OutEdges)
+	{
+		OutEdges.Reset();
+
+		const int32 NumGeometry = InCollection.NumElements(FGeometryCollection::GeometryGroup);
+		if (NumGeometry < 2)
+		{
+			// A single piece has nothing to be adjacent to. Not an error - just an empty graph.
+			return true;
+		}
+
+		// The static, const overload: computing proximity through FGeometryCollectionProximityUtility would
+		// mutate the collection to cache a Proximity attribute, and callers hold immutable collections.
+		const TArray<TSet<int32>> Proximity =
+			FGeometryCollectionProximityUtility::ComputePreciseProximity(InCollection);
+		if (Proximity.Num() != NumGeometry)
+		{
+			return false;
+		}
+
+		// Proximity is indexed by geometry, but everything user-facing is indexed by bone.
+		auto GeometryToBone = [&InCollection](int32 GeometryIndex) -> int32
+		{
+			return InCollection.TransformIndex.IsValidIndex(GeometryIndex)
+				? InCollection.TransformIndex[GeometryIndex] : INDEX_NONE;
+		};
+
+		// Contact measurement needs convex hulls and a mutable collection, so it works on a throwaway copy
+		// rather than forcing every caller to hand over a mutable one.
+		TMap<TPair<int32, int32>, TPair<float, float>> ContactByGeometryPair;
+		if (bComputeContact)
+		{
+			TSharedRef<FGeometryCollection> Working = MakeShared<FGeometryCollection>();
+			InCollection.CopyTo(&Working.Get());
+
+			TArray<FTransform> GlobalTransforms;
+			ComputeGlobalTransforms(*Working, GlobalTransforms);
+
+			UE::GeometryCollectionConvexUtility::FConvexHulls Hulls =
+				FGeometryCollectionConvexUtility::ComputeLeafHulls(&Working.Get(), GlobalTransforms);
+
+			const TArray<FGeometryCollectionProximityUtility::FGeometryContactEdge> ContactEdges =
+				FGeometryCollectionProximityUtility::ComputeConvexGeometryContactFromProximity(
+					&Working.Get(), /*DistanceTolerance=*/0.0f, Hulls);
+
+			for (const FGeometryCollectionProximityUtility::FGeometryContactEdge& Contact : ContactEdges)
+			{
+				const int32 Lower = FMath::Min(Contact.GeometryIndices[0], Contact.GeometryIndices[1]);
+				const int32 Upper = FMath::Max(Contact.GeometryIndices[0], Contact.GeometryIndices[1]);
+				ContactByGeometryPair.Add(
+					TPair<int32, int32>(Lower, Upper),
+					TPair<float, float>(Contact.ContactArea, Contact.SharpContactWidth));
+			}
+		}
+
+		for (int32 GeometryIndex = 0; GeometryIndex < NumGeometry; ++GeometryIndex)
+		{
+			const int32 BoneA = GeometryToBone(GeometryIndex);
+			if (BoneA == INDEX_NONE || !IsGeometryBearingBone(InCollection, BoneA))
+			{
+				continue;
+			}
+
+			for (const int32 NeighbourGeometry : Proximity[GeometryIndex])
+			{
+				// Emit each pair once. Proximity is symmetric, so taking only the ascending direction both
+				// de-duplicates and gives a stable edge ordering.
+				if (NeighbourGeometry <= GeometryIndex)
+				{
+					continue;
+				}
+
+				const int32 BoneB = GeometryToBone(NeighbourGeometry);
+				if (BoneB == INDEX_NONE || !IsGeometryBearingBone(InCollection, BoneB))
+				{
+					continue;
+				}
+
+				FBoneAdjacencyEdge& Edge = OutEdges.Emplace_GetRef();
+				Edge.BoneA = FMath::Min(BoneA, BoneB);
+				Edge.BoneB = FMath::Max(BoneA, BoneB);
+
+				if (const TPair<float, float>* Contact = ContactByGeometryPair.Find(
+					TPair<int32, int32>(GeometryIndex, NeighbourGeometry)))
+				{
+					Edge.ContactArea = Contact->Key;
+					Edge.SharpContactWidth = Contact->Value;
+				}
+			}
+		}
+
+		return true;
 	}
 
 	FBox ComputeCollectionBounds(const FGeometryCollection& InCollection)
