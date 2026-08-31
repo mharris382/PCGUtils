@@ -33,6 +33,11 @@
 			"LoadingPhase": "Default"
 		},
 		{
+			"Name": "PCGUtilsFracture",
+			"Type": "Runtime",
+			"LoadingPhase": "Default"
+		},
+		{
 			"Name": "PCGUtilsDataCache",
 			"Type": "Runtime",
 			"LoadingPhase": "Default"
@@ -54,6 +59,14 @@
 		},
 		{
 			"Name": "PCGGeometryScriptInterop",
+			"Enabled": true
+		},
+		{
+			"Name": "Fracture",
+			"Enabled": true
+		},
+		{
+			"Name": "PlanarCut",
 			"Enabled": true
 		}
 	]

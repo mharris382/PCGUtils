@@ -32,9 +32,19 @@ pin/data display names, and documentation. Keep official engine names such as `U
 `UPCGDynamicMeshData`, and Geometry Script APIs unchanged. For existing reflected classes, prefer user-facing
 display-name changes first; perform C++ renames only with appropriate Core Redirects.
 
+Use `GC`, not `GeometryCollection`, in PCGUtils-owned names and display text. Spelled out, it makes node titles
+unusably long (`Geometry Collection Bones To Points` versus `GC Bones To Points`), and those titles are what
+users actually type in the palette. This covers filenames, node names/titles, categories, pin labels, and
+attribute prefixes (`GC_BoneIndex`). Keep official engine names such as `FGeometryCollection` and
+`FManagedArrayCollection` unchanged, and add `Geometry Collection` as a node title alias so search still finds
+it. The one deliberate exception is the root data class `UPCGGeometryCollectionData`, spelled out because it is
+the name that appears in `Cast<>` calls and error text; its display name is still `GC`.
+
 `Factory` is an internal C++ implementation term only. Never expose it in node titles, pin labels, tooltips,
 data-type display names, errors, or end-user documentation. The user-facing term is always `Selector`. Existing
 reflected C++ types containing `Factory` remain unchanged until a redirect-backed compatibility migration exists.
+
+In `PCGUtilsFracture` the equivalent user-facing pin labels are `GC`, `Fracture` and `Selection`.
 
 ## Validation
 

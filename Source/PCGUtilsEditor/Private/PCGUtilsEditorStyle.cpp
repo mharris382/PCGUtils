@@ -18,6 +18,10 @@ const FName FPCGUtilsEditorStyle::PrimitiveFactoryInputPinIcon(TEXT("PCGUtils.Pi
 const FName FPCGUtilsEditorStyle::PrimitiveFactoryOutputPinIcon(TEXT("PCGUtils.Pin.OUT_PrimitiveFactory"));
 const FName FPCGUtilsEditorStyle::PrimitiveFactoriesInputPinIcon(TEXT("PCGUtils.Pin.IN_PrimitiveFactories"));
 const FName FPCGUtilsEditorStyle::PrimitiveFactoriesOutputPinIcon(TEXT("PCGUtils.Pin.OUT_PrimitiveFactories"));
+const FName FPCGUtilsEditorStyle::FractureFactoryInputPinIcon(TEXT("PCGUtils.Pin.IN_FractureFactory"));
+const FName FPCGUtilsEditorStyle::FractureFactoryOutputPinIcon(TEXT("PCGUtils.Pin.OUT_FractureFactory"));
+const FName FPCGUtilsEditorStyle::GCSelectionFactoryInputPinIcon(TEXT("PCGUtils.Pin.IN_GCSelectionFactory"));
+const FName FPCGUtilsEditorStyle::GCSelectionFactoryOutputPinIcon(TEXT("PCGUtils.Pin.OUT_GCSelectionFactory"));
 
 void FPCGUtilsEditorStyle::Initialize()
 {
@@ -86,6 +90,23 @@ TSharedRef<FSlateStyleSet> FPCGUtilsEditorStyle::Create()
 	Style->Set(PrimitiveFactoriesOutputPinIcon,
 		new FSlateVectorImageBrush(
 			Style->RootToContentDir(TEXT("Icons/PCGUtils_Pin_OUT_PrimitiveFactories"), TEXT(".svg")),
+			FVector2D(22.0f, 22.0f)));
+
+	Style->Set(FractureFactoryInputPinIcon,
+		new FSlateVectorImageBrush(
+			Style->RootToContentDir(TEXT("Icons/PCGUtils_Pin_IN_FractureFactory"), TEXT(".svg")),
+			FVector2D(22.0f, 22.0f)));
+	Style->Set(FractureFactoryOutputPinIcon,
+		new FSlateVectorImageBrush(
+			Style->RootToContentDir(TEXT("Icons/PCGUtils_Pin_OUT_FractureFactory"), TEXT(".svg")),
+			FVector2D(22.0f, 22.0f)));
+	Style->Set(GCSelectionFactoryInputPinIcon,
+		new FSlateVectorImageBrush(
+			Style->RootToContentDir(TEXT("Icons/PCGUtils_Pin_IN_GCSelectionFactory"), TEXT(".svg")),
+			FVector2D(22.0f, 22.0f)));
+	Style->Set(GCSelectionFactoryOutputPinIcon,
+		new FSlateVectorImageBrush(
+			Style->RootToContentDir(TEXT("Icons/PCGUtils_Pin_OUT_GCSelectionFactory"), TEXT(".svg")),
 			FVector2D(22.0f, 22.0f)));
 
 	RegisterActionIcons(Style);

@@ -23,6 +23,14 @@ public:
 	static const FName PrimitiveFactoriesInputPinIcon;
 	static const FName PrimitiveFactoriesOutputPinIcon;
 
+	// PCGUtilsFracture. The GC selection glyph is the same shape as the DynMesh selection one on purpose:
+	// the domain colour is what separates them, so a blue selection icon reads as "Geometry Collection bones"
+	// and a purple one as "DynMesh elements" without inventing a second symbol.
+	static const FName FractureFactoryInputPinIcon;
+	static const FName FractureFactoryOutputPinIcon;
+	static const FName GCSelectionFactoryInputPinIcon;
+	static const FName GCSelectionFactoryOutputPinIcon;
+
 private:
 	static TSharedRef<FSlateStyleSet> Create();
 	static void RegisterActionIcons(const TSharedRef<FSlateStyleSet>& Style);

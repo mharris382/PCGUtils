@@ -17,6 +17,7 @@ public class PCGUtilsEditor : ModuleRules
                 "GameplayTags",
                 "PCGUtils",
 				"PCGUtilsDynMesh",
+				"PCGUtilsFracture",
                 "PCG",
                 "SlateCore",
                 "Slate",

@@ -7,6 +7,8 @@
 #include "Factories/PCGUtilsDynMeshBuilderFactory.h"
 #include "Factories/PCGUtilsDynMeshPainterFactory.h"
 #include "Factories/PCGUtilsDynMeshSelectionFactory.h"
+#include "Factories/PCGUtilsFractureFactory.h"
+#include "Factories/PCGUtilsGCSelectionFactory.h"
 #include "Visualizers/PCGMarkerComponentVisualizer.h"
 #include "Visualizers/PCGSplineComponentVisualizer.h"
 #include "Visualizers/PCGChildSplineComponentVisualizer.h"
@@ -105,6 +107,28 @@ void FPCGUtilsEditor::RegisterPinIcons()
 			return MakeTuple(Brush, Brush);
 		});
 
+	FPCGModule::GetMutableDataTypeRegistry().RegisterPinIconsFunction(
+		FPCGUtilsFractureFactoryDataTypeInfo::AsId(),
+		[](const FPCGDataTypeIdentifier&, const FPCGPinProperties&, const bool bIsInput)
+		{
+			const FSlateBrush* Brush = FPCGUtilsEditorStyle::Get().GetBrush(
+				bIsInput
+					? FPCGUtilsEditorStyle::FractureFactoryInputPinIcon
+					: FPCGUtilsEditorStyle::FractureFactoryOutputPinIcon);
+			return MakeTuple(Brush, Brush);
+		});
+
+	FPCGModule::GetMutableDataTypeRegistry().RegisterPinIconsFunction(
+		FPCGUtilsGCSelectionFactoryDataTypeInfo::AsId(),
+		[](const FPCGDataTypeIdentifier&, const FPCGPinProperties&, const bool bIsInput)
+		{
+			const FSlateBrush* Brush = FPCGUtilsEditorStyle::Get().GetBrush(
+				bIsInput
+					? FPCGUtilsEditorStyle::GCSelectionFactoryInputPinIcon
+					: FPCGUtilsEditorStyle::GCSelectionFactoryOutputPinIcon);
+			return MakeTuple(Brush, Brush);
+		});
+
 	bPinIconsRegistered = true;
 }
 
@@ -121,6 +145,10 @@ void FPCGUtilsEditor::UnregisterPinIcons()
 		FPCGUtilsDynMeshBuilderFactoryDataTypeInfo::AsId());
 	FPCGModule::GetMutableDataTypeRegistry().UnregisterPinIconsFunction(
 		FPCGUtilsDynMeshPainterFactoryDataTypeInfo::AsId());
+	FPCGModule::GetMutableDataTypeRegistry().UnregisterPinIconsFunction(
+		FPCGUtilsFractureFactoryDataTypeInfo::AsId());
+	FPCGModule::GetMutableDataTypeRegistry().UnregisterPinIconsFunction(
+		FPCGUtilsGCSelectionFactoryDataTypeInfo::AsId());
 	bPinIconsRegistered = false;
 }
 
