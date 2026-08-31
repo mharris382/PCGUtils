@@ -8,7 +8,7 @@
 #include "Factories/PCGUtilsDynMeshPainterFactory.h"
 #include "Factories/PCGUtilsDynMeshSelectionFactory.h"
 #include "Factories/PCGUtilsFractureFactory.h"
-#include "Factories/PCGUtilsGCSelectionFactory.h"
+#include "Factories/PCGUtilsGeometryCollectionSelectionFactory.h"
 #include "Visualizers/PCGMarkerComponentVisualizer.h"
 #include "Visualizers/PCGSplineComponentVisualizer.h"
 #include "Visualizers/PCGChildSplineComponentVisualizer.h"
@@ -119,7 +119,7 @@ void FPCGUtilsEditor::RegisterPinIcons()
 		});
 
 	FPCGModule::GetMutableDataTypeRegistry().RegisterPinIconsFunction(
-		FPCGUtilsGCSelectionFactoryDataTypeInfo::AsId(),
+		FPCGUtilsGeometryCollectionSelectionFactoryDataTypeInfo::AsId(),
 		[](const FPCGDataTypeIdentifier&, const FPCGPinProperties&, const bool bIsInput)
 		{
 			const FSlateBrush* Brush = FPCGUtilsEditorStyle::Get().GetBrush(
@@ -148,7 +148,7 @@ void FPCGUtilsEditor::UnregisterPinIcons()
 	FPCGModule::GetMutableDataTypeRegistry().UnregisterPinIconsFunction(
 		FPCGUtilsFractureFactoryDataTypeInfo::AsId());
 	FPCGModule::GetMutableDataTypeRegistry().UnregisterPinIconsFunction(
-		FPCGUtilsGCSelectionFactoryDataTypeInfo::AsId());
+		FPCGUtilsGeometryCollectionSelectionFactoryDataTypeInfo::AsId());
 	bPinIconsRegistered = false;
 }
 

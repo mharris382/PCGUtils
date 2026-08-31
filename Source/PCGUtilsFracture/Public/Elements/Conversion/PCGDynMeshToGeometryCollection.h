@@ -5,9 +5,9 @@
 #include "CoreMinimal.h"
 #include "Elements/PCGUtilsFractureElementBase.h"
 
-#include "PCGDynMeshToGC.generated.h"
+#include "PCGDynMeshToGeometryCollection.generated.h"
 
-namespace PCGDynMeshToGCConstants
+namespace PCGDynMeshToGeometryCollectionConstants
 {
 	inline const FName MeshInputPin = TEXT("DynMesh");
 	inline const FName CollectionOutputPin = TEXT("GC");
@@ -19,7 +19,7 @@ namespace PCGDynMeshToGCConstants
  */
 UCLASS(BlueprintType, ClassGroup=(Procedural), Category="PCGUtils|Fracture",
 	meta=(Keywords="Geometry Collection Mesh To Collection Fracture GC"))
-class PCGUTILSFRACTURE_API UPCGDynMeshToGCSettings : public UPCGUtilsFractureElementBaseSettings
+class PCGUTILSFRACTURE_API UPCGDynMeshToGeometryCollectionSettings : public UPCGUtilsFractureElementBaseSettings
 {
 	GENERATED_BODY()
 
@@ -65,7 +65,7 @@ protected:
 	virtual FPCGElementPtr CreateElement() const override;
 };
 
-class PCGUTILSFRACTURE_API FPCGDynMeshToGCElement : public IPCGElement
+class PCGUTILSFRACTURE_API FPCGDynMeshToGeometryCollectionElement : public IPCGElement
 {
 protected:
 	virtual bool ExecuteInternal(FPCGContext* Context) const override;

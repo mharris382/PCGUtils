@@ -4,7 +4,7 @@
 
 #include "CoreMinimal.h"
 #include "Dataflow/DataflowSelection.h"
-#include "Factories/PCGUtilsGCFactoryData.h"
+#include "Factories/PCGUtilsGeometryCollectionFactoryData.h"
 
 #include "PCGUtilsFractureFactory.generated.h"
 
@@ -20,7 +20,7 @@ namespace PCGUtilsFractureFactoryConstants
 }
 
 USTRUCT(meta=(PCG_DataTypeDisplayName="Fracture"))
-struct FPCGUtilsFractureFactoryDataTypeInfo : public FPCGUtilsGCFactoryDataTypeInfo
+struct FPCGUtilsFractureFactoryDataTypeInfo : public FPCGUtilsGeometryCollectionFactoryDataTypeInfo
 {
 	GENERATED_BODY()
 
@@ -36,7 +36,7 @@ struct FPCGUtilsFractureFactoryDataTypeInfo : public FPCGUtilsGCFactoryDataTypeI
  * parameters), so future factories are thin wrappers rather than ports.
  */
 UCLASS(Abstract, BlueprintType, ClassGroup=(Procedural), Category="PCGUtils|Fracture")
-class PCGUTILSFRACTURE_API UPCGUtilsFractureFactoryData : public UPCGUtilsGCFactoryData
+class PCGUTILSFRACTURE_API UPCGUtilsFractureFactoryData : public UPCGUtilsGeometryCollectionFactoryData
 {
 	GENERATED_BODY()
 

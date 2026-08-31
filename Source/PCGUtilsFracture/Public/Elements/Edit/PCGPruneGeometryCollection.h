@@ -5,9 +5,9 @@
 #include "CoreMinimal.h"
 #include "Elements/PCGUtilsFractureElementBase.h"
 
-#include "PCGPruneGC.generated.h"
+#include "PCGPruneGeometryCollection.generated.h"
 
-namespace PCGPruneGCConstants
+namespace PCGPruneGeometryCollectionConstants
 {
 	inline const FName CollectionInputPin = TEXT("GC");
 	inline const FName CollectionOutputPin = TEXT("GC");
@@ -22,7 +22,7 @@ namespace PCGPruneGCConstants
  */
 UCLASS(BlueprintType, ClassGroup=(Procedural), Category="PCGUtils|Fracture",
 	meta=(Keywords="Geometry Collection Prune Delete Remove Bones Fracture GC"))
-class PCGUTILSFRACTURE_API UPCGPruneGCSettings : public UPCGUtilsFractureElementBaseSettings
+class PCGUTILSFRACTURE_API UPCGPruneGeometryCollectionSettings : public UPCGUtilsFractureElementBaseSettings
 {
 	GENERATED_BODY()
 
@@ -46,7 +46,7 @@ protected:
 	virtual FPCGElementPtr CreateElement() const override;
 };
 
-class PCGUTILSFRACTURE_API FPCGPruneGCElement : public IPCGElement
+class PCGUTILSFRACTURE_API FPCGPruneGeometryCollectionElement : public IPCGElement
 {
 protected:
 	virtual bool ExecuteInternal(FPCGContext* Context) const override;

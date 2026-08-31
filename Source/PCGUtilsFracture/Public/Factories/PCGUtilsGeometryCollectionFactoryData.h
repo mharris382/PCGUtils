@@ -7,12 +7,12 @@
 #include "Data/Registry/PCGDataType.h"
 #include "PCGData.h"
 
-#include "PCGUtilsGCFactoryData.generated.h"
+#include "PCGUtilsGeometryCollectionFactoryData.generated.h"
 
 struct FPCGContext;
 
 USTRUCT(meta=(PCG_DataTypeDisplayName="GC Provider"))
-struct FPCGUtilsGCFactoryDataTypeInfo : public FPCGDataTypeInfo
+struct FPCGUtilsGeometryCollectionFactoryDataTypeInfo : public FPCGDataTypeInfo
 {
 	GENERATED_BODY()
 
@@ -29,12 +29,12 @@ struct FPCGUtilsGCFactoryDataTypeInfo : public FPCGDataTypeInfo
  * state, not here.
  */
 UCLASS(Abstract, BlueprintType, ClassGroup=(Procedural), Category="PCGUtils|Fracture|Providers")
-class PCGUTILSFRACTURE_API UPCGUtilsGCFactoryData : public UPCGData
+class PCGUTILSFRACTURE_API UPCGUtilsGeometryCollectionFactoryData : public UPCGData
 {
 	GENERATED_BODY()
 
 public:
-	PCG_ASSIGN_TYPE_INFO(FPCGUtilsGCFactoryDataTypeInfo)
+	PCG_ASSIGN_TYPE_INFO(FPCGUtilsGeometryCollectionFactoryDataTypeInfo)
 
 	/** Execution order when several factories share one pin. Lower runs first; ties keep connection order. */
 	UPROPERTY()
@@ -54,12 +54,12 @@ protected:
 	TSet<TObjectPtr<UPCGData>> DataDependencies;
 };
 
-namespace PCGUtilsGCFactories
+namespace PCGUtilsGeometryCollectionFactories
 {
 	PCGUTILSFRACTURE_API bool GetInputFactoriesInternal(
 		FPCGContext* InContext,
 		FName InPinLabel,
-		TArray<TObjectPtr<const UPCGUtilsGCFactoryData>>& OutFactories,
+		TArray<TObjectPtr<const UPCGUtilsGeometryCollectionFactoryData>>& OutFactories,
 		const TSet<FPCGDataTypeBaseId>& AcceptedTypes,
 		bool bRequired);
 
@@ -72,13 +72,13 @@ namespace PCGUtilsGCFactories
 		const TSet<FPCGDataTypeBaseId>& AcceptedTypes,
 		bool bRequired = true)
 	{
-		TArray<TObjectPtr<const UPCGUtilsGCFactoryData>> BaseFactories;
+		TArray<TObjectPtr<const UPCGUtilsGeometryCollectionFactoryData>> BaseFactories;
 		if (!GetInputFactoriesInternal(InContext, InPinLabel, BaseFactories, AcceptedTypes, bRequired))
 		{
 			return false;
 		}
 
-		for (const UPCGUtilsGCFactoryData* BaseFactory : BaseFactories)
+		for (const UPCGUtilsGeometryCollectionFactoryData* BaseFactory : BaseFactories)
 		{
 			if (const FactoryType* Factory = Cast<FactoryType>(BaseFactory))
 			{

@@ -1,6 +1,6 @@
 // Copyright Max Harris
 
-#include "Factories/PCGUtilsGCSelectionFactory.h"
+#include "Factories/PCGUtilsGeometryCollectionSelectionFactory.h"
 
 #include "GeometryCollection/GeometryCollection.h"
 #include "PCGContext.h"
@@ -8,33 +8,33 @@
 
 #define LOCTEXT_NAMESPACE "PCGUtilsGCSelectionFactory"
 
-PCG_DEFINE_TYPE_INFO(FPCGUtilsGCSelectionFactoryDataTypeInfo, UPCGUtilsGCSelectionFactoryData)
+PCG_DEFINE_TYPE_INFO(FPCGUtilsGeometryCollectionSelectionFactoryDataTypeInfo, UPCGUtilsGeometryCollectionSelectionFactoryData)
 
-int32 FPCGUtilsGCSelectionEvaluationContext::NumTransforms() const
+int32 FPCGUtilsGeometryCollectionSelectionEvaluationContext::NumTransforms() const
 {
 	return Collection.NumElements(FGeometryCollection::TransformGroup);
 }
 
-namespace PCGUtilsGCSelectionFactories
+namespace PCGUtilsGeometryCollectionSelectionFactories
 {
 	const TSet<FPCGDataTypeBaseId>& GetSelectionFactoryTypes()
 	{
-		static const TSet<FPCGDataTypeBaseId> Types = {FPCGUtilsGCSelectionFactoryDataTypeInfo::AsId()};
+		static const TSet<FPCGDataTypeBaseId> Types = {FPCGUtilsGeometryCollectionSelectionFactoryDataTypeInfo::AsId()};
 		return Types;
 	}
 
 	bool ResolveSelectionFromPin(
 		FPCGContext* InContext,
 		FName InPinLabel,
-		const FPCGUtilsGCSelectionEvaluationContext& InEvaluationContext,
+		const FPCGUtilsGeometryCollectionSelectionEvaluationContext& InEvaluationContext,
 		bool bRequired,
 		FDataflowTransformSelection& OutSelection,
 		bool& bOutHasSelection)
 	{
 		bOutHasSelection = false;
 
-		TArray<TObjectPtr<const UPCGUtilsGCSelectionFactoryData>> Factories;
-		if (!PCGUtilsGCFactories::GetInputFactories<UPCGUtilsGCSelectionFactoryData>(
+		TArray<TObjectPtr<const UPCGUtilsGeometryCollectionSelectionFactoryData>> Factories;
+		if (!PCGUtilsGeometryCollectionFactories::GetInputFactories<UPCGUtilsGeometryCollectionSelectionFactoryData>(
 			InContext, InPinLabel, Factories, GetSelectionFactoryTypes(), bRequired))
 		{
 			// GetInputFactories already logged when bRequired. An empty optional pin is a success.
@@ -43,7 +43,7 @@ namespace PCGUtilsGCSelectionFactories
 
 		OutSelection.InitializeFromCollection(InEvaluationContext.Collection, false);
 
-		for (const UPCGUtilsGCSelectionFactoryData* Factory : Factories)
+		for (const UPCGUtilsGeometryCollectionSelectionFactoryData* Factory : Factories)
 		{
 			FDataflowTransformSelection FactorySelection;
 			if (!Factory->Evaluate(InEvaluationContext, InContext, FactorySelection))

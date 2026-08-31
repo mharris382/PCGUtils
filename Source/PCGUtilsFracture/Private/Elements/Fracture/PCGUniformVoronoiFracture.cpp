@@ -3,7 +3,7 @@
 #include "Elements/Fracture/PCGUniformVoronoiFracture.h"
 
 #include "FractureEngineFracturing.h"
-#include "FunctionLibraries/PCGUtilsGCHelpers.h"
+#include "FunctionLibraries/PCGUtilsGeometryCollectionHelpers.h"
 #include "GeometryCollection/GeometryCollection.h"
 #include "PCGContext.h"
 #include "PCGUtilsFracture.h"
@@ -28,7 +28,7 @@ bool UPCGUniformVoronoiFractureFactoryData::Fracture(
 	}
 
 	TArray<FString> MissingAttributes;
-	if (!PCGUtilsGCHelpers::ValidateFractureRequirements(InOutCollection, MissingAttributes))
+	if (!PCGUtilsGeometryCollectionHelpers::ValidateFractureRequirements(InOutCollection, MissingAttributes))
 	{
 		PCGLog::LogErrorOnGraph(FText::Format(
 			LOCTEXT("MalformedCollection",
@@ -78,7 +78,7 @@ bool UPCGUniformVoronoiFractureFactoryData::Fracture(
 
 	if (ResultGeometryIndex == INDEX_NONE)
 	{
-		const FBox CollectionBounds = PCGUtilsGCHelpers::ComputeCollectionBounds(InOutCollection);
+		const FBox CollectionBounds = PCGUtilsGeometryCollectionHelpers::ComputeCollectionBounds(InOutCollection);
 		PCGLog::LogErrorOnGraph(FText::Format(
 			LOCTEXT("CutProducedNothing",
 				"Uniform Voronoi Fracture cut nothing across {0} target bone(s) occupying {1} to {2}. A Grout "
@@ -169,8 +169,8 @@ const FPCGDataTypeBaseId& UPCGUniformVoronoiFractureSettings::GetFactoryTypeId()
 	return FPCGUtilsFractureFactoryDataTypeInfo::AsId();
 }
 
-UPCGUtilsGCFactoryData* UPCGUniformVoronoiFractureSettings::CreateFactory(
-	FPCGContext* InContext, UPCGUtilsGCFactoryData* InFactory) const
+UPCGUtilsGeometryCollectionFactoryData* UPCGUniformVoronoiFractureSettings::CreateFactory(
+	FPCGContext* InContext, UPCGUtilsGeometryCollectionFactoryData* InFactory) const
 {
 	if (MaxVoronoiSites < MinVoronoiSites)
 	{

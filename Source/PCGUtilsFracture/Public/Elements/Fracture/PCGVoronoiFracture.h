@@ -77,7 +77,7 @@ protected:
  */
 UCLASS(BlueprintType, ClassGroup=(Procedural), Category="PCGUtils|Fracture",
 	meta=(Keywords="Voronoi Sites Points Fracture Shatter Cells Scatter GC Geometry Collection"))
-class PCGUTILSFRACTURE_API UPCGVoronoiFractureSettings : public UPCGUtilsGCFactoryProviderSettings
+class PCGUTILSFRACTURE_API UPCGVoronoiFractureSettings : public UPCGUtilsGeometryCollectionFactoryProviderSettings
 {
 	GENERATED_BODY()
 
@@ -132,8 +132,8 @@ public:
 	int32 Priority = 0;
 
 	virtual FName GetMainOutputPin() const override;
-	virtual UPCGUtilsGCFactoryData* CreateFactory(
-		FPCGContext* InContext, UPCGUtilsGCFactoryData* InFactory = nullptr) const override;
+	virtual UPCGUtilsGeometryCollectionFactoryData* CreateFactory(
+		FPCGContext* InContext, UPCGUtilsGeometryCollectionFactoryData* InFactory = nullptr) const override;
 
 protected:
 	virtual const FPCGDataTypeBaseId& GetFactoryTypeId() const override;

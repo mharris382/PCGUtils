@@ -10,7 +10,7 @@ class FGeometryCollection;
  * Small shared helpers for reading Geometry Collection hierarchy/geometry state. Deliberately thin: anything
  * Epic already implements (selection algorithms, prune, fracture) is called directly rather than wrapped.
  */
-namespace PCGUtilsGCHelpers
+namespace PCGUtilsGeometryCollectionHelpers
 {
 	/**
 	 * A bone that actually carries geometry and is simulated as a rigid leaf, i.e. a fracture piece rather
@@ -58,6 +58,54 @@ namespace PCGUtilsGCHelpers
 	 */
 	PCGUTILSFRACTURE_API bool ValidateFractureRequirements(
 		const FGeometryCollection& InCollection, TArray<FString>& OutMissingAttributes);
+
+	/**
+	 * Per-bone surface, split into original (exterior) and fracture-generated (interior) faces.
+	 *
+	 * The collection tracks an Internal flag per *face*, so this is a genuine breakdown rather than a boolean:
+	 * a bone knows how much of its surface was inherited from the source mesh and how much a cut created.
+	 */
+	struct FBoneSurfaceInfo
+	{
+		int32 ExteriorFaceCount = 0;
+		int32 InteriorFaceCount = 0;
+		double ExteriorArea = 0.0;
+		double InteriorArea = 0.0;
+
+		/** A bone with no exterior faces is buried: removing it changes no silhouette. */
+		bool IsExterior() const { return ExteriorFaceCount > 0; }
+
+		int32 TotalFaceCount() const { return ExteriorFaceCount + InteriorFaceCount; }
+		double TotalArea() const { return ExteriorArea + InteriorArea; }
+
+		/**
+		 * Fraction of this piece's surface that was originally on the outside, in [0,1].
+		 *
+		 * More useful than either raw area for choosing pieces, because it is scale-invariant: 0 is fully
+		 * buried, a value near 1 is a piece the fracture barely touched, and the middle is a chunk with real
+		 * exposure. An absolute area threshold has to be retuned for every mesh size; this does not.
+		 */
+		double ExposureRatio() const
+		{
+			const double Total = TotalArea();
+			return Total > UE_DOUBLE_SMALL_NUMBER ? ExteriorArea / Total : 0.0;
+		}
+	};
+
+	/**
+	 * Measures one bone's exterior/interior surface split.
+	 *
+	 * Reads the collection's own per-face `Internal` flag rather than inferring anything geometrically:
+	 * AppendMeshToCollection marks original faces external, PlanarCut marks the faces it creates internal, and
+	 * that flag round-trips through every subsequent cut. Exact, and one pass over the bone's face range.
+	 *
+	 * @param InBoneToCollection The bone's global transform, so areas are measured in collection space rather
+	 *                           than bone-local space. Only matters for a scaled bone.
+	 */
+	PCGUTILSFRACTURE_API FBoneSurfaceInfo GetBoneSurfaceInfo(
+		const FGeometryCollection& InCollection,
+		int32 InBoneIndex,
+		const FTransform& InBoneToCollection = FTransform::Identity);
 
 	/**
 	 * Bounds of all geometry-bearing bones in collection space, computed the same way the fracture backend

@@ -131,15 +131,60 @@ The log line reports before/after bone counts. Expect roughly one bone per site 
 Fractured `GC` in. One point per fracture piece, at the piece's centre, carrying the piece's bounds and
 orientation, plus:
 
+Every attribute has its own toggle and its own name field in the details panel, so what this node can produce
+is visible without running the graph. Only identity is written unconditionally - it is the contract with
+`Select Bones From Points`, which cannot resolve a selection without it:
+
 ```
-GC_BoneIndex  GC_SourceId  GC_SourceRevision  GC_SourceStateId
-GC_ParentIndex  GC_HierarchyLevel  GC_GeometryIndex  GC_BoundsVolume
+always:   GC_BoneIndex  GC_SourceId  GC_SourceRevision  GC_SourceStateId
+opt-in:   GC_ParentIndex  GC_HierarchyLevel  GC_GeometryIndex  GC_BoundsVolume
+opt-in:   GC_IsExterior  GC_ExposureRatio
+          GC_ExteriorArea  GC_InteriorArea
+          GC_ExteriorFaceCount  GC_InteriorFaceCount
 ```
+
+Names shown are defaults; rename any of them in the details panel to avoid a collision. Leaving every surface
+toggle off skips the per-face pass entirely.
+
+The surface attributes split each piece's faces into surface it inherited from the source mesh and surface a
+fracture cut created. The collection tracks this per face, so it is exact rather than inferred.
+
+| Attribute | Meaning |
+|---|---|
+| `GC_IsExterior` | the piece has at least one original-surface face |
+| `GC_ExteriorArea` / `GC_InteriorArea` | surface area of each set, in collection space |
+| `GC_ExteriorFaceCount` / `GC_InteriorFaceCount` | face counts of each set |
+| `GC_ExposureRatio` | `ExteriorArea / TotalArea`, in [0,1] |
+
+**Prefer `GC_ExposureRatio` for choosing pieces.** It is scale-invariant, so a threshold that works on one mesh
+works on the next: 0 is fully buried, a value near 1 is a piece the fracture barely touched, and the middle is
+a chunk with real exposure. An absolute `GC_ExteriorArea` threshold has to be retuned per mesh size.
+
+Before any fracture every face came from the source mesh, so every bone reads as fully exterior; the breakdown
+only becomes interesting after the first cut.
 
 `Output To World Space` is on by default so the points compare correctly against world-space PCG geometry.
 
 > `GC_BoundsVolume` is bounding-box volume, not true mesh volume. The collection's real `Volume` attribute
 > requires convex-hull generation, which is far too heavy for a points node.
+
+### 6b. Random damage, safely
+
+The surface attributes exist to make this workflow correct. Pruning a *buried* piece is doubly wrong: nothing
+visible changes, and interior faces nobody will ever see are left behind. So filter them out first:
+
+```
+GC Bones To Points                         (tick Is Exterior + Exposure Ratio)
+  -> filter GC_IsExterior == true          (exclude buried pieces)
+  -> filter GC_ExposureRatio > ~0.15       (exclude pieces that merely graze the surface)
+  -> random subset of N points
+  -> Select Bones From Points
+  -> Prune GC
+```
+
+The middle filter is what separates believable damage from a piece vanishing with almost no visual effect. On a
+4x4x4 fracture of a cube, 56 of 64 pieces are exterior and 8 are buried, so a naive random pick has a ~12%
+chance of doing nothing at all.
 
 ### 7. Filter the points
 

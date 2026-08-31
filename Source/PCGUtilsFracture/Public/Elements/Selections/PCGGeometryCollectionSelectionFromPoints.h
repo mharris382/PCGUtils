@@ -5,20 +5,20 @@
 #include "CoreMinimal.h"
 #include "Data/PCGGeometryCollectionData.h"
 #include "Elements/PCGUtilsFractureElementBase.h"
-#include "Factories/PCGUtilsGCSelectionFactory.h"
+#include "Factories/PCGUtilsGeometryCollectionSelectionFactory.h"
 
-#include "PCGGCSelectionFromPoints.generated.h"
+#include "PCGGeometryCollectionSelectionFromPoints.generated.h"
 
 class UPCGBasePointData;
 
-namespace PCGGCSelectionFromPointsConstants
+namespace PCGGeometryCollectionSelectionFromPointsConstants
 {
 	inline const FName PointsInputPin = TEXT("Points");
 }
 
 /** Turns bone indices carried on PCG points into a native Geometry Collection bone selection. */
 UCLASS(BlueprintType, ClassGroup=(Procedural), Category="PCGUtils|Fracture|Selections")
-class PCGUTILSFRACTURE_API UPCGGCSelectionFromPointsFactoryData : public UPCGUtilsGCSelectionFactoryData
+class PCGUTILSFRACTURE_API UPCGGeometryCollectionSelectionFromPointsFactoryData : public UPCGUtilsGeometryCollectionSelectionFactoryData
 {
 	GENERATED_BODY()
 
@@ -33,7 +33,7 @@ public:
 	bool bValidateSourceIdentity = true;
 
 	virtual bool Evaluate(
-		const FPCGUtilsGCSelectionEvaluationContext& InEvaluationContext,
+		const FPCGUtilsGeometryCollectionSelectionEvaluationContext& InEvaluationContext,
 		FPCGContext* InContext,
 		FDataflowTransformSelection& OutSelection) const override;
 
@@ -48,7 +48,7 @@ protected:
  */
 UCLASS(BlueprintType, ClassGroup=(Procedural), Category="PCGUtils|Fracture|Selections",
 	meta=(Keywords="Geometry Collection GC Selection Bone Indices From Points"))
-class PCGUTILSFRACTURE_API UPCGGCSelectionFromPointsSettings : public UPCGUtilsGCFactoryProviderSettings
+class PCGUTILSFRACTURE_API UPCGGeometryCollectionSelectionFromPointsSettings : public UPCGUtilsGeometryCollectionFactoryProviderSettings
 {
 	GENERATED_BODY()
 
@@ -62,7 +62,7 @@ public:
 
 	/** Integer point attribute holding Geometry Collection bone indices, as written by GC Bones To Points. */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Selection", meta=(PCG_Overridable))
-	FName BoneIndexAttribute = PCGUtilsGCIdentity::BoneIndexAttribute;
+	FName BoneIndexAttribute = PCGUtilsGeometryCollectionIdentity::BoneIndexAttribute;
 
 	/**
 	 * Require the points' recorded source collection state to match the collection being selected against.
@@ -78,8 +78,8 @@ public:
 	int32 Priority = 0;
 
 	virtual FName GetMainOutputPin() const override;
-	virtual UPCGUtilsGCFactoryData* CreateFactory(
-		FPCGContext* InContext, UPCGUtilsGCFactoryData* InFactory = nullptr) const override;
+	virtual UPCGUtilsGeometryCollectionFactoryData* CreateFactory(
+		FPCGContext* InContext, UPCGUtilsGeometryCollectionFactoryData* InFactory = nullptr) const override;
 
 protected:
 	virtual const FPCGDataTypeBaseId& GetFactoryTypeId() const override;

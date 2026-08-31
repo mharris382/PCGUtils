@@ -111,7 +111,7 @@ private:
 	FGuid StateId;
 };
 
-namespace PCGUtilsGCIdentity
+namespace PCGUtilsGeometryCollectionIdentity
 {
 	/**
 	 * PCG metadata has no FGuid attribute type, so identity travels on points as int64. Folds all 128 bits in,
@@ -128,4 +128,13 @@ namespace PCGUtilsGCIdentity
 	inline const FName HierarchyLevelAttribute = TEXT("GC_HierarchyLevel");
 	inline const FName GeometryIndexAttribute = TEXT("GC_GeometryIndex");
 	inline const FName BoundsVolumeAttribute = TEXT("GC_BoundsVolume");
+
+	// Surface breakdown. The collection tracks an Internal flag per face, so a bone's surface can be split
+	// into what it inherited from the source mesh and what a fracture cut created.
+	inline const FName IsExteriorAttribute = TEXT("GC_IsExterior");
+	inline const FName ExteriorFaceCountAttribute = TEXT("GC_ExteriorFaceCount");
+	inline const FName InteriorFaceCountAttribute = TEXT("GC_InteriorFaceCount");
+	inline const FName ExteriorAreaAttribute = TEXT("GC_ExteriorArea");
+	inline const FName InteriorAreaAttribute = TEXT("GC_InteriorArea");
+	inline const FName ExposureRatioAttribute = TEXT("GC_ExposureRatio");
 }

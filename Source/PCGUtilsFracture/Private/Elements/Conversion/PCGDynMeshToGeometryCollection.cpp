@@ -1,13 +1,13 @@
 // Copyright Max Harris
 
-#include "Elements/Conversion/PCGDynMeshToGC.h"
+#include "Elements/Conversion/PCGDynMeshToGeometryCollection.h"
 
 #include "Data/PCGDynamicMeshData.h"
 #include "Data/PCGGeometryCollectionData.h"
 #include "DynamicMesh/DynamicMesh3.h"
 #include "DynamicMesh/DynamicMeshAttributeSet.h"
 #include "DynamicMeshEditor.h"
-#include "FunctionLibraries/PCGUtilsGCHelpers.h"
+#include "FunctionLibraries/PCGUtilsGeometryCollectionHelpers.h"
 #include "GeometryCollection/GeometryCollection.h"
 #include "GeometryCollectionToDynamicMesh.h"
 #include "DynamicMesh/DynamicMeshAABBTree3.h"
@@ -40,7 +40,7 @@ namespace
 	 */
 	void SplitIntoIslands(
 		const FDynamicMesh3& InMesh,
-		const UPCGDynMeshToGCSettings* Settings,
+		const UPCGDynMeshToGeometryCollectionSettings* Settings,
 		TArray<TUniquePtr<FDynamicMesh3>>& OutMeshes)
 	{
 		FVertexConnectedComponents Components(InMesh.MaxVertexID());
@@ -119,12 +119,12 @@ namespace
 }
 
 #if WITH_EDITOR
-FText UPCGDynMeshToGCSettings::GetDefaultNodeTitle() const
+FText UPCGDynMeshToGeometryCollectionSettings::GetDefaultNodeTitle() const
 {
 	return LOCTEXT("Title", "DynMesh To GC");
 }
 
-FText UPCGDynMeshToGCSettings::GetNodeTooltipText() const
+FText UPCGDynMeshToGeometryCollectionSettings::GetNodeTooltipText() const
 {
 	return LOCTEXT("Tooltip",
 		"Converts DynMesh data into a transient Geometry Collection so Unreal's fracture backend can be used as "
@@ -133,40 +133,40 @@ FText UPCGDynMeshToGCSettings::GetNodeTooltipText() const
 }
 #endif
 
-TArray<FPCGPinProperties> UPCGDynMeshToGCSettings::InputPinProperties() const
+TArray<FPCGPinProperties> UPCGDynMeshToGeometryCollectionSettings::InputPinProperties() const
 {
 	TArray<FPCGPinProperties> Pins;
 	Pins.Emplace_GetRef(
-		PCGDynMeshToGCConstants::MeshInputPin,
+		PCGDynMeshToGeometryCollectionConstants::MeshInputPin,
 		EPCGDataType::DynamicMesh, /*bAllowMultipleConnections=*/true, /*bAllowMultipleData=*/true)
 		.SetRequiredPin();
 	return Pins;
 }
 
-TArray<FPCGPinProperties> UPCGDynMeshToGCSettings::OutputPinProperties() const
+TArray<FPCGPinProperties> UPCGDynMeshToGeometryCollectionSettings::OutputPinProperties() const
 {
 	TArray<FPCGPinProperties> Pins;
 	Pins.Add(FPCGPinProperties(
-		PCGDynMeshToGCConstants::CollectionOutputPin,
+		PCGDynMeshToGeometryCollectionConstants::CollectionOutputPin,
 		FPCGGeometryCollectionDataTypeInfo::AsId(), /*bAllowMultipleConnections=*/true, /*bAllowMultipleData=*/true));
 	return Pins;
 }
 
-FPCGElementPtr UPCGDynMeshToGCSettings::CreateElement() const
+FPCGElementPtr UPCGDynMeshToGeometryCollectionSettings::CreateElement() const
 {
-	return MakeShared<FPCGDynMeshToGCElement>();
+	return MakeShared<FPCGDynMeshToGeometryCollectionElement>();
 }
 
-bool FPCGDynMeshToGCElement::ExecuteInternal(FPCGContext* Context) const
+bool FPCGDynMeshToGeometryCollectionElement::ExecuteInternal(FPCGContext* Context) const
 {
 	using namespace UE::Geometry;
 
 	check(Context);
-	const UPCGDynMeshToGCSettings* Settings = Context->GetInputSettings<UPCGDynMeshToGCSettings>();
+	const UPCGDynMeshToGeometryCollectionSettings* Settings = Context->GetInputSettings<UPCGDynMeshToGeometryCollectionSettings>();
 	check(Settings);
 
 	const TArray<FPCGTaggedData> Inputs =
-		Context->InputData.GetInputsByPin(PCGDynMeshToGCConstants::MeshInputPin);
+		Context->InputData.GetInputsByPin(PCGDynMeshToGeometryCollectionConstants::MeshInputPin);
 
 	// Prepared meshes plus the combined material array they were remapped against. When merging, one batch;
 	// otherwise one batch per input.
@@ -253,7 +253,7 @@ bool FPCGDynMeshToGCElement::ExecuteInternal(FPCGContext* Context) const
 		// attributes silently and just returns INDEX_NONE, so catching it at the producer is the difference
 		// between naming the missing attribute and leaving the user to guess at the far end of the graph.
 		TArray<FString> MissingAttributes;
-		if (!PCGUtilsGCHelpers::ValidateFractureRequirements(*Collection, MissingAttributes))
+		if (!PCGUtilsGeometryCollectionHelpers::ValidateFractureRequirements(*Collection, MissingAttributes))
 		{
 			PCGLog::LogErrorOnGraph(FText::Format(
 				LOCTEXT("MalformedOutput",
@@ -271,11 +271,11 @@ bool FPCGDynMeshToGCElement::ExecuteInternal(FPCGContext* Context) const
 			? Context->OutputData.TaggedData.Emplace_GetRef(*Batch.SourceInput)
 			: Context->OutputData.TaggedData.Emplace_GetRef();
 		Output.Data = OutputData;
-		Output.Pin = PCGDynMeshToGCConstants::CollectionOutputPin;
+		Output.Pin = PCGDynMeshToGeometryCollectionConstants::CollectionOutputPin;
 		bProducedAnything = true;
 
 		UE_LOG(LogPCGUtilsFracture, Verbose, TEXT("DynMesh To GC: %d input mesh(es) -> %s"),
-			Batch.Meshes.Num(), *PCGUtilsGCHelpers::DescribeCollection(*Collection));
+			Batch.Meshes.Num(), *PCGUtilsGeometryCollectionHelpers::DescribeCollection(*Collection));
 	}
 
 	if (!bProducedAnything && !Inputs.IsEmpty())

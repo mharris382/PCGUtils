@@ -1,11 +1,11 @@
 // Copyright Max Harris
 
-#include "Elements/Fracture/PCGFractureGC.h"
+#include "Elements/Fracture/PCGFractureGeometryCollection.h"
 
 #include "Data/PCGGeometryCollectionData.h"
 #include "Factories/PCGUtilsFractureFactory.h"
-#include "Factories/PCGUtilsGCSelectionFactory.h"
-#include "FunctionLibraries/PCGUtilsGCHelpers.h"
+#include "Factories/PCGUtilsGeometryCollectionSelectionFactory.h"
+#include "FunctionLibraries/PCGUtilsGeometryCollectionHelpers.h"
 #include "GeometryCollection/Facades/CollectionTransformSelectionFacade.h"
 #include "GeometryCollection/GeometryCollection.h"
 #include "PCGContext.h"
@@ -37,12 +37,12 @@ namespace
 }
 
 #if WITH_EDITOR
-FText UPCGFractureGCSettings::GetDefaultNodeTitle() const
+FText UPCGFractureGeometryCollectionSettings::GetDefaultNodeTitle() const
 {
 	return LOCTEXT("Title", "Fracture GC");
 }
 
-FText UPCGFractureGCSettings::GetNodeTooltipText() const
+FText UPCGFractureGeometryCollectionSettings::GetNodeTooltipText() const
 {
 	return LOCTEXT("Tooltip",
 		"Runs the connected Fracture operations against a copy of the incoming Geometry Collection. Connect a "
@@ -51,11 +51,11 @@ FText UPCGFractureGCSettings::GetNodeTooltipText() const
 }
 #endif
 
-TArray<FPCGPinProperties> UPCGFractureGCSettings::InputPinProperties() const
+TArray<FPCGPinProperties> UPCGFractureGeometryCollectionSettings::InputPinProperties() const
 {
 	TArray<FPCGPinProperties> Pins;
 	Pins.Emplace_GetRef(
-		PCGFractureGCConstants::CollectionInputPin,
+		PCGFractureGeometryCollectionConstants::CollectionInputPin,
 		FPCGGeometryCollectionDataTypeInfo::AsId(), /*bAllowMultipleConnections=*/true, /*bAllowMultipleData=*/true)
 		.SetRequiredPin();
 
@@ -67,33 +67,33 @@ TArray<FPCGPinProperties> UPCGFractureGCSettings::InputPinProperties() const
 		.SetRequiredPin();
 
 	Pins.Add(FPCGPinProperties(
-		PCGUtilsGCSelectionFactoryConstants::SelectionInputPin,
-		FPCGUtilsGCSelectionFactoryDataTypeInfo::AsId(), /*bAllowMultipleConnections=*/false, /*bAllowMultipleData=*/false));
+		PCGUtilsGeometryCollectionSelectionFactoryConstants::SelectionInputPin,
+		FPCGUtilsGeometryCollectionSelectionFactoryDataTypeInfo::AsId(), /*bAllowMultipleConnections=*/false, /*bAllowMultipleData=*/false));
 	return Pins;
 }
 
-TArray<FPCGPinProperties> UPCGFractureGCSettings::OutputPinProperties() const
+TArray<FPCGPinProperties> UPCGFractureGeometryCollectionSettings::OutputPinProperties() const
 {
 	TArray<FPCGPinProperties> Pins;
 	Pins.Add(FPCGPinProperties(
-		PCGFractureGCConstants::CollectionOutputPin,
+		PCGFractureGeometryCollectionConstants::CollectionOutputPin,
 		FPCGGeometryCollectionDataTypeInfo::AsId(), true, true));
 	return Pins;
 }
 
-FPCGElementPtr UPCGFractureGCSettings::CreateElement() const
+FPCGElementPtr UPCGFractureGeometryCollectionSettings::CreateElement() const
 {
-	return MakeShared<FPCGFractureGCElement>();
+	return MakeShared<FPCGFractureGeometryCollectionElement>();
 }
 
-bool FPCGFractureGCElement::ExecuteInternal(FPCGContext* Context) const
+bool FPCGFractureGeometryCollectionElement::ExecuteInternal(FPCGContext* Context) const
 {
 	check(Context);
-	const UPCGFractureGCSettings* Settings = Context->GetInputSettings<UPCGFractureGCSettings>();
+	const UPCGFractureGeometryCollectionSettings* Settings = Context->GetInputSettings<UPCGFractureGeometryCollectionSettings>();
 	check(Settings);
 
 	TArray<TObjectPtr<const UPCGUtilsFractureFactoryData>> FractureOperations;
-	if (!PCGUtilsGCFactories::GetInputFactories<UPCGUtilsFractureFactoryData>(
+	if (!PCGUtilsGeometryCollectionFactories::GetInputFactories<UPCGUtilsFractureFactoryData>(
 		Context, PCGUtilsFractureFactoryConstants::FracturesInputPin, FractureOperations,
 		PCGUtilsFractureFactories::GetFractureFactoryTypes(), /*bRequired=*/true))
 	{
@@ -101,7 +101,7 @@ bool FPCGFractureGCElement::ExecuteInternal(FPCGContext* Context) const
 	}
 
 	for (const FPCGTaggedData& Input :
-		Context->InputData.GetInputsByPin(PCGFractureGCConstants::CollectionInputPin))
+		Context->InputData.GetInputsByPin(PCGFractureGeometryCollectionConstants::CollectionInputPin))
 	{
 		const UPCGGeometryCollectionData* InputData = Cast<const UPCGGeometryCollectionData>(Input.Data);
 		if (!InputData || !InputData->HasCollection())
@@ -126,9 +126,9 @@ bool FPCGFractureGCElement::ExecuteInternal(FPCGContext* Context) const
 		FDataflowTransformSelection TargetBones;
 		bool bHasAuthoredSelection = false;
 		{
-			const FPCGUtilsGCSelectionEvaluationContext EvaluationContext(InputData, *Collection);
-			if (!PCGUtilsGCSelectionFactories::ResolveSelectionFromPin(
-				Context, PCGUtilsGCSelectionFactoryConstants::SelectionInputPin, EvaluationContext,
+			const FPCGUtilsGeometryCollectionSelectionEvaluationContext EvaluationContext(InputData, *Collection);
+			if (!PCGUtilsGeometryCollectionSelectionFactories::ResolveSelectionFromPin(
+				Context, PCGUtilsGeometryCollectionSelectionFactoryConstants::SelectionInputPin, EvaluationContext,
 				/*bRequired=*/false, TargetBones, bHasAuthoredSelection))
 			{
 				// The selector already logged; failing the whole input is safer than fracturing the wrong bones.
@@ -187,7 +187,7 @@ bool FPCGFractureGCElement::ExecuteInternal(FPCGContext* Context) const
 		if (Settings->bOverrideInternalMaterial)
 		{
 			NumRetaggedFaces =
-				PCGUtilsGCHelpers::SetInternalFaceMaterialID(*Collection, Settings->InternalMaterialID);
+				PCGUtilsGeometryCollectionHelpers::SetInternalFaceMaterialID(*Collection, Settings->InternalMaterialID);
 		}
 
 		const int32 BonesAfter = Collection->NumElements(FGeometryCollection::TransformGroup);
@@ -200,7 +200,7 @@ bool FPCGFractureGCElement::ExecuteInternal(FPCGContext* Context) const
 
 		FPCGTaggedData& Output = Context->OutputData.TaggedData.Emplace_GetRef(Input);
 		Output.Data = OutputData;
-		Output.Pin = PCGFractureGCConstants::CollectionOutputPin;
+		Output.Pin = PCGFractureGeometryCollectionConstants::CollectionOutputPin;
 
 		UE_LOG(LogPCGUtilsFracture, Log,
 			TEXT("Fracture GC: %d operation(s), target bones: %d, bones %d -> %d%s. Result %s (revision %d)"),
@@ -210,7 +210,7 @@ bool FPCGFractureGCElement::ExecuteInternal(FPCGContext* Context) const
 			BonesAfter,
 			Settings->bOverrideInternalMaterial
 				? *FString::Printf(TEXT(", internal faces retagged: %d"), NumRetaggedFaces) : TEXT(""),
-			*PCGUtilsGCHelpers::DescribeCollection(*Collection),
+			*PCGUtilsGeometryCollectionHelpers::DescribeCollection(*Collection),
 			OutputData->GetRevision());
 	}
 

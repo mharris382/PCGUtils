@@ -2,7 +2,7 @@
 
 #include "Elements/PCGUtilsFractureElementBase.h"
 
-#include "Factories/PCGUtilsGCFactoryData.h"
+#include "Factories/PCGUtilsGeometryCollectionFactoryData.h"
 #include "PCGContext.h"
 #include "PCGPin.h"
 #include "PCGUtilsFracture.h"
@@ -17,47 +17,47 @@ FLinearColor UPCGUtilsFractureElementBaseSettings::GetNodeTitleColor() const
 }
 #endif
 
-FName UPCGUtilsGCFactoryProviderSettings::GetMainOutputPin() const
+FName UPCGUtilsGeometryCollectionFactoryProviderSettings::GetMainOutputPin() const
 {
 	return NAME_None;
 }
 
-UPCGUtilsGCFactoryData* UPCGUtilsGCFactoryProviderSettings::CreateFactory(
-	FPCGContext* InContext, UPCGUtilsGCFactoryData* InFactory) const
+UPCGUtilsGeometryCollectionFactoryData* UPCGUtilsGeometryCollectionFactoryProviderSettings::CreateFactory(
+	FPCGContext* InContext, UPCGUtilsGeometryCollectionFactoryData* InFactory) const
 {
 	return InFactory;
 }
 
-const FPCGDataTypeBaseId& UPCGUtilsGCFactoryProviderSettings::GetFactoryTypeId() const
+const FPCGDataTypeBaseId& UPCGUtilsGeometryCollectionFactoryProviderSettings::GetFactoryTypeId() const
 {
-	return FPCGUtilsGCFactoryDataTypeInfo::AsId();
+	return FPCGUtilsGeometryCollectionFactoryDataTypeInfo::AsId();
 }
 
-TArray<FPCGPinProperties> UPCGUtilsGCFactoryProviderSettings::InputPinProperties() const
+TArray<FPCGPinProperties> UPCGUtilsGeometryCollectionFactoryProviderSettings::InputPinProperties() const
 {
 	return {};
 }
 
-TArray<FPCGPinProperties> UPCGUtilsGCFactoryProviderSettings::OutputPinProperties() const
+TArray<FPCGPinProperties> UPCGUtilsGeometryCollectionFactoryProviderSettings::OutputPinProperties() const
 {
 	TArray<FPCGPinProperties> Pins;
 	Pins.Emplace_GetRef(GetMainOutputPin(), GetFactoryTypeId(), false, false).SetRequiredPin();
 	return Pins;
 }
 
-FPCGElementPtr UPCGUtilsGCFactoryProviderSettings::CreateElement() const
+FPCGElementPtr UPCGUtilsGeometryCollectionFactoryProviderSettings::CreateElement() const
 {
-	return MakeShared<FPCGUtilsGCFactoryProviderElement>();
+	return MakeShared<FPCGUtilsGeometryCollectionFactoryProviderElement>();
 }
 
-bool FPCGUtilsGCFactoryProviderElement::ExecuteInternal(FPCGContext* Context) const
+bool FPCGUtilsGeometryCollectionFactoryProviderElement::ExecuteInternal(FPCGContext* Context) const
 {
 	check(Context);
-	const UPCGUtilsGCFactoryProviderSettings* Settings =
-		Context->GetInputSettings<UPCGUtilsGCFactoryProviderSettings>();
+	const UPCGUtilsGeometryCollectionFactoryProviderSettings* Settings =
+		Context->GetInputSettings<UPCGUtilsGeometryCollectionFactoryProviderSettings>();
 	check(Settings);
 
-	UPCGUtilsGCFactoryData* Factory = Settings->CreateFactory(Context);
+	UPCGUtilsGeometryCollectionFactoryData* Factory = Settings->CreateFactory(Context);
 	if (!Factory)
 	{
 		return true;
@@ -83,7 +83,7 @@ bool FPCGUtilsGCFactoryProviderElement::ExecuteInternal(FPCGContext* Context) co
 	return true;
 }
 
-void FPCGUtilsGCFactoryProviderElement::DisabledPassThroughData(FPCGContext* Context) const
+void FPCGUtilsGeometryCollectionFactoryProviderElement::DisabledPassThroughData(FPCGContext* Context) const
 {
 	Context->OutputData.TaggedData.Reset();
 }

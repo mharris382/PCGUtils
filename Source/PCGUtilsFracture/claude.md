@@ -190,6 +190,22 @@ first or the layers silently vanish.
 
 ---
 
+## Attributes
+
+Follow the repository rule in `AGENTS.md`: every attribute exposes its name, and each optional one has its own
+toggle with the name hidden behind it. `GC Bones To Points` is the reference implementation - its
+`FAttributeWriters` resolves the whole set once, and a null pointer means "not requested" so the write sites
+stay a flat list of guarded assignments.
+
+Identity (`GC_BoneIndex` and the source id/revision/state trio) is the one thing written unconditionally,
+because it is the contract with `Select Bones From Points` - a selection cannot be resolved without it. Its
+names are still exposed so they can be matched against that node.
+
+## Naming
+
+C++ spells out `GeometryCollection`; user-facing text uses `GC`. So `UPCGGeometryCollectionBonesToPointsSettings`
+in code, "GC Bones To Points" in the palette, `GC` on pins, `GC_` on attributes. See `AGENTS.md` for why.
+
 ## Node conventions
 
 - Every element derives from `UPCGUtilsFractureElementBaseSettings`, which supplies `GetType()`. Deriving

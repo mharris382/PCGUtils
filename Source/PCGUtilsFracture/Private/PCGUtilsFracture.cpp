@@ -6,7 +6,7 @@
 #include "Data/PCGGeometryCollectionData.h"
 #include "Data/Registry/PCGDataTypeRegistry.h"
 #include "Factories/PCGUtilsFractureFactory.h"
-#include "Factories/PCGUtilsGCSelectionFactory.h"
+#include "Factories/PCGUtilsGeometryCollectionSelectionFactory.h"
 #include "Misc/CoreDelegates.h"
 #include "PCGModule.h"
 #endif
@@ -46,7 +46,7 @@ void FPCGUtilsFractureModule::RegisterPinColors()
 
 	Registry.RegisterPinColorFunction(FPCGGeometryCollectionDataTypeInfo::AsId(), ColorFn);
 	Registry.RegisterPinColorFunction(FPCGUtilsFractureFactoryDataTypeInfo::AsId(), ColorFn);
-	Registry.RegisterPinColorFunction(FPCGUtilsGCSelectionFactoryDataTypeInfo::AsId(), ColorFn);
+	Registry.RegisterPinColorFunction(FPCGUtilsGeometryCollectionSelectionFactoryDataTypeInfo::AsId(), ColorFn);
 }
 
 void FPCGUtilsFractureModule::OnPreExit()
@@ -54,7 +54,7 @@ void FPCGUtilsFractureModule::OnPreExit()
 	FPCGDataTypeRegistry& Registry = FPCGModule::GetMutableDataTypeRegistry();
 	Registry.UnregisterPinColorFunction(FPCGGeometryCollectionDataTypeInfo::AsId());
 	Registry.UnregisterPinColorFunction(FPCGUtilsFractureFactoryDataTypeInfo::AsId());
-	Registry.UnregisterPinColorFunction(FPCGUtilsGCSelectionFactoryDataTypeInfo::AsId());
+	Registry.UnregisterPinColorFunction(FPCGUtilsGeometryCollectionSelectionFactoryDataTypeInfo::AsId());
 }
 #endif
 

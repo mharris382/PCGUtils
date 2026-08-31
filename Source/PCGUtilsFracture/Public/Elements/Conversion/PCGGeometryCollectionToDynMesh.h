@@ -5,9 +5,9 @@
 #include "CoreMinimal.h"
 #include "Elements/PCGUtilsFractureElementBase.h"
 
-#include "PCGGCToDynMesh.generated.h"
+#include "PCGGeometryCollectionToDynMesh.generated.h"
 
-namespace PCGGCToDynMeshConstants
+namespace PCGGeometryCollectionToDynMeshConstants
 {
 	inline const FName CollectionInputPin = TEXT("GC");
 	inline const FName MeshOutputPin = TEXT("DynMesh");
@@ -25,7 +25,7 @@ namespace PCGGCToDynMeshConstants
  */
 UCLASS(BlueprintType, ClassGroup=(Procedural), Category="PCGUtils|Fracture",
 	meta=(Keywords="Geometry Collection To Mesh Fracture GC"))
-class PCGUTILSFRACTURE_API UPCGGCToDynMeshSettings : public UPCGUtilsFractureElementBaseSettings
+class PCGUTILSFRACTURE_API UPCGGeometryCollectionToDynMeshSettings : public UPCGUtilsFractureElementBaseSettings
 {
 	GENERATED_BODY()
 
@@ -46,7 +46,7 @@ public:
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="PolyGroups",
 		meta=(PCG_Overridable, EditCondition="bSetPolygroupPerBone"))
-	FName BonePolygroupLayerName = PCGGCToDynMeshConstants::DefaultBonePolygroupLayer;
+	FName BonePolygroupLayerName = PCGGeometryCollectionToDynMeshConstants::DefaultBonePolygroupLayer;
 
 	/**
 	 * Keep the engine's interior/exterior face tagging as the named PolyGroup layer
@@ -69,7 +69,7 @@ protected:
 	virtual FPCGElementPtr CreateElement() const override;
 };
 
-class PCGUTILSFRACTURE_API FPCGGCToDynMeshElement : public IPCGElement
+class PCGUTILSFRACTURE_API FPCGGeometryCollectionToDynMeshElement : public IPCGElement
 {
 protected:
 	virtual bool ExecuteInternal(FPCGContext* Context) const override;

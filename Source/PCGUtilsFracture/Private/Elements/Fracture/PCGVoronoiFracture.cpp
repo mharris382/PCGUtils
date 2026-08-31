@@ -5,7 +5,7 @@
 #include "Data/PCGBasePointData.h"
 #include "Elements/PCGUtilsDynMeshSpaceHelpers.h"
 #include "FractureEngineFracturing.h"
-#include "FunctionLibraries/PCGUtilsGCHelpers.h"
+#include "FunctionLibraries/PCGUtilsGeometryCollectionHelpers.h"
 #include "GeometryCollection/GeometryCollection.h"
 #include "PCGContext.h"
 #include "PCGPin.h"
@@ -33,7 +33,7 @@ bool UPCGVoronoiFractureFactoryData::Fracture(
 	}
 
 	TArray<FString> MissingAttributes;
-	if (!PCGUtilsGCHelpers::ValidateFractureRequirements(InOutCollection, MissingAttributes))
+	if (!PCGUtilsGeometryCollectionHelpers::ValidateFractureRequirements(InOutCollection, MissingAttributes))
 	{
 		PCGLog::LogErrorOnGraph(FText::Format(
 			LOCTEXT("MalformedCollection",
@@ -54,7 +54,7 @@ bool UPCGVoronoiFractureFactoryData::Fracture(
 		return false;
 	}
 
-	const FBox CollectionBounds = PCGUtilsGCHelpers::ComputeCollectionBounds(InOutCollection);
+	const FBox CollectionBounds = PCGUtilsGeometryCollectionHelpers::ComputeCollectionBounds(InOutCollection);
 	const FBox SiteBounds(Sites);
 
 	// Sites are cell centres: a cell only splits geometry if some geometry is nearer to it than to any other
@@ -245,8 +245,8 @@ TArray<FPCGPinProperties> UPCGVoronoiFractureSettings::InputPinProperties() cons
 	return Pins;
 }
 
-UPCGUtilsGCFactoryData* UPCGVoronoiFractureSettings::CreateFactory(
-	FPCGContext* InContext, UPCGUtilsGCFactoryData* InFactory) const
+UPCGUtilsGeometryCollectionFactoryData* UPCGVoronoiFractureSettings::CreateFactory(
+	FPCGContext* InContext, UPCGUtilsGeometryCollectionFactoryData* InFactory) const
 {
 	// PCG points are world-space by convention while the collection lives in the source DynMesh's local space.
 	// Resolving that here, once, is what makes the node work at non-identity source transforms.

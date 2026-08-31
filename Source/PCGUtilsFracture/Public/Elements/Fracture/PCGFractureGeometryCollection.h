@@ -5,9 +5,9 @@
 #include "CoreMinimal.h"
 #include "Elements/PCGUtilsFractureElementBase.h"
 
-#include "PCGFractureGC.generated.h"
+#include "PCGFractureGeometryCollection.generated.h"
 
-namespace PCGFractureGCConstants
+namespace PCGFractureGeometryCollectionConstants
 {
 	inline const FName CollectionInputPin = TEXT("GC");
 	inline const FName CollectionOutputPin = TEXT("GC");
@@ -22,7 +22,7 @@ namespace PCGFractureGCConstants
  */
 UCLASS(BlueprintType, ClassGroup=(Procedural), Category="PCGUtils|Fracture",
 	meta=(Keywords="Geometry Collection Apply Fracture Shatter Break GC"))
-class PCGUTILSFRACTURE_API UPCGFractureGCSettings : public UPCGUtilsFractureElementBaseSettings
+class PCGUTILSFRACTURE_API UPCGFractureGeometryCollectionSettings : public UPCGUtilsFractureElementBaseSettings
 {
 	GENERATED_BODY()
 
@@ -54,7 +54,7 @@ protected:
 	virtual FPCGElementPtr CreateElement() const override;
 };
 
-class PCGUTILSFRACTURE_API FPCGFractureGCElement : public IPCGElement
+class PCGUTILSFRACTURE_API FPCGFractureGeometryCollectionElement : public IPCGElement
 {
 protected:
 	virtual bool ExecuteInternal(FPCGContext* Context) const override;

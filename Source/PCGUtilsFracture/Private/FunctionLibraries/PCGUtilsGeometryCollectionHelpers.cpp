@@ -1,12 +1,12 @@
 // Copyright Max Harris
 
-#include "FunctionLibraries/PCGUtilsGCHelpers.h"
+#include "FunctionLibraries/PCGUtilsGeometryCollectionHelpers.h"
 
 #include "GeometryCollection/GeometryCollection.h"
 #include "GeometryCollection/GeometryCollectionAlgo.h"
 #include "GeometryCollection/TransformCollection.h"
 
-namespace PCGUtilsGCHelpers
+namespace PCGUtilsGeometryCollectionHelpers
 {
 	bool IsGeometryBearingBone(const FGeometryCollection& InCollection, int32 InBoneIndex)
 	{
@@ -105,6 +105,57 @@ namespace PCGUtilsGCHelpers
 		Require(FGeometryCollection::BoundingBoxAttribute, FGeometryCollection::GeometryGroup);
 
 		return OutMissingAttributes.IsEmpty();
+	}
+
+	FBoneSurfaceInfo GetBoneSurfaceInfo(
+		const FGeometryCollection& InCollection,
+		int32 InBoneIndex,
+		const FTransform& InBoneToCollection)
+	{
+		FBoneSurfaceInfo Info;
+
+		if (!InCollection.TransformToGeometryIndex.IsValidIndex(InBoneIndex))
+		{
+			return Info;
+		}
+		const int32 GeometryIndex = InCollection.TransformToGeometryIndex[InBoneIndex];
+		if (!InCollection.FaceStart.IsValidIndex(GeometryIndex))
+		{
+			return Info;
+		}
+
+		// Same face-range access FFractureEngineEdit::SetVisibilityInCollectionFromTransformSelection uses.
+		const int32 FaceStart = InCollection.FaceStart[GeometryIndex];
+		const int32 FaceCount = InCollection.FaceCount[GeometryIndex];
+
+		for (int32 Offset = 0; Offset < FaceCount; ++Offset)
+		{
+			const int32 FaceIndex = FaceStart + Offset;
+			if (!InCollection.Internal.IsValidIndex(FaceIndex) || !InCollection.Indices.IsValidIndex(FaceIndex))
+			{
+				continue;
+			}
+
+			const bool bIsInternal = InCollection.Internal[FaceIndex];
+			(bIsInternal ? Info.InteriorFaceCount : Info.ExteriorFaceCount) += 1;
+
+			const FIntVector& Triangle = InCollection.Indices[FaceIndex];
+			if (!InCollection.Vertex.IsValidIndex(Triangle.X)
+				|| !InCollection.Vertex.IsValidIndex(Triangle.Y)
+				|| !InCollection.Vertex.IsValidIndex(Triangle.Z))
+			{
+				continue;
+			}
+
+			const FVector A = InBoneToCollection.TransformPosition(FVector(InCollection.Vertex[Triangle.X]));
+			const FVector B = InBoneToCollection.TransformPosition(FVector(InCollection.Vertex[Triangle.Y]));
+			const FVector C = InBoneToCollection.TransformPosition(FVector(InCollection.Vertex[Triangle.Z]));
+			const double Area = 0.5 * FVector::CrossProduct(B - A, C - A).Size();
+
+			(bIsInternal ? Info.InteriorArea : Info.ExteriorArea) += Area;
+		}
+
+		return Info;
 	}
 
 	FBox ComputeCollectionBounds(const FGeometryCollection& InCollection)

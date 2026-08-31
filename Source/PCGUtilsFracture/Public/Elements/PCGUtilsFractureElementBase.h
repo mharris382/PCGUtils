@@ -7,7 +7,7 @@
 
 #include "PCGUtilsFractureElementBase.generated.h"
 
-class UPCGUtilsGCFactoryData;
+class UPCGUtilsGeometryCollectionFactoryData;
 
 /**
  * Shared settings base for every PCGUtilsFracture node.
@@ -35,16 +35,16 @@ public:
  * and a CreateFactory override, and the shared element handles emission and data-dependency capture.
  */
 UCLASS(Abstract, BlueprintType, ClassGroup=(Procedural), Category="PCGUtils|Fracture|Providers")
-class PCGUTILSFRACTURE_API UPCGUtilsGCFactoryProviderSettings : public UPCGUtilsFractureElementBaseSettings
+class PCGUTILSFRACTURE_API UPCGUtilsGeometryCollectionFactoryProviderSettings : public UPCGUtilsFractureElementBaseSettings
 {
 	GENERATED_BODY()
 
-	friend class FPCGUtilsGCFactoryProviderElement;
+	friend class FPCGUtilsGeometryCollectionFactoryProviderElement;
 
 public:
 	virtual FName GetMainOutputPin() const;
-	virtual UPCGUtilsGCFactoryData* CreateFactory(
-		FPCGContext* InContext, UPCGUtilsGCFactoryData* InFactory = nullptr) const;
+	virtual UPCGUtilsGeometryCollectionFactoryData* CreateFactory(
+		FPCGContext* InContext, UPCGUtilsGeometryCollectionFactoryData* InFactory = nullptr) const;
 
 protected:
 	virtual const FPCGDataTypeBaseId& GetFactoryTypeId() const;
@@ -53,7 +53,7 @@ protected:
 	virtual FPCGElementPtr CreateElement() const override;
 };
 
-class PCGUTILSFRACTURE_API FPCGUtilsGCFactoryProviderElement final : public IPCGElement
+class PCGUTILSFRACTURE_API FPCGUtilsGeometryCollectionFactoryProviderElement final : public IPCGElement
 {
 protected:
 	virtual bool ExecuteInternal(FPCGContext* Context) const override;

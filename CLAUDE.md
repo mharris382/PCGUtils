@@ -16,3 +16,4 @@ backend. Its rules: `UPCGGeometryCollectionData` is immutable (mutate only a `Cr
 topology-changing node publishes a new state via `InitializeAsRevisionOf`; fracture behaviour and bone selection
 are separate factory families consumed by generic executors. Use `GC` in names, never `GeometryCollection`.
 `PCGUtilsDynMesh` must never depend on `PCGUtilsFracture`.
+

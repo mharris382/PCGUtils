@@ -10,19 +10,20 @@
 #include "Data/PCGPointArrayData.h"
 #include "DynamicMesh/DynamicMesh3.h"
 #include "DynamicMesh/DynamicMeshAttributeSet.h"
-#include "Elements/Conversion/PCGDynMeshToGC.h"
-#include "Elements/Conversion/PCGGCBonesToPoints.h"
-#include "Elements/Conversion/PCGGCToDynMesh.h"
-#include "Elements/Edit/PCGPruneGC.h"
-#include "Elements/Fracture/PCGFractureGC.h"
+#include "Elements/Conversion/PCGDynMeshToGeometryCollection.h"
+#include "Elements/Conversion/PCGGeometryCollectionBonesToPoints.h"
+#include "Elements/Conversion/PCGGeometryCollectionToDynMesh.h"
+#include "Elements/Edit/PCGPruneGeometryCollection.h"
+#include "Elements/Fracture/PCGFractureGeometryCollection.h"
 #include "Elements/Fracture/PCGUniformVoronoiFracture.h"
 #include "Elements/Fracture/PCGVoronoiFracture.h"
-#include "Elements/Selections/PCGGCSelectionFromPoints.h"
+#include "Elements/Selections/PCGGeometryCollectionSelectionFromPoints.h"
 #include "GeometryCollection/GeometryCollection.h"
 #include "GeometryCollectionToDynamicMesh.h"
-#include "FunctionLibraries/PCGUtilsGCHelpers.h"
+#include "FunctionLibraries/PCGUtilsGeometryCollectionHelpers.h"
 #include "Generators/GridBoxMeshGenerator.h"
 #include "Metadata/PCGMetadata.h"
+#include "PCGUtilsFracture.h"
 #include "PCGContext.h"
 #include "UDynamicMesh.h"
 
@@ -124,9 +125,9 @@ namespace PCGUtilsFractureTests
 
 	const UPCGGeometryCollectionData* ToCollection(const UPCGDynamicMeshData* Mesh)
 	{
-		UPCGDynMeshToGCSettings* Settings = NewObject<UPCGDynMeshToGCSettings>();
+		UPCGDynMeshToGeometryCollectionSettings* Settings = NewObject<UPCGDynMeshToGeometryCollectionSettings>();
 		return FirstOutput<UPCGGeometryCollectionData>(
-			Run(Settings, {{PCGDynMeshToGCConstants::MeshInputPin, Mesh}}));
+			Run(Settings, {{PCGDynMeshToGeometryCollectionConstants::MeshInputPin, Mesh}}));
 	}
 
 	const UPCGGeometryCollectionData* Fracture(
@@ -143,9 +144,9 @@ namespace PCGUtilsFractureTests
 			return nullptr;
 		}
 
-		UPCGFractureGCSettings* FractureSettings = NewObject<UPCGFractureGCSettings>();
+		UPCGFractureGeometryCollectionSettings* FractureSettings = NewObject<UPCGFractureGeometryCollectionSettings>();
 		return FirstOutput<UPCGGeometryCollectionData>(Run(FractureSettings, {
-			{PCGFractureGCConstants::CollectionInputPin, Collection},
+			{PCGFractureGeometryCollectionConstants::CollectionInputPin, Collection},
 			{PCGUtilsFractureFactoryConstants::FracturesInputPin, Operation}}));
 	}
 
@@ -185,18 +186,29 @@ namespace PCGUtilsFractureTests
 			return nullptr;
 		}
 
-		UPCGFractureGCSettings* FractureSettings = NewObject<UPCGFractureGCSettings>();
+		UPCGFractureGeometryCollectionSettings* FractureSettings = NewObject<UPCGFractureGeometryCollectionSettings>();
 		return FirstOutput<UPCGGeometryCollectionData>(Run(FractureSettings, {
-			{PCGFractureGCConstants::CollectionInputPin, Collection},
+			{PCGFractureGeometryCollectionConstants::CollectionInputPin, Collection},
 			{PCGUtilsFractureFactoryConstants::FracturesInputPin, Operation}}));
 	}
 
-	const UPCGBasePointData* BonesToPoints(const UPCGGeometryCollectionData* Collection)
+	/**
+	 * Optional attributes are opt-in by design, so a test that reads one has to ask for it - which also keeps
+	 * these tests honest about what the node writes by default.
+	 */
+	const UPCGBasePointData* BonesToPoints(
+		const UPCGGeometryCollectionData* Collection, bool bWithSurfaceAttributes = false)
 	{
-		UPCGGCBonesToPointsSettings* Settings = NewObject<UPCGGCBonesToPointsSettings>();
+		UPCGGeometryCollectionBonesToPointsSettings* Settings = NewObject<UPCGGeometryCollectionBonesToPointsSettings>();
 		Settings->bOutputToWorldSpace = false;
+		Settings->bOutputIsExterior = bWithSurfaceAttributes;
+		Settings->bOutputExposureRatio = bWithSurfaceAttributes;
+		Settings->bOutputExteriorArea = bWithSurfaceAttributes;
+		Settings->bOutputInteriorArea = bWithSurfaceAttributes;
+		Settings->bOutputExteriorFaceCount = bWithSurfaceAttributes;
+		Settings->bOutputInteriorFaceCount = bWithSurfaceAttributes;
 		return FirstOutput<UPCGBasePointData>(
-			Run(Settings, {{PCGGCBonesToPointsConstants::CollectionInputPin, Collection}}));
+			Run(Settings, {{PCGGeometryCollectionBonesToPointsConstants::CollectionInputPin, Collection}}));
 	}
 
 	/** Stands in for the PCG/PCGEx spatial filtering step: keeps points whose centre is inside Region. */
@@ -222,27 +234,38 @@ namespace PCGUtilsFractureTests
 		return Filtered;
 	}
 
-	const UPCGUtilsGCSelectionFactoryData* SelectionFromPoints(const UPCGBasePointData* Points)
+	/** Keeps the points at the given indices, preserving their metadata. */
+	UPCGPointArrayData* FilterPointsByIndex(const UPCGBasePointData* Points, const TArray<int32>& Indices)
 	{
-		UPCGGCSelectionFromPointsSettings* Settings = NewObject<UPCGGCSelectionFromPointsSettings>();
-		return FirstOutput<UPCGUtilsGCSelectionFactoryData>(
-			Run(Settings, {{PCGGCSelectionFromPointsConstants::PointsInputPin, Points}}));
+		UPCGPointArrayData* Filtered = NewObject<UPCGPointArrayData>();
+		FPCGInitializeFromDataParams InitializeParams(Points);
+		InitializeParams.bInheritSpatialData = false;
+		Filtered->InitializeFromDataWithParams(InitializeParams);
+		Filtered->SetPointsFrom(Points, Indices);
+		return Filtered;
+	}
+
+	const UPCGUtilsGeometryCollectionSelectionFactoryData* SelectionFromPoints(const UPCGBasePointData* Points)
+	{
+		UPCGGeometryCollectionSelectionFromPointsSettings* Settings = NewObject<UPCGGeometryCollectionSelectionFromPointsSettings>();
+		return FirstOutput<UPCGUtilsGeometryCollectionSelectionFactoryData>(
+			Run(Settings, {{PCGGeometryCollectionSelectionFromPointsConstants::PointsInputPin, Points}}));
 	}
 
 	const UPCGGeometryCollectionData* Prune(
-		const UPCGGeometryCollectionData* Collection, const UPCGUtilsGCSelectionFactoryData* Selection)
+		const UPCGGeometryCollectionData* Collection, const UPCGUtilsGeometryCollectionSelectionFactoryData* Selection)
 	{
-		UPCGPruneGCSettings* Settings = NewObject<UPCGPruneGCSettings>();
+		UPCGPruneGeometryCollectionSettings* Settings = NewObject<UPCGPruneGeometryCollectionSettings>();
 		return FirstOutput<UPCGGeometryCollectionData>(Run(Settings, {
-			{PCGPruneGCConstants::CollectionInputPin, Collection},
-			{PCGUtilsGCSelectionFactoryConstants::SelectionInputPin, Selection}}));
+			{PCGPruneGeometryCollectionConstants::CollectionInputPin, Collection},
+			{PCGUtilsGeometryCollectionSelectionFactoryConstants::SelectionInputPin, Selection}}));
 	}
 
 	const UPCGDynamicMeshData* ToDynMesh(const UPCGGeometryCollectionData* Collection)
 	{
-		UPCGGCToDynMeshSettings* Settings = NewObject<UPCGGCToDynMeshSettings>();
+		UPCGGeometryCollectionToDynMeshSettings* Settings = NewObject<UPCGGeometryCollectionToDynMeshSettings>();
 		return FirstOutput<UPCGDynamicMeshData>(
-			Run(Settings, {{PCGGCToDynMeshConstants::CollectionInputPin, Collection}}));
+			Run(Settings, {{PCGGeometryCollectionToDynMeshConstants::CollectionInputPin, Collection}}));
 	}
 
 	const UE::Geometry::FDynamicMesh3& Mesh(const UPCGDynamicMeshData* Data)
@@ -253,7 +276,7 @@ namespace PCGUtilsFractureTests
 	int32 CountGeometryBones(const UPCGGeometryCollectionData* Data)
 	{
 		TArray<int32> Bones;
-		PCGUtilsGCHelpers::GatherGeometryBearingBones(Data->GetCollection(), Bones);
+		PCGUtilsGeometryCollectionHelpers::GatherGeometryBearingBones(Data->GetCollection(), Bones);
 		return Bones.Num();
 	}
 
@@ -330,7 +353,7 @@ bool FPCGUtilsFractureRoundTripTest::RunTest(const FString&)
 		return false;
 	}
 
-	const UPCGUtilsGCSelectionFactoryData* Selection = SelectionFromPoints(FilteredPoints);
+	const UPCGUtilsGeometryCollectionSelectionFactoryData* Selection = SelectionFromPoints(FilteredPoints);
 	if (!TestNotNull(TEXT("Select Bones From Points produced a selection"), Selection))
 	{
 		return false;
@@ -374,7 +397,7 @@ bool FPCGUtilsFractureRoundTripTest::RunTest(const FString&)
 
 	// Both PolyGroup layers must survive the combine, or the result cannot re-enter the DynMesh ecosystem.
 	TestNotNull(TEXT("Per-bone PolyGroup layer present"),
-		FindLayer(ResultMesh, PCGGCToDynMeshConstants::DefaultBonePolygroupLayer));
+		FindLayer(ResultMesh, PCGGeometryCollectionToDynMeshConstants::DefaultBonePolygroupLayer));
 	TestNotNull(TEXT("Internal-face PolyGroup layer present"),
 		FindLayer(ResultMesh, UE::Geometry::FGeometryCollectionToDynamicMeshes::InternalFacePolyGroupName()));
 
@@ -382,6 +405,244 @@ bool FPCGUtilsFractureRoundTripTest::RunTest(const FString&)
 }
 
 
+
+
+
+/**
+ * The random-damage workflow: pick exterior pieces only, prune them, and confirm the result actually changed
+ * on the outside. The failure this guards against is subtle - pruning a buried piece "succeeds", reports bones
+ * removed, and produces no visible damage at all.
+ */
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FPCGUtilsFractureSurfaceAttributesTest,
+	"PCGUtils.Fracture.Bones.SurfaceAttributesDriveDamage",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::ProductFilter)
+
+bool FPCGUtilsFractureSurfaceAttributesTest::RunTest(const FString&)
+{
+	using namespace PCGUtilsFractureTests;
+	using namespace PCGUtilsGeometryCollectionIdentity;
+
+	const UPCGGeometryCollectionData* Fractured = Fracture(ToCollection(Box()), SiteGrid(4));
+	if (!TestNotNull(TEXT("Fractured"), Fractured))
+	{
+		return false;
+	}
+
+	const UPCGBasePointData* Points = BonesToPoints(Fractured, /*bWithSurfaceAttributes=*/true);
+	if (!TestNotNull(TEXT("Bone points"), Points))
+	{
+		return false;
+	}
+
+	const FPCGMetadataDomain* Domain =
+		Points->ConstMetadata()->GetConstMetadataDomain(PCGMetadataDomainID::Elements);
+	const FPCGMetadataAttribute<bool>* IsExterior =
+		Domain->GetConstTypedAttribute<bool>(IsExteriorAttribute);
+	const FPCGMetadataAttribute<double>* ExteriorArea =
+		Domain->GetConstTypedAttribute<double>(ExteriorAreaAttribute);
+	const FPCGMetadataAttribute<double>* InteriorArea =
+		Domain->GetConstTypedAttribute<double>(InteriorAreaAttribute);
+	const FPCGMetadataAttribute<double>* ExposureRatio =
+		Domain->GetConstTypedAttribute<double>(ExposureRatioAttribute);
+	const FPCGMetadataAttribute<int32>* ExteriorFaces =
+		Domain->GetConstTypedAttribute<int32>(ExteriorFaceCountAttribute);
+
+	if (!TestNotNull(TEXT("GC_IsExterior written"), IsExterior)
+		|| !TestNotNull(TEXT("GC_ExteriorArea written"), ExteriorArea)
+		|| !TestNotNull(TEXT("GC_InteriorArea written"), InteriorArea)
+		|| !TestNotNull(TEXT("GC_ExposureRatio written"), ExposureRatio)
+		|| !TestNotNull(TEXT("GC_ExteriorFaceCount written"), ExteriorFaces))
+	{
+		return false;
+	}
+
+	// Split the pieces the way a graph would: buried versus surface-facing.
+	TArray<int32> BuriedIndices;
+	TArray<int32> ExteriorIndices;
+	const auto Entries = Points->GetConstMetadataEntryValueRange();
+	for (int32 Index = 0; Index < Entries.Num(); ++Index)
+	{
+		const int64 Entry = Entries[Index];
+		const bool bExterior = IsExterior->GetValueFromItemKey(Entry);
+		(bExterior ? ExteriorIndices : BuriedIndices).Add(Index);
+
+		const double Exposure = ExposureRatio->GetValueFromItemKey(Entry);
+		TestTrue(TEXT("Exposure ratio is a fraction"), Exposure >= 0.0 && Exposure <= 1.0);
+
+		if (bExterior)
+		{
+			TestTrue(TEXT("Exterior piece has exterior area"),
+				ExteriorArea->GetValueFromItemKey(Entry) > 0.0);
+			TestTrue(TEXT("Exterior piece has exterior faces"),
+				ExteriorFaces->GetValueFromItemKey(Entry) > 0);
+			TestTrue(TEXT("Exterior piece has non-zero exposure"), Exposure > 0.0);
+		}
+		else
+		{
+			// This is the case the attribute exists to exclude.
+			TestEqual(TEXT("Buried piece has zero exposure"), Exposure, 0.0);
+			TestEqual(TEXT("Buried piece has zero exterior area"),
+				ExteriorArea->GetValueFromItemKey(Entry), 0.0);
+			TestTrue(TEXT("Buried piece is all interior surface"),
+				InteriorArea->GetValueFromItemKey(Entry) > 0.0);
+		}
+	}
+
+	TestTrue(TEXT("Both classes present in a 4x4x4 fracture"),
+		ExteriorIndices.Num() > 0 && BuriedIndices.Num() > 0);
+
+	// Optional attributes must not appear unless asked for: a single bulk flag writing everything is exactly
+	// the UX problem the per-attribute toggles exist to avoid.
+	{
+		const UPCGBasePointData* Default = BonesToPoints(Fractured);
+		const FPCGMetadataDomain* DefaultDomain =
+			Default->ConstMetadata()->GetConstMetadataDomain(PCGMetadataDomainID::Elements);
+		TestNull(TEXT("GC_IsExterior is not written by default"),
+			DefaultDomain->GetConstTypedAttribute<bool>(IsExteriorAttribute));
+		TestNull(TEXT("GC_BoundsVolume is not written by default"),
+			DefaultDomain->GetConstTypedAttribute<double>(BoundsVolumeAttribute));
+		// Identity is the contract with Select Bones From Points, so it is always present.
+		TestNotNull(TEXT("GC_BoneIndex is always written"),
+			DefaultDomain->GetConstTypedAttribute<int32>(BoneIndexAttribute));
+		TestNotNull(TEXT("GC_SourceStateId is always written"),
+			DefaultDomain->GetConstTypedAttribute<int64>(SourceStateIdAttribute));
+	}
+
+	// A renamed attribute must actually come out under the new name.
+	{
+		UPCGGeometryCollectionBonesToPointsSettings* Renamed = NewObject<UPCGGeometryCollectionBonesToPointsSettings>();
+		Renamed->bOutputToWorldSpace = false;
+		Renamed->bOutputIsExterior = true;
+		Renamed->IsExteriorAttributeName = TEXT("MyExteriorFlag");
+		const UPCGBasePointData* Custom = FirstOutput<UPCGBasePointData>(
+			Run(Renamed, {{PCGGeometryCollectionBonesToPointsConstants::CollectionInputPin, Fractured}}));
+		if (TestNotNull(TEXT("Renamed run produced points"), Custom))
+		{
+			const FPCGMetadataDomain* CustomDomain =
+				Custom->ConstMetadata()->GetConstMetadataDomain(PCGMetadataDomainID::Elements);
+			TestNotNull(TEXT("Attribute uses the user-supplied name"),
+				CustomDomain->GetConstTypedAttribute<bool>(FName(TEXT("MyExteriorFlag"))));
+			TestNull(TEXT("Attribute no longer uses the default name"),
+				CustomDomain->GetConstTypedAttribute<bool>(IsExteriorAttribute));
+		}
+	}
+
+	// Prune two exterior pieces, as a damage graph would, and confirm the silhouette really changed.
+	const FBox BeforeBounds = PCGUtilsGeometryCollectionHelpers::ComputeCollectionBounds(Fractured->GetCollection());
+	double BeforeExteriorArea = 0.0;
+	{
+		TArray<int32> Bones;
+		PCGUtilsGeometryCollectionHelpers::GatherGeometryBearingBones(Fractured->GetCollection(), Bones);
+		TArray<FTransform> Globals;
+		PCGUtilsGeometryCollectionHelpers::ComputeGlobalTransforms(Fractured->GetCollection(), Globals);
+		for (const int32 Bone : Bones)
+		{
+			BeforeExteriorArea += PCGUtilsGeometryCollectionHelpers::GetBoneSurfaceInfo(
+				Fractured->GetCollection(), Bone, Globals[Bone]).ExteriorArea;
+		}
+	}
+
+	ExteriorIndices.SetNum(2);
+	const UPCGUtilsGeometryCollectionSelectionFactoryData* Selection =
+		SelectionFromPoints(FilterPointsByIndex(Points, ExteriorIndices));
+	const UPCGGeometryCollectionData* Damaged = Prune(Fractured, Selection);
+	if (!TestNotNull(TEXT("Pruned two exterior pieces"), Damaged))
+	{
+		return false;
+	}
+
+	double AfterExteriorArea = 0.0;
+	{
+		TArray<int32> Bones;
+		PCGUtilsGeometryCollectionHelpers::GatherGeometryBearingBones(Damaged->GetCollection(), Bones);
+		TArray<FTransform> Globals;
+		PCGUtilsGeometryCollectionHelpers::ComputeGlobalTransforms(Damaged->GetCollection(), Globals);
+		for (const int32 Bone : Bones)
+		{
+			AfterExteriorArea += PCGUtilsGeometryCollectionHelpers::GetBoneSurfaceInfo(
+				Damaged->GetCollection(), Bone, Globals[Bone]).ExteriorArea;
+		}
+	}
+
+	// Removing surface-facing pieces must remove original outer surface. Pruning buried pieces would not.
+	TestTrue(TEXT("Damaging exterior pieces removes original outer surface"),
+		AfterExteriorArea < BeforeExteriorArea);
+	TestTrue(TEXT("The solid keeps its overall footprint"),
+		BeforeBounds.IsInsideOrOn(
+			PCGUtilsGeometryCollectionHelpers::ComputeCollectionBounds(Damaged->GetCollection()).GetCenter()));
+
+	return true;
+}
+
+/**
+ * Interior vs exterior bone classification, which is what makes "randomly damage a mesh" safe: pruning a
+ * buried bone changes no silhouette and leaves invisible interior surface behind.
+ */
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FPCGUtilsFractureBoneSurfaceTest,
+	"PCGUtils.Fracture.Bones.ExteriorVsInterior",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::ProductFilter)
+
+bool FPCGUtilsFractureBoneSurfaceTest::RunTest(const FString&)
+{
+	using namespace PCGUtilsFractureTests;
+
+	// Before fracturing, every face came from the source mesh, so the single bone is entirely exterior.
+	const UPCGGeometryCollectionData* Unfractured = ToCollection(Box());
+	if (!TestNotNull(TEXT("Collection built"), Unfractured))
+	{
+		return false;
+	}
+	{
+		TArray<int32> Bones;
+		PCGUtilsGeometryCollectionHelpers::GatherGeometryBearingBones(Unfractured->GetCollection(), Bones);
+		if (TestEqual(TEXT("One bone before fracture"), Bones.Num(), 1))
+		{
+			const auto Info = PCGUtilsGeometryCollectionHelpers::GetBoneSurfaceInfo(Unfractured->GetCollection(), Bones[0]);
+			TestTrue(TEXT("Unfractured bone is exterior"), Info.IsExterior());
+			TestEqual(TEXT("Unfractured bone has no interior faces"), Info.InteriorFaceCount, 0);
+			TestTrue(TEXT("Unfractured bone has exterior area"), Info.ExteriorArea > 0.0);
+		}
+	}
+
+	// A 4x4x4 lattice guarantees a shell of surface chunks around a genuinely buried core.
+	const UPCGGeometryCollectionData* Fractured = Fracture(Unfractured, SiteGrid(4));
+	if (!TestNotNull(TEXT("Fractured"), Fractured))
+	{
+		return false;
+	}
+
+	TArray<int32> Bones;
+	PCGUtilsGeometryCollectionHelpers::GatherGeometryBearingBones(Fractured->GetCollection(), Bones);
+
+	int32 NumExterior = 0;
+	int32 NumInterior = 0;
+	for (const int32 BoneIndex : Bones)
+	{
+		const auto Info = PCGUtilsGeometryCollectionHelpers::GetBoneSurfaceInfo(Fractured->GetCollection(), BoneIndex);
+		if (Info.IsExterior())
+		{
+			++NumExterior;
+			TestTrue(TEXT("An exterior bone has exterior area"), Info.ExteriorArea > 0.0);
+		}
+		else
+		{
+			++NumInterior;
+			TestEqual(TEXT("A buried bone has zero exterior area"), Info.ExteriorArea, 0.0);
+			TestTrue(TEXT("A buried bone is still made of interior faces"), Info.InteriorFaceCount > 0);
+		}
+	}
+
+	UE_LOG(LogPCGUtilsFracture, Log,
+		TEXT("Bone surface classification: %d exterior, %d buried, of %d pieces"),
+		NumExterior, NumInterior, Bones.Num());
+
+	// A 4x4x4 subdivision of a cube has a 2x2x2 fully-buried core and a 56-chunk shell around it.
+	TestTrue(TEXT("Some chunks reach the original surface"), NumExterior > 0);
+	TestTrue(TEXT("Some chunks are fully buried"), NumInterior > 0);
+	TestEqual(TEXT("Every piece is classified"), NumExterior + NumInterior, Bones.Num());
+
+	return true;
+}
 
 /**
  * Uniform Voronoi mirrors Fracture Mode's Uniform button: it scatters its own sites through the bounds of
@@ -480,7 +741,7 @@ bool FPCGUtilsFractureDegenerateSitesTest::RunTest(const FString&)
 			FGeometryCollection::BoundingBoxAttribute, FGeometryCollection::GeometryGroup);
 		TArray<FString> Missing;
 		TestFalse(TEXT("Stripped collection is detected as unfracturable"),
-			PCGUtilsGCHelpers::ValidateFractureRequirements(*Stripped, Missing));
+			PCGUtilsGeometryCollectionHelpers::ValidateFractureRequirements(*Stripped, Missing));
 		TestTrue(TEXT("The missing attribute is named"),
 			Missing.Num() == 1 && Missing[0].Contains(TEXT("BoundingBox")));
 	}
@@ -506,7 +767,7 @@ bool FPCGUtilsFractureStaleSelectionTest::RunTest(const FString&)
 
 	// Points authored against revision 1 ...
 	const UPCGBasePointData* StalePoints = BonesToPoints(FracturedOnce);
-	const UPCGUtilsGCSelectionFactoryData* StaleSelection = SelectionFromPoints(StalePoints);
+	const UPCGUtilsGeometryCollectionSelectionFactoryData* StaleSelection = SelectionFromPoints(StalePoints);
 	if (!TestNotNull(TEXT("Selection authored"), StaleSelection))
 	{
 		return false;
@@ -527,7 +788,7 @@ bool FPCGUtilsFractureStaleSelectionTest::RunTest(const FString&)
 		EAutomationExpectedErrorFlags::Contains, -1);
 
 	FDataflowTransformSelection Resolved;
-	const FPCGUtilsGCSelectionEvaluationContext EvaluationContext(
+	const FPCGUtilsGeometryCollectionSelectionEvaluationContext EvaluationContext(
 		FracturedTwice, FracturedTwice->GetCollection());
 	const bool bEvaluated = StaleSelection->Evaluate(EvaluationContext, nullptr, Resolved);
 

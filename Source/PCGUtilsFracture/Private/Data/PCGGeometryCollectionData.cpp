@@ -96,7 +96,7 @@ void UPCGGeometryCollectionData::AddToCrc(FArchiveCrc32& Ar, bool bFullDataCrc) 
 	}
 }
 
-int64 PCGUtilsGCIdentity::FoldGuid(const FGuid& InGuid)
+int64 PCGUtilsGeometryCollectionIdentity::FoldGuid(const FGuid& InGuid)
 {
 	const uint64 High = (static_cast<uint64>(InGuid.A) << 32) | static_cast<uint64>(InGuid.B);
 	const uint64 Low = (static_cast<uint64>(InGuid.C) << 32) | static_cast<uint64>(InGuid.D);

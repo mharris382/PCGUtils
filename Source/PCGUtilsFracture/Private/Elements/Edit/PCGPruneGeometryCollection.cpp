@@ -1,11 +1,11 @@
 // Copyright Max Harris
 
-#include "Elements/Edit/PCGPruneGC.h"
+#include "Elements/Edit/PCGPruneGeometryCollection.h"
 
 #include "Data/PCGGeometryCollectionData.h"
-#include "Factories/PCGUtilsGCSelectionFactory.h"
+#include "Factories/PCGUtilsGeometryCollectionSelectionFactory.h"
 #include "FractureEngineEdit.h"
-#include "FunctionLibraries/PCGUtilsGCHelpers.h"
+#include "FunctionLibraries/PCGUtilsGeometryCollectionHelpers.h"
 #include "GeometryCollection/GeometryCollection.h"
 #include "PCGContext.h"
 #include "PCGPin.h"
@@ -15,12 +15,12 @@
 #define LOCTEXT_NAMESPACE "PCGPruneGC"
 
 #if WITH_EDITOR
-FText UPCGPruneGCSettings::GetDefaultNodeTitle() const
+FText UPCGPruneGeometryCollectionSettings::GetDefaultNodeTitle() const
 {
 	return LOCTEXT("Title", "Prune GC");
 }
 
-FText UPCGPruneGCSettings::GetNodeTooltipText() const
+FText UPCGPruneGeometryCollectionSettings::GetNodeTooltipText() const
 {
 	return LOCTEXT("Tooltip",
 		"Removes the selected bones and all their children from the Geometry Collection, cleaning up any "
@@ -30,42 +30,42 @@ FText UPCGPruneGCSettings::GetNodeTooltipText() const
 }
 #endif
 
-TArray<FPCGPinProperties> UPCGPruneGCSettings::InputPinProperties() const
+TArray<FPCGPinProperties> UPCGPruneGeometryCollectionSettings::InputPinProperties() const
 {
 	TArray<FPCGPinProperties> Pins;
 	Pins.Emplace_GetRef(
-		PCGPruneGCConstants::CollectionInputPin,
+		PCGPruneGeometryCollectionConstants::CollectionInputPin,
 		FPCGGeometryCollectionDataTypeInfo::AsId(), /*bAllowMultipleConnections=*/true, /*bAllowMultipleData=*/true)
 		.SetRequiredPin();
 	Pins.Emplace_GetRef(
-		PCGUtilsGCSelectionFactoryConstants::SelectionInputPin,
-		FPCGUtilsGCSelectionFactoryDataTypeInfo::AsId(), /*bAllowMultipleConnections=*/false, /*bAllowMultipleData=*/false)
+		PCGUtilsGeometryCollectionSelectionFactoryConstants::SelectionInputPin,
+		FPCGUtilsGeometryCollectionSelectionFactoryDataTypeInfo::AsId(), /*bAllowMultipleConnections=*/false, /*bAllowMultipleData=*/false)
 		.SetRequiredPin();
 	return Pins;
 }
 
-TArray<FPCGPinProperties> UPCGPruneGCSettings::OutputPinProperties() const
+TArray<FPCGPinProperties> UPCGPruneGeometryCollectionSettings::OutputPinProperties() const
 {
 	TArray<FPCGPinProperties> Pins;
 	Pins.Add(FPCGPinProperties(
-		PCGPruneGCConstants::CollectionOutputPin,
+		PCGPruneGeometryCollectionConstants::CollectionOutputPin,
 		FPCGGeometryCollectionDataTypeInfo::AsId(), true, true));
 	return Pins;
 }
 
-FPCGElementPtr UPCGPruneGCSettings::CreateElement() const
+FPCGElementPtr UPCGPruneGeometryCollectionSettings::CreateElement() const
 {
-	return MakeShared<FPCGPruneGCElement>();
+	return MakeShared<FPCGPruneGeometryCollectionElement>();
 }
 
-bool FPCGPruneGCElement::ExecuteInternal(FPCGContext* Context) const
+bool FPCGPruneGeometryCollectionElement::ExecuteInternal(FPCGContext* Context) const
 {
 	check(Context);
-	const UPCGPruneGCSettings* Settings = Context->GetInputSettings<UPCGPruneGCSettings>();
+	const UPCGPruneGeometryCollectionSettings* Settings = Context->GetInputSettings<UPCGPruneGeometryCollectionSettings>();
 	check(Settings);
 
 	for (const FPCGTaggedData& Input :
-		Context->InputData.GetInputsByPin(PCGPruneGCConstants::CollectionInputPin))
+		Context->InputData.GetInputsByPin(PCGPruneGeometryCollectionConstants::CollectionInputPin))
 	{
 		const UPCGGeometryCollectionData* InputData = Cast<const UPCGGeometryCollectionData>(Input.Data);
 		if (!InputData || !InputData->HasCollection())
@@ -88,9 +88,9 @@ bool FPCGPruneGCElement::ExecuteInternal(FPCGContext* Context) const
 		FDataflowTransformSelection Selection;
 		bool bHasSelection = false;
 		{
-			const FPCGUtilsGCSelectionEvaluationContext EvaluationContext(InputData, *Collection);
-			if (!PCGUtilsGCSelectionFactories::ResolveSelectionFromPin(
-				Context, PCGUtilsGCSelectionFactoryConstants::SelectionInputPin, EvaluationContext,
+			const FPCGUtilsGeometryCollectionSelectionEvaluationContext EvaluationContext(InputData, *Collection);
+			if (!PCGUtilsGeometryCollectionSelectionFactories::ResolveSelectionFromPin(
+				Context, PCGUtilsGeometryCollectionSelectionFactoryConstants::SelectionInputPin, EvaluationContext,
 				/*bRequired=*/true, Selection, bHasSelection) || !bHasSelection)
 			{
 				continue;
@@ -150,12 +150,12 @@ bool FPCGPruneGCElement::ExecuteInternal(FPCGContext* Context) const
 
 		FPCGTaggedData& Output = Context->OutputData.TaggedData.Emplace_GetRef(Input);
 		Output.Data = OutputData;
-		Output.Pin = PCGPruneGCConstants::CollectionOutputPin;
+		Output.Pin = PCGPruneGeometryCollectionConstants::CollectionOutputPin;
 
 		UE_LOG(LogPCGUtilsFracture, Log,
 			TEXT("Prune GC: selected %d, pruned %d, remaining %d. Result %s (revision %d)"),
 			NumRequested, NumRemoved, BonesAfter,
-			*PCGUtilsGCHelpers::DescribeCollection(*Collection), OutputData->GetRevision());
+			*PCGUtilsGeometryCollectionHelpers::DescribeCollection(*Collection), OutputData->GetRevision());
 	}
 
 	return true;

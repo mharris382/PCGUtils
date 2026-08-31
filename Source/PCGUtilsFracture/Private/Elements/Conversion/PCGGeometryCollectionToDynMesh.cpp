@@ -1,12 +1,12 @@
 // Copyright Max Harris
 
-#include "Elements/Conversion/PCGGCToDynMesh.h"
+#include "Elements/Conversion/PCGGeometryCollectionToDynMesh.h"
 
 #include "Data/PCGDynamicMeshData.h"
 #include "Data/PCGGeometryCollectionData.h"
 #include "DynamicMesh/DynamicMesh3.h"
 #include "DynamicMesh/DynamicMeshAttributeSet.h"
-#include "FunctionLibraries/PCGUtilsGCHelpers.h"
+#include "FunctionLibraries/PCGUtilsGeometryCollectionHelpers.h"
 #include "GeometryCollection/GeometryCollection.h"
 #include "GeometryCollectionToDynamicMesh.h"
 #include "Materials/MaterialInterface.h"
@@ -48,12 +48,12 @@ namespace
 }
 
 #if WITH_EDITOR
-FText UPCGGCToDynMeshSettings::GetDefaultNodeTitle() const
+FText UPCGGeometryCollectionToDynMeshSettings::GetDefaultNodeTitle() const
 {
 	return LOCTEXT("Title", "GC To DynMesh");
 }
 
-FText UPCGGCToDynMeshSettings::GetNodeTooltipText() const
+FText UPCGGeometryCollectionToDynMeshSettings::GetNodeTooltipText() const
 {
 	return LOCTEXT("Tooltip",
 		"Combines the surviving Geometry Collection pieces into one DynMesh, in the collection's own local "
@@ -63,39 +63,39 @@ FText UPCGGCToDynMeshSettings::GetNodeTooltipText() const
 }
 #endif
 
-TArray<FPCGPinProperties> UPCGGCToDynMeshSettings::InputPinProperties() const
+TArray<FPCGPinProperties> UPCGGeometryCollectionToDynMeshSettings::InputPinProperties() const
 {
 	TArray<FPCGPinProperties> Pins;
 	Pins.Emplace_GetRef(
-		PCGGCToDynMeshConstants::CollectionInputPin,
+		PCGGeometryCollectionToDynMeshConstants::CollectionInputPin,
 		FPCGGeometryCollectionDataTypeInfo::AsId(), /*bAllowMultipleConnections=*/true, /*bAllowMultipleData=*/true)
 		.SetRequiredPin();
 	return Pins;
 }
 
-TArray<FPCGPinProperties> UPCGGCToDynMeshSettings::OutputPinProperties() const
+TArray<FPCGPinProperties> UPCGGeometryCollectionToDynMeshSettings::OutputPinProperties() const
 {
 	TArray<FPCGPinProperties> Pins;
 	Pins.Add(FPCGPinProperties(
-		PCGGCToDynMeshConstants::MeshOutputPin, EPCGDataType::DynamicMesh, true, true));
+		PCGGeometryCollectionToDynMeshConstants::MeshOutputPin, EPCGDataType::DynamicMesh, true, true));
 	return Pins;
 }
 
-FPCGElementPtr UPCGGCToDynMeshSettings::CreateElement() const
+FPCGElementPtr UPCGGeometryCollectionToDynMeshSettings::CreateElement() const
 {
-	return MakeShared<FPCGGCToDynMeshElement>();
+	return MakeShared<FPCGGeometryCollectionToDynMeshElement>();
 }
 
-bool FPCGGCToDynMeshElement::ExecuteInternal(FPCGContext* Context) const
+bool FPCGGeometryCollectionToDynMeshElement::ExecuteInternal(FPCGContext* Context) const
 {
 	using namespace UE::Geometry;
 
 	check(Context);
-	const UPCGGCToDynMeshSettings* Settings = Context->GetInputSettings<UPCGGCToDynMeshSettings>();
+	const UPCGGeometryCollectionToDynMeshSettings* Settings = Context->GetInputSettings<UPCGGeometryCollectionToDynMeshSettings>();
 	check(Settings);
 
 	for (const FPCGTaggedData& Input :
-		Context->InputData.GetInputsByPin(PCGGCToDynMeshConstants::CollectionInputPin))
+		Context->InputData.GetInputsByPin(PCGGeometryCollectionToDynMeshConstants::CollectionInputPin))
 	{
 		const UPCGGeometryCollectionData* CollectionData = Cast<const UPCGGeometryCollectionData>(Input.Data);
 		if (!CollectionData || !CollectionData->HasCollection())
@@ -109,7 +109,7 @@ bool FPCGGCToDynMeshElement::ExecuteInternal(FPCGContext* Context) const
 		const FGeometryCollection& Collection = CollectionData->GetCollection();
 
 		TArray<int32> GeometryBones;
-		PCGUtilsGCHelpers::GatherGeometryBearingBones(Collection, GeometryBones);
+		PCGUtilsGeometryCollectionHelpers::GatherGeometryBearingBones(Collection, GeometryBones);
 		if (GeometryBones.IsEmpty())
 		{
 			PCGLog::LogErrorOnGraph(
@@ -207,7 +207,7 @@ bool FPCGGCToDynMeshElement::ExecuteInternal(FPCGContext* Context) const
 
 		FPCGTaggedData& Output = Context->OutputData.TaggedData.Emplace_GetRef(Input);
 		Output.Data = OutputData;
-		Output.Pin = PCGGCToDynMeshConstants::MeshOutputPin;
+		Output.Pin = PCGGeometryCollectionToDynMeshConstants::MeshOutputPin;
 
 		const UE::Geometry::FDynamicMesh3* ResultMesh =
 			OutputData->GetDynamicMesh() ? OutputData->GetDynamicMesh()->GetMeshPtr() : nullptr;

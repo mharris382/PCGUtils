@@ -4,21 +4,21 @@
 
 #include "CoreMinimal.h"
 #include "Dataflow/DataflowSelection.h"
-#include "Factories/PCGUtilsGCFactoryData.h"
+#include "Factories/PCGUtilsGeometryCollectionFactoryData.h"
 
-#include "PCGUtilsGCSelectionFactory.generated.h"
+#include "PCGUtilsGeometryCollectionSelectionFactory.generated.h"
 
 class FGeometryCollection;
 class UPCGGeometryCollectionData;
 
-namespace PCGUtilsGCSelectionFactoryConstants
+namespace PCGUtilsGeometryCollectionSelectionFactoryConstants
 {
 	inline const FName OutputPin = TEXT("Selection");
 	inline const FName SelectionInputPin = TEXT("Selection");
 }
 
 USTRUCT(meta=(PCG_DataTypeDisplayName="GC Selection"))
-struct FPCGUtilsGCSelectionFactoryDataTypeInfo : public FPCGUtilsGCFactoryDataTypeInfo
+struct FPCGUtilsGeometryCollectionSelectionFactoryDataTypeInfo : public FPCGUtilsGeometryCollectionFactoryDataTypeInfo
 {
 	GENERATED_BODY()
 
@@ -26,9 +26,9 @@ struct FPCGUtilsGCSelectionFactoryDataTypeInfo : public FPCGUtilsGCFactoryDataTy
 };
 
 /** Read-only collection state shared by every factory in one selection evaluation. */
-struct PCGUTILSFRACTURE_API FPCGUtilsGCSelectionEvaluationContext
+struct PCGUTILSFRACTURE_API FPCGUtilsGeometryCollectionSelectionEvaluationContext
 {
-	FPCGUtilsGCSelectionEvaluationContext(
+	FPCGUtilsGeometryCollectionSelectionEvaluationContext(
 		const UPCGGeometryCollectionData* InCollectionData,
 		const FGeometryCollection& InCollection)
 		: CollectionData(InCollectionData), Collection(InCollection)
@@ -61,22 +61,22 @@ struct PCGUTILSFRACTURE_API FPCGUtilsGCSelectionEvaluationContext
  * free structural check on top of our own identity/revision validation.
  */
 UCLASS(Abstract, BlueprintType, ClassGroup=(Procedural), Category="PCGUtils|Fracture|Selections")
-class PCGUTILSFRACTURE_API UPCGUtilsGCSelectionFactoryData : public UPCGUtilsGCFactoryData
+class PCGUTILSFRACTURE_API UPCGUtilsGeometryCollectionSelectionFactoryData : public UPCGUtilsGeometryCollectionFactoryData
 {
 	GENERATED_BODY()
 
 public:
-	PCG_ASSIGN_TYPE_INFO(FPCGUtilsGCSelectionFactoryDataTypeInfo)
+	PCG_ASSIGN_TYPE_INFO(FPCGUtilsGeometryCollectionSelectionFactoryDataTypeInfo)
 
 	/** Returns false (already logged) if the selection could not be resolved against this collection state. */
 	virtual bool Evaluate(
-		const FPCGUtilsGCSelectionEvaluationContext& InEvaluationContext,
+		const FPCGUtilsGeometryCollectionSelectionEvaluationContext& InEvaluationContext,
 		FPCGContext* InContext,
 		FDataflowTransformSelection& OutSelection) const
-		PURE_VIRTUAL(UPCGUtilsGCSelectionFactoryData::Evaluate, return false;);
+		PURE_VIRTUAL(UPCGUtilsGeometryCollectionSelectionFactoryData::Evaluate, return false;);
 };
 
-namespace PCGUtilsGCSelectionFactories
+namespace PCGUtilsGeometryCollectionSelectionFactories
 {
 	/** The set of PCG data types accepted anywhere a GC Selection is expected. */
 	PCGUTILSFRACTURE_API const TSet<FPCGDataTypeBaseId>& GetSelectionFactoryTypes();
@@ -90,7 +90,7 @@ namespace PCGUtilsGCSelectionFactories
 	PCGUTILSFRACTURE_API bool ResolveSelectionFromPin(
 		FPCGContext* InContext,
 		FName InPinLabel,
-		const FPCGUtilsGCSelectionEvaluationContext& InEvaluationContext,
+		const FPCGUtilsGeometryCollectionSelectionEvaluationContext& InEvaluationContext,
 		bool bRequired,
 		FDataflowTransformSelection& OutSelection,
 		bool& bOutHasSelection);

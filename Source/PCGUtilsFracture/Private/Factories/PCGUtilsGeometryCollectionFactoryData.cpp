@@ -1,7 +1,7 @@
 // Copyright Max Harris
 // Factory architecture adapted from PCGExtendedToolkit, Copyright 2026 Timothe Lapetite and contributors (MIT).
 
-#include "Factories/PCGUtilsGCFactoryData.h"
+#include "Factories/PCGUtilsGeometryCollectionFactoryData.h"
 
 #include "PCGContext.h"
 #include "Serialization/ArchiveCrc32.h"
@@ -9,9 +9,9 @@
 
 #define LOCTEXT_NAMESPACE "PCGUtilsGCFactoryData"
 
-PCG_DEFINE_TYPE_INFO(FPCGUtilsGCFactoryDataTypeInfo, UPCGUtilsGCFactoryData)
+PCG_DEFINE_TYPE_INFO(FPCGUtilsGeometryCollectionFactoryDataTypeInfo, UPCGUtilsGeometryCollectionFactoryData)
 
-void UPCGUtilsGCFactoryData::AddDataDependency(const UPCGData* InData)
+void UPCGUtilsGeometryCollectionFactoryData::AddDataDependency(const UPCGData* InData)
 {
 	if (InData)
 	{
@@ -19,7 +19,7 @@ void UPCGUtilsGCFactoryData::AddDataDependency(const UPCGData* InData)
 	}
 }
 
-void UPCGUtilsGCFactoryData::AddToCrc(FArchiveCrc32& Ar, bool bFullDataCrc) const
+void UPCGUtilsGeometryCollectionFactoryData::AddToCrc(FArchiveCrc32& Ar, bool bFullDataCrc) const
 {
 	Super::AddToCrc(Ar, bFullDataCrc);
 
@@ -44,10 +44,10 @@ void UPCGUtilsGCFactoryData::AddToCrc(FArchiveCrc32& Ar, bool bFullDataCrc) cons
 	}
 }
 
-bool PCGUtilsGCFactories::GetInputFactoriesInternal(
+bool PCGUtilsGeometryCollectionFactories::GetInputFactoriesInternal(
 	FPCGContext* InContext,
 	FName InPinLabel,
-	TArray<TObjectPtr<const UPCGUtilsGCFactoryData>>& OutFactories,
+	TArray<TObjectPtr<const UPCGUtilsGeometryCollectionFactoryData>>& OutFactories,
 	const TSet<FPCGDataTypeBaseId>& AcceptedTypes,
 	bool bRequired)
 {
@@ -71,7 +71,7 @@ bool PCGUtilsGCFactories::GetInputFactoriesInternal(
 			continue;
 		}
 
-		const UPCGUtilsGCFactoryData* Factory = Cast<UPCGUtilsGCFactoryData>(TaggedData.Data);
+		const UPCGUtilsGeometryCollectionFactoryData* Factory = Cast<UPCGUtilsGeometryCollectionFactoryData>(TaggedData.Data);
 		if (!Factory || !AcceptedTypes.Contains(Factory->GetDataTypeId()))
 		{
 			PCGLog::LogErrorOnGraph(FText::Format(
@@ -95,7 +95,7 @@ bool PCGUtilsGCFactories::GetInputFactoriesInternal(
 	}
 
 	// Stable, so equal-Priority factories keep the pin's connection order - which is the order the user sees.
-	OutFactories.StableSort([](const UPCGUtilsGCFactoryData& A, const UPCGUtilsGCFactoryData& B)
+	OutFactories.StableSort([](const UPCGUtilsGeometryCollectionFactoryData& A, const UPCGUtilsGeometryCollectionFactoryData& B)
 	{
 		return A.Priority < B.Priority;
 	});

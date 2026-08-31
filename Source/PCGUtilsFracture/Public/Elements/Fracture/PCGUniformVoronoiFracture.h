@@ -73,7 +73,7 @@ protected:
 /** Authoring node for Uniform Voronoi fracture. Emits a Fracture operation for Fracture GC to run. */
 UCLASS(BlueprintType, ClassGroup=(Procedural), Category="PCGUtils|Fracture",
 	meta=(Keywords="Uniform Voronoi Fracture Shatter Break Cells Chunks GC Geometry Collection"))
-class PCGUTILSFRACTURE_API UPCGUniformVoronoiFractureSettings : public UPCGUtilsGCFactoryProviderSettings
+class PCGUTILSFRACTURE_API UPCGUniformVoronoiFractureSettings : public UPCGUtilsGeometryCollectionFactoryProviderSettings
 {
 	GENERATED_BODY()
 
@@ -141,15 +141,15 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Noise", meta=(PCG_Overridable))
 	bool bAddSurfaceNoise = false;
 
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Noise", meta=(EditCondition="bAddSurfaceNoise"))
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Noise", meta=(PCG_Overridable,EditCondition="bAddSurfaceNoise"))
 	FPCGFractureNoiseSettings Noise;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Fracture", AdvancedDisplay, meta=(PCG_Overridable))
 	int32 Priority = 0;
 
 	virtual FName GetMainOutputPin() const override;
-	virtual UPCGUtilsGCFactoryData* CreateFactory(
-		FPCGContext* InContext, UPCGUtilsGCFactoryData* InFactory = nullptr) const override;
+	virtual UPCGUtilsGeometryCollectionFactoryData* CreateFactory(
+		FPCGContext* InContext, UPCGUtilsGeometryCollectionFactoryData* InFactory = nullptr) const override;
 
 protected:
 	virtual const FPCGDataTypeBaseId& GetFactoryTypeId() const override;

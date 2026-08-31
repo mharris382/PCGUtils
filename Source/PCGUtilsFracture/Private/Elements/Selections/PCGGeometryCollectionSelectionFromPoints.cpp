@@ -1,6 +1,6 @@
 // Copyright Max Harris
 
-#include "Elements/Selections/PCGGCSelectionFromPoints.h"
+#include "Elements/Selections/PCGGeometryCollectionSelectionFromPoints.h"
 
 #include "Data/PCGBasePointData.h"
 #include "Data/PCGGeometryCollectionData.h"
@@ -14,8 +14,8 @@
 
 #define LOCTEXT_NAMESPACE "PCGGCSelectionFromPoints"
 
-bool UPCGGCSelectionFromPointsFactoryData::Evaluate(
-	const FPCGUtilsGCSelectionEvaluationContext& InEvaluationContext,
+bool UPCGGeometryCollectionSelectionFromPointsFactoryData::Evaluate(
+	const FPCGUtilsGeometryCollectionSelectionEvaluationContext& InEvaluationContext,
 	FPCGContext* InContext,
 	FDataflowTransformSelection& OutSelection) const
 {
@@ -43,8 +43,8 @@ bool UPCGGCSelectionFromPointsFactoryData::Evaluate(
 				InContext);
 			return false;
 		}
-		TargetSourceId = PCGUtilsGCIdentity::FoldGuid(InEvaluationContext.CollectionData->GetCollectionId());
-		TargetStateId = PCGUtilsGCIdentity::FoldGuid(InEvaluationContext.CollectionData->GetStateId());
+		TargetSourceId = PCGUtilsGeometryCollectionIdentity::FoldGuid(InEvaluationContext.CollectionData->GetCollectionId());
+		TargetStateId = PCGUtilsGeometryCollectionIdentity::FoldGuid(InEvaluationContext.CollectionData->GetStateId());
 		TargetRevision = InEvaluationContext.CollectionData->GetRevision();
 	}
 
@@ -74,11 +74,11 @@ bool UPCGGCSelectionFromPointsFactoryData::Evaluate(
 		}
 
 		const FPCGMetadataAttribute<int64>* SourceIdAttr = bValidateSourceIdentity
-			? ElementsDomain->GetConstTypedAttribute<int64>(PCGUtilsGCIdentity::SourceIdAttribute) : nullptr;
+			? ElementsDomain->GetConstTypedAttribute<int64>(PCGUtilsGeometryCollectionIdentity::SourceIdAttribute) : nullptr;
 		const FPCGMetadataAttribute<int64>* StateIdAttr = bValidateSourceIdentity
-			? ElementsDomain->GetConstTypedAttribute<int64>(PCGUtilsGCIdentity::SourceStateIdAttribute) : nullptr;
+			? ElementsDomain->GetConstTypedAttribute<int64>(PCGUtilsGeometryCollectionIdentity::SourceStateIdAttribute) : nullptr;
 		const FPCGMetadataAttribute<int32>* RevisionAttr = bValidateSourceIdentity
-			? ElementsDomain->GetConstTypedAttribute<int32>(PCGUtilsGCIdentity::SourceRevisionAttribute) : nullptr;
+			? ElementsDomain->GetConstTypedAttribute<int32>(PCGUtilsGeometryCollectionIdentity::SourceRevisionAttribute) : nullptr;
 
 		if (bValidateSourceIdentity && (!SourceIdAttr || !StateIdAttr))
 		{
@@ -168,7 +168,7 @@ bool UPCGGCSelectionFromPointsFactoryData::Evaluate(
 	return true;
 }
 
-void UPCGGCSelectionFromPointsFactoryData::AddToCrc(FArchiveCrc32& Ar, bool bFullDataCrc) const
+void UPCGGeometryCollectionSelectionFromPointsFactoryData::AddToCrc(FArchiveCrc32& Ar, bool bFullDataCrc) const
 {
 	Super::AddToCrc(Ar, bFullDataCrc);
 	if (bFullDataCrc)
@@ -181,12 +181,12 @@ void UPCGGCSelectionFromPointsFactoryData::AddToCrc(FArchiveCrc32& Ar, bool bFul
 }
 
 #if WITH_EDITOR
-FText UPCGGCSelectionFromPointsSettings::GetDefaultNodeTitle() const
+FText UPCGGeometryCollectionSelectionFromPointsSettings::GetDefaultNodeTitle() const
 {
 	return LOCTEXT("Title", "Select Bones From Points");
 }
 
-FText UPCGGCSelectionFromPointsSettings::GetNodeTooltipText() const
+FText UPCGGeometryCollectionSelectionFromPointsSettings::GetNodeTooltipText() const
 {
 	return LOCTEXT("Tooltip",
 		"Builds a Geometry Collection bone selection from bone indices carried on PCG points, so the spatial "
@@ -195,36 +195,36 @@ FText UPCGGCSelectionFromPointsSettings::GetNodeTooltipText() const
 		"rejected rather than silently applied to the wrong pieces.");
 }
 
-FString UPCGGCSelectionFromPointsSettings::GetAdditionalTitleInformation() const
+FString UPCGGeometryCollectionSelectionFromPointsSettings::GetAdditionalTitleInformation() const
 {
 	return BoneIndexAttribute.ToString();
 }
 #endif
 
-FName UPCGGCSelectionFromPointsSettings::GetMainOutputPin() const
+FName UPCGGeometryCollectionSelectionFromPointsSettings::GetMainOutputPin() const
 {
-	return PCGUtilsGCSelectionFactoryConstants::OutputPin;
+	return PCGUtilsGeometryCollectionSelectionFactoryConstants::OutputPin;
 }
 
-const FPCGDataTypeBaseId& UPCGGCSelectionFromPointsSettings::GetFactoryTypeId() const
+const FPCGDataTypeBaseId& UPCGGeometryCollectionSelectionFromPointsSettings::GetFactoryTypeId() const
 {
-	return FPCGUtilsGCSelectionFactoryDataTypeInfo::AsId();
+	return FPCGUtilsGeometryCollectionSelectionFactoryDataTypeInfo::AsId();
 }
 
-TArray<FPCGPinProperties> UPCGGCSelectionFromPointsSettings::InputPinProperties() const
+TArray<FPCGPinProperties> UPCGGeometryCollectionSelectionFromPointsSettings::InputPinProperties() const
 {
 	TArray<FPCGPinProperties> Pins;
 	Pins.Emplace_GetRef(
-		PCGGCSelectionFromPointsConstants::PointsInputPin, EPCGDataType::Point, true, true).SetRequiredPin();
+		PCGGeometryCollectionSelectionFromPointsConstants::PointsInputPin, EPCGDataType::Point, true, true).SetRequiredPin();
 	return Pins;
 }
 
-UPCGUtilsGCFactoryData* UPCGGCSelectionFromPointsSettings::CreateFactory(
-	FPCGContext* InContext, UPCGUtilsGCFactoryData* InFactory) const
+UPCGUtilsGeometryCollectionFactoryData* UPCGGeometryCollectionSelectionFromPointsSettings::CreateFactory(
+	FPCGContext* InContext, UPCGUtilsGeometryCollectionFactoryData* InFactory) const
 {
 	TArray<TObjectPtr<const UPCGBasePointData>> Inputs;
 	for (const FPCGTaggedData& Input :
-		InContext->InputData.GetInputsByPin(PCGGCSelectionFromPointsConstants::PointsInputPin))
+		InContext->InputData.GetInputsByPin(PCGGeometryCollectionSelectionFromPointsConstants::PointsInputPin))
 	{
 		if (const UPCGBasePointData* Points = Cast<const UPCGBasePointData>(Input.Data))
 		{
@@ -239,9 +239,9 @@ UPCGUtilsGCFactoryData* UPCGGCSelectionFromPointsSettings::CreateFactory(
 		return nullptr;
 	}
 
-	UPCGGCSelectionFromPointsFactoryData* Factory = InFactory
-		? Cast<UPCGGCSelectionFromPointsFactoryData>(InFactory)
-		: FPCGContext::NewObject_AnyThread<UPCGGCSelectionFromPointsFactoryData>(InContext);
+	UPCGGeometryCollectionSelectionFromPointsFactoryData* Factory = InFactory
+		? Cast<UPCGGeometryCollectionSelectionFromPointsFactoryData>(InFactory)
+		: FPCGContext::NewObject_AnyThread<UPCGGeometryCollectionSelectionFromPointsFactoryData>(InContext);
 	if (!Factory)
 	{
 		return nullptr;
