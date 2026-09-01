@@ -1,73 +1,81 @@
 {
-	"FileVersion": 3,
-	"Version": 1,
-	"VersionName": "1.0",
-	"FriendlyName": "PCGUtils",
-	"Description": "",
-	"Category": "PCG",
-	"CreatedBy": "Max Harris",
-	"CreatedByURL": "",
-	"DocsURL": "",
-	"MarketplaceURL": "",
-	"SupportURL": "",
-	"CanContainContent": true,
-	"IsBetaVersion": false,
-	"EngineVersion": "5.8.0",
-	"IsExperimentalVersion": false,
-	"Installed": true,
-	"Modules": [
-		{
-			"Name": "PCGUtils",
-			"Type": "Runtime",
-			"LoadingPhase": "Default"
-		},
-		{
-			"Name": "PCGUtilsEditor",
-			"Type": "UncookedOnly",
-			"LoadingPhase": "PostEngineInit"
-		}
-		,
-		{
-			"Name": "PCGUtilsDynMesh",
-			"Type": "Runtime",
-			"LoadingPhase": "Default"
-		},
-		{
-			"Name": "PCGUtilsFracture",
-			"Type": "Runtime",
-			"LoadingPhase": "Default"
-		},
-		{
-			"Name": "PCGUtilsDataCache",
-			"Type": "Runtime",
-			"LoadingPhase": "Default"
-		},
-		{
-			"Name": "PCGUtilsMaterialCache",
-			"Type": "Runtime",
-			"LoadingPhase": "Default"
-		}
-	],
-	"Plugins": [
-		{
-			"Name": "PCG",
-			"Enabled": true
-		},
-		{
-			"Name": "GeometryScripting",
-			"Enabled": true
-		},
-		{
-			"Name": "PCGGeometryScriptInterop",
-			"Enabled": true
-		},
-		{
-			"Name": "Fracture",
-			"Enabled": true
-		},
-		{
-			"Name": "PlanarCut",
-			"Enabled": true
-		}
-	]
+    "FileVersion": 3,
+    "Version": 1,
+    "VersionName": "1.0",
+    "FriendlyName": "PCGUtils",
+    "Description": "",
+    "Category": "PCG",
+    "CreatedBy": "Max Harris",
+    "CreatedByURL": "",
+    "DocsURL": "",
+    "MarketplaceURL": "",
+    "SupportURL": "",
+    "CanContainContent": true,
+    "IsBetaVersion": false,
+    "EngineVersion": "5.8.0",
+    "IsExperimentalVersion": false,
+    "Installed": true,
+    "Modules": [
+        {
+            "Name": "PCGUtils",
+            "Type": "Runtime",
+            "LoadingPhase": "Default"
+        },
+        {
+            "Name": "PCGUtilsEditor",
+            "Type": "UncookedOnly",
+            "LoadingPhase": "PostEngineInit"
+        },
+        {
+            "Name": "PCGUtilsDynMesh",
+            "Type": "Runtime",
+            "LoadingPhase": "Default"
+        },
+        {
+            "Name": "PCGUtilsFracture",
+            "Type": "Runtime",
+            "LoadingPhase": "Default"
+        },
+        {
+            "Name": "PCGUtilsDataCache",
+            "Type": "Runtime",
+            "LoadingPhase": "Default"
+        },
+        {
+            "Name": "PCGUtilsMaterialCache",
+            "Type": "Runtime",
+            "LoadingPhase": "Default"
+        },
+        {
+            "Name": "PCGUtilsSimulation",
+            "Type": "Runtime",
+            "LoadingPhase": "Default"
+        }
+    ],
+    "Plugins": [
+        {
+            "Name": "PCG",
+            "Enabled": true
+        },
+        {
+            "Name": "GeometryScripting",
+            "Enabled": true
+        },
+        {
+            "Name": "PCGGeometryScriptInterop",
+            "Enabled": true
+        },
+        {
+            "Name": "Fracture",
+            "Enabled": true
+        },
+        {
+            "Name": "PlanarCut",
+            "Enabled": true
+        },
+        {
+            "Name": "ChaosCaching",
+            "Enabled": true
+        }
+    ]
 }
