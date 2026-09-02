@@ -25,10 +25,10 @@
 
 namespace
 {
-	const FName TargetPin = TEXT("Target");
-	const FName PainterPin = TEXT("Painter");
+	const FName StaticMeshTargetPin = TEXT("Target");
+	const FName StaticMeshPainterPin = TEXT("Painter");
 
-	EPCGUtilsDynMeshPainterColorChannel GetWriteChannels(const FGeometryScriptColorFlags& Flags)
+	EPCGUtilsDynMeshPainterColorChannel GetStaticMeshWriteChannels(const FGeometryScriptColorFlags& Flags)
 	{
 		EPCGUtilsDynMeshPainterColorChannel Channels = EPCGUtilsDynMeshPainterColorChannel::None;
 		if (Flags.bRed) Channels |= EPCGUtilsDynMeshPainterColorChannel::Red;
@@ -38,12 +38,12 @@ namespace
 		return Channels;
 	}
 
-	FORCEINLINE uint8 QuantizeUNorm(float Value)
+	FORCEINLINE uint8 QuantizeStaticMeshUNorm(float Value)
 	{
 		return static_cast<uint8>(FMath::Clamp(FMath::RoundToInt(Value * 255.0f), 0, 255));
 	}
 
-	PCGUtilsPainterStaticMeshBackend::EBaseColorMode ToBackendBaseColor(EPCGPaintStaticMeshBaseColor Mode)
+	PCGUtilsPainterStaticMeshBackend::EBaseColorMode ToStaticMeshBackendBaseColor(EPCGPaintStaticMeshBaseColor Mode)
 	{
 		using EBackend = PCGUtilsPainterStaticMeshBackend::EBaseColorMode;
 		switch (Mode)
@@ -80,8 +80,8 @@ FText UPCGPaintStaticMeshVertexColorSettings::GetNodeTooltipText() const
 TArray<FPCGPinProperties> UPCGPaintStaticMeshVertexColorSettings::InputPinProperties() const
 {
 	TArray<FPCGPinProperties> Pins;
-	Pins.Emplace_GetRef(TargetPin, EPCGDataType::Point | EPCGDataType::Param).SetRequiredPin();
-	Pins.Emplace_GetRef(PainterPin, FPCGUtilsDynMeshPainterFactoryDataTypeInfo::AsId(), false, false).SetRequiredPin();
+	Pins.Emplace_GetRef(StaticMeshTargetPin, EPCGDataType::Point | EPCGDataType::Param).SetRequiredPin();
+	Pins.Emplace_GetRef(StaticMeshPainterPin, FPCGUtilsDynMeshPainterFactoryDataTypeInfo::AsId(), false, false).SetRequiredPin();
 	return Pins;
 }
 
@@ -112,7 +112,7 @@ bool FPCGPaintStaticMeshVertexColorElement::ExecuteInternal(FPCGContext* Context
 
 	// Resolve the single Painter.
 	const UPCGUtilsDynMeshPainterFactoryData* PainterFactory = nullptr;
-	if (!PCGUtilsDynMeshPainterFactories::GetSinglePainter(Context, PainterPin, PainterFactory, /*bRequired=*/true))
+	if (!PCGUtilsDynMeshPainterFactories::GetSinglePainter(Context, StaticMeshPainterPin, PainterFactory, /*bRequired=*/true))
 	{
 		return true;
 	}
@@ -121,7 +121,7 @@ bool FPCGPaintStaticMeshVertexColorElement::ExecuteInternal(FPCGContext* Context
 	TArray<FSoftObjectPath> ComponentPaths;
 	{
 		TSet<FSoftObjectPath> Seen;
-		for (const FPCGTaggedData& Input : Context->InputData.GetInputsByPin(TargetPin))
+		for (const FPCGTaggedData& Input : Context->InputData.GetInputsByPin(StaticMeshTargetPin))
 		{
 			if (!Input.Data)
 			{
@@ -165,8 +165,8 @@ bool FPCGPaintStaticMeshVertexColorElement::ExecuteInternal(FPCGContext* Context
 		return true;
 	}
 
-	const EPCGUtilsDynMeshPainterColorChannel RequestedChannels = GetWriteChannels(Settings->WriteChannels);
-	const PCGUtilsPainterStaticMeshBackend::EBaseColorMode BaseColorMode = ToBackendBaseColor(Settings->BaseColor);
+	const EPCGUtilsDynMeshPainterColorChannel RequestedChannels = GetStaticMeshWriteChannels(Settings->WriteChannels);
+	const PCGUtilsPainterStaticMeshBackend::EBaseColorMode BaseColorMode = ToStaticMeshBackendBaseColor(Settings->BaseColor);
 
 #if WITH_EDITOR
 	const bool bUseTransactions = Context->ExecutionSource.Get()
@@ -274,7 +274,7 @@ bool FPCGPaintStaticMeshVertexColorElement::ExecuteInternal(FPCGContext* Context
 
 				Colors[Index] = Settings->bConvertToSRGB
 					? FLinearColor(Value.X, Value.Y, Value.Z, Value.W).ToFColor(/*bSRGB=*/true)
-					: FColor(QuantizeUNorm(Value.X), QuantizeUNorm(Value.Y), QuantizeUNorm(Value.Z), QuantizeUNorm(Value.W));
+					: FColor(QuantizeStaticMeshUNorm(Value.X), QuantizeStaticMeshUNorm(Value.Y), QuantizeStaticMeshUNorm(Value.Z), QuantizeStaticMeshUNorm(Value.W));
 			}
 
 			if (PCGUtilsPainterStaticMeshBackend::SetOverrideVertexColorsForLOD(Component, LODIndex, Colors))
