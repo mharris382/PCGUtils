@@ -18,7 +18,7 @@ enum class EPCGUtilsDynMeshPainterBaseColorMode : uint8
 
 /** Resolves one scalar-or-color Painter into requested DynMesh vertex-color channels. */
 UCLASS(BlueprintType, ClassGroup=(Procedural), Category="PCGUtils|DynMesh|Attributes")
-class PCGUTILSDYNMESH_API UPCGDynMeshPaintVertexColorSettings
+class PCGUTILSPAINTER_API UPCGDynMeshPaintVertexColorSettings
 	: public UPCGUtilsDynMeshProcessBaseSettings
 {
 	GENERATED_BODY()
@@ -64,12 +64,12 @@ protected:
 	virtual FPCGElementPtr CreateElement() const override;
 };
 
-class PCGUTILSDYNMESH_API FPCGDynMeshPaintVertexColorElement
+class PCGUTILSPAINTER_API FPCGDynMeshPaintVertexColorElement
 	: public FPCGUtilsDynMeshProcessBaseElement
 {
 };
 
-class PCGUTILSDYNMESH_API FPCGUtilsDynMeshPaintVertexColorOperation final
+class PCGUTILSPAINTER_API FPCGUtilsDynMeshPaintVertexColorOperation final
 	: public FPCGUtilsDynMeshProcessOperation
 {
 public:

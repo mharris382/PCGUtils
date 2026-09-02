@@ -20,7 +20,7 @@ enum class EPCGUtilsDynMeshPointsToPainterMode : uint8
 
 /** Painter backed by ordered point datasets paired one-to-one with consuming DynMesh inputs. */
 UCLASS(BlueprintType, ClassGroup=(Procedural), Category="PCGUtils|DynMesh|Painters")
-class PCGUTILSDYNMESH_API UPCGDynMeshPointsToPainterFactoryData
+class PCGUTILSPAINTER_API UPCGDynMeshPointsToPainterFactoryData
 	: public UPCGUtilsDynMeshPainterFactoryData
 {
 	GENERATED_BODY()
@@ -42,7 +42,7 @@ protected:
 
 /** Converts vertex-index-aligned PCG point datasets into a scalar or color Painter. */
 UCLASS(BlueprintType, ClassGroup=(Procedural), Category="PCGUtils|DynMesh|Painters")
-class PCGUTILSDYNMESH_API UPCGDynMeshPointsToPainterProviderSettings
+class PCGUTILSPAINTER_API UPCGDynMeshPointsToPainterProviderSettings
 	: public UPCGUtilsDynMeshFactoryProviderSettings
 {
 	GENERATED_BODY()

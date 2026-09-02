@@ -32,6 +32,13 @@ namespace
 			{
 				return false;
 			}
+			if (!InPainterContext.Mesh)
+			{
+				PCGLog::LogErrorOnGraph(
+					LOCTEXT("RequiresDynMesh", "Points to Painter can only be evaluated against a Dynamic Mesh target. It maps a per-vertex point dataset onto DynMesh vertex-iteration order and has no Static Mesh equivalent."),
+					Context);
+				return false;
+			}
 			if (InPainterContext.DataSetCount <= 0 ||
 				Factory->PointDataSets.Num() != InPainterContext.DataSetCount)
 			{
@@ -50,12 +57,12 @@ namespace
 			}
 
 			PointData = Factory->PointDataSets[InPainterContext.DataSetIndex];
-			if (!PointData || PointData->GetNumPoints() != InPainterContext.Mesh.VertexCount())
+			if (!PointData || PointData->GetNumPoints() != InPainterContext.Mesh->VertexCount())
 			{
 				PCGLog::LogErrorOnGraph(FText::Format(
 					LOCTEXT("PointCountMismatch", "Points to Painter requires one point per DynMesh vertex. DynMesh input {0} has {1} vertices but its matching point dataset has {2} points."),
 					FText::AsNumber(InPainterContext.DataSetIndex),
-					FText::AsNumber(InPainterContext.Mesh.VertexCount()),
+					FText::AsNumber(InPainterContext.Mesh->VertexCount()),
 					FText::AsNumber(PointData ? PointData->GetNumPoints() : 0)), Context);
 				return false;
 			}
@@ -73,12 +80,12 @@ namespace
 				return false;
 			}
 
-			bVertexIDsArePointIndices = InPainterContext.Mesh.IsCompactV();
+			bVertexIDsArePointIndices = InPainterContext.Mesh->IsCompactV();
 			if (!bVertexIDsArePointIndices)
 			{
-				VertexToPointIndex.Init(INDEX_NONE, InPainterContext.Mesh.MaxVertexID());
+				VertexToPointIndex.Init(INDEX_NONE, InPainterContext.Mesh->MaxVertexID());
 				int32 PointIndex = 0;
-				for (const int32 VertexID : InPainterContext.Mesh.VertexIndicesItr())
+				for (const int32 VertexID : InPainterContext.Mesh->VertexIndicesItr())
 				{
 					VertexToPointIndex[VertexID] = PointIndex++;
 				}

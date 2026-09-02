@@ -6,38 +6,57 @@
 #include "Factories/PCGUtilsDynMeshFactoryProvider.h"
 #include "Factories/PCGUtilsDynMeshPainterFactory.h"
 
-#include "PCGDynMeshCombinePainters.generated.h"
+#include "PCGDynMeshPainterMath.generated.h"
 
-/** Color Painter whose R/G/B/A components are supplied by independent child Painters. */
+UENUM(BlueprintType)
+enum class EPCGUtilsDynMeshPainterMathOperation : uint8
+{
+	Add UMETA(DisplayName="Add"),
+	Subtract UMETA(DisplayName="Subtract"),
+	Multiply UMETA(DisplayName="Multiply"),
+	Min UMETA(DisplayName="Min"),
+	Max UMETA(DisplayName="Max")
+};
+
 UCLASS(BlueprintType, ClassGroup=(Procedural), Category="PCGUtils|DynMesh|Painters")
-class PCGUTILSDYNMESH_API UPCGDynMeshCombinePaintersFactoryData
+class PCGUTILSPAINTER_API UPCGDynMeshPainterMathFactoryData
 	: public UPCGUtilsDynMeshPainterFactoryData
 {
 	GENERATED_BODY()
 
 public:
-	/** Always four entries in R/G/B/A order; null entries are unspecified output channels. */
 	UPROPERTY()
-	TArray<TObjectPtr<const UPCGUtilsDynMeshPainterFactoryData>> ChannelPainters;
+	EPCGUtilsDynMeshPainterMathOperation Operation = EPCGUtilsDynMeshPainterMathOperation::Multiply;
+
+	UPROPERTY()
+	TObjectPtr<const UPCGUtilsDynMeshPainterFactoryData> A;
+
+	UPROPERTY()
+	TObjectPtr<const UPCGUtilsDynMeshPainterFactoryData> B;
 
 protected:
 	virtual TSharedPtr<FPCGUtilsDynMeshPainterOperation> CreateOperationInternal() const override;
 	virtual void AddToCrc(FArchiveCrc32& Ar, bool bFullDataCrc) const override;
 };
 
-/** Combines up to four Painters into one channel-aware color Painter. */
+/** Composes two Painter fields without materializing intermediate PCG data. */
 UCLASS(BlueprintType, ClassGroup=(Procedural), Category="PCGUtils|DynMesh|Painters")
-class PCGUTILSDYNMESH_API UPCGDynMeshCombinePaintersProviderSettings
+class PCGUTILSPAINTER_API UPCGDynMeshPainterMathProviderSettings
 	: public UPCGUtilsDynMeshFactoryProviderSettings
 {
 	GENERATED_BODY()
 
 public:
 #if WITH_EDITOR
-	virtual FName GetDefaultNodeName() const override { return TEXT("DynMeshCombinePainters"); }
+	virtual FName GetDefaultNodeName() const override { return TEXT("DynMeshPainterMath"); }
 	virtual FText GetDefaultNodeTitle() const override;
 	virtual FText GetNodeTooltipText() const override;
+	virtual bool ShouldDrawNodeCompact() const override { return true; }
+	virtual bool ShouldShowCompactNodeTitle() const override { return true; }
 #endif
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Painter", meta=(PCG_Overridable))
+	EPCGUtilsDynMeshPainterMathOperation Operation = EPCGUtilsDynMeshPainterMathOperation::Multiply;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Painter", AdvancedDisplay, meta=(PCG_Overridable))
 	int32 Priority = 0;

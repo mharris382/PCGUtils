@@ -14,6 +14,9 @@ UPCGGetStaticMeshDataSettings::UPCGGetStaticMeshDataSettings()
 {
 	Mode = EPCGGetDataFromActorMode::ParseActorComponents;
 	ComponentSettings.bOutputActorReference = true;
+	// Emit the standard "ComponentReference" soft-object-path by default so Paint Static Mesh Vertex Colors
+	// (and any component-targeting node) works straight off this node with no attribute setup.
+	ComponentSettings.bOutputComponentReference = true;
 	bAlwaysRequeryActors = true;
 }
 

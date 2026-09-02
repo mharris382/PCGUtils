@@ -68,7 +68,7 @@ struct FPCGUtilsDynMeshPreparedPaintPoint
 
 /** A scalar field made from prepared per-point spherical or ellipsoidal brushes in PCG world space. */
 UCLASS(BlueprintType, ClassGroup=(Procedural), Category="PCGUtils|DynMesh|Painters")
-class PCGUTILSDYNMESH_API UPCGDynMeshPainterFromPointsFactoryData
+class PCGUTILSPAINTER_API UPCGDynMeshPainterFromPointsFactoryData
 	: public UPCGUtilsDynMeshPainterFactoryData
 {
 	GENERATED_BODY()
@@ -118,7 +118,7 @@ protected:
 
 /** Converts PCG points into reusable per-point spherical or ellipsoidal scalar brushes. */
 UCLASS(BlueprintType, ClassGroup=(Procedural), Category="PCGUtils|DynMesh|Painters")
-class PCGUTILSDYNMESH_API UPCGDynMeshPainterFromPointsProviderSettings
+class PCGUTILSPAINTER_API UPCGDynMeshPainterFromPointsProviderSettings
 	: public UPCGUtilsDynMeshFactoryProviderSettings
 {
 	GENERATED_BODY()

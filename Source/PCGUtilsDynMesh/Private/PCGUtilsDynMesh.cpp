@@ -7,7 +7,6 @@
 #include "Data/Registry/PCGDataTypeRegistry.h"
 #include "Data/PCGDynamicMeshSelectionData.h"
 #include "Factories/PCGUtilsDynMeshBuilderFactory.h"
-#include "Factories/PCGUtilsDynMeshPainterFactory.h"
 #include "Factories/PCGUtilsDynMeshSelectionFactory.h"
 #include "Misc/CoreDelegates.h"
 #endif
@@ -47,9 +46,8 @@ void FPCGUtilsDynMeshModule::RegisterPinColors()
 	static const FLinearColor BuilderPinColor =
 		FLinearColor::FromSRGBColor(FColor::FromHex(TEXT("D97B3FFF")));
 
-	// Violet-blue distinguishes scalar-field expressions from geometry Builders and element Selectors.
-	static const FLinearColor PainterPinColor =
-		FLinearColor::FromSRGBColor(FColor::FromHex(TEXT("9B7BFFFF")));
+	// NOTE: the Painter ("scalar/color field") pin color moved to the PCGUtilsPainter module along with
+	// the Painter feature family. See FPCGUtilsPainterModule::RegisterPinColors.
 
 	FPCGModule::GetMutableDataTypeRegistry().RegisterPinColorFunction(
 		FPCGDataTypeInfoDynamicMeshSelection::AsId(),
@@ -62,10 +60,6 @@ void FPCGUtilsDynMeshModule::RegisterPinColors()
 	FPCGModule::GetMutableDataTypeRegistry().RegisterPinColorFunction(
 		FPCGUtilsDynMeshBuilderFactoryDataTypeInfo::AsId(),
 		[](const FPCGDataTypeIdentifier&) { return BuilderPinColor; });
-
-	FPCGModule::GetMutableDataTypeRegistry().RegisterPinColorFunction(
-		FPCGUtilsDynMeshPainterFactoryDataTypeInfo::AsId(),
-		[](const FPCGDataTypeIdentifier&) { return PainterPinColor; });
 }
 
 void FPCGUtilsDynMeshModule::OnPreExit()
@@ -73,7 +67,6 @@ void FPCGUtilsDynMeshModule::OnPreExit()
 	FPCGModule::GetMutableDataTypeRegistry().UnregisterPinColorFunction(FPCGDataTypeInfoDynamicMeshSelection::AsId());
 	FPCGModule::GetMutableDataTypeRegistry().UnregisterPinColorFunction(FPCGUtilsDynMeshSelectionFactoryDataTypeInfo::AsId());
 	FPCGModule::GetMutableDataTypeRegistry().UnregisterPinColorFunction(FPCGUtilsDynMeshBuilderFactoryDataTypeInfo::AsId());
-	FPCGModule::GetMutableDataTypeRegistry().UnregisterPinColorFunction(FPCGUtilsDynMeshPainterFactoryDataTypeInfo::AsId());
 }
 #endif
 

@@ -16,7 +16,7 @@ enum class EPCGUtilsDynMeshPainterCoordinateSpace : uint8
 };
 
 UCLASS(BlueprintType, ClassGroup=(Procedural), Category="PCGUtils|DynMesh|Painters")
-class PCGUTILSDYNMESH_API UPCGDynMeshAxisGradientPainterFactoryData
+class PCGUTILSPAINTER_API UPCGDynMeshAxisGradientPainterFactoryData
 	: public UPCGUtilsDynMeshPainterFactoryData
 {
 	GENERATED_BODY()
@@ -48,7 +48,7 @@ protected:
 
 /** Creates a clamped linear scalar gradient projected along an axis. */
 UCLASS(BlueprintType, ClassGroup=(Procedural), Category="PCGUtils|DynMesh|Painters")
-class PCGUTILSDYNMESH_API UPCGDynMeshAxisGradientPainterProviderSettings
+class PCGUTILSPAINTER_API UPCGDynMeshAxisGradientPainterProviderSettings
 	: public UPCGUtilsDynMeshFactoryProviderSettings
 {
 	GENERATED_BODY()

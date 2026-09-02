@@ -218,81 +218,13 @@ future C++ renames require Core Redirects.
 
 ## Painter fields
 
-Painters are reusable field expressions. A Painter evaluates either an untargeted scalar or a color with explicit
-valid channels for a mesh sample containing DynMesh-local/world position, local/world normal, and geometric vertex
-ID. A scalar does not choose its destination channel; a consuming node decides where to broadcast it. A color does
-identify channels, so a consumer writes only the intersection of its requested channels and the channels supplied
-by the Painter.
+The Painter feature family — Axis Gradient Painter, Paint from Points, Painter Math, Combine Painters, Points to
+Painter, and the `Paint DynMesh Vertex Color` consumer — moved into its own module, **`PCGUtilsPainter`**, which
+depends on `PCGUtilsDynMesh`. See `Docs/PCGUtilsPainter.md`.
 
-V1 provides:
-
-- **Paint from Points**: prepares world-space PCG points as independently sized brushes. Point Bounds mode fits an
-  oriented ellipsoid to each point's transformed bounds, including non-uniform extents; Attribute mode reads a
-  uniform world-space radius from a normal input selector (default `Radius`). Values use a selector defaulting to
-  `$Density`. An optional inner-radius selector (default `InnerRadius`) creates a solid homothetic core, after which
-  Hard/Linear/Smooth falloff begins. Linear and Smooth falloff support a per-point power selector defaulting to
-  `$Steepness`, or a constant power. Max/Min/Add/Multiply overlap reduction is followed by the explicit `Clamp
-  Value` option, which clamps the final result to `[0,1]`.
-- **Axis Gradient Painter**: evaluates a clamped projection between Start and End along a normalized axis, in
-  either DynMesh-local or world space, with optional inversion.
-- **Painter Math**: evaluates two child Painters directly and combines them with Add, Subtract, Multiply, Min, or
-  Max. Its inputs must be scalar Painters. Nested expressions do not create intermediate point data.
-- **Combine Painters**: accepts optional `R`, `G`, `B`, and `A` Painter pins and produces one color Painter. A scalar
-  child supplies the channel represented by its pin; a color child supplies that channel only when it defines it.
-- **Points to Painter**: turns vertex-aligned PCG point datasets back into a Painter. Scalar mode reads a normal
-  input selector defaulting to `$Density`; Color mode reads one defaulting to `$Color`. Multiple point datasets
-  pair one-to-one, in order, with the DynMesh inputs evaluated by the consuming process. Every point count must
-  equal the matching mesh's full vertex count and point order must remain unchanged, even when only a vertex
-  selection will be painted.
-- **Paint DynMesh Vertex Color**: accepts one required `Painter` pin and exposes `Write Channels`. Its output pin is
-  typed as `Dynamic Mesh` (or DynMesh Selection when `Output Selection Data` is enabled), preserving direct
-  connections and context-sensitive graph search. It makes one
-  primary vertex traversal, resolves the Painter result against the requested channels once per geometric vertex,
-  and writes the final color once. A scalar is broadcast to all requested channels; a color preserves unrequested
-  or undefined channels.
-
-`Paint DynMesh Vertex Color` uses the module's actor-local DynMesh convention by default. It resolves the PCG target
-actor transform once per mesh, populates both local and world sample fields, and therefore compares Paint from
-Points' world-space brush centers against world-space mesh samples without mixing coordinate systems. Disable
-`Mesh Is Actor Local` only when incoming mesh coordinates are already world space.
-
-Color writes use shared seam-aware overlay helpers. A newly required overlay is initialized seamlessly; for an
-existing split overlay, the base color is read from an attached element and the evaluated result is written to
-every color element associated with that geometric vertex. This deliberately makes a vertex's Painter result
-consistent across color seams.
-
-The point round-trip pattern is:
-
-`DynMesh To Points -> native PCG point processing -> Points to Painter -> Painter consumer`
-
-Points to Painter retains a full one-point-per-vertex interface so point index remains aligned with DynMesh vertex
-iteration order. This costs more storage than a native Painter. Evaluation remains selection-scoped: the Painter
-consumer reads values only for selected vertices, so an inexpensive Selector can still protect high-poly meshes
-from expensive per-vertex Painter work.
-
-### Graph examples
-
-Scarlet-macaw palette coordinate:
-
-`Marker Points ($Density) -> Paint from Points (Smooth, Max) -> Paint DynMesh Vertex Color (Write Channels = R)`
-
-The material reads `VertexColor.R` as its palette/gradient lookup coordinate.
-
-Branch wind mask:
-
-`Axis Gradient Painter -> Painter Math (Multiply).A`
-
-`Paint from Points -----> Painter Math (Multiply).B -> Paint DynMesh Vertex Color (Write Channels = A)`
-
-Combined color Painter:
-
-`Paint from Points -> Combine Painters.R`
-
-`Axis Gradient ----> Combine Painters.A -> Paint DynMesh Vertex Color (Write Channels = R, A)`
-
-V1 deliberately leaves spatial acceleration, per-point radii, non-spherical brushes, curves/remapping, noise,
-splines, textures, curvature, arbitrary named attributes, GPU evaluation, and destination blend modes for later
-versions.
+`Paint DynMesh Vertex Color` and `Points to Painter` remain DynMesh-specific and still derive from
+`UPCGUtilsDynMeshProcessBaseSettings`; they simply live in the Painter module now. Class, struct and enum names
+are unchanged — Core Redirects in `Config/DefaultPCGUtils.ini` keep existing graphs loading.
 
 ## Extension checklist
 

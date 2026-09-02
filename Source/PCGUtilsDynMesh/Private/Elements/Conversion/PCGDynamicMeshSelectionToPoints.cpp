@@ -9,7 +9,6 @@
 #include "DynamicMesh/DynamicMeshAttributeSet.h"
 #include "GameFramework/Actor.h"
 #include "Metadata/PCGMetadata.h"
-#include "MeshTarget/PCGUtilsMeshTargetFunctions.h"
 #include "PCGContext.h"
 #include "PCGPin.h"
 #include "UDynamicMesh.h"
@@ -72,15 +71,15 @@ FText UPCGDynamicMeshSelectionToPointsSettings::GetDefaultNodeTitle() const
 
 FText UPCGDynamicMeshSelectionToPointsSettings::GetNodeTooltipText() const
 {
-	return LOCTEXT("Tooltip", "Converts the incoming vertex, edge, or triangle selection to vertices and outputs one PCG point for each unique selected source-mesh vertex. The source selection domain is written to the SelectionDomain @Data attribute and a readable data tag.");
+	return LOCTEXT("Tooltip", "Converts an existing Dynamic Mesh Selection's vertex, edge, or triangle elements to vertices and outputs one PCG point for each unique selected source-mesh vertex, without copying the rest of the mesh. The source selection domain is written to the SelectionDomain @Data attribute and a readable data tag.");
 }
 #endif
 
 TArray<FPCGPinProperties> UPCGDynamicMeshSelectionToPointsSettings::InputPinProperties() const
 {
-	TArray<FPCGPinProperties> Pins = Super::InputPinProperties();
-	Pins[0] = FPCGUtilsMeshTargetFunctions::MakeMeshInputPinProperties(SelectionToPointsInputPin);
-	Pins[0].SetRequiredPin();
+	TArray<FPCGPinProperties> Pins;
+	Pins.Emplace_GetRef(SelectionToPointsInputPin,
+		FPCGDataTypeIdentifier(UPCGDynamicMeshSelectionData::StaticClass()), true, true).SetRequiredPin();
 	return Pins;
 }
 
@@ -103,14 +102,13 @@ bool FPCGDynamicMeshSelectionToPointsElement::ExecuteInternal(FPCGContext* Conte
 
 	for (const FPCGTaggedData& Input : Context->InputData.GetInputsByPin(SelectionToPointsInputPin))
 	{
-		const FPCGUtilsDynMeshResolvedInput ResolvedInput =
-			FPCGUtilsDynMeshProcessFunctions::ResolveInput(Input.Data, Settings, Context);
-		if (!ResolvedInput.IsValid())
+		const UPCGDynamicMeshSelectionData* SelectionData = Cast<const UPCGDynamicMeshSelectionData>(Input.Data);
+		if (!SelectionData)
 		{
+			PCGLog::LogWarningOnGraph(LOCTEXT("BadInput", "Dynamic Mesh Selection To Points: input is not Dynamic Mesh Selection data, skipping."), Context);
 			continue;
 		}
-		const UPCGDynamicMeshSelectionData* SelectionData = ResolvedInput.SelectionData;
-		const UPCGDynamicMeshData* MeshData = ResolvedInput.MeshData;
+		const UPCGDynamicMeshData* MeshData = SelectionData->GetSourceMeshData();
 		const UDynamicMesh* DynamicMesh = MeshData ? MeshData->GetDynamicMesh() : nullptr;
 		const UE::Geometry::FDynamicMesh3* Mesh = DynamicMesh ? DynamicMesh->GetMeshPtr() : nullptr;
 		if (!Mesh)
@@ -193,6 +191,30 @@ bool FPCGDynamicMeshSelectionToPointsElement::ExecuteInternal(FPCGContext* Conte
 			Densities[Index] = 1.0f;
 			BoundsMin[Index] = FVector::ZeroVector;
 			BoundsMax[Index] = FVector::ZeroVector;
+		}
+
+		if (Settings->bOutputVertexIndex)
+		{
+			if (Settings->VertexIndexAttribute.IsNone())
+			{
+				PCGLog::LogWarningOnGraph(LOCTEXT("EmptyVertexIndexAttribute", "Dynamic Mesh Selection To Points cannot output an unnamed Vertex Index attribute."), Context);
+			}
+			else if (UPCGMetadata* Metadata = OutputData->MutableMetadata())
+			{
+				FPCGMetadataDomain* ElementsDomain = Metadata->GetMetadataDomain(PCGMetadataDomainID::Elements);
+				FPCGMetadataAttribute<int32>* VertexIndexAttribute = ElementsDomain
+					? ElementsDomain->FindOrCreateAttribute<int32>(Settings->VertexIndexAttribute, INDEX_NONE, false, true)
+					: nullptr;
+				if (VertexIndexAttribute)
+				{
+					auto MetadataEntries = OutputData->GetMetadataEntryValueRange();
+					for (int32 Index = 0; Index < SelectedVertices.Num(); ++Index)
+					{
+						ElementsDomain->InitializeOnSet(MetadataEntries[Index]);
+						VertexIndexAttribute->SetValue(MetadataEntries[Index], SelectedVertices[Index]);
+					}
+				}
+			}
 		}
 
 		const UE::Geometry::EGeometryElementType SelectionElementType =

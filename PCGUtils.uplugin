@@ -32,6 +32,11 @@
             "LoadingPhase": "Default"
         },
         {
+            "Name": "PCGUtilsPainter",
+            "Type": "Runtime",
+            "LoadingPhase": "Default"
+        },
+        {
             "Name": "PCGUtilsFracture",
             "Type": "Runtime",
             "LoadingPhase": "Default"

@@ -39,7 +39,7 @@ enum class EPCGUtilsDynMeshPainterColorChannel : uint8
 ENUM_CLASS_FLAGS(EPCGUtilsDynMeshPainterColorChannel)
 
 /** A Painter result is either an untargeted scalar or a color with explicit valid channels. */
-struct PCGUTILSDYNMESH_API FPCGUtilsDynMeshPainterValue
+struct PCGUTILSPAINTER_API FPCGUtilsDynMeshPainterValue
 {
 	EPCGUtilsDynMeshPainterValueType Type = EPCGUtilsDynMeshPainterValueType::Scalar;
 	float Scalar = 0.0f;
@@ -74,14 +74,14 @@ namespace PCGUtilsDynMeshPainters
 	 * colors write only the intersection of requested and explicitly valid color channels.
 	 * Returns the channels actually written.
 	 */
-	PCGUTILSDYNMESH_API EPCGUtilsDynMeshPainterColorChannel ResolveValueToColor(
+	PCGUTILSPAINTER_API EPCGUtilsDynMeshPainterColorChannel ResolveValueToColor(
 		const FPCGUtilsDynMeshPainterValue& Value,
 		EPCGUtilsDynMeshPainterColorChannel RequestedChannels,
 		FVector4f& InOutColor);
 }
 
 /** One destination-agnostic field sample on a DynMesh. */
-struct PCGUTILSDYNMESH_API FPCGUtilsDynMeshPainterSample
+struct PCGUTILSPAINTER_API FPCGUtilsDynMeshPainterSample
 {
 	FVector LocalPosition = FVector::ZeroVector;
 	FVector WorldPosition = FVector::ZeroVector;
@@ -90,22 +90,40 @@ struct PCGUTILSDYNMESH_API FPCGUtilsDynMeshPainterSample
 	int32 VertexID = INDEX_NONE;
 };
 
-/** Read-only mesh state shared by a complete Painter expression tree. */
-struct PCGUTILSDYNMESH_API FPCGUtilsDynMeshPainterEvaluationContext
+/**
+ * Read-only state shared by a complete Painter expression tree.
+ *
+ * The Painter evaluation API is geometry-agnostic: `FPCGUtilsDynMeshPainterOperation::Evaluate` consumes only a
+ * `FPCGUtilsDynMeshPainterSample`. Some providers (Points to Painter) additionally need the DynMesh vertex set at
+ * `Initialize` time; for those a DynMesh-targeted context is built. A geometry-agnostic consumer (Static Mesh
+ * render-vertex traversal) builds the mesh-less context, and a DynMesh-only Painter must fail in `Initialize`.
+ */
+struct PCGUTILSPAINTER_API FPCGUtilsDynMeshPainterEvaluationContext
 {
+	/** DynMesh-targeted context. */
 	FPCGUtilsDynMeshPainterEvaluationContext(
 		const UPCGDynamicMeshData* InMeshData,
 		const UE::Geometry::FDynamicMesh3& InMesh,
 		const FTransform& InLocalToWorld,
 		int32 InDataSetIndex = 0,
 		int32 InDataSetCount = 1)
-		: MeshData(InMeshData), Mesh(InMesh), LocalToWorld(InLocalToWorld),
+		: MeshData(InMeshData), Mesh(&InMesh), LocalToWorld(InLocalToWorld),
+		  DataSetIndex(InDataSetIndex), DataSetCount(InDataSetCount)
+	{
+	}
+
+	/** Geometry-agnostic context. `Mesh` / `MeshData` stay null; DynMesh-only Painters must reject it. */
+	explicit FPCGUtilsDynMeshPainterEvaluationContext(
+		const FTransform& InLocalToWorld,
+		int32 InDataSetIndex = 0,
+		int32 InDataSetCount = 1)
+		: LocalToWorld(InLocalToWorld),
 		  DataSetIndex(InDataSetIndex), DataSetCount(InDataSetCount)
 	{
 	}
 
 	const UPCGDynamicMeshData* MeshData = nullptr;
-	const UE::Geometry::FDynamicMesh3& Mesh;
+	const UE::Geometry::FDynamicMesh3* Mesh = nullptr;
 	FTransform LocalToWorld = FTransform::Identity;
 	/** Pairing coordinates for Painters backed by ordered per-DynMesh external datasets. */
 	int32 DataSetIndex = 0;
@@ -117,14 +135,14 @@ struct FPCGUtilsDynMeshPainterFactoryDataTypeInfo : public FPCGUtilsDynMeshFacto
 {
 	GENERATED_BODY()
 
-	PCG_DECLARE_TYPE_INFO(PCGUTILSDYNMESH_API);
+	PCG_DECLARE_TYPE_INFO(PCGUTILSPAINTER_API);
 };
 
 class FPCGUtilsDynMeshPainterOperation;
 
 /** Immutable scalar/color field configuration transported through PCG pins. */
 UCLASS(Abstract, BlueprintType, ClassGroup=(Procedural), Category="PCGUtils|DynMesh|Painters")
-class PCGUTILSDYNMESH_API UPCGUtilsDynMeshPainterFactoryData : public UPCGUtilsDynMeshFactoryData
+class PCGUTILSPAINTER_API UPCGUtilsDynMeshPainterFactoryData : public UPCGUtilsDynMeshFactoryData
 {
 	GENERATED_BODY()
 
@@ -139,7 +157,7 @@ protected:
 };
 
 /** Runtime scalar-or-color field evaluated for mesh samples by a Painter consumer. */
-class PCGUTILSDYNMESH_API FPCGUtilsDynMeshPainterOperation : public FPCGUtilsDynMeshOperation
+class PCGUTILSPAINTER_API FPCGUtilsDynMeshPainterOperation : public FPCGUtilsDynMeshOperation
 {
 public:
 	virtual bool Initialize(const FPCGUtilsDynMeshPainterEvaluationContext& InPainterContext);
@@ -153,13 +171,13 @@ protected:
 
 namespace PCGUtilsDynMeshFactories
 {
-	PCGUTILSDYNMESH_API const TSet<FPCGDataTypeBaseId>& GetPainterFactoryTypes();
+	PCGUTILSPAINTER_API const TSet<FPCGDataTypeBaseId>& GetPainterFactoryTypes();
 }
 
 namespace PCGUtilsDynMeshPainterFactories
 {
 	/** Resolves zero or one Painter from a pin; required pins report a graph error when empty. */
-	PCGUTILSDYNMESH_API bool GetSinglePainter(
+	PCGUTILSPAINTER_API bool GetSinglePainter(
 		FPCGContext* Context,
 		FName PinLabel,
 		const UPCGUtilsDynMeshPainterFactoryData*& OutPainter,
