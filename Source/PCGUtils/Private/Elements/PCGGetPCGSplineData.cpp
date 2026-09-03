@@ -62,7 +62,7 @@ void FPCGGetPCGSplineDataElement::ProcessActor(
 			continue;
 		}
 		UPCGSplineComponent* Comp = Cast<UPCGSplineComponent>(SplineComponent);
-		if (!Comp)
+		if (!Comp || !ShouldProcessSplineComponent(Comp))
 		{
 			continue;
 		}
@@ -72,9 +72,16 @@ void FPCGGetPCGSplineDataElement::ProcessActor(
 		
 		if (SplineData->Metadata)
 		{
-			if (FPCGMetadataAttribute<bool>* IsClosedAttribute =
+			if (GetSettings->IsClosedAttributeName.IsNone())
+			{
+				PCGE_LOG(Error, GraphAndLog, FText::Format(
+					LOCTEXT("EmptyIsClosedAttributeName",
+						"Get PCG Spline Data could not write the closed-state metadata for component {0}: IsClosedAttributeName is None; expected a nonempty @Data Bool attribute name."),
+					FText::FromString(GetNameSafe(Comp))));
+			}
+			else if (FPCGMetadataAttribute<bool>* IsClosedAttribute =
 					SplineData->Metadata->FindOrCreateAttribute<bool>(
-						FPCGAttributeIdentifier(FName("IsClosed"), PCGMetadataDomainID::Data),
+						FPCGAttributeIdentifier(GetSettings->IsClosedAttributeName, PCGMetadataDomainID::Data),
 						SplineComponent->IsClosedLoop(),false,false,true))
 			{
 				IsClosedAttribute->SetValue(PCGInvalidEntryKey, SplineComponent->IsClosedLoop());
@@ -85,6 +92,7 @@ void FPCGGetPCGSplineDataElement::ProcessActor(
 				SplineData->Metadata, &GetSettings->PathSettings, &Comp->PathData);
 			UPCGUtilPathDataLibrary::GetComponentDataFromSettings(
 				SplineData->Metadata, &GetSettings->ComponentSettings, Comp);
+			WriteAdditionalSplineMetadata(Context, GetSettings, Comp, SplineData);
 		}
 
 		FPCGTaggedData& TaggedData = Context->OutputData.TaggedData.Emplace_GetRef();
@@ -92,6 +100,19 @@ void FPCGGetPCGSplineDataElement::ProcessActor(
 		Algo::Transform(SplineComponent->ComponentTags, TaggedData.Tags, NameTagsToStringTags);
 		TaggedData.Tags.Append(ActorTags);
 	}
+}
+
+bool FPCGGetPCGSplineDataElement::ShouldProcessSplineComponent(const UPCGSplineComponent* Component) const
+{
+	return Component != nullptr;
+}
+
+void FPCGGetPCGSplineDataElement::WriteAdditionalSplineMetadata(
+	FPCGContext* Context,
+	const UPCGGetPCGSplineDataSettings* Settings,
+	const UPCGSplineComponent* Component,
+	UPCGSplineData* SplineData) const
+{
 }
 
 #undef LOCTEXT_NAMESPACE

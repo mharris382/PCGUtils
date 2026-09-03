@@ -19,7 +19,7 @@
         {
             "Name": "PCGUtils",
             "Type": "Runtime",
-            "LoadingPhase": "Default"
+            "LoadingPhase": "PreDefault"
         },
         {
             "Name": "PCGUtilsEditor",
@@ -29,32 +29,32 @@
         {
             "Name": "PCGUtilsDynMesh",
             "Type": "Runtime",
-            "LoadingPhase": "Default"
+            "LoadingPhase": "PreDefault"
         },
         {
             "Name": "PCGUtilsPainter",
             "Type": "Runtime",
-            "LoadingPhase": "Default"
+            "LoadingPhase": "PreDefault"
         },
         {
             "Name": "PCGUtilsFracture",
             "Type": "Runtime",
-            "LoadingPhase": "Default"
+            "LoadingPhase": "PreDefault"
         },
         {
             "Name": "PCGUtilsDataCache",
             "Type": "Runtime",
-            "LoadingPhase": "Default"
+            "LoadingPhase": "PreDefault"
         },
         {
             "Name": "PCGUtilsMaterialCache",
             "Type": "Runtime",
-            "LoadingPhase": "Default"
+            "LoadingPhase": "PreDefault"
         },
         {
             "Name": "PCGUtilsSimulation",
             "Type": "Runtime",
-            "LoadingPhase": "Default"
+            "LoadingPhase": "PreDefault"
         }
     ],
     "Plugins": [
