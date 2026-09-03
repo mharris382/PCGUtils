@@ -27,14 +27,33 @@ namespace
 				return false;
 			}
 
-			ChildOperations.Reserve(Factory->ChildFactories.Num());
+			if (Factory->ChildFactories.IsEmpty() ||
+				(Factory->Mode == EPCGUtilsDynMeshSelectionFactoryGroupMode::Not && Factory->ChildFactories.Num() != 1))
+			{
+				return false;
+			}
+
+			TArray<TObjectPtr<const UPCGUtilsDynMeshSelectionFactoryData>> OrderedChildFactories;
+			OrderedChildFactories.Reserve(Factory->ChildFactories.Num());
 			for (const UPCGUtilsDynMeshSelectionFactoryData* ChildFactory : Factory->ChildFactories)
 			{
 				if (!ChildFactory)
 				{
 					return false;
 				}
+				OrderedChildFactories.Add(ChildFactory);
+			}
 
+			// Groups use priority as short-circuit precedence. Keep equal-priority selectors in connection order.
+			OrderedChildFactories.StableSort([](const UPCGUtilsDynMeshSelectionFactoryData& A,
+				const UPCGUtilsDynMeshSelectionFactoryData& B)
+			{
+				return A.Priority > B.Priority;
+			});
+
+			ChildOperations.Reserve(OrderedChildFactories.Num());
+			for (const UPCGUtilsDynMeshSelectionFactoryData* ChildFactory : OrderedChildFactories)
+			{
 				TSharedPtr<FPCGUtilsDynMeshSelectionOperation> ChildOperation = ChildFactory->CreateOperation(Context);
 				if (!ChildOperation || !ChildOperation->Initialize(InSelectionContext))
 				{
@@ -43,8 +62,7 @@ namespace
 				ChildOperations.Add(MoveTemp(ChildOperation));
 			}
 
-			return !ChildOperations.IsEmpty() &&
-				(Factory->Mode != EPCGUtilsDynMeshSelectionFactoryGroupMode::Not || ChildOperations.Num() == 1);
+			return true;
 		}
 
 		virtual bool TestElement(int32 ElementID) const override
@@ -146,7 +164,8 @@ FText UPCGDynMeshSelectionFactoryGroupProviderSettings::GetDefaultNodeTitle() co
 
 FText UPCGDynMeshSelectionFactoryGroupProviderSettings::GetNodeTooltipText() const
 {
-	return LOCTEXT("Tooltip", "Combines child DynMesh selectors into a nested AND, OR, or NOT predicate.");
+	return LOCTEXT("Tooltip", "Combines child DynMesh selectors into a nested AND, OR, or NOT predicate. "
+		"Higher-priority selectors evaluate first; AND and OR stop evaluating an element as soon as its result is known.");
 }
 
 TArray<FText> UPCGDynMeshSelectionFactoryGroupProviderSettings::GetNodeTitleAliases() const

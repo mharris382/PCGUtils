@@ -184,6 +184,11 @@ switch provides two graph forms from the same element:
 Expand Selection, Contract Selection, Select Connected, and Select Boundary follow this contract. Older
 standalone/provider duplicates remain loadable only for graph compatibility and are deprecated.
 
+Selection Logic groups evaluate their child Selectors from highest to lowest **Priority**, preserving connection
+order between equal priorities. AND stops testing an element after the first child excludes it; OR stops after the
+first child includes it. Put cheap or highly selective predicates at a higher priority to avoid lower-priority work.
+NOT has exactly one child, so priority only matters when that NOT group is nested inside another group.
+
 ### Preparation and restoration
 
 - `Region` extracts the selected triangle region. Use it when the operation may change topology and can safely be

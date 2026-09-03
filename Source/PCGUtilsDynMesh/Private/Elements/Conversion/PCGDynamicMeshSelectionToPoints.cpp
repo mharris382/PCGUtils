@@ -210,6 +210,7 @@ bool FPCGDynamicMeshSelectionToPointsElement::ExecuteInternal(FPCGContext* Conte
 					auto MetadataEntries = OutputData->GetMetadataEntryValueRange();
 					for (int32 Index = 0; Index < SelectedVertices.Num(); ++Index)
 					{
+						MetadataEntries[Index] = PCGInvalidEntryKey;
 						ElementsDomain->InitializeOnSet(MetadataEntries[Index]);
 						VertexIndexAttribute->SetValue(MetadataEntries[Index], SelectedVertices[Index]);
 					}

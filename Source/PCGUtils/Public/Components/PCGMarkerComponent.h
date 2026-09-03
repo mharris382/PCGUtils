@@ -77,6 +77,10 @@ public:
 	
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category=  "Marker|Editor", meta = (DisplayName="Use Point Color As Fill Color", ToolTip="When Point Data has Set Point Color enabled, use that color for the editor fill."))
 	bool bUsePointColorAsEditorColor = true;
+
+	/** Draw this marker as an ellipsoid fitted to its bounds instead of a box. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Marker|Editor", meta=(DisplayName="Draw As Ellipsoid"))
+	bool bDrawAsEllipsoid = false;
 	
 #endif
 

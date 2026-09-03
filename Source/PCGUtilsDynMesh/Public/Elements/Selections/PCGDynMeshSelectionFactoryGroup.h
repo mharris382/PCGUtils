@@ -60,6 +60,7 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Selection", meta=(PCG_Overridable))
 	EPCGUtilsDynMeshSelectionFactoryGroupMode Mode = EPCGUtilsDynMeshSelectionFactoryGroupMode::And;
 
+	/** Evaluation priority when this group is nested. Higher values are evaluated first. */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Selection", AdvancedDisplay, meta=(PCG_Overridable))
 	int32 Priority = 0;
 

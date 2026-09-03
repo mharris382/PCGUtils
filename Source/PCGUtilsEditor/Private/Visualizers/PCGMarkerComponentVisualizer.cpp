@@ -41,6 +41,17 @@ namespace
 			? MarkerComp.bDrawSelectedAsWireframe
 			: MarkerComp.bDrawUnselectedAsWireframe;
 	}
+
+	FTransform MakeMarkerEllipsoidTransform(
+		const FTransform& ComponentTransform,
+		const FVector& LocalCenter,
+		const FVector& LocalExtent)
+	{
+		return FTransform(
+			ComponentTransform.GetRotation(),
+			ComponentTransform.TransformPosition(LocalCenter),
+			ComponentTransform.GetScale3D() * LocalExtent);
+	}
 }
 
 void FPCGMarkerComponentVisualizer::DrawVisualization(
@@ -78,29 +89,74 @@ void FPCGMarkerComponentVisualizer::DrawVisualization(
 	{
 		const FVector LocalCenter = LocalBox.GetCenter();
 		const FVector LocalExtent = LocalBox.GetExtent();
-		const FTransform BoxTransform(
-			ComponentTransform.GetRotation(),
-			ComponentTransform.TransformPosition(LocalCenter),
-			ComponentTransform.GetScale3D());
-
 		FDynamicColoredMaterialRenderProxy* MaterialProxy =
 			new FDynamicColoredMaterialRenderProxy(EditedMaterial->GetRenderProxy(), FillColor);
 		PDI->RegisterDynamicResource(MaterialProxy);
-		DrawBox(PDI, BoxTransform.ToMatrixWithScale(), LocalExtent, MaterialProxy, SDPG_World);
+
+		if (MarkerComp->bDrawAsEllipsoid)
+		{
+			const FVector WorldRadii = LocalExtent * ComponentTransform.GetScale3D().GetAbs();
+			DrawSphere(
+				PDI,
+				ComponentTransform.TransformPosition(LocalCenter),
+				ComponentTransform.Rotator(),
+				WorldRadii,
+				32,
+				16,
+				MaterialProxy,
+				SDPG_World);
+		}
+		else
+		{
+			const FTransform BoxTransform(
+				ComponentTransform.GetRotation(),
+				ComponentTransform.TransformPosition(LocalCenter),
+				ComponentTransform.GetScale3D());
+			DrawBox(PDI, BoxTransform.ToMatrixWithScale(), LocalExtent, MaterialProxy, SDPG_World);
+		}
 	}
 
-	DrawWireBox(PDI, ComponentTransform.ToMatrixWithScale(), LocalBox, LineColor, SDPG_Foreground, bSelected ? 2.0f : 1.0f);
+	if (MarkerComp->bDrawAsEllipsoid)
+	{
+		DrawWireSphere(
+			PDI,
+			MakeMarkerEllipsoidTransform(ComponentTransform, LocalBox.GetCenter(), LocalBox.GetExtent()),
+			LineColor,
+			1.0,
+			32,
+			SDPG_Foreground,
+			bSelected ? 2.0f : 1.0f);
+	}
+	else
+	{
+		DrawWireBox(PDI, ComponentTransform.ToMatrixWithScale(), LocalBox, LineColor,
+			SDPG_Foreground, bSelected ? 2.0f : 1.0f);
+	}
 
 	const float Steepness = FMath::Clamp(MarkerComp->PointData.Steepness, 0.0f, 1.0f);
 	if (Steepness < 1.0f - KINDA_SMALL_NUMBER)
 	{
 		const FVector SoftCoreExtent = LocalBox.GetExtent() * Steepness;
-		const FVector SoftCoreCenter = LocalBox.GetCenter();
-		const FBox SoftCoreBox(SoftCoreCenter - SoftCoreExtent, SoftCoreCenter + SoftCoreExtent);
 		FLinearColor SoftCoreColor = LineColor;
 		SoftCoreColor.A = FMath::Clamp(LineColor.A * 0.35f, 0.05f, 0.35f);
-		DrawWireBox(PDI, ComponentTransform.ToMatrixWithScale(), SoftCoreBox,
-			SoftCoreColor, SDPG_Foreground, 0.75f);
+		if (MarkerComp->bDrawAsEllipsoid)
+		{
+			DrawWireSphere(
+				PDI,
+				MakeMarkerEllipsoidTransform(ComponentTransform, LocalBox.GetCenter(), SoftCoreExtent),
+				SoftCoreColor,
+				1.0,
+				32,
+				SDPG_Foreground,
+				0.75f);
+		}
+		else
+		{
+			const FVector SoftCoreCenter = LocalBox.GetCenter();
+			const FBox SoftCoreBox(SoftCoreCenter - SoftCoreExtent, SoftCoreCenter + SoftCoreExtent);
+			DrawWireBox(PDI, ComponentTransform.ToMatrixWithScale(), SoftCoreBox,
+				SoftCoreColor, SDPG_Foreground, 0.75f);
+		}
 	}
 
 	PDI->SetHitProxy(nullptr);

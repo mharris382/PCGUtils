@@ -85,6 +85,12 @@ The one permitted exception is an attribute that forms a hard contract with anot
 makes the data useless to its intended consumer. Such an attribute may be written unconditionally, but its name
 must still be exposed so it can be matched against the consuming node. Say so in the property comment.
 
+**3. Never expose uninitialized point metadata keys.** When `UPCGPointArrayData::SetNumPoints(..., false)` is
+followed by a mutable metadata-entry range, set every new entry to `PCGInvalidEntryKey` before calling
+`InitializeOnSet()`, or initialize point values when sizing the array. `InitializeOnSet()` does not repair an
+arbitrary nonnegative value left by uninitialized storage, which can produce unreadable attributes and the graph
+warning that an output does not have valid point metadata.
+
 ## Validation
 
 Build the affected Unreal target after C++ changes. Inspect graph pins for process nodes: the primary input must
