@@ -18,7 +18,18 @@ DEFINE_LOG_CATEGORY(LogPCGUtilsDynMesh);
 void FPCGUtilsDynMeshModule::StartupModule()
 {
 #if WITH_EDITOR
-	RegisterPinColors();
+	if (FPCGModule::IsPCGModuleLoaded())
+	{
+		RegisterPinColors();
+	}
+	else
+	{
+		// This module loads in PreDefault so its asset-serialized UClasses exist before
+		// restored PCG graphs. The PCG registry itself is initialized in PCG's Default-
+		// phase StartupModule, so registry customization must wait for ModuleLoaded.
+		FModuleManager::Get().OnModulesChanged().AddRaw(
+			this, &FPCGUtilsDynMeshModule::OnModulesChanged);
+	}
 
 	// The registry lives in the PCG module; register cleanup on PreExit (as PCGEditor does)
 	// rather than in ShutdownModule, since module shutdown order is not guaranteed here.
@@ -29,6 +40,7 @@ void FPCGUtilsDynMeshModule::StartupModule()
 void FPCGUtilsDynMeshModule::ShutdownModule()
 {
 #if WITH_EDITOR
+	FModuleManager::Get().OnModulesChanged().RemoveAll(this);
 	FCoreDelegates::OnPreExit.RemoveAll(this);
 #endif
 }
@@ -36,6 +48,11 @@ void FPCGUtilsDynMeshModule::ShutdownModule()
 #if WITH_EDITOR
 void FPCGUtilsDynMeshModule::RegisterPinColors()
 {
+	if (bPinColorsRegistered)
+	{
+		return;
+	}
+
 	// Blender-inspired selection yellow. Convert from the authored sRGB hex value so Slate receives
 	// the correct linear color, and share it across materialized selections and selection factories.
 	static const FLinearColor DynamicMeshSelectionPinColor =
@@ -60,13 +77,30 @@ void FPCGUtilsDynMeshModule::RegisterPinColors()
 	FPCGModule::GetMutableDataTypeRegistry().RegisterPinColorFunction(
 		FPCGUtilsDynMeshBuilderFactoryDataTypeInfo::AsId(),
 		[](const FPCGDataTypeIdentifier&) { return BuilderPinColor; });
+
+	bPinColorsRegistered = true;
+}
+
+void FPCGUtilsDynMeshModule::OnModulesChanged(FName ModuleName, EModuleChangeReason ChangeReason)
+{
+	if (ModuleName == FName(TEXT("PCG")) && ChangeReason == EModuleChangeReason::ModuleLoaded)
+	{
+		RegisterPinColors();
+		FModuleManager::Get().OnModulesChanged().RemoveAll(this);
+	}
 }
 
 void FPCGUtilsDynMeshModule::OnPreExit()
 {
+	if (!bPinColorsRegistered || !FPCGModule::IsPCGModuleLoaded())
+	{
+		return;
+	}
+
 	FPCGModule::GetMutableDataTypeRegistry().UnregisterPinColorFunction(FPCGDataTypeInfoDynamicMeshSelection::AsId());
 	FPCGModule::GetMutableDataTypeRegistry().UnregisterPinColorFunction(FPCGUtilsDynMeshSelectionFactoryDataTypeInfo::AsId());
 	FPCGModule::GetMutableDataTypeRegistry().UnregisterPinColorFunction(FPCGUtilsDynMeshBuilderFactoryDataTypeInfo::AsId());
+	bPinColorsRegistered = false;
 }
 #endif
 
