@@ -5,11 +5,12 @@
 #include "Data/PCGDynamicMeshData.h"
 #include "Data/PCGDynamicMeshSelectionData.h"
 #include "DynamicMesh/DynamicMesh3.h"
-#include "DynamicMesh/PCGUtilsDynMeshAttributeHelpers.h"
 #include "Elements/PCGUtilsDynMeshSpaceHelpers.h"
 #include "PCGContext.h"
 #include "PCGPin.h"
 #include "Selections/GeometrySelection.h"
+#include "Target/PCGUtilsPainterDynMeshTarget.h"
+#include "Target/PCGUtilsPainterTarget.h"
 #include "UDynamicMesh.h"
 #include "Utils/PCGLogErrors.h"
 
@@ -118,36 +119,15 @@ bool FPCGUtilsDynMeshPaintVertexColorOperation::Execute(
 
 	OutOutcome.SelectionOutcome = EPCGUtilsDynMeshProcessSelectionOutcome::Preserve;
 
-	const FVector4f ConstantColor(
-		ConstantBaseColor.R, ConstantBaseColor.G, ConstantBaseColor.B, ConstantBaseColor.A);
-	UE::Geometry::FDynamicMeshColorOverlay* ColorOverlay =
-		PCGUtilsDynMeshAttributeHelpers::EnsurePrimaryColorOverlay(*Mesh, ConstantColor);
-	if (!ColorOverlay)
-	{
-		PCGLog::LogErrorOnGraph(
-			LOCTEXT("ColorOverlayFailure", "Paint DynMesh Vertex Color could not initialize the primary color overlay."),
-			Invocation.Context);
-		return false;
-	}
-
 	const FTransform LocalToWorld = PCGUtilsDynMeshSpaceHelpers::ResolveMeshActorTransform(
 		Invocation.Context,
 		Invocation.SourceMeshData ? Invocation.SourceMeshData : MeshData,
 		bMeshIsActorLocal);
-	const FPCGUtilsDynMeshPainterEvaluationContext PainterContext(
-		MeshData, *Mesh, LocalToWorld, Invocation.InputIndex, Invocation.InputCount);
 
-	TSharedPtr<FPCGUtilsDynMeshPainterOperation> PainterOperation =
-		Painter ? Painter->CreateOperation(Invocation.Context) : nullptr;
-	if (!PainterOperation || !PainterOperation->Initialize(PainterContext))
-	{
-		PCGLog::LogErrorOnGraph(
-			LOCTEXT("PainterInitializationFailure", "Paint DynMesh Vertex Color could not initialize its Painter."),
-			Invocation.Context);
-		return false;
-	}
-	const EPCGUtilsDynMeshPainterColorChannel RequestedChannels =
-		GetWriteChannels(WriteChannels);
+	// A native Dynamic Mesh target: the canonical mesh IS the input mesh, evaluation writes in place, Commit
+	// is a no-op. Routing through the shared target layer keeps this node on exactly the same write path as
+	// every other Painter consumer.
+	FPCGUtilsPainterDynMeshTarget Target(MeshData, LocalToWorld, Invocation.InputIndex, Invocation.InputCount);
 
 	TSet<int32> SelectedVertices;
 	if (Invocation.SelectionData)
@@ -158,34 +138,22 @@ bool FPCGUtilsDynMeshPaintVertexColorOperation::Execute(
 		}
 	}
 
-	for (const int32 VertexID : Mesh->VertexIndicesItr())
+	FPCGUtilsPainterGraphEvaluation Evaluation;
+	Evaluation.Painter = Painter;
+	Evaluation.WriteChannels = GetWriteChannels(WriteChannels);
+	Evaluation.BaseColorSource = (BaseColorMode == EPCGUtilsDynMeshPainterBaseColorMode::Existing)
+		? EPCGUtilsPainterBaseColorSource::CanonicalExisting
+		: EPCGUtilsPainterBaseColorSource::Constant;
+	Evaluation.ConstantBaseColor =
+		FVector4f(ConstantBaseColor.R, ConstantBaseColor.G, ConstantBaseColor.B, ConstantBaseColor.A);
+	Evaluation.SelectedVertexIDs = Invocation.SelectionData ? &SelectedVertices : nullptr;
+
+	if (!PCGUtilsPainter::EvaluatePainterGraphOntoTarget(Target, Evaluation, Invocation.Context))
 	{
-		if (Invocation.SelectionData && !SelectedVertices.Contains(VertexID))
-		{
-			continue;
-		}
-
-		FPCGUtilsDynMeshPainterSample Sample;
-		Sample.VertexID = VertexID;
-		Sample.LocalPosition = FVector(Mesh->GetVertex(VertexID));
-		Sample.WorldPosition = LocalToWorld.TransformPosition(Sample.LocalPosition);
-		if (Mesh->HasVertexNormals())
-		{
-			Sample.LocalNormal = FVector(Mesh->GetVertexNormal(VertexID)).GetSafeNormal();
-		}
-		Sample.WorldNormal = LocalToWorld.TransformVectorNoScale(Sample.LocalNormal).GetSafeNormal();
-
-		FVector4f Color = BaseColorMode == EPCGUtilsDynMeshPainterBaseColorMode::Existing
-			? PCGUtilsDynMeshAttributeHelpers::GetVertexColor(
-				*Mesh, *ColorOverlay, VertexID, ConstantColor)
-			: ConstantColor;
-		PCGUtilsDynMeshPainters::ResolveValueToColor(
-			PainterOperation->Evaluate(Sample), RequestedChannels, Color);
-
-		PCGUtilsDynMeshAttributeHelpers::SetVertexColor(*Mesh, *ColorOverlay, VertexID, Color);
+		return false;
 	}
 
-	return true;
+	return Target.Commit(Invocation.Context);
 }
 
 #undef LOCTEXT_NAMESPACE

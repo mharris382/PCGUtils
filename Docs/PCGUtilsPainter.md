@@ -17,6 +17,34 @@ PCGUtilsPainter        Painter framework, generic evaluation, spatial providers,
 `PCGUtilsPainter` **depends on** `PCGUtilsDynMesh` (and `PCGUtils`, `PCG`, `Engine`, `RenderCore`, the
 GeometryProcessing modules). `PCGUtilsDynMesh` must never depend on `PCGUtilsPainter`.
 
+## Canonical target model
+
+Every Painter graph evaluates against a canonical `FDynamicMesh3`, whatever the original target domain. The
+`FPCGUtilsPainterTarget` abstraction (`Target/PCGUtilsPainterTarget.h`) owns target conversion, LOD
+propagation, and write-back; **no Painter factory contains Static Mesh, Geometry Collection, or other
+target-specific logic**, and there are no per-factory LOD modes or capability flags.
+
+```text
+Original target
+    -> canonical FDynamicMesh3
+    -> EvaluatePainterGraphOntoTarget()  (one traversal, seam-consistent write to the primary color overlay)
+    -> Target::Commit()                  (write the painted colors back; propagate to lower LODs)
+```
+
+- `FPCGUtilsPainterDynMeshTarget` — the canonical mesh *is* the input `UPCGDynamicMeshData`; evaluation writes
+  in place and `Commit()` is a no-op. `Paint DynMesh Vertex Color` routes through this.
+- `FPCGUtilsPainterStaticMeshTarget` — `Prepare()` builds a transient connectivity-preserving `FDynamicMesh3`
+  of LOD0 (one base vertex per unique render-vertex *position*, so UV / hard-normal / material / render-vertex
+  splits do **not** become disconnected islands; per-render-vertex color and geometry seams stay in overlays),
+  records the exact render-vertex ↔ canonical-vertex ↔ color-element correspondence, and builds the LOD0 AABB
+  tree once. `Commit()` writes LOD0's override colors straight from that correspondence, then transfers only
+  the painted write-channels to every lower LOD by closest-point surface projection.
+
+The LOD0 topology is reconstructed by position-welding the render buffers (weld tolerance default 0.01 asset
+units). This is the most reliable UE 5.8 runtime path; genuinely coincident authored vertices that the mesh
+build did not weld would remain split, and a non-manifold edge in LOD0 render data drops the offending
+triangle from the canonical mesh (rare; warned).
+
 The module exists for feature organisation and target expansion, not to make Painting independent of the DynMesh
 toolkit. The core Painter *evaluation* API (`FPCGUtilsDynMeshPainterSample` / `...PainterValue` /
 `...PainterOperation::Evaluate`) is kept geometry-agnostic so both DynMesh traversal and Static Mesh
@@ -127,24 +155,48 @@ asset.
   de-duplicated; unresolved / unloaded paths are counted and warned once.
 - **`Painter`** pin — exactly one, same contract as `Paint DynMesh Vertex Color`. `Painter by Vertex ID` is
   Dynamic Mesh-only and is rejected here with a graph error.
-- **LOD Mode**: *All LODs* (default) evaluates the Painter independently against every LOD's own render vertices —
-  no cross-LOD correspondence, matching the engine's runtime `FMeshVertexPainter`. *LOD 0 Only* writes just LOD 0.
+- **LOD Mode** is a *target policy*, not a per-Painter setting: the complete Painter graph is always evaluated
+  exactly once, on the canonical LOD0 mesh. *All LODs* (default) then transfers the painted write-channels to
+  every lower LOD by closest-point projection + barycentric interpolation — so randomized or topology-dependent
+  Painters stay spatially consistent across LODs. *LOD 0 Only* skips the transfer.
 - **Base Color**: *Modify Existing* (component override → asset colors → white), *Asset Vertex Colors*, *White*,
-  *Black*. `Write Channels` limits which channels the Painter may change. `Convert To sRGB` (default off) — leave
-  off for mask / gradient-lookup workflows.
-- Render vertices are read directly from `FStaticMeshLODResources` — **no `FDynamicMesh3` round-trip**. World
-  normals use the component matrix inverse-transpose (correct under non-uniform scale).
+  *Black* — resolved once on LOD0 and used to seed the canonical color overlay (and to seed each lower LOD's
+  preserved channels). `Write Channels` limits which channels the Painter may change; on lower LODs the other
+  channels keep their existing value. `Convert To sRGB` (default off) — leave off for mask / gradient-lookup
+  workflows.
+- LOD transfer interpolates in linear float space; byte quantization and sRGB encoding happen only at the final
+  `FColor` write. The LOD0 spatial index is built once per target execution and reused for every lower LOD and
+  every channel.
 - **Editor-authoring only.** Mutates components on the game thread inside a transaction; never cacheable.
 - **Skipped with a graph warning:** Nanite-rendered components (the Nanite raster path ignores override vertex
   colors — use a Mesh Paint Texture) and ISM/HISM components (one override buffer is shared by every instance —
   use Per Instance Custom Data).
 
-The reusable write path lives in `PCGUtilsPainterStaticMeshBackend` (Engine + RenderCore only); it knows nothing
-about PCG, the Painter framework, LOD policy, or targeting. Background:
+The low-level per-component override write path lives in `PCGUtilsPainterStaticMeshBackend` (Engine + RenderCore
+only); it knows nothing about PCG, the Painter framework, LOD policy, or targeting. Background:
 `PCGUtils_StaticMeshInstanceVertexPainting_Investigation.md`.
+
+## Reusable surface correspondence
+
+`PCGUtilsDynMeshSurfaceCorrespondence` (in **`PCGUtilsDynMesh`**, `Geometry/PCGUtilsDynMeshSurfaceCorrespondence.h`)
+is a general DynMesh utility — it depends only on GeometryCore, not on the Painter framework, Static Mesh
+Components, or PCG element execution, so it can transfer any per-corner mesh attribute between two
+representations of one surface in future systems.
+
+- `ProjectPoints` / `ProjectMeshVertices` build a `FMeshSurfaceProjection` per destination sample: closest
+  source `SourceTriangleID`, `BarycentricCoordinates`, and `DistanceSquared`. `ProjectMeshVertices` is indexed
+  by destination vertex ID and is safe for sparse Dynamic Mesh IDs.
+- **Coordinate-space contract**: the source AABB tree defines the reference space; each destination point is
+  transformed by `FProjectionOptions::DestinationToSource` (destination → source) before the query, default
+  identity (two LODs of one asset share the asset's local space).
+- `SampleColorOverlay` / `TransferColorChannels` interpolate a source primary color overlay at a projection in
+  linear float space and copy only the requested channel bits into a caller-owned destination array.
+- Empty/degenerate source, out-of-range `MaxDistance`, invalid triangles, and non-finite input all produce
+  `bProjected == false` with success/failure counts — no crashes, no Painter-specific logging.
 
 ## Roadmap
 
-Deferred: LOD0→lower-LOD transfer / `RemapPaintedVertexColors`, render-vertex selection, Mesh Paint Texture
-backend, per-instance ISM/HISM painting, Geometry Collection backend, runtime/cooked traversal, and dropping
-`DynMesh` from the generic core Painter identifiers (cosmetic).
+Deferred: `Random Value by Mesh Island` Painter factory (relies on the canonical-mesh connectivity this
+established), render-vertex selection, Mesh Paint Texture backend, per-instance ISM/HISM painting, Geometry
+Collection backend, cached/persistent LOD correspondence, runtime/cooked traversal, and dropping `DynMesh` from
+the generic core Painter identifiers (cosmetic).

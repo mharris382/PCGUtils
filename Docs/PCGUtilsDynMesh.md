@@ -152,6 +152,17 @@ or remap separate operand material-slot tables. Operand material IDs should alre
 Handle-based elements still derive from the process settings base and pass their settings to
 `FPCGUtilsMeshTargetFunctions::CreateTarget(..., Settings)`, ensuring that Selector inputs are honored.
 
+## Shared geometry utilities
+
+`Geometry/PCGUtilsDynMeshSurfaceCorrespondence.h` is a standalone GeometryCore-only helper (no PCG element,
+Painter, or Static Mesh Component dependency) for closest-point surface correspondence between two Dynamic
+Meshes: `ProjectPoints` / `ProjectMeshVertices` return, per destination sample, the nearest source triangle,
+its barycentric coordinates, and the squared distance, and `SampleColorOverlay` / `TransferColorChannels`
+resample a source colour overlay through that correspondence. The source AABB tree defines the reference
+space; `FProjectionOptions::DestinationToSource` (default identity) maps destination points into it. Used by
+the Painter Static Mesh target for LOD0 → lower-LOD colour transfer; intended for reuse by any future
+attribute-transfer system.
+
 ## Selection modifiers
 
 ### PolyGroup Selector

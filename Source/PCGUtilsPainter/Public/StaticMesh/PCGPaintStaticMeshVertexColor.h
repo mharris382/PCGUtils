@@ -9,13 +9,21 @@
 
 #include "PCGPaintStaticMeshVertexColor.generated.h"
 
-/** Which LODs of each target component receive Painter-evaluated colors. */
+/**
+ * Which LODs of each target component receive the painted result. This is a target-level policy, not a
+ * per-Painter setting: the complete Painter graph is always evaluated exactly once, on a canonical Dynamic
+ * Mesh representation of LOD0.
+ */
 UENUM(BlueprintType)
 enum class EPCGPaintStaticMeshLODMode : uint8
 {
-	/** Evaluate the Painter independently against every LOD's own render vertices. */
+	/**
+	 * Evaluate on LOD0, then transfer the painted write-channels to every lower LOD by closest-point surface
+	 * projection and barycentric interpolation. Lower LODs never re-run the Painter, so randomized or
+	 * topology-dependent Painters stay spatially consistent across LODs.
+	 */
 	AllLODs UMETA(DisplayName="All LODs"),
-	/** Write only LOD 0; leave lower LODs at their asset / previous colors. */
+	/** Evaluate and write LOD 0 only; leave lower LODs at their asset / previous colors. */
 	LOD0Only UMETA(DisplayName="LOD 0 Only"),
 };
 
@@ -97,6 +105,16 @@ public:
 	/** Silence the warning when a component reference is empty or its owning actor is not loaded. */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Settings", AdvancedDisplay, meta=(PCG_Overridable))
 	bool bSilenceUnresolvedPathWarning = false;
+
+	/**
+	 * LOD0 render vertices closer than this (in Static Mesh asset local units) are treated as one canonical
+	 * vertex when reconstructing geometric connectivity for evaluation. The mesh build usually produces
+	 * bit-identical duplicates at seams, so the default is small; raise it only if a mesh's seam vertices are
+	 * not being connected.
+	 */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Settings", AdvancedDisplay,
+		meta=(PCG_Overridable, ClampMin="0.0", UIMin="0.0", UIMax="1.0"))
+	double CanonicalWeldTolerance = 0.01;
 
 protected:
 	virtual TArray<FPCGPinProperties> InputPinProperties() const override;

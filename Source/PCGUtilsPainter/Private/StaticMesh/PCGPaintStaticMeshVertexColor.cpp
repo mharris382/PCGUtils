@@ -5,6 +5,8 @@
 #include "PCGUtilsPainter.h"
 #include "Factories/PCGUtilsDynMeshPainterFactory.h"
 #include "StaticMesh/PCGUtilsPainterStaticMeshBackend.h"
+#include "StaticMesh/PCGUtilsPainterStaticMeshTarget.h"
+#include "Target/PCGUtilsPainterTarget.h"
 
 #include "PCGContext.h"
 #include "PCGPin.h"
@@ -38,11 +40,6 @@ namespace
 		return Channels;
 	}
 
-	FORCEINLINE uint8 QuantizeStaticMeshUNorm(float Value)
-	{
-		return static_cast<uint8>(FMath::Clamp(FMath::RoundToInt(Value * 255.0f), 0, 255));
-	}
-
 	PCGUtilsPainterStaticMeshBackend::EBaseColorMode ToStaticMeshBackendBaseColor(EPCGPaintStaticMeshBaseColor Mode)
 	{
 		using EBackend = PCGUtilsPainterStaticMeshBackend::EBaseColorMode;
@@ -72,8 +69,9 @@ FText UPCGPaintStaticMeshVertexColorSettings::GetNodeTooltipText() const
 {
 	return LOCTEXT("NodeTooltip",
 		"Applies a Painter to the per-component override vertex colors of existing Static Mesh Components referenced "
-		"by a soft-object-path attribute. Does not modify the Static Mesh asset. Editor-authoring only. "
-		"Nanite and ISM/HISM components are skipped with a warning.");
+		"by a soft-object-path attribute. Does not modify the Static Mesh asset. The complete Painter graph is "
+		"evaluated exactly once, against a canonical Dynamic Mesh of LOD0; the result is transferred to lower LODs "
+		"by surface projection. Editor-authoring only. Nanite and ISM/HISM components are skipped with a warning.");
 }
 #endif
 
@@ -153,20 +151,34 @@ bool FPCGPaintStaticMeshVertexColorElement::ExecuteInternal(FPCGContext* Context
 		return true;
 	}
 
-	// Build the Painter operation once. The evaluation context is geometry-agnostic; a DynMesh-only Painter
-	// (Painter by Vertex ID) rejects it in Initialize.
-	TSharedPtr<FPCGUtilsDynMeshPainterOperation> Operation = PainterFactory->CreateOperation(Context);
-	const FPCGUtilsDynMeshPainterEvaluationContext PainterContext(FTransform::Identity);
-	if (!Operation || !Operation->Initialize(PainterContext))
+	// Fail fast — before touching any component — if the Painter cannot target a non-DynMesh canonical mesh.
+	// The Static Mesh canonical mesh carries no backing UPCGDynamicMeshData, so this mesh-less probe context is
+	// exactly what EvaluatePainterGraphOntoTarget will build per component.
 	{
-		PCGLog::LogErrorOnGraph(
-			LOCTEXT("PainterInitFailed", "Paint Static Mesh Vertex Colors could not initialize its Painter. Painter by Vertex ID is Dynamic Mesh-only and cannot target a Static Mesh Component."),
-			Context);
-		return true;
+		TSharedPtr<FPCGUtilsDynMeshPainterOperation> Probe = PainterFactory->CreateOperation(Context);
+		const FPCGUtilsDynMeshPainterEvaluationContext ProbeContext(FTransform::Identity);
+		if (!Probe || !Probe->Initialize(ProbeContext))
+		{
+			PCGLog::LogErrorOnGraph(
+				LOCTEXT("PainterInitFailed", "Paint Static Mesh Vertex Colors could not initialize its Painter. Painter by Vertex ID is Dynamic Mesh-only and cannot target a Static Mesh Component."),
+				Context);
+			return true;
+		}
 	}
 
-	const EPCGUtilsDynMeshPainterColorChannel RequestedChannels = GetStaticMeshWriteChannels(Settings->WriteChannels);
-	const PCGUtilsPainterStaticMeshBackend::EBaseColorMode BaseColorMode = ToStaticMeshBackendBaseColor(Settings->BaseColor);
+	FPCGUtilsPainterGraphEvaluation Evaluation;
+	Evaluation.Painter = PainterFactory;
+	Evaluation.WriteChannels = GetStaticMeshWriteChannels(Settings->WriteChannels);
+	// The Static Mesh canonical mesh always pre-seeds its color overlay with the resolved Base Color, so the
+	// shared traversal reads "existing" and Replace/Modify/From Asset/White/Black are all decided by the seed.
+	Evaluation.BaseColorSource = EPCGUtilsPainterBaseColorSource::CanonicalExisting;
+
+	FPCGUtilsPainterStaticMeshTarget::FConfig TargetConfig;
+	TargetConfig.BaseColorMode = ToStaticMeshBackendBaseColor(Settings->BaseColor);
+	TargetConfig.WrittenChannels = Evaluation.WriteChannels;
+	TargetConfig.bConvertToSRGB = Settings->bConvertToSRGB;
+	TargetConfig.bTransferToLowerLODs = (Settings->LODMode == EPCGPaintStaticMeshLODMode::AllLODs);
+	TargetConfig.WeldTolerance = Settings->CanonicalWeldTolerance;
 
 #if WITH_EDITOR
 	const bool bUseTransactions = Context->ExecutionSource.Get()
@@ -229,63 +241,21 @@ bool FPCGPaintStaticMeshVertexColorElement::ExecuteInternal(FPCGContext* Context
 				FText::FromString(Path.ToString())), Context);
 		}
 
-		const FTransform ComponentToWorld = Component->GetComponentTransform();
-		const FMatrix NormalMatrix = ComponentToWorld.ToMatrixWithScale().Inverse().GetTransposed();
-
-		const int32 NumLODs = PCGUtilsPainterStaticMeshBackend::GetNumLODs(Component);
-		const int32 MaxLOD = (Settings->LODMode == EPCGPaintStaticMeshLODMode::LOD0Only) ? FMath::Min(1, NumLODs) : NumLODs;
-
-		Component->Modify();
-
-		bool bWroteAnyLOD = false;
-		for (int32 LODIndex = 0; LODIndex < MaxLOD; ++LODIndex)
+		FPCGUtilsPainterStaticMeshTarget Target(Component, TargetConfig);
+		if (!Target.Prepare(Context))
 		{
-			TArray<FVector3f> Positions;
-			TArray<FVector3f> Normals;
-			if (!PCGUtilsPainterStaticMeshBackend::GetLODRenderVertices(Component, LODIndex, Positions, Normals))
-			{
-				PCGLog::LogWarningOnGraph(FText::Format(
-					LOCTEXT("LODVerticesUnavailable", "'{0}' LOD {1}: render-vertex data is unavailable and was skipped."),
-					FText::FromString(Component->GetName()), FText::AsNumber(LODIndex)), Context);
-				continue;
-			}
-
-			const int32 NumVertices = Positions.Num();
-
-			TArray<FColor> Colors;
-			PCGUtilsPainterStaticMeshBackend::GetBaseLODColors(Component, LODIndex, BaseColorMode, Colors);
-			if (Colors.Num() != NumVertices)
-			{
-				Colors.Init(FColor::White, NumVertices);
-			}
-
-			for (int32 Index = 0; Index < NumVertices; ++Index)
-			{
-				FPCGUtilsDynMeshPainterSample Sample;
-				Sample.LocalPosition = FVector(Positions[Index]);
-				Sample.WorldPosition = ComponentToWorld.TransformPosition(Sample.LocalPosition);
-				Sample.LocalNormal = FVector(Normals[Index]).GetSafeNormal();
-				Sample.WorldNormal = NormalMatrix.TransformVector(Sample.LocalNormal).GetSafeNormal();
-				Sample.VertexID = Index;
-
-				const FColor Base = Colors[Index];
-				FVector4f Value(Base.R / 255.0f, Base.G / 255.0f, Base.B / 255.0f, Base.A / 255.0f);
-				PCGUtilsDynMeshPainters::ResolveValueToColor(Operation->Evaluate(Sample), RequestedChannels, Value);
-
-				Colors[Index] = Settings->bConvertToSRGB
-					? FLinearColor(Value.X, Value.Y, Value.Z, Value.W).ToFColor(/*bSRGB=*/true)
-					: FColor(QuantizeStaticMeshUNorm(Value.X), QuantizeStaticMeshUNorm(Value.Y), QuantizeStaticMeshUNorm(Value.Z), QuantizeStaticMeshUNorm(Value.W));
-			}
-
-			if (PCGUtilsPainterStaticMeshBackend::SetOverrideVertexColorsForLOD(Component, LODIndex, Colors))
-			{
-				bWroteAnyLOD = true;
-			}
+			continue;
 		}
 
-		if (bWroteAnyLOD)
+		if (!PCGUtilsPainter::EvaluatePainterGraphOntoTarget(Target, Evaluation, Context))
 		{
-			PCGUtilsPainterStaticMeshBackend::FinalizeVertexColorEdit(Component);
+			// Already logged; the up-front probe should have caught Painter incompatibility.
+			continue;
+		}
+
+		Component->Modify();
+		if (Target.Commit(Context))
+		{
 			++PaintedComponentCount;
 		}
 	}
