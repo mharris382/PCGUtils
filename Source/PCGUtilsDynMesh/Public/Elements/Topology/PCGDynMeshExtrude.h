@@ -8,7 +8,7 @@
 #include "PCGDynMeshExtrude.generated.h"
 
 /** Linear extrusion with explicit cap/border result tracking, for realized meshes and deferred Builders. */
-UCLASS(BlueprintType, ClassGroup=(Procedural), Category="PCGUtils|DynMesh")
+UCLASS(BlueprintType, ClassGroup=(Procedural), Category="PCGUtils|DynMesh", meta=(Keywords="DynMesh mesh selection selector extrude faces"))
 class PCGUTILSDYNMESH_API UPCGDynMeshExtrudeSettings : public UPCGUtilsDynMeshTopologyProcessBaseSettings
 {
 	GENERATED_BODY()

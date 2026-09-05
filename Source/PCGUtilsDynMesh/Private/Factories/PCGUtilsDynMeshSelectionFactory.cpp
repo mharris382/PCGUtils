@@ -3,8 +3,79 @@
 
 #include "Factories/PCGUtilsDynMeshSelectionFactory.h"
 
+#include "Data/PCGDynamicMeshSelectionData.h"
 #include "DynamicMesh/DynamicMesh3.h"
+#include "Factories/PCGUtilsDynMeshDomainSelectionFactory.h"
+#include "GeometryScript/GeometryScriptSelectionTypes.h"
 #include "PCGContext.h"
+#include "Serialization/ArchiveCrc32.h"
+
+namespace
+{
+	EGeometryScriptIndexType ToScriptIndexType(UE::Geometry::EGeometryElementType ElementType)
+	{
+		switch (ElementType)
+		{
+		case UE::Geometry::EGeometryElementType::Vertex:
+			return EGeometryScriptIndexType::Vertex;
+		case UE::Geometry::EGeometryElementType::Edge:
+			return EGeometryScriptIndexType::Edge;
+		case UE::Geometry::EGeometryElementType::Face:
+		default:
+			return EGeometryScriptIndexType::Triangle;
+		}
+	}
+
+	class FLiteralSelectionOperation final : public FPCGUtilsDynMeshSelectionOperation
+	{
+	public:
+		explicit FLiteralSelectionOperation(const UPCGUtilsDynMeshLiteralSelectionFactoryData* InFactory)
+			: Factory(InFactory)
+		{
+		}
+
+		virtual bool Initialize(const FPCGUtilsDynMeshSelectionEvaluationContext& InSelectionContext) override
+		{
+			if (!FPCGUtilsDynMeshSelectionOperation::Initialize(InSelectionContext) ||
+				!Factory || !Factory->SelectionData || !InSelectionContext.MeshData ||
+				Factory->SelectionData->GetSourceMeshData() != InSelectionContext.MeshData)
+			{
+				return false;
+			}
+
+			UE::Geometry::FGeometrySelection ConvertedSelection;
+			if (!PCGUtilsDynMeshSelectionDomains::ConvertSelection(
+				InSelectionContext.MeshData, InSelectionContext.Mesh,
+				Factory->SelectionData->GetSelection(), InSelectionContext.Domain.ElementType,
+				Factory->bAllowPartialInclusion, ConvertedSelection))
+			{
+				return false;
+			}
+
+			FGeometryScriptMeshSelection ScriptSelection;
+			ScriptSelection.SetSelection(ConvertedSelection);
+			TArray<int32> ElementIDs;
+			const EGeometryScriptIndexType IndexType = ToScriptIndexType(InSelectionContext.Domain.ElementType);
+			if (ScriptSelection.ConvertToMeshIndexArray(
+				InSelectionContext.Mesh, ElementIDs, IndexType) != IndexType)
+			{
+				return false;
+			}
+
+			SelectedElementIDs.Append(ElementIDs);
+			return true;
+		}
+
+		virtual bool TestElement(int32 ElementID) const override
+		{
+			return SelectedElementIDs.Contains(ElementID);
+		}
+
+	private:
+		TObjectPtr<const UPCGUtilsDynMeshLiteralSelectionFactoryData> Factory;
+		TSet<int32> SelectedElementIDs;
+	};
+}
 
 PCG_DEFINE_TYPE_INFO(FPCGUtilsDynMeshSelectionFactoryDataTypeInfo, UPCGUtilsDynMeshSelectionFactoryData)
 
@@ -30,6 +101,34 @@ TSharedPtr<FPCGUtilsDynMeshSelectionOperation> UPCGUtilsDynMeshSelectionFactoryD
 	return nullptr;
 }
 
+bool UPCGUtilsDynMeshLiteralSelectionFactoryData::SupportsDomain(
+	const FPCGUtilsDynMeshSelectionDomain& Domain) const
+{
+	return Domain.TopologyType == UE::Geometry::EGeometryTopologyType::Triangle &&
+		(Domain.ElementType == UE::Geometry::EGeometryElementType::Vertex ||
+		 Domain.ElementType == UE::Geometry::EGeometryElementType::Edge ||
+		 Domain.ElementType == UE::Geometry::EGeometryElementType::Face);
+}
+
+TSharedPtr<FPCGUtilsDynMeshSelectionOperation>
+UPCGUtilsDynMeshLiteralSelectionFactoryData::CreateOperationInternal() const
+{
+	return MakeShared<FLiteralSelectionOperation>(this);
+}
+
+void UPCGUtilsDynMeshLiteralSelectionFactoryData::AddToCrc(
+	FArchiveCrc32& Ar, bool bFullDataCrc) const
+{
+	Super::AddToCrc(Ar, bFullDataCrc);
+	if (bFullDataCrc)
+	{
+		uint32 SelectionCrc = SelectionData ? SelectionData->GetOrComputeCrc(true).GetValue() : 0;
+		bool bAllowPartial = bAllowPartialInclusion;
+		Ar << SelectionCrc;
+		Ar << bAllowPartial;
+	}
+}
+
 bool FPCGUtilsDynMeshSelectionOperation::Initialize(
 	const FPCGUtilsDynMeshSelectionEvaluationContext& InSelectionContext)
 {
@@ -44,6 +143,16 @@ namespace PCGUtilsDynMeshFactories
 		static const TSet<FPCGDataTypeBaseId> Types = {FPCGUtilsDynMeshSelectionFactoryDataTypeInfo::AsId()};
 		return Types;
 	}
+}
+
+void PCGUtilsDynMeshSelectionFactories::SortByPriority(
+	TArray<TObjectPtr<const UPCGUtilsDynMeshSelectionFactoryData>>& Factories)
+{
+	Factories.StableSort([](const UPCGUtilsDynMeshSelectionFactoryData& A,
+		const UPCGUtilsDynMeshSelectionFactoryData& B)
+	{
+		return A.Priority > B.Priority;
+	});
 }
 
 bool PCGUtilsDynMeshSelectionFactories::EvaluateFactory(

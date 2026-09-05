@@ -1,7 +1,7 @@
 #pragma once
 
 #include "CoreMinimal.h"
-#include "Elements/Selections/PCGDynamicMeshSelectionFilterBase.h"
+#include "Factories/PCGUtilsDynMeshDomainSelectionFactory.h"
 
 #include "PCGSharpEdgeFilter.generated.h"
 
@@ -12,11 +12,37 @@
  * implementation rather than reimplementing dihedral-angle logic.
  */
 UCLASS(BlueprintType, ClassGroup=(Procedural), Category="PCGUtils|DynMesh|Selections")
-class PCGUTILSDYNMESH_API UPCGSharpEdgeFilterSettings : public UPCGDynamicMeshSelectionFilterBaseSettings
+class PCGUTILSDYNMESH_API UPCGSharpEdgeSelectionFactoryData
+	: public UPCGUtilsDynMeshDomainSelectionFactoryData
 {
 	GENERATED_BODY()
 
 public:
+	UPROPERTY()
+	float MinimumSharpAngleDegrees = 30.0f;
+
+protected:
+	virtual UE::Geometry::EGeometryElementType GetNativeElementTypeInternal() const override
+	{
+		return UE::Geometry::EGeometryElementType::Edge;
+	}
+	virtual TSharedPtr<FPCGUtilsDynMeshSelectionOperation> CreateNativeOperationInternal() const override;
+	virtual void AddToCrc(FArchiveCrc32& Ar, bool bFullDataCrc) const override;
+};
+
+UCLASS(BlueprintType, ClassGroup=(Procedural), Category="PCGUtils|DynMesh|Selections",
+	meta=(Keywords="Select Selection Selector Sharp Crease Edge"))
+class PCGUTILSDYNMESH_API UPCGSharpEdgeFilterSettings : public UPCGUtilsDynMeshDomainSelectionSourceSettings
+{
+	GENERATED_BODY()
+
+public:
+	UPCGSharpEdgeFilterSettings()
+	{
+		Representation = EPCGUtilsDynMeshSelectionRepresentation::Selection;
+		SelectionElementType = EPCGUtilsDynMeshSelectionElementType::Edge;
+	}
+
 #if WITH_EDITOR
 	virtual FName GetDefaultNodeName() const override { return TEXT("SharpEdgeFilter"); }
 	virtual FText GetDefaultNodeTitle() const override;
@@ -28,15 +54,9 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Selection", meta=(PCG_Overridable, ClampMin="0.0", ClampMax="180.0"))
 	float MinimumSharpAngleDegrees = 30.0f;
 
-protected:
-	virtual FPCGElementPtr CreateElement() const override;
-};
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Selection", AdvancedDisplay, meta=(PCG_Overridable))
+	int32 Priority = 0;
 
-class PCGUTILSDYNMESH_API FPCGSharpEdgeFilterElement : public FPCGDynamicMeshSelectionFilterBaseElement
-{
-protected:
-	virtual bool ComputeMatchSelection(const UPCGDynamicMeshData* MeshData,
-		const UE::Geometry::FDynamicMesh3& Mesh, const FPCGDynamicMeshSelectionCandidates& Candidates,
-		FPCGContext* Context,
-		UE::Geometry::FGeometrySelection& OutSelection) const override;
+	virtual UPCGUtilsDynMeshFactoryData* CreateFactory(
+		FPCGContext* InContext, UPCGUtilsDynMeshFactoryData* InFactory = nullptr) const override;
 };

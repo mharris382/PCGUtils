@@ -3,8 +3,44 @@
 #include "Data/PCGDynamicMeshData.h"
 #include "DynamicMesh/DynamicMesh3.h"
 #include "PCGContext.h"
+#include "Serialization/ArchiveCrc32.h"
 
 #define LOCTEXT_NAMESPACE "PCGSharpEdgeFilter"
+
+namespace
+{
+	class FSharpEdgeSelectionOperation final : public FPCGUtilsDynMeshSelectionOperation
+	{
+	public:
+		explicit FSharpEdgeSelectionOperation(const UPCGSharpEdgeSelectionFactoryData* InFactory)
+			: Factory(InFactory)
+		{
+		}
+
+		virtual bool Initialize(const FPCGUtilsDynMeshSelectionEvaluationContext& InSelectionContext) override
+		{
+			if (!FPCGUtilsDynMeshSelectionOperation::Initialize(InSelectionContext) || !Factory)
+			{
+				return false;
+			}
+			CosThreshold = FMath::Cos(FMath::DegreesToRadians(
+				static_cast<double>(FMath::Clamp(Factory->MinimumSharpAngleDegrees, 0.0f, 180.0f))));
+			return true;
+		}
+
+		virtual bool TestElement(int32 EdgeID) const override
+		{
+			const UE::Geometry::FIndex2i EdgeTriangles = SelectionContext->Mesh.GetEdgeT(EdgeID);
+			return EdgeTriangles.B != INDEX_NONE &&
+				SelectionContext->Mesh.GetTriNormal(EdgeTriangles.A).Dot(
+					SelectionContext->Mesh.GetTriNormal(EdgeTriangles.B)) <= CosThreshold;
+		}
+
+	private:
+		TObjectPtr<const UPCGSharpEdgeSelectionFactoryData> Factory;
+		double CosThreshold = 1.0;
+	};
+}
 
 #if WITH_EDITOR
 FText UPCGSharpEdgeFilterSettings::GetDefaultNodeTitle() const
@@ -18,40 +54,32 @@ FText UPCGSharpEdgeFilterSettings::GetNodeTooltipText() const
 }
 #endif
 
-FPCGElementPtr UPCGSharpEdgeFilterSettings::CreateElement() const
+TSharedPtr<FPCGUtilsDynMeshSelectionOperation>
+UPCGSharpEdgeSelectionFactoryData::CreateNativeOperationInternal() const
 {
-	return MakeShared<FPCGSharpEdgeFilterElement>();
+	return MakeShared<FSharpEdgeSelectionOperation>(this);
 }
 
-bool FPCGSharpEdgeFilterElement::ComputeMatchSelection(const UPCGDynamicMeshData* MeshData,
-	const UE::Geometry::FDynamicMesh3& Mesh, const FPCGDynamicMeshSelectionCandidates& Candidates,
-	FPCGContext* Context,
-	UE::Geometry::FGeometrySelection& OutSelection) const
+void UPCGSharpEdgeSelectionFactoryData::AddToCrc(FArchiveCrc32& Ar, bool bFullDataCrc) const
 {
-	using namespace UE::Geometry;
-
-	const UPCGSharpEdgeFilterSettings* Settings = Context->GetInputSettings<UPCGSharpEdgeFilterSettings>();
-	check(Settings);
-
-	OutSelection.InitializeTypes(EGeometryElementType::Edge, EGeometryTopologyType::Triangle);
-	const double CosThreshold = FMath::Cos(FMath::DegreesToRadians(
-		static_cast<double>(Settings->MinimumSharpAngleDegrees)));
-
-	Candidates.ProcessEdges([&Mesh, &OutSelection, CosThreshold](int32 EdgeID)
+	Super::AddToCrc(Ar, bFullDataCrc);
+	if (bFullDataCrc)
 	{
-		const FIndex2i EdgeTriangles = Mesh.GetEdgeT(EdgeID);
-		if (EdgeTriangles.B == INDEX_NONE)
-		{
-			return; // Match GeometryScript: open mesh boundaries are not sharp edges.
-		}
+		float Angle = MinimumSharpAngleDegrees;
+		Ar << Angle;
+	}
+}
 
-		if (Mesh.GetTriNormal(EdgeTriangles.A).Dot(Mesh.GetTriNormal(EdgeTriangles.B)) <= CosThreshold)
-		{
-			PCGDynamicMeshSelectionFilterHelpers::AddEdgeToSelection(Mesh, EdgeID, OutSelection);
-		}
-	});
-
-	return true;
+UPCGUtilsDynMeshFactoryData* UPCGSharpEdgeFilterSettings::CreateFactory(
+	FPCGContext* InContext, UPCGUtilsDynMeshFactoryData* InFactory) const
+{
+	UPCGSharpEdgeSelectionFactoryData* Factory = InFactory
+		? Cast<UPCGSharpEdgeSelectionFactoryData>(InFactory)
+		: FPCGContext::NewObject_AnyThread<UPCGSharpEdgeSelectionFactoryData>(InContext);
+	if (!Factory) return nullptr;
+	Factory->Priority = Priority;
+	Factory->MinimumSharpAngleDegrees = MinimumSharpAngleDegrees;
+	return Super::CreateFactory(InContext, Factory);
 }
 
 #undef LOCTEXT_NAMESPACE

@@ -1,7 +1,7 @@
 #pragma once
 
 #include "CoreMinimal.h"
-#include "Elements/Selections/PCGDynamicMeshSelectionFilterBase.h"
+#include "Factories/PCGUtilsDynMeshDomainSelectionFactory.h"
 
 #include "PCGEdgeDirection.generated.h"
 
@@ -38,11 +38,49 @@ enum class EPCGDynMeshDirectionSpace : uint8
  * per Abs(Dot(EdgeDirection, ReferenceDirection)).
  */
 UCLASS(BlueprintType, ClassGroup=(Procedural), Category="PCGUtils|DynMesh|Selections")
-class PCGUTILSDYNMESH_API UPCGEdgeDirectionSettings : public UPCGDynamicMeshSelectionFilterBaseSettings
+class PCGUTILSDYNMESH_API UPCGEdgeDirectionFactoryData
+	: public UPCGUtilsDynMeshDomainSelectionFactoryData
 {
 	GENERATED_BODY()
 
 public:
+	UPROPERTY()
+	EPCGDynMeshDirectionAxis Axis = EPCGDynMeshDirectionAxis::Z;
+
+	UPROPERTY()
+	FVector CustomDirection = FVector::UpVector;
+
+	UPROPERTY()
+	EPCGDynMeshDirectionSpace Space = EPCGDynMeshDirectionSpace::World;
+
+	UPROPERTY()
+	EPCGDynMeshDirectionRelationship Relationship = EPCGDynMeshDirectionRelationship::Perpendicular;
+
+	UPROPERTY()
+	float AngularToleranceDegrees = 5.0f;
+
+protected:
+	virtual UE::Geometry::EGeometryElementType GetNativeElementTypeInternal() const override
+	{
+		return UE::Geometry::EGeometryElementType::Edge;
+	}
+	virtual TSharedPtr<FPCGUtilsDynMeshSelectionOperation> CreateNativeOperationInternal() const override;
+	virtual void AddToCrc(FArchiveCrc32& Ar, bool bFullDataCrc) const override;
+};
+
+UCLASS(BlueprintType, ClassGroup=(Procedural), Category="PCGUtils|DynMesh|Selections",
+	meta=(Keywords="Select Selection Selector Edge Direction Parallel Perpendicular"))
+class PCGUTILSDYNMESH_API UPCGEdgeDirectionSettings : public UPCGUtilsDynMeshDomainSelectionSourceSettings
+{
+	GENERATED_BODY()
+
+public:
+	UPCGEdgeDirectionSettings()
+	{
+		Representation = EPCGUtilsDynMeshSelectionRepresentation::Selection;
+		SelectionElementType = EPCGUtilsDynMeshSelectionElementType::Edge;
+	}
+
 #if WITH_EDITOR
 	virtual FName GetDefaultNodeName() const override { return TEXT("EdgeDirection"); }
 	virtual FText GetDefaultNodeTitle() const override;
@@ -71,19 +109,9 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Direction", meta=(PCG_Overridable, ClampMin="0.0", ClampMax="90.0"))
 	float AngularToleranceDegrees = 5.0f;
 
-protected:
-	virtual FPCGElementPtr CreateElement() const override;
-};
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Selection", AdvancedDisplay, meta=(PCG_Overridable))
+	int32 Priority = 0;
 
-class PCGUTILSDYNMESH_API FPCGEdgeDirectionElement : public FPCGDynamicMeshSelectionFilterBaseElement
-{
-public:
-	/** Resolving the target actor for World-space direction conversion requires the game thread. */
-	virtual bool CanExecuteOnlyOnMainThread(FPCGContext*) const override { return true; }
-
-protected:
-	virtual bool ComputeMatchSelection(const UPCGDynamicMeshData* MeshData,
-		const UE::Geometry::FDynamicMesh3& Mesh, const FPCGDynamicMeshSelectionCandidates& Candidates,
-		FPCGContext* Context,
-		UE::Geometry::FGeometrySelection& OutSelection) const override;
+	virtual UPCGUtilsDynMeshFactoryData* CreateFactory(
+		FPCGContext* InContext, UPCGUtilsDynMeshFactoryData* InFactory = nullptr) const override;
 };

@@ -20,15 +20,7 @@
 #if WITH_EDITOR
 FText UPCGSelectionBoundaryEdgesSettings::GetDefaultNodeTitle() const
 {
-	return LOCTEXT("Title", "Select Boundary");
-}
-
-TArray<FText> UPCGSelectionBoundaryEdgesSettings::GetNodeTitleAliases() const
-{
-	return {
-		LOCTEXT("BoundaryAlias", "Boundary of Selection"),
-		LOCTEXT("OutlineAlias", "Selection Outline")
-	};
+	return LOCTEXT("Title", "Extract Selection Boundary");
 }
 
 FText UPCGSelectionBoundaryEdgesSettings::GetNodeTooltipText() const
@@ -46,56 +38,11 @@ TArray<FPCGPinProperties> UPCGSelectionBoundaryEdgesSettings::SelectorInputPinPr
 	return Pins;
 }
 
-bool UPCGSelectionBoundaryEdgesSettings::ProcessSelection(
-	const UPCGDynamicMeshSelectionData* SelectionData,
-	FPCGContext* Context,
-	UE::Geometry::FGeometrySelection& OutSelection) const
+UE::Geometry::EGeometryElementType
+UPCGSelectionBoundaryEdgesSettings::GetMaterializedOutputElementType(
+	const UPCGDynamicMeshSelectionData* SelectionData) const
 {
-	const UPCGDynamicMeshData* MeshData = SelectionData ? SelectionData->GetSourceMeshData() : nullptr;
-	const UDynamicMesh* DynamicMesh = MeshData ? MeshData->GetDynamicMesh() : nullptr;
-	const UE::Geometry::FDynamicMesh3* Mesh = DynamicMesh ? DynamicMesh->GetMeshPtr() : nullptr;
-	if (!SelectionData || !DynamicMesh || !Mesh)
-	{
-		return false;
-	}
-
-	UE::Geometry::FGeometrySelection TriangleSelection;
-	if (!PCGUtilsDynMeshSelectionDomains::ConvertSelection(
-		MeshData, *Mesh, SelectionData->GetSelection(),
-		UE::Geometry::EGeometryElementType::Face, bAllowPartialInclusion, TriangleSelection))
-	{
-		PCGLog::LogErrorOnGraph(LOCTEXT("SelectionConversionFailed", "Select Boundary could not convert the incoming selection to triangles."), Context);
-		return false;
-	}
-
-	OutSelection.InitializeTypes(
-		UE::Geometry::EGeometryElementType::Edge, UE::Geometry::EGeometryTopologyType::Triangle);
-	if (TriangleSelection.IsEmpty())
-	{
-		return true;
-	}
-
-	FGeometryScriptMeshSelection ScriptSelection;
-	ScriptSelection.SetSelection(MoveTemp(TriangleSelection));
-	FGeometryScriptMeshSelection ScriptBoundary;
-	UGeometryScriptLibrary_MeshSelectionFunctions::SelectSelectionBoundaryEdges(
-		const_cast<UDynamicMesh*>(DynamicMesh), ScriptSelection, ScriptBoundary, bExcludeMeshBoundaryEdges);
-
-	TArray<int32> BoundaryEdgeIDs;
-	if (ScriptBoundary.ConvertToMeshIndexArray(*Mesh, BoundaryEdgeIDs, EGeometryScriptIndexType::Edge) != EGeometryScriptIndexType::Edge)
-	{
-		PCGLog::LogErrorOnGraph(LOCTEXT("BoundaryConversionFailed", "Select Boundary could not convert the generated boundary to edges."), Context);
-		return false;
-	}
-
-	for (const int32 EdgeID : BoundaryEdgeIDs)
-	{
-		if (Mesh->IsEdge(EdgeID))
-		{
-			PCGDynamicMeshSelectionFilterHelpers::AddEdgeToSelection(*Mesh, EdgeID, OutSelection);
-		}
-	}
-	return true;
+	return UE::Geometry::EGeometryElementType::Edge;
 }
 
 #undef LOCTEXT_NAMESPACE

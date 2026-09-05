@@ -75,6 +75,7 @@ bool FPCGBuildDynMeshSelectionElement::CreateSelection(
 	{
 		return false;
 	}
+	PCGUtilsDynMeshSelectionFactories::SortByPriority(Factories);
 
 	FPCGUtilsDynMeshSelectionEvaluationContext EvaluationContext(MeshData, Mesh, Domain);
 	TArray<TSharedPtr<FPCGUtilsDynMeshSelectionOperation>> Operations;

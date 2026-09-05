@@ -208,7 +208,7 @@ namespace
 #if WITH_EDITOR
 FText UPCGSplineDeformSettings::GetDefaultNodeTitle() const
 {
-	return LOCTEXT("NodeTitle", "Spline Deform");
+	return LOCTEXT("NodeTitle", "Deform DynMesh Along Spline");
 }
 
 FText UPCGSplineDeformSettings::GetNodeTooltipText() const

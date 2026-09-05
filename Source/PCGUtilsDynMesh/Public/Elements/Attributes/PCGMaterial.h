@@ -7,7 +7,7 @@
 #include "PCGMaterial.generated.h"
 
 /** Assigns a material to an entire Dynamic Mesh or appends it for a mesh selection. */
-UCLASS(BlueprintType, ClassGroup=(Procedural), Category="PCGUtils|DynMesh")
+UCLASS(BlueprintType, ClassGroup=(Procedural), Category="PCGUtils|DynMesh", meta=(Keywords="DynMesh mesh selection selector material assign set"))
 class PCGUTILSDYNMESH_API UPCGMaterialSettings : public UPCGUtilsDynMeshProcessBaseSettings
 {
 	GENERATED_BODY()

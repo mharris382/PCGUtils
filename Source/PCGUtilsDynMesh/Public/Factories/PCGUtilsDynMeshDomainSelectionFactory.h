@@ -3,6 +3,7 @@
 #pragma once
 
 #include "CoreMinimal.h"
+#include "Elements/Selections/PCGUtilsDynMeshSelectionSource.h"
 #include "Factories/PCGUtilsDynMeshFactoryProvider.h"
 #include "Factories/PCGUtilsDynMeshSelectionFactory.h"
 
@@ -56,6 +57,27 @@ protected:
 UCLASS(Abstract, BlueprintType, ClassGroup=(Procedural), Category="PCGUtils|DynMesh|Selections")
 class PCGUTILSDYNMESH_API UPCGUtilsDynMeshDomainSelectionFactoryProviderSettings
 	: public UPCGUtilsDynMeshFactoryProviderSettings
+{
+	GENERATED_BODY()
+
+public:
+	/** Include a target element when any incident source element is selected. Disable for full-inclusion conversion. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Selection", AdvancedDisplay, meta=(PCG_Overridable))
+	bool bAllowPartialInclusion = true;
+
+	virtual UPCGUtilsDynMeshFactoryData* CreateFactory(
+		FPCGContext* InContext, UPCGUtilsDynMeshFactoryData* InFactory = nullptr) const override;
+
+protected:
+	virtual void ApplyDeprecationBeforeUpdatePins(
+		UPCGNode* InOutNode, TArray<TObjectPtr<UPCGPin>>& InputPins,
+		TArray<TObjectPtr<UPCGPin>>& OutputPins) override;
+};
+
+/** Unified query counterpart that adds inline Selection materialization to a native-domain Selector. */
+UCLASS(Abstract, BlueprintType, ClassGroup=(Procedural), Category="PCGUtils|DynMesh|Selections")
+class PCGUTILSDYNMESH_API UPCGUtilsDynMeshDomainSelectionSourceSettings
+	: public UPCGUtilsDynMeshSelectionSourceSettings
 {
 	GENERATED_BODY()
 

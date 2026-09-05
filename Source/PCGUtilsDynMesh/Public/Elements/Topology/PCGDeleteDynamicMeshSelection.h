@@ -16,7 +16,7 @@ enum class EPCGDeleteDynamicMeshSelectionMode : uint8
 	Vertices
 };
 
-UCLASS(BlueprintType, ClassGroup=(Procedural), Category="PCGUtils|DynMesh")
+UCLASS(BlueprintType, ClassGroup=(Procedural), Category="PCGUtils|DynMesh", meta=(Keywords="DynMesh mesh selection selector delete remove selection"))
 class PCGUTILSDYNMESH_API UPCGDeleteDynamicMeshSelectionSettings : public UPCGUtilsDynMeshProcessBaseSettings
 {
 	GENERATED_BODY()

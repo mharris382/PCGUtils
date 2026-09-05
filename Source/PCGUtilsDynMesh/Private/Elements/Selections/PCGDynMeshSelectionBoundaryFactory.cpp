@@ -138,51 +138,29 @@ FText UPCGDynMeshSelectionBoundaryFactoryProviderSettings::GetDefaultNodeTitle()
 	return LOCTEXT("Title", "DEPRECATED: Select Boundary Provider");
 }
 
-TArray<FText> UPCGDynMeshSelectionBoundaryFactoryProviderSettings::GetNodeTitleAliases() const
-{
-	return {
-		LOCTEXT("BoundaryEdgesAlias", "Boundary Edges Selector"),
-		LOCTEXT("OutlineAlias", "Selection Outline Selector")
-	};
-}
-
 FText UPCGDynMeshSelectionBoundaryFactoryProviderSettings::GetNodeTooltipText() const
 {
 	return LOCTEXT("Tooltip", "Deprecated compatibility node. Use Select Boundary with Operation Mode set to Selector.");
 }
 #endif
 
-UPCGUtilsDynMeshFactoryData* UPCGSelectionBoundaryEdgesSettings::CreateFactory(
-	FPCGContext* InContext, UPCGUtilsDynMeshFactoryData* InFactory) const
+UPCGUtilsDynMeshSelectionFactoryData*
+UPCGSelectionBoundaryEdgesSettings::CreateDecoratorFactory(
+	FPCGContext* InContext,
+	const UPCGUtilsDynMeshSelectionFactoryData* ChildSelector) const
 {
-	TArray<TObjectPtr<const UPCGUtilsDynMeshSelectionFactoryData>> RegionFactories;
-	if (!PCGUtilsDynMeshFactories::GetInputFactories(
-		InContext, PCGDynMeshSelectionBoundaryFactoryConstants::RegionFactoryInputPin,
-		RegionFactories, PCGUtilsDynMeshFactories::GetSelectionFactoryTypes()))
+	if (!ChildSelector)
 	{
 		return nullptr;
 	}
-
-	if (RegionFactories.Num() != 1)
-	{
-		PCGLog::LogErrorOnGraph(
-			LOCTEXT("RequiresOneFactory", "Select Boundary requires exactly one region selector in Selector mode."),
-			InContext);
-		return nullptr;
-	}
-
-	UPCGDynMeshSelectionBoundaryFactoryData* Factory = InFactory
-		? Cast<UPCGDynMeshSelectionBoundaryFactoryData>(InFactory)
-		: FPCGContext::NewObject_AnyThread<UPCGDynMeshSelectionBoundaryFactoryData>(InContext);
-	if (!Factory)
-	{
-		return nullptr;
-	}
+	UPCGDynMeshSelectionBoundaryFactoryData* Factory =
+		FPCGContext::NewObject_AnyThread<UPCGDynMeshSelectionBoundaryFactoryData>(InContext);
 
 	Factory->Priority = Priority;
-	Factory->RegionFactory = RegionFactories[0];
+	Factory->RegionFactory = ChildSelector;
 	Factory->bExcludeMeshBoundaryEdges = bExcludeMeshBoundaryEdges;
-	return Super::CreateFactory(InContext, Factory);
+	Factory->bAllowPartialInclusion = bAllowPartialInclusion;
+	return Factory;
 }
 
 #undef LOCTEXT_NAMESPACE

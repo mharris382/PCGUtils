@@ -29,6 +29,13 @@ class PCGUTILSDYNMESH_API UPCGSelectByNormalSettings : public UPCGDynamicMeshSel
 	GENERATED_BODY()
 
 public:
+	UPCGSelectByNormalSettings()
+	{
+#if WITH_EDITORONLY_DATA
+		bExposeToLibrary = false;
+#endif
+	}
+
 #if WITH_EDITOR
 	virtual FName GetDefaultNodeName() const override { return TEXT("SelectByNormal"); }
 	virtual FText GetDefaultNodeTitle() const override;

@@ -144,15 +144,7 @@ namespace
 #if WITH_EDITOR
 FText UPCGDynMeshExpandToConnectedSelectionSettings::GetDefaultNodeTitle() const
 {
-	return LOCTEXT("ElementTitle", "Select Connected");
-}
-
-TArray<FText> UPCGDynMeshExpandToConnectedSelectionSettings::GetNodeTitleAliases() const
-{
-	return {
-		LOCTEXT("ElementComponentAlias", "Select Connected Component"),
-		LOCTEXT("ElementFloodAlias", "Flood Selection")
-	};
+	return LOCTEXT("ElementTitle", "Expand Selection to Connected Region");
 }
 
 FText UPCGDynMeshExpandToConnectedSelectionSettings::GetNodeTooltipText() const
@@ -168,14 +160,6 @@ FString UPCGDynMeshExpandToConnectedSelectionSettings::GetAdditionalTitleInforma
 FText UPCGDynMeshExpandToConnectedSelectionFactoryProviderSettings::GetDefaultNodeTitle() const
 {
 	return LOCTEXT("FactoryTitle", "DEPRECATED: Select Connected Provider");
-}
-
-TArray<FText> UPCGDynMeshExpandToConnectedSelectionFactoryProviderSettings::GetNodeTitleAliases() const
-{
-	return {
-		LOCTEXT("FactoryComponentAlias", "Connected Component Selector"),
-		LOCTEXT("FactoryFloodAlias", "Flood Selector")
-	};
 }
 
 FText UPCGDynMeshExpandToConnectedSelectionFactoryProviderSettings::GetNodeTooltipText() const
@@ -198,48 +182,6 @@ TArray<FPCGPinProperties> UPCGDynMeshExpandToConnectedSelectionSettings::Selecto
 	return Pins;
 }
 
-bool UPCGDynMeshExpandToConnectedSelectionSettings::ProcessSelection(
-	const UPCGDynamicMeshSelectionData* SelectionData,
-	FPCGContext* Context,
-	UE::Geometry::FGeometrySelection& OutSelection) const
-{
-	const UPCGDynamicMeshData* MeshData = SelectionData ? SelectionData->GetSourceMeshData() : nullptr;
-	const UDynamicMesh* DynamicMesh = MeshData ? MeshData->GetDynamicMesh() : nullptr;
-	const UE::Geometry::FDynamicMesh3* Mesh = DynamicMesh ? DynamicMesh->GetMeshPtr() : nullptr;
-	if (!SelectionData || !MeshData || !Mesh)
-	{
-		return false;
-	}
-
-	UE::Geometry::FGeometrySelection TriangleSeedSelection;
-	if (!PCGUtilsDynMeshSelectionDomains::ConvertSelection(
-		MeshData, *Mesh, SelectionData->GetSelection(),
-		UE::Geometry::EGeometryElementType::Face, bAllowPartialInclusion, TriangleSeedSelection))
-	{
-		PCGLog::LogErrorOnGraph(LOCTEXT("SeedConversionFailed", "Select Connected could not convert the incoming selection to triangles."), Context);
-		return false;
-	}
-
-	TSet<int32> ConnectedTriangleIDs;
-	if (!ExpandToConnectedTriangles(MeshData, *Mesh, TriangleSeedSelection, ConnectionType, ConnectedTriangleIDs))
-	{
-		PCGLog::LogErrorOnGraph(LOCTEXT("ElementExpansionFailed", "Select Connected could not generate the connected region."), Context);
-		return false;
-	}
-
-	UE::Geometry::FGeometrySelection TriangleResultSelection;
-	TriangleResultSelection.InitializeTypes(
-		UE::Geometry::EGeometryElementType::Face, UE::Geometry::EGeometryTopologyType::Triangle);
-	for (const int32 TriangleID : ConnectedTriangleIDs)
-	{
-		TriangleResultSelection.Selection.Add(UE::Geometry::FGeoSelectionID::MeshTriangle(TriangleID).Encoded());
-	}
-
-	return PCGUtilsDynMeshSelectionDomains::ConvertSelection(
-		MeshData, *Mesh, TriangleResultSelection, SelectionData->GetSelection().ElementType,
-		bAllowPartialInclusion, OutSelection);
-}
-
 TSharedPtr<FPCGUtilsDynMeshSelectionOperation>
 UPCGDynMeshExpandToConnectedSelectionFactoryData::CreateNativeOperationInternal() const
 {
@@ -259,38 +201,23 @@ void UPCGDynMeshExpandToConnectedSelectionFactoryData::AddToCrc(
 	}
 }
 
-UPCGUtilsDynMeshFactoryData*
-UPCGDynMeshExpandToConnectedSelectionSettings::CreateFactory(
-	FPCGContext* InContext, UPCGUtilsDynMeshFactoryData* InFactory) const
+UPCGUtilsDynMeshSelectionFactoryData*
+UPCGDynMeshExpandToConnectedSelectionSettings::CreateDecoratorFactory(
+	FPCGContext* InContext,
+	const UPCGUtilsDynMeshSelectionFactoryData* ChildSelector) const
 {
-	TArray<TObjectPtr<const UPCGUtilsDynMeshSelectionFactoryData>> SeedFactories;
-	if (!PCGUtilsDynMeshFactories::GetInputFactories(
-		InContext, PCGDynMeshExpandToConnectedSelectionConstants::SeedFactoryInputPin,
-		SeedFactories, PCGUtilsDynMeshFactories::GetSelectionFactoryTypes()))
+	if (!ChildSelector)
 	{
 		return nullptr;
 	}
-
-	if (SeedFactories.Num() != 1)
-	{
-		PCGLog::LogErrorOnGraph(
-			LOCTEXT("RequiresOneSeedFactory", "Select Connected requires exactly one seed selector in Selector mode."),
-			InContext);
-		return nullptr;
-	}
-
-	UPCGDynMeshExpandToConnectedSelectionFactoryData* Factory = InFactory
-		? Cast<UPCGDynMeshExpandToConnectedSelectionFactoryData>(InFactory)
-		: FPCGContext::NewObject_AnyThread<UPCGDynMeshExpandToConnectedSelectionFactoryData>(InContext);
-	if (!Factory)
-	{
-		return nullptr;
-	}
+	UPCGDynMeshExpandToConnectedSelectionFactoryData* Factory =
+		FPCGContext::NewObject_AnyThread<UPCGDynMeshExpandToConnectedSelectionFactoryData>(InContext);
 
 	Factory->Priority = Priority;
-	Factory->SeedFactory = SeedFactories[0];
+	Factory->SeedFactory = ChildSelector;
 	Factory->ConnectionType = ConnectionType;
-	return Super::CreateFactory(InContext, Factory);
+	Factory->bAllowPartialInclusion = bAllowPartialInclusion;
+	return Factory;
 }
 
 #undef LOCTEXT_NAMESPACE

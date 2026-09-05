@@ -9,6 +9,7 @@
 #include "Factories/PCGUtilsDynMeshBuilderFactory.h"
 #include "Factories/PCGUtilsDynMeshSelectionFactory.h"
 #include "Misc/CoreDelegates.h"
+#include "Modules/ModuleManager.h"
 #endif
 
 #define LOCTEXT_NAMESPACE "FPCGUtilsDynMeshModule"
@@ -18,6 +19,9 @@ DEFINE_LOG_CATEGORY(LogPCGUtilsDynMesh);
 void FPCGUtilsDynMeshModule::StartupModule()
 {
 #if WITH_EDITOR
+	// PCGUtilsDynMesh loads in PreDefault while the engine PCG module normally loads in Default. Commandlets do
+	// not incidentally preload PCG like the editor does, so establish the registry dependency explicitly.
+	FModuleManager::LoadModuleChecked<FPCGModule>(TEXT("PCG"));
 	RegisterPinColors();
 
 	// The registry lives in the PCG module; register cleanup on PreExit (as PCGEditor does)

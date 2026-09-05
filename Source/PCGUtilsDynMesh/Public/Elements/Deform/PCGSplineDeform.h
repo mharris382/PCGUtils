@@ -66,7 +66,7 @@ enum class EPCGUtilsSplineDeformOutOfRangeMode : uint8
  * frame is still derived from the complete source mesh bounds, not the selection, so narrowing the selection
  * never changes where the mesh maps onto the spline.
  */
-UCLASS(BlueprintType, ClassGroup=(Procedural), Category="PCGUtils|DynMesh")
+UCLASS(BlueprintType, ClassGroup=(Procedural), Category="PCGUtils|DynMesh", meta=(Keywords="DynMesh mesh selection selector spline deform curve"))
 class PCGUTILSDYNMESH_API UPCGSplineDeformSettings : public UPCGUtilsDynMeshProcessBaseSettings
 {
 	GENERATED_BODY()

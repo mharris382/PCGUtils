@@ -17,6 +17,11 @@
     "Installed": true,
     "Modules": [
         {
+            "Name": "PCGUtilsCore",
+            "Type": "Runtime",
+            "LoadingPhase": "PreDefault"
+        },
+        {
             "Name": "PCGUtils",
             "Type": "Runtime",
             "LoadingPhase": "PreDefault"

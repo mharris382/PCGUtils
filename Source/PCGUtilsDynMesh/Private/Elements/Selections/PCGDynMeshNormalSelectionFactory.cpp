@@ -147,11 +147,6 @@ FText UPCGDynMeshNormalSelectionFactoryProviderSettings::GetNodeTooltipText() co
 }
 #endif
 
-FName UPCGDynMeshNormalSelectionFactoryProviderSettings::GetMainOutputPin() const
-{
-	return PCGUtilsDynMeshSelectionFactoryConstants::OutputPin;
-}
-
 const FPCGDataTypeBaseId& UPCGDynMeshNormalSelectionFactoryProviderSettings::GetFactoryTypeId() const
 {
 	return FPCGUtilsDynMeshSelectionFactoryDataTypeInfo::AsId();

@@ -4,6 +4,7 @@
 #include "DynamicMesh/DynamicMesh3.h"
 #include "PCGContext.h"
 #include "PCGPin.h"
+#include "Serialization/ArchiveCrc32.h"
 #include "Utils/PCGLogErrors.h"
 
 #define LOCTEXT_NAMESPACE "PCGSelectDynamicMeshTriangles"
@@ -35,6 +36,51 @@ namespace
 		if (!FaceNormal.Normalize()) return false;
 		return FaceNormal.Dot(ReferenceNormal) >= MinimumDotProduct;
 	}
+
+	class FSelectDynamicMeshTrianglesOperation final : public FPCGUtilsDynMeshSelectionOperation
+	{
+	public:
+		explicit FSelectDynamicMeshTrianglesOperation(
+			const UPCGSelectDynamicMeshTrianglesFactoryData* InFactory)
+			: Factory(InFactory)
+		{
+		}
+
+		virtual bool Initialize(const FPCGUtilsDynMeshSelectionEvaluationContext& InSelectionContext) override
+		{
+			if (!FPCGUtilsDynMeshSelectionOperation::Initialize(InSelectionContext) || !Factory)
+			{
+				return false;
+			}
+			ReferenceNormal = FVector3d(Factory->ReferenceNormal);
+			if (Factory->Mode == EPCGDynamicMeshTriangleSelectionMode::FaceNormal &&
+				!ReferenceNormal.Normalize())
+			{
+				PCGLog::LogErrorOnGraph(
+					LOCTEXT("ZeroReferenceNormal", "Select Mesh Triangles requires a non-zero Reference Normal."), Context);
+				return false;
+			}
+			ThresholdSquared = FMath::Square(FMath::Max(0.0, Factory->EdgeLengthThreshold));
+			MinimumEdges = FMath::Clamp(Factory->MinimumMatchingEdges, 1, 3);
+			MinimumDot = FMath::Clamp(Factory->MinimumDotProduct, -1.0, 1.0);
+			return true;
+		}
+
+		virtual bool TestElement(int32 TriangleID) const override
+		{
+			bool bSelected = Factory->Mode == EPCGDynamicMeshTriangleSelectionMode::EdgeLength
+				? MatchesEdgeLength(SelectionContext->Mesh, TriangleID, ThresholdSquared, MinimumEdges)
+				: MatchesFaceNormal(SelectionContext->Mesh, TriangleID, ReferenceNormal, MinimumDot);
+			return bSelected != Factory->bInvertSelection;
+		}
+
+	private:
+		TObjectPtr<const UPCGSelectDynamicMeshTrianglesFactoryData> Factory;
+		FVector3d ReferenceNormal = FVector3d(0.0, 0.0, 1.0);
+		double ThresholdSquared = 0.0;
+		double MinimumDot = 0.0;
+		int32 MinimumEdges = 1;
+	};
 }
 
 #if WITH_EDITOR
@@ -49,40 +95,43 @@ FText UPCGSelectDynamicMeshTrianglesSettings::GetNodeTooltipText() const
 }
 #endif
 
-FPCGElementPtr UPCGSelectDynamicMeshTrianglesSettings::CreateElement() const
+TSharedPtr<FPCGUtilsDynMeshSelectionOperation>
+UPCGSelectDynamicMeshTrianglesFactoryData::CreateNativeOperationInternal() const
 {
-	return MakeShared<FPCGSelectDynamicMeshTrianglesElement>();
+	return MakeShared<FSelectDynamicMeshTrianglesOperation>(this);
 }
 
-bool FPCGSelectDynamicMeshTrianglesElement::ComputeMatchSelection(const UPCGDynamicMeshData*,
-	const UE::Geometry::FDynamicMesh3& Mesh, const FPCGDynamicMeshSelectionCandidates& Candidates,
-	FPCGContext* Context, UE::Geometry::FGeometrySelection& OutSelection) const
+void UPCGSelectDynamicMeshTrianglesFactoryData::AddToCrc(
+	FArchiveCrc32& Ar, bool bFullDataCrc) const
 {
-	const UPCGSelectDynamicMeshTrianglesSettings* Settings = Context->GetInputSettings<UPCGSelectDynamicMeshTrianglesSettings>();
-	check(Settings);
-
-	FVector3d ReferenceNormal(Settings->ReferenceNormal);
-	if (Settings->Mode == EPCGDynamicMeshTriangleSelectionMode::FaceNormal && !ReferenceNormal.Normalize())
+	Super::AddToCrc(Ar, bFullDataCrc);
+	if (bFullDataCrc)
 	{
-		PCGLog::LogErrorOnGraph(LOCTEXT("ZeroReferenceNormal", "Select Mesh Triangles requires a non-zero Reference Normal."), Context);
-		return false;
+		uint8 ModeValue = static_cast<uint8>(Mode);
+		double Length = EdgeLengthThreshold;
+		int32 EdgeCount = MinimumMatchingEdges;
+		FVector Normal = ReferenceNormal;
+		double Dot = MinimumDotProduct;
+		bool bInvert = bInvertSelection;
+		Ar << ModeValue << Length << EdgeCount << Normal << Dot << bInvert;
 	}
+}
 
-	const double ThresholdSquared = FMath::Square(FMath::Max(0.0, Settings->EdgeLengthThreshold));
-	const int32 MinimumEdges = FMath::Clamp(Settings->MinimumMatchingEdges, 1, 3);
-	OutSelection.InitializeTypes(UE::Geometry::EGeometryElementType::Face, UE::Geometry::EGeometryTopologyType::Triangle);
-	Candidates.ProcessTriangles([&](const int32 TriangleID)
-	{
-		bool bSelected = Settings->Mode == EPCGDynamicMeshTriangleSelectionMode::EdgeLength
-			? MatchesEdgeLength(Mesh, TriangleID, ThresholdSquared, MinimumEdges)
-			: MatchesFaceNormal(Mesh, TriangleID, ReferenceNormal, FMath::Clamp(Settings->MinimumDotProduct, -1.0, 1.0));
-		bSelected ^= Settings->bInvertSelection;
-		if (bSelected)
-		{
-			OutSelection.Selection.Add(UE::Geometry::FGeoSelectionID::MeshTriangle(TriangleID).Encoded());
-		}
-	});
-	return true;
+UPCGUtilsDynMeshFactoryData* UPCGSelectDynamicMeshTrianglesSettings::CreateFactory(
+	FPCGContext* InContext, UPCGUtilsDynMeshFactoryData* InFactory) const
+{
+	UPCGSelectDynamicMeshTrianglesFactoryData* Factory = InFactory
+		? Cast<UPCGSelectDynamicMeshTrianglesFactoryData>(InFactory)
+		: FPCGContext::NewObject_AnyThread<UPCGSelectDynamicMeshTrianglesFactoryData>(InContext);
+	if (!Factory) return nullptr;
+	Factory->Priority = Priority;
+	Factory->Mode = Mode;
+	Factory->EdgeLengthThreshold = EdgeLengthThreshold;
+	Factory->MinimumMatchingEdges = MinimumMatchingEdges;
+	Factory->ReferenceNormal = ReferenceNormal;
+	Factory->MinimumDotProduct = MinimumDotProduct;
+	Factory->bInvertSelection = bInvertSelection;
+	return Super::CreateFactory(InContext, Factory);
 }
 
 #undef LOCTEXT_NAMESPACE

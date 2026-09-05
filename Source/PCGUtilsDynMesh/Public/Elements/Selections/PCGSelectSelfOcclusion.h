@@ -1,7 +1,7 @@
 #pragma once
 
 #include "CoreMinimal.h"
-#include "Elements/Selections/PCGDynamicMeshSelectionFilterBase.h"
+#include "Factories/PCGUtilsDynMeshDomainSelectionFactory.h"
 
 #include "PCGSelectSelfOcclusion.generated.h"
 
@@ -40,21 +40,64 @@ enum class EPCGDynMeshSelfOcclusionResult : uint8
  * Normal an effective pruning pass before the more expensive self-occlusion queries.
  */
 UCLASS(BlueprintType, ClassGroup=(Procedural), Category="PCGUtils|DynMesh|Selections")
-class PCGUTILSDYNMESH_API UPCGSelectSelfOcclusionSettings : public UPCGDynamicMeshSelectionFilterBaseSettings
+class PCGUTILSDYNMESH_API UPCGSelectSelfOcclusionFactoryData
+	: public UPCGUtilsDynMeshDomainSelectionFactoryData
 {
 	GENERATED_BODY()
 
 public:
+	UPROPERTY()
+	EPCGDynMeshSelfOcclusionElementType ElementType = EPCGDynMeshSelfOcclusionElementType::Vertex;
+	UPROPERTY()
+	EPCGDynMeshSelfOcclusionResult Result = EPCGDynMeshSelfOcclusionResult::Occluded;
+	UPROPERTY()
+	FVector TraceDirection = FVector::UpVector;
+	UPROPERTY()
+	EPCGDynMeshSelfOcclusionDirectionSpace DirectionSpace = EPCGDynMeshSelfOcclusionDirectionSpace::World;
+	UPROPERTY()
+	double MaximumDistance = 0.0;
+	UPROPERTY()
+	double NormalOffset = 0.1;
+	UPROPERTY()
+	double DirectionOffset = 0.1;
+	UPROPERTY()
+	bool bIgnoreSourceTriangles = true;
+
+protected:
+	virtual UE::Geometry::EGeometryElementType GetNativeElementTypeInternal() const override
+	{
+		return ElementType == EPCGDynMeshSelfOcclusionElementType::Vertex
+			? UE::Geometry::EGeometryElementType::Vertex
+			: UE::Geometry::EGeometryElementType::Face;
+	}
+	virtual TSharedPtr<FPCGUtilsDynMeshSelectionOperation> CreateNativeOperationInternal() const override;
+	virtual void AddToCrc(FArchiveCrc32& Ar, bool bFullDataCrc) const override;
+};
+
+UCLASS(BlueprintType, ClassGroup=(Procedural), Category="PCGUtils|DynMesh|Selections",
+	meta=(Keywords="Select Self Raycast Mesh Occlusion Selection Selector"))
+class PCGUTILSDYNMESH_API UPCGSelectSelfOcclusionSettings : public UPCGUtilsDynMeshDomainSelectionSourceSettings
+{
+	GENERATED_BODY()
+
+public:
+	UPCGSelectSelfOcclusionSettings()
+	{
+		Representation = EPCGUtilsDynMeshSelectionRepresentation::Selection;
+		SelectionElementType = EPCGUtilsDynMeshSelectionElementType::Vertex;
+		bSupportsMaterializedElementTypeOverride = false;
+	}
+
 #if WITH_EDITOR
 	virtual FName GetDefaultNodeName() const override { return TEXT("SelectSelfOcclusion"); }
 	virtual FText GetDefaultNodeTitle() const override;
-	virtual TArray<FText> GetNodeTitleAliases() const override;
 	virtual FText GetNodeTooltipText() const override;
 	virtual FLinearColor GetNodeTitleColor() const override { return FLinearColor(0.413f, 0.25f, 1.0f, 1.0f); }
 #endif
 
-	/** Mesh element sampled at its position (vertex) or centroid (triangle). */
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Selection", meta=(PCG_Overridable))
+	/** Native mesh element sampled at its position (vertex) or centroid (triangle). */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Selection",
+		meta=(PCG_Overridable, DisplayName="Occlusion Sample Type"))
 	EPCGDynMeshSelfOcclusionElementType ElementType = EPCGDynMeshSelfOcclusionElementType::Vertex;
 
 	/** Whether the output contains blocked candidates or candidates with a clear ray. */
@@ -85,19 +128,17 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Self Hit Prevention", meta=(PCG_Overridable))
 	bool bIgnoreSourceTriangles = true;
 
-protected:
-	virtual FPCGElementPtr CreateElement() const override;
-};
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Selection", AdvancedDisplay, meta=(PCG_Overridable))
+	int32 Priority = 0;
 
-class PCGUTILSDYNMESH_API FPCGSelectSelfOcclusionElement : public FPCGDynamicMeshSelectionFilterBaseElement
-{
-public:
-	/** World-space direction conversion resolves the PCG target actor; mesh access also follows the module's main-thread convention. */
-	virtual bool CanExecuteOnlyOnMainThread(FPCGContext*) const override { return true; }
+	virtual UPCGUtilsDynMeshFactoryData* CreateFactory(
+		FPCGContext* InContext, UPCGUtilsDynMeshFactoryData* InFactory = nullptr) const override;
 
 protected:
-	virtual bool ComputeMatchSelection(const UPCGDynamicMeshData* MeshData,
-		const UE::Geometry::FDynamicMesh3& Mesh, const FPCGDynamicMeshSelectionCandidates& Candidates,
-		FPCGContext* Context,
-		UE::Geometry::FGeometrySelection& OutSelection) const override;
+	virtual UE::Geometry::EGeometryElementType GetMaterializedElementType() const override
+	{
+		return ElementType == EPCGDynMeshSelfOcclusionElementType::Vertex
+			? UE::Geometry::EGeometryElementType::Vertex
+			: UE::Geometry::EGeometryElementType::Face;
+	}
 };

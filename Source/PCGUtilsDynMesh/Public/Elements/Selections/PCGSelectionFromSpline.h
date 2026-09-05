@@ -1,7 +1,7 @@
 #pragma once
 
 #include "CoreMinimal.h"
-#include "Elements/Selections/PCGDynamicMeshSelectionBase.h"
+#include "Factories/PCGUtilsDynMeshDomainSelectionFactory.h"
 
 #include "PCGSelectionFromSpline.generated.h"
 
@@ -23,12 +23,46 @@ enum class EPCGUtilsSplineSelectionCapMode : uint8
  * Creates a Dynamic Mesh vertex selection containing every vertex within Radius of a PCG spline's centerline -
  * conceptually a tube swept along the spline. Uses the same coordinate-space conversion as Spline Deform.
  */
+class UPCGSplineData;
+
 UCLASS(BlueprintType, ClassGroup=(Procedural), Category="PCGUtils|DynMesh|Selections")
-class PCGUTILSDYNMESH_API UPCGSelectionFromSplineSettings : public UPCGDynamicMeshSelectionBaseSettings
+class PCGUTILSDYNMESH_API UPCGSelectionFromSplineFactoryData
+	: public UPCGUtilsDynMeshDomainSelectionFactoryData
 {
 	GENERATED_BODY()
 
 public:
+	UPROPERTY()
+	TObjectPtr<const UPCGSplineData> SplineData;
+	UPROPERTY()
+	float Radius = 100.0f;
+	UPROPERTY()
+	EPCGUtilsSplineSelectionCapMode CapMode = EPCGUtilsSplineSelectionCapMode::Round;
+	UPROPERTY()
+	bool bConvertSplineToLocalSpace = true;
+
+protected:
+	virtual UE::Geometry::EGeometryElementType GetNativeElementTypeInternal() const override
+	{
+		return UE::Geometry::EGeometryElementType::Vertex;
+	}
+	virtual TSharedPtr<FPCGUtilsDynMeshSelectionOperation> CreateNativeOperationInternal() const override;
+	virtual void AddToCrc(FArchiveCrc32& Ar, bool bFullDataCrc) const override;
+};
+
+UCLASS(BlueprintType, ClassGroup=(Procedural), Category="PCGUtils|DynMesh|Selections",
+	meta=(Keywords="Select Selection Selector Spline Tube Selection From Spline"))
+class PCGUTILSDYNMESH_API UPCGSelectionFromSplineSettings : public UPCGUtilsDynMeshDomainSelectionSourceSettings
+{
+	GENERATED_BODY()
+
+public:
+	UPCGSelectionFromSplineSettings()
+	{
+		Representation = EPCGUtilsDynMeshSelectionRepresentation::Selection;
+		SelectionElementType = EPCGUtilsDynMeshSelectionElementType::Vertex;
+	}
+
 #if WITH_EDITOR
 	virtual FName GetDefaultNodeName() const override { return TEXT("SelectionFromSpline"); }
 	virtual FText GetDefaultNodeTitle() const override;
@@ -47,20 +81,12 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Selection", meta=(PCG_Overridable))
 	bool bConvertSplineToLocalSpace = true;
 
-protected:
-	virtual TArray<FPCGPinProperties> InputPinProperties() const override;
-	virtual FPCGElementPtr CreateElement() const override;
-};
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Selection", AdvancedDisplay, meta=(PCG_Overridable))
+	int32 Priority = 0;
 
-class PCGUTILSDYNMESH_API FPCGSelectionFromSplineElement : public FPCGDynamicMeshSelectionBaseElement
-{
-public:
-	/** Resolving the target actor for spline/mesh coordinate-space conversion requires the game thread. */
-	virtual bool CanExecuteOnlyOnMainThread(FPCGContext*) const override { return true; }
+	virtual UPCGUtilsDynMeshFactoryData* CreateFactory(
+		FPCGContext* InContext, UPCGUtilsDynMeshFactoryData* InFactory = nullptr) const override;
 
 protected:
-	virtual bool CreateSelection(const UPCGDynamicMeshData* MeshData,
-		const UE::Geometry::FDynamicMesh3& Mesh, const FPCGDynamicMeshSelectionCandidates& Candidates,
-		FPCGContext* Context,
-		UE::Geometry::FGeometrySelection& OutSelection) const override;
+	virtual TArray<FPCGPinProperties> SourceInputPinProperties() const override;
 };

@@ -47,11 +47,13 @@ public:
 	UPCGDynMeshSelectionBoundaryFactoryProviderSettings()
 	{
 		OperationMode = EPCGUtilsDynMeshSelectionOperationMode::Selector;
+#if WITH_EDITORONLY_DATA
+		bExposeToLibrary = false;
+#endif
 	}
 #if WITH_EDITOR
 	virtual FName GetDefaultNodeName() const override { return TEXT("DynMeshSelectionBoundaryFactory"); }
 	virtual FText GetDefaultNodeTitle() const override;
-	virtual TArray<FText> GetNodeTitleAliases() const override;
 	virtual FText GetNodeTooltipText() const override;
 #endif
 

@@ -109,15 +109,7 @@ void UPCGDynMeshSelectionFromPointsFactoryData::AddToCrc(FArchiveCrc32& Ar, bool
 #if WITH_EDITOR
 FText UPCGDynMeshSelectionFromPointsFactoryProviderSettings::GetDefaultNodeTitle() const
 {
-	return LOCTEXT("Title", "Select from Points");
-}
-
-TArray<FText> UPCGDynMeshSelectionFromPointsFactoryProviderSettings::GetNodeTitleAliases() const
-{
-	return {
-		LOCTEXT("VertexIDsAlias", "Vertex IDs Selector"),
-		LOCTEXT("PointIndicesAlias", "Point Indices Selector")
-	};
+	return LOCTEXT("Title", "Select from Vertex IDs");
 }
 
 FText UPCGDynMeshSelectionFromPointsFactoryProviderSettings::GetNodeTooltipText() const
@@ -131,17 +123,12 @@ FString UPCGDynMeshSelectionFromPointsFactoryProviderSettings::GetAdditionalTitl
 }
 #endif
 
-FName UPCGDynMeshSelectionFromPointsFactoryProviderSettings::GetMainOutputPin() const
-{
-	return PCGUtilsDynMeshSelectionFactoryConstants::OutputPin;
-}
-
 const FPCGDataTypeBaseId& UPCGDynMeshSelectionFromPointsFactoryProviderSettings::GetFactoryTypeId() const
 {
 	return FPCGUtilsDynMeshSelectionFactoryDataTypeInfo::AsId();
 }
 
-TArray<FPCGPinProperties> UPCGDynMeshSelectionFromPointsFactoryProviderSettings::InputPinProperties() const
+TArray<FPCGPinProperties> UPCGDynMeshSelectionFromPointsFactoryProviderSettings::SourceInputPinProperties() const
 {
 	TArray<FPCGPinProperties> Pins;
 	Pins.Emplace_GetRef(

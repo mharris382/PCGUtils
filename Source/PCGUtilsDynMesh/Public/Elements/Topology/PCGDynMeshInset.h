@@ -8,7 +8,7 @@
 #include "PCGDynMeshInset.generated.h"
 
 /** Inset/outset with the inner face region available for the next operation. */
-UCLASS(BlueprintType, ClassGroup=(Procedural), Category="PCGUtils|DynMesh")
+UCLASS(BlueprintType, ClassGroup=(Procedural), Category="PCGUtils|DynMesh", meta=(Keywords="DynMesh mesh selection selector inset faces"))
 class PCGUTILSDYNMESH_API UPCGDynMeshInsetSettings : public UPCGUtilsDynMeshTopologyProcessBaseSettings
 {
 	GENERATED_BODY()

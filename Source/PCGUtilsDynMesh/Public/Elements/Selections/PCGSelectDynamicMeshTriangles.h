@@ -1,7 +1,7 @@
 #pragma once
 
 #include "CoreMinimal.h"
-#include "Elements/Selections/PCGDynamicMeshSelectionFilterBase.h"
+#include "Factories/PCGUtilsDynMeshDomainSelectionFactory.h"
 
 #include "PCGSelectDynamicMeshTriangles.generated.h"
 
@@ -12,12 +12,48 @@ enum class EPCGDynamicMeshTriangleSelectionMode : uint8
 	FaceNormal
 };
 
-UCLASS(BlueprintType, ClassGroup=(Procedural), Category="PCGUtils|DynMesh")
-class PCGUTILSDYNMESH_API UPCGSelectDynamicMeshTrianglesSettings : public UPCGDynamicMeshSelectionFilterBaseSettings
+UCLASS(BlueprintType, ClassGroup=(Procedural), Category="PCGUtils|DynMesh|Selections")
+class PCGUTILSDYNMESH_API UPCGSelectDynamicMeshTrianglesFactoryData
+	: public UPCGUtilsDynMeshDomainSelectionFactoryData
 {
 	GENERATED_BODY()
 
 public:
+	UPROPERTY()
+	EPCGDynamicMeshTriangleSelectionMode Mode = EPCGDynamicMeshTriangleSelectionMode::EdgeLength;
+	UPROPERTY()
+	double EdgeLengthThreshold = 100.0;
+	UPROPERTY()
+	int32 MinimumMatchingEdges = 2;
+	UPROPERTY()
+	FVector ReferenceNormal = FVector::UpVector;
+	UPROPERTY()
+	double MinimumDotProduct = 0.0;
+	UPROPERTY()
+	bool bInvertSelection = false;
+
+protected:
+	virtual UE::Geometry::EGeometryElementType GetNativeElementTypeInternal() const override
+	{
+		return UE::Geometry::EGeometryElementType::Face;
+	}
+	virtual TSharedPtr<FPCGUtilsDynMeshSelectionOperation> CreateNativeOperationInternal() const override;
+	virtual void AddToCrc(FArchiveCrc32& Ar, bool bFullDataCrc) const override;
+};
+
+UCLASS(BlueprintType, ClassGroup=(Procedural), Category="PCGUtils|DynMesh|Selections",
+	meta=(Keywords="Select Selection Selector Triangle Face Edge Length Normal"))
+class PCGUTILSDYNMESH_API UPCGSelectDynamicMeshTrianglesSettings : public UPCGUtilsDynMeshDomainSelectionSourceSettings
+{
+	GENERATED_BODY()
+
+public:
+	UPCGSelectDynamicMeshTrianglesSettings()
+	{
+		Representation = EPCGUtilsDynMeshSelectionRepresentation::Selection;
+		SelectionElementType = EPCGUtilsDynMeshSelectionElementType::Triangle;
+	}
+
 #if WITH_EDITOR
 	virtual FName GetDefaultNodeName() const override { return TEXT("SelectDynMeshTriangles"); }
 	virtual FText GetDefaultNodeTitle() const override;
@@ -48,14 +84,9 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Selection", meta=(PCG_Overridable))
 	bool bInvertSelection = false;
 
-protected:
-	virtual FPCGElementPtr CreateElement() const override;
-};
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Selection", AdvancedDisplay, meta=(PCG_Overridable))
+	int32 Priority = 0;
 
-class PCGUTILSDYNMESH_API FPCGSelectDynamicMeshTrianglesElement : public FPCGDynamicMeshSelectionFilterBaseElement
-{
-protected:
-	virtual bool ComputeMatchSelection(const UPCGDynamicMeshData* MeshData,
-		const UE::Geometry::FDynamicMesh3& Mesh, const FPCGDynamicMeshSelectionCandidates& Candidates,
-		FPCGContext* Context, UE::Geometry::FGeometrySelection& OutSelection) const override;
+	virtual UPCGUtilsDynMeshFactoryData* CreateFactory(
+		FPCGContext* InContext, UPCGUtilsDynMeshFactoryData* InFactory = nullptr) const override;
 };

@@ -1,4 +1,5 @@
 // Copyright Max Harris
+// Shared factory infrastructure; intentionally independent of mesh modules.
 // Factory architecture adapted from PCGExtendedToolkit, Copyright 2026 Timothe Lapetite and contributors (MIT).
 
 #include "Factories/PCGUtilsDynMeshFactoryProvider.h"
@@ -10,18 +11,6 @@
 #include "Utils/PCGLogErrors.h"
 
 #define LOCTEXT_NAMESPACE "PCGUtilsDynMeshFactoryProvider"
-
-void UPCGUtilsDynMeshFactoryProviderSettings::ApplyDeprecationBeforeUpdatePins(
-	UPCGNode* InOutNode, TArray<TObjectPtr<UPCGPin>>& InputPins,
-	TArray<TObjectPtr<UPCGPin>>& OutputPins)
-{
-	Super::ApplyDeprecationBeforeUpdatePins(InOutNode, InputPins, OutputPins);
-	if (InOutNode)
-	{
-		InOutNode->RenameInputPin(TEXT("Factories"), TEXT("Selectors"));
-		InOutNode->RenameOutputPin(TEXT("Selection Factory"), TEXT("Selector"));
-	}
-}
 
 FName UPCGUtilsDynMeshFactoryProviderSettings::GetMainOutputPin() const
 {
@@ -71,7 +60,7 @@ bool FPCGUtilsDynMeshFactoryProviderElement::ExecuteInternal(FPCGContext* Contex
 
 	if (!Factory->Prepare(Context))
 	{
-		PCGLog::LogErrorOnGraph(LOCTEXT("FactoryPreparationFailed", "Provider preparation failed."), Context);
+		PCGLog::LogErrorOnGraph(LOCTEXT("FactoryPreparationFailed", "Reusable operation preparation failed."), Context);
 		return true;
 	}
 

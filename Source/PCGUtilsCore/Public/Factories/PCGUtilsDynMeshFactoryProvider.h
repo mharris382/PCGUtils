@@ -10,8 +10,8 @@
 
 class UPCGUtilsDynMeshFactoryData;
 
-UCLASS(Abstract, BlueprintType, ClassGroup=(Procedural), Category="PCGUtils|DynMesh|Providers")
-class PCGUTILSDYNMESH_API UPCGUtilsDynMeshFactoryProviderSettings : public UPCGSettings
+UCLASS(Abstract, BlueprintType, ClassGroup=(Procedural), Category="PCGUtils|Core")
+class PCGUTILSCORE_API UPCGUtilsDynMeshFactoryProviderSettings : public UPCGSettings
 {
 	GENERATED_BODY()
 
@@ -28,16 +28,13 @@ public:
 		FPCGContext* InContext, UPCGUtilsDynMeshFactoryData* InFactory = nullptr) const;
 
 protected:
-	virtual void ApplyDeprecationBeforeUpdatePins(
-		UPCGNode* InOutNode, TArray<TObjectPtr<UPCGPin>>& InputPins,
-		TArray<TObjectPtr<UPCGPin>>& OutputPins) override;
 	virtual const FPCGDataTypeBaseId& GetFactoryTypeId() const;
 	virtual TArray<FPCGPinProperties> InputPinProperties() const override;
 	virtual TArray<FPCGPinProperties> OutputPinProperties() const override;
 	virtual FPCGElementPtr CreateElement() const override;
 };
 
-class PCGUTILSDYNMESH_API FPCGUtilsDynMeshFactoryProviderElement final : public IPCGElement
+class PCGUTILSCORE_API FPCGUtilsDynMeshFactoryProviderElement final : public IPCGElement
 {
 protected:
 	virtual bool ExecuteInternal(FPCGContext* Context) const override;

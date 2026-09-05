@@ -13,7 +13,7 @@
  * MeshTarget/PCGUtilsMeshTargetFunctions.h) - the same infrastructure Bevel Edges is built on, since
  * SetMeshSelectionVertexColor is itself selection-aware and needs no region extraction/weld.
  */
-UCLASS(BlueprintType, ClassGroup=(Procedural), Category="PCGUtils|DynMesh")
+UCLASS(BlueprintType, ClassGroup=(Procedural), Category="PCGUtils|DynMesh", meta=(Keywords="DynMesh mesh selection selector vertex color colour set"))
 class PCGUTILSDYNMESH_API UPCGSetVertexColorSettings : public UPCGUtilsDynMeshProcessBaseSettings
 {
 	GENERATED_BODY()

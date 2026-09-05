@@ -22,7 +22,7 @@ enum class EPCGDynMeshSeparationMode : uint8
  * opposite side deleted via GeometryScript - no region extraction/weld is involved, since the two halves are meant
  * to end up as separate meshes rather than being recombined.
  */
-UCLASS(BlueprintType, ClassGroup=(Procedural), Category="PCGUtils|DynMesh")
+UCLASS(BlueprintType, ClassGroup=(Procedural), Category="PCGUtils|DynMesh", meta=(Keywords="DynMesh mesh selection selector separate split selection"))
 class PCGUTILSDYNMESH_API UPCGSeparateSelectionSettings : public UPCGUtilsDynMeshProcessBaseSettings
 {
 	GENERATED_BODY()

@@ -9,7 +9,7 @@
  * Bevels all edges or the effective edge selection using Geometry Script's underlying bevel operation.
  * Newly created bevel faces form the result selection; the topology base handles result groups and Selectors.
  */
-UCLASS(BlueprintType, ClassGroup=(Procedural), Category="PCGUtils|DynMesh")
+UCLASS(BlueprintType, ClassGroup=(Procedural), Category="PCGUtils|DynMesh", meta=(Keywords="DynMesh mesh selection selector bevel edge chamfer"))
 class PCGUTILSDYNMESH_API UPCGBevelEdgesSettings : public UPCGUtilsDynMeshTopologyProcessBaseSettings
 {
 	GENERATED_BODY()

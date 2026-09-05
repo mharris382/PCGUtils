@@ -8,10 +8,12 @@
 struct FPCGContext;
 
 /** Lightweight per-execution operation created from immutable factory data. */
-class PCGUTILSDYNMESH_API FPCGUtilsDynMeshOperation : public TSharedFromThis<FPCGUtilsDynMeshOperation>
+class PCGUTILSCORE_API FPCGUtilsDynMeshOperation : public TSharedFromThis<FPCGUtilsDynMeshOperation>
 {
 public:
-	virtual ~FPCGUtilsDynMeshOperation() = default;
+	FPCGUtilsDynMeshOperation();
+	FPCGUtilsDynMeshOperation(const FPCGUtilsDynMeshOperation&);
+	virtual ~FPCGUtilsDynMeshOperation();
 
 	void BindContext(FPCGContext* InContext) { Context = InContext; }
 

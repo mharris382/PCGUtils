@@ -221,7 +221,7 @@ UPCGDynamicMeshUVProjectSettings::UPCGDynamicMeshUVProjectSettings()
 #if WITH_EDITOR
 FText UPCGDynamicMeshUVProjectSettings::GetDefaultNodeTitle() const
 {
-	return LOCTEXT("Title", "UV Project");
+	return LOCTEXT("Title", "Project DynMesh UVs");
 }
 
 FText UPCGDynamicMeshUVProjectSettings::GetNodeTooltipText() const

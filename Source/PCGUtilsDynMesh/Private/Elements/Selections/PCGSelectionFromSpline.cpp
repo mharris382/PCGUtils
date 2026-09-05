@@ -5,14 +5,91 @@
 #include "Elements/PCGUtilsSplineHelpers.h"
 #include "PCGContext.h"
 #include "PCGPin.h"
+#include "Serialization/ArchiveCrc32.h"
 #include "Utils/PCGLogErrors.h"
 
 #define LOCTEXT_NAMESPACE "PCGSelectionFromSplineElement"
 
+namespace
+{
+	class FSelectionFromSplineOperation final : public FPCGUtilsDynMeshSelectionOperation
+	{
+	public:
+		explicit FSelectionFromSplineOperation(const UPCGSelectionFromSplineFactoryData* InFactory)
+			: Factory(InFactory)
+		{
+		}
+
+		virtual bool Initialize(const FPCGUtilsDynMeshSelectionEvaluationContext& InSelectionContext) override
+		{
+			if (!FPCGUtilsDynMeshSelectionOperation::Initialize(InSelectionContext) ||
+				!Factory || !Factory->SplineData)
+			{
+				return false;
+			}
+
+			ActorTransform = PCGUtilsSplineHelpers::ResolveActorTransformForSpline(
+				Context, Factory->SplineData, Factory->bConvertSplineToLocalSpace);
+			Radius = FMath::Max(Factory->Radius, 0.0f);
+			const FPCGSplineStruct& Spline = Factory->SplineData->SplineStruct;
+			bFlatCaps = !Spline.IsClosedLoop() && Factory->CapMode == EPCGUtilsSplineSelectionCapMode::Flat;
+			EndInputKey = static_cast<float>(Spline.GetNumberOfSplineSegments());
+			if (bFlatCaps)
+			{
+				StartWorldPos = Spline.GetLocationAtSplineInputKey(0.0f, ESplineCoordinateSpace::World);
+				EndWorldPos = Spline.GetLocationAtSplineInputKey(EndInputKey, ESplineCoordinateSpace::World);
+				StartWorldTangent = Spline.GetTangentAtSplineInputKey(
+					0.0f, ESplineCoordinateSpace::World).GetSafeNormal();
+				EndWorldTangent = Spline.GetTangentAtSplineInputKey(
+					EndInputKey, ESplineCoordinateSpace::World).GetSafeNormal();
+			}
+			return true;
+		}
+
+		virtual bool TestElement(int32 VertexID) const override
+		{
+			const FPCGSplineStruct& Spline = Factory->SplineData->SplineStruct;
+			const FVector WorldPos = ActorTransform.TransformPosition(
+				SelectionContext->Mesh.GetVertex(VertexID));
+			const float ClosestKey = Spline.FindInputKeyClosestToWorldLocation(WorldPos);
+			const FVector ClosestWorldPos = Spline.GetLocationAtSplineInputKey(
+				ClosestKey, ESplineCoordinateSpace::World);
+			if (FVector::Dist(WorldPos, ClosestWorldPos) > Radius)
+			{
+				return false;
+			}
+
+			constexpr float KeyEpsilon = UE_KINDA_SMALL_NUMBER;
+			if (bFlatCaps && ClosestKey <= KeyEpsilon &&
+				FVector::DotProduct(WorldPos - StartWorldPos, StartWorldTangent) < 0.0)
+			{
+				return false;
+			}
+			if (bFlatCaps && ClosestKey >= EndInputKey - KeyEpsilon &&
+				FVector::DotProduct(WorldPos - EndWorldPos, EndWorldTangent) > 0.0)
+			{
+				return false;
+			}
+			return true;
+		}
+
+	private:
+		TObjectPtr<const UPCGSelectionFromSplineFactoryData> Factory;
+		FTransform ActorTransform = FTransform::Identity;
+		FVector StartWorldPos = FVector::ZeroVector;
+		FVector EndWorldPos = FVector::ZeroVector;
+		FVector StartWorldTangent = FVector::ZeroVector;
+		FVector EndWorldTangent = FVector::ZeroVector;
+		float Radius = 0.0f;
+		float EndInputKey = 0.0f;
+		bool bFlatCaps = false;
+	};
+}
+
 #if WITH_EDITOR
 FText UPCGSelectionFromSplineSettings::GetDefaultNodeTitle() const
 {
-	return LOCTEXT("NodeTitle", "Selection From Spline");
+	return LOCTEXT("NodeTitle", "Select Near Spline");
 }
 
 FText UPCGSelectionFromSplineSettings::GetNodeTooltipText() const
@@ -23,93 +100,51 @@ FText UPCGSelectionFromSplineSettings::GetNodeTooltipText() const
 }
 #endif
 
-TArray<FPCGPinProperties> UPCGSelectionFromSplineSettings::InputPinProperties() const
+TArray<FPCGPinProperties> UPCGSelectionFromSplineSettings::SourceInputPinProperties() const
 {
-	TArray<FPCGPinProperties> Pins = Super::InputPinProperties();
+	TArray<FPCGPinProperties> Pins;
 	Pins.Emplace_GetRef(PCGSelectionFromSplineConstants::SplineInputPin, EPCGDataType::Spline, true, true).SetRequiredPin();
 	return Pins;
 }
 
-FPCGElementPtr UPCGSelectionFromSplineSettings::CreateElement() const
+TSharedPtr<FPCGUtilsDynMeshSelectionOperation>
+UPCGSelectionFromSplineFactoryData::CreateNativeOperationInternal() const
 {
-	return MakeShared<FPCGSelectionFromSplineElement>();
+	return MakeShared<FSelectionFromSplineOperation>(this);
 }
 
-bool FPCGSelectionFromSplineElement::CreateSelection(const UPCGDynamicMeshData*,
-	const UE::Geometry::FDynamicMesh3& Mesh, const FPCGDynamicMeshSelectionCandidates& Candidates,
-	FPCGContext* Context,
-	UE::Geometry::FGeometrySelection& OutSelection) const
+void UPCGSelectionFromSplineFactoryData::AddToCrc(FArchiveCrc32& Ar, bool bFullDataCrc) const
 {
-	using namespace UE::Geometry;
+	Super::AddToCrc(Ar, bFullDataCrc);
+	if (bFullDataCrc)
+	{
+		float RadiusValue = Radius;
+		uint8 CapModeValue = static_cast<uint8>(CapMode);
+		bool bConvert = bConvertSplineToLocalSpace;
+		Ar << RadiusValue << CapModeValue << bConvert;
+	}
+}
 
-	const UPCGSelectionFromSplineSettings* Settings = Context->GetInputSettings<UPCGSelectionFromSplineSettings>();
-	check(Settings);
-	OutSelection.InitializeTypes(EGeometryElementType::Vertex, EGeometryTopologyType::Triangle);
+UPCGUtilsDynMeshFactoryData* UPCGSelectionFromSplineSettings::CreateFactory(
+	FPCGContext* InContext, UPCGUtilsDynMeshFactoryData* InFactory) const
 
-	const UPCGSplineData* SplineData = PCGUtilsSplineHelpers::ResolveSingleSpline(Context, PCGSelectionFromSplineConstants::SplineInputPin);
+{
+	const UPCGSplineData* SplineData = PCGUtilsSplineHelpers::ResolveSingleSpline(
+		InContext, PCGSelectionFromSplineConstants::SplineInputPin);
 	if (!SplineData)
 	{
-		return false;
+		return nullptr;
 	}
-
-	const FPCGSplineStruct& Spline = SplineData->SplineStruct;
-	const FTransform ActorTransform = PCGUtilsSplineHelpers::ResolveActorTransformForSpline(Context, SplineData, Settings->bConvertSplineToLocalSpace);
-
-	const float Radius = FMath::Max(Settings->Radius, 0.0f);
-	const bool bClosedSpline = Spline.IsClosedLoop();
-	const bool bFlatCaps = !bClosedSpline && Settings->CapMode == EPCGUtilsSplineSelectionCapMode::Flat;
-
-	// Endpoint frames for Flat caps, evaluated once. Valid spline-component input-key range for an open spline
-	// is [0, NumSegments].
-	const float EndInputKey = static_cast<float>(Spline.GetNumberOfSplineSegments());
-	FVector StartWorldPos = FVector::ZeroVector, EndWorldPos = FVector::ZeroVector;
-	FVector StartWorldTangent = FVector::ZeroVector, EndWorldTangent = FVector::ZeroVector;
-	if (bFlatCaps)
-	{
-		StartWorldPos = Spline.GetLocationAtSplineInputKey(0.0f, ESplineCoordinateSpace::World);
-		EndWorldPos = Spline.GetLocationAtSplineInputKey(EndInputKey, ESplineCoordinateSpace::World);
-		StartWorldTangent = Spline.GetTangentAtSplineInputKey(0.0f, ESplineCoordinateSpace::World).GetSafeNormal();
-		EndWorldTangent = Spline.GetTangentAtSplineInputKey(EndInputKey, ESplineCoordinateSpace::World).GetSafeNormal();
-	}
-
-	// Nearest-point search is naturally clamped to the spline's own valid key range, so for an open spline a
-	// ClosestKey at/near 0 or NumSegments reliably means the unconstrained nearest point would lie beyond that
-	// endpoint - exactly the signal Flat caps need, without approximating the spline with a sample count.
-	constexpr float KeyEpsilon = UE_KINDA_SMALL_NUMBER;
-
-	Candidates.ProcessVertices([&](int32 VertexID)
-	{
-		const FVector WorldPos = ActorTransform.TransformPosition(Mesh.GetVertex(VertexID));
-		const float ClosestKey = Spline.FindInputKeyClosestToWorldLocation(WorldPos);
-		const FVector ClosestWorldPos = Spline.GetLocationAtSplineInputKey(ClosestKey, ESplineCoordinateSpace::World);
-
-		if (FVector::Dist(WorldPos, ClosestWorldPos) > Radius)
-		{
-			return;
-		}
-
-		if (bFlatCaps)
-		{
-			if (ClosestKey <= KeyEpsilon)
-			{
-				if (FVector::DotProduct(WorldPos - StartWorldPos, StartWorldTangent) < 0.0)
-				{
-					return; // beyond the flat start cap
-				}
-			}
-			else if (ClosestKey >= EndInputKey - KeyEpsilon)
-			{
-				if (FVector::DotProduct(WorldPos - EndWorldPos, EndWorldTangent) > 0.0)
-				{
-					return; // beyond the flat end cap
-				}
-			}
-		}
-
-		OutSelection.Selection.Add(FGeoSelectionID::MeshVertex(VertexID).Encoded());
-	});
-
-	return true;
+	UPCGSelectionFromSplineFactoryData* Factory = InFactory
+		? Cast<UPCGSelectionFromSplineFactoryData>(InFactory)
+		: FPCGContext::NewObject_AnyThread<UPCGSelectionFromSplineFactoryData>(InContext);
+	if (!Factory) return nullptr;
+	Factory->Priority = Priority;
+	Factory->SplineData = SplineData;
+	Factory->Radius = Radius;
+	Factory->CapMode = CapMode;
+	Factory->bConvertSplineToLocalSpace = bConvertSplineToLocalSpace;
+	return Super::CreateFactory(InContext, Factory);
 }
 
 #undef LOCTEXT_NAMESPACE

@@ -3,7 +3,7 @@
 #pragma once
 
 #include "CoreMinimal.h"
-#include "Factories/PCGUtilsDynMeshFactoryProvider.h"
+#include "Elements/Selections/PCGUtilsDynMeshSelectionSource.h"
 #include "Factories/PCGUtilsDynMeshSelectionFactory.h"
 
 #include "PCGDynMeshNormalSelectionFactory.generated.h"
@@ -29,9 +29,10 @@ protected:
 	virtual void AddToCrc(FArchiveCrc32& Ar, bool bFullDataCrc) const override;
 };
 
-UCLASS(BlueprintType, ClassGroup=(Procedural), Category="PCGUtils|DynMesh|Selections")
+UCLASS(BlueprintType, ClassGroup=(Procedural), Category="PCGUtils|DynMesh|Selections",
+	meta=(Keywords="Normal Direction Selection Selector"))
 class PCGUTILSDYNMESH_API UPCGDynMeshNormalSelectionFactoryProviderSettings
-	: public UPCGUtilsDynMeshFactoryProviderSettings
+	: public UPCGUtilsDynMeshSelectionSourceSettings
 {
 	GENERATED_BODY()
 
@@ -53,7 +54,6 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Selection", AdvancedDisplay, meta=(PCG_Overridable))
 	int32 Priority = 0;
 
-	virtual FName GetMainOutputPin() const override;
 	virtual UPCGUtilsDynMeshFactoryData* CreateFactory(
 		FPCGContext* InContext, UPCGUtilsDynMeshFactoryData* InFactory = nullptr) const override;
 

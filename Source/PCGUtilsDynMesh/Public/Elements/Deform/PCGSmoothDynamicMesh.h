@@ -32,7 +32,7 @@ enum class EPCGUtilsDynamicMeshSmoothingMethod : uint8
  *
  * Each input Dynamic Mesh is processed independently; inputs are never merged or unioned together.
  */
-UCLASS(BlueprintType, ClassGroup=(Procedural), Category="PCGUtils|DynMesh")
+UCLASS(BlueprintType, ClassGroup=(Procedural), Category="PCGUtils|DynMesh", meta=(Keywords="DynMesh mesh selection selector smooth relax"))
 class PCGUTILSDYNMESH_API UPCGSmoothDynamicMeshSettings : public UPCGUtilsDynMeshProcessBaseSettings
 {
 	GENERATED_BODY()

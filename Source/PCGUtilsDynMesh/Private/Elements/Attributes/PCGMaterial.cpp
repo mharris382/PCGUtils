@@ -14,7 +14,7 @@
 #if WITH_EDITOR
 FText UPCGMaterialSettings::GetDefaultNodeTitle() const
 {
-	return LOCTEXT("Title", "Material");
+	return LOCTEXT("Title", "Set DynMesh Material");
 }
 
 FText UPCGMaterialSettings::GetNodeTooltipText() const

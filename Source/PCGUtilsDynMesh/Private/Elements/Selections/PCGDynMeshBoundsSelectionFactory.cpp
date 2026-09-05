@@ -219,12 +219,7 @@ void UPCGDynMeshBoundsSelectionFactoryData::AddToCrc(FArchiveCrc32& Ar, bool bFu
 #if WITH_EDITOR
 FText UPCGDynMeshBoundsSelectionFactoryProviderSettings::GetDefaultNodeTitle() const
 {
-	return LOCTEXT("Title", "Select Bounds");
-}
-
-TArray<FText> UPCGDynMeshBoundsSelectionFactoryProviderSettings::GetNodeTitleAliases() const
-{
-	return {LOCTEXT("PointBoundsAlias", "Select Bounds")};
+	return LOCTEXT("Title", "Select in Bounds");
 }
 
 FText UPCGDynMeshBoundsSelectionFactoryProviderSettings::GetNodeTooltipText() const
@@ -233,17 +228,12 @@ FText UPCGDynMeshBoundsSelectionFactoryProviderSettings::GetNodeTooltipText() co
 }
 #endif
 
-FName UPCGDynMeshBoundsSelectionFactoryProviderSettings::GetMainOutputPin() const
-{
-	return PCGUtilsDynMeshSelectionFactoryConstants::OutputPin;
-}
-
 const FPCGDataTypeBaseId& UPCGDynMeshBoundsSelectionFactoryProviderSettings::GetFactoryTypeId() const
 {
 	return FPCGUtilsDynMeshSelectionFactoryDataTypeInfo::AsId();
 }
 
-TArray<FPCGPinProperties> UPCGDynMeshBoundsSelectionFactoryProviderSettings::InputPinProperties() const
+TArray<FPCGPinProperties> UPCGDynMeshBoundsSelectionFactoryProviderSettings::SourceInputPinProperties() const
 {
 	TArray<FPCGPinProperties> Pins;
 	Pins.Emplace_GetRef(

@@ -44,12 +44,7 @@ namespace
 				OrderedChildFactories.Add(ChildFactory);
 			}
 
-			// Groups use priority as short-circuit precedence. Keep equal-priority selectors in connection order.
-			OrderedChildFactories.StableSort([](const UPCGUtilsDynMeshSelectionFactoryData& A,
-				const UPCGUtilsDynMeshSelectionFactoryData& B)
-			{
-				return A.Priority > B.Priority;
-			});
+			PCGUtilsDynMeshSelectionFactories::SortByPriority(OrderedChildFactories);
 
 			ChildOperations.Reserve(OrderedChildFactories.Num());
 			for (const UPCGUtilsDynMeshSelectionFactoryData* ChildFactory : OrderedChildFactories)
@@ -168,63 +163,48 @@ FText UPCGDynMeshSelectionFactoryGroupProviderSettings::GetNodeTooltipText() con
 		"Higher-priority selectors evaluate first; AND and OR stop evaluating an element as soon as its result is known.");
 }
 
-TArray<FText> UPCGDynMeshSelectionFactoryGroupProviderSettings::GetNodeTitleAliases() const
-{
-	return {
-		LOCTEXT("AndAlias", "Intersect Selectors"),
-		LOCTEXT("IntersectAlias", "Intersect Selectors"),
-		LOCTEXT("OrAlias", "Add Selectors"),
-		LOCTEXT("UnionAlias", "Union Selectors"),
-		LOCTEXT("NotAlias", "Invert Selector")
-	};
-}
-
 TArray<FPCGPreConfiguredSettingsInfo>
 UPCGDynMeshSelectionFactoryGroupProviderSettings::GetPreconfiguredInfo() const
 {
-	return {
-		{static_cast<int32>(EPCGUtilsDynMeshSelectionFactoryGroupMode::And),
-			LOCTEXT("AndPreconfiguredTitle", "Selectors AND"),
-			LOCTEXT("AndPreconfiguredTooltip", "Keeps an element only when every child selector passes.")},
-		{static_cast<int32>(EPCGUtilsDynMeshSelectionFactoryGroupMode::Or),
-			LOCTEXT("OrPreconfiguredTitle", "Selectors OR"),
-			LOCTEXT("OrPreconfiguredTooltip", "Keeps an element when any child selector passes.")},
-		{static_cast<int32>(EPCGUtilsDynMeshSelectionFactoryGroupMode::Not),
-			LOCTEXT("NotPreconfiguredTitle", "Selector NOT"),
-			LOCTEXT("NotPreconfiguredTooltip", "Inverts the result of one child selector.")}
-	};
+	TArray<FPCGPreConfiguredSettingsInfo> Presets = MakeRepresentationPresets(
+		LOCTEXT("AndDisplayName", "Selectors AND"), 0, 1);
+	Presets.Append(MakeRepresentationPresets(
+		LOCTEXT("OrDisplayName", "Selectors OR"), 2, 3));
+	Presets.Append(MakeRepresentationPresets(
+		LOCTEXT("NotDisplayName", "Selector NOT"), 4, 5));
+	return Presets;
 }
 
 void UPCGDynMeshSelectionFactoryGroupProviderSettings::ApplyPreconfiguredSettings(
 	const FPCGPreConfiguredSettingsInfo& PreconfiguredInfo)
 {
 	Super::ApplyPreconfiguredSettings(PreconfiguredInfo);
-	switch (static_cast<EPCGUtilsDynMeshSelectionFactoryGroupMode>(PreconfiguredInfo.PreconfiguredIndex))
+	if (ApplyRepresentationPreset(PreconfiguredInfo.PreconfiguredIndex, 0, 1, Representation))
 	{
-	case EPCGUtilsDynMeshSelectionFactoryGroupMode::And:
-	case EPCGUtilsDynMeshSelectionFactoryGroupMode::Or:
-	case EPCGUtilsDynMeshSelectionFactoryGroupMode::Not:
-		Mode = static_cast<EPCGUtilsDynMeshSelectionFactoryGroupMode>(PreconfiguredInfo.PreconfiguredIndex);
-		break;
-	default:
+		Mode = EPCGUtilsDynMeshSelectionFactoryGroupMode::And;
+	}
+	else if (ApplyRepresentationPreset(PreconfiguredInfo.PreconfiguredIndex, 2, 3, Representation))
+	{
+		Mode = EPCGUtilsDynMeshSelectionFactoryGroupMode::Or;
+	}
+	else if (ApplyRepresentationPreset(PreconfiguredInfo.PreconfiguredIndex, 4, 5, Representation))
+	{
+		Mode = EPCGUtilsDynMeshSelectionFactoryGroupMode::Not;
+	}
+	else
+	{
 		ensureMsgf(false, TEXT("Unknown DynMesh Selection Logic preconfiguration index: %d"),
 			PreconfiguredInfo.PreconfiguredIndex);
-		break;
 	}
 }
 #endif
-
-FName UPCGDynMeshSelectionFactoryGroupProviderSettings::GetMainOutputPin() const
-{
-	return PCGUtilsDynMeshSelectionFactoryConstants::OutputPin;
-}
 
 const FPCGDataTypeBaseId& UPCGDynMeshSelectionFactoryGroupProviderSettings::GetFactoryTypeId() const
 {
 	return FPCGUtilsDynMeshSelectionFactoryDataTypeInfo::AsId();
 }
 
-TArray<FPCGPinProperties> UPCGDynMeshSelectionFactoryGroupProviderSettings::InputPinProperties() const
+TArray<FPCGPinProperties> UPCGDynMeshSelectionFactoryGroupProviderSettings::SourceInputPinProperties() const
 {
 	TArray<FPCGPinProperties> Pins;
 	Pins.Emplace_GetRef(

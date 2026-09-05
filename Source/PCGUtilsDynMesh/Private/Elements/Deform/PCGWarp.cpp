@@ -119,7 +119,7 @@ namespace
 #if WITH_EDITOR
 FText UPCGWarpSettings::GetDefaultNodeTitle() const
 {
-	return LOCTEXT("NodeTitle", "Warp");
+	return LOCTEXT("NodeTitle", "Warp DynMesh");
 }
 
 FText UPCGWarpSettings::GetNodeTooltipText() const

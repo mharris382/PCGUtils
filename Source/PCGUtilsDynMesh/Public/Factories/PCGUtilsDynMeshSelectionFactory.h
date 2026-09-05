@@ -16,6 +16,7 @@ namespace UE::Geometry
 }
 
 class UPCGDynamicMeshData;
+class UPCGDynamicMeshSelectionData;
 
 namespace PCGUtilsDynMeshSelectionFactoryConstants
 {
@@ -74,6 +75,31 @@ protected:
 	virtual TSharedPtr<FPCGUtilsDynMeshSelectionOperation> CreateOperationInternal() const;
 };
 
+/**
+ * Internal representation bridge that exposes an existing mesh-bound Selection as a deferred Selector.
+ * Selection modifier nodes use this as their child so their Selection and Selector modes execute the same
+ * decorator factory implementation.
+ */
+UCLASS()
+class PCGUTILSDYNMESH_API UPCGUtilsDynMeshLiteralSelectionFactoryData
+	: public UPCGUtilsDynMeshSelectionFactoryData
+{
+	GENERATED_BODY()
+
+public:
+	UPROPERTY()
+	TObjectPtr<const UPCGDynamicMeshSelectionData> SelectionData;
+
+	UPROPERTY()
+	bool bAllowPartialInclusion = true;
+
+	virtual bool SupportsDomain(const FPCGUtilsDynMeshSelectionDomain& Domain) const override;
+
+protected:
+	virtual TSharedPtr<FPCGUtilsDynMeshSelectionOperation> CreateOperationInternal() const override;
+	virtual void AddToCrc(FArchiveCrc32& Ar, bool bFullDataCrc) const override;
+};
+
 /** Runtime boolean predicate evaluated once per mesh element in the selected domain. */
 class PCGUTILSDYNMESH_API FPCGUtilsDynMeshSelectionOperation : public FPCGUtilsDynMeshOperation
 {
@@ -92,6 +118,10 @@ namespace PCGUtilsDynMeshFactories
 
 namespace PCGUtilsDynMeshSelectionFactories
 {
+	/** Orders selectors by short-circuit precedence. Equal priorities retain their connection order. */
+	PCGUTILSDYNMESH_API void SortByPriority(
+		TArray<TObjectPtr<const UPCGUtilsDynMeshSelectionFactoryData>>& Factories);
+
 	/** Evaluates one factory across its requested domain and materializes the matching mesh elements. */
 	PCGUTILSDYNMESH_API bool EvaluateFactory(
 		const UPCGUtilsDynMeshSelectionFactoryData* Factory,

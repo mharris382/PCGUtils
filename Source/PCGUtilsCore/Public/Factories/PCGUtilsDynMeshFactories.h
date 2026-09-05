@@ -11,7 +11,7 @@ struct FPCGContext;
 
 namespace PCGUtilsDynMeshFactories
 {
-	PCGUTILSDYNMESH_API bool GetInputFactoriesInternal(
+	PCGUTILSCORE_API bool GetInputFactoriesInternal(
 		FPCGContext* InContext,
 		FName InPinLabel,
 		TArray<TObjectPtr<const UPCGUtilsDynMeshFactoryData>>& OutFactories,

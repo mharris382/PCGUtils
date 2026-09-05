@@ -40,7 +40,7 @@ enum class EPCGUtilsWarpControlMode : uint8
  * warp's lower/upper extent along the point's local Z axis) - multiple inputs apply sequentially to the same
  * target mesh before the result is restored once.
  */
-UCLASS(BlueprintType, ClassGroup=(Procedural), Category="PCGUtils|DynMesh")
+UCLASS(BlueprintType, ClassGroup=(Procedural), Category="PCGUtils|DynMesh", meta=(Keywords="DynMesh mesh selection selector warp deform"))
 class PCGUTILSDYNMESH_API UPCGWarpSettings : public UPCGUtilsDynMeshProcessBaseSettings
 {
 	GENERATED_BODY()

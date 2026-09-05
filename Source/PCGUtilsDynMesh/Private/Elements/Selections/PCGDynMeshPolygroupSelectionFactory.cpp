@@ -138,21 +138,11 @@ FText UPCGDynMeshPolygroupSelectionFactoryProviderSettings::GetDefaultNodeTitle(
 	return LOCTEXT("Title", "Select by PolyGroup");
 }
 
-TArray<FText> UPCGDynMeshPolygroupSelectionFactoryProviderSettings::GetNodeTitleAliases() const
-{
-	return { LOCTEXT("Alias", "PolyGroup Selector"), LOCTEXT("DynMeshAlias", "DynMesh PolyGroup Selector") };
-}
-
 FText UPCGDynMeshPolygroupSelectionFactoryProviderSettings::GetNodeTooltipText() const
 {
 	return LOCTEXT("Tooltip", "Creates a reusable PolyGroup Selector for explicit group IDs or the highest ID used by triangles in a layer. Selects faces and automatically converts to vertices or edges when requested. Connect to Build DynMesh Selection or a process node's Selector input. Highest ID is not a guarantee of boolean operand provenance.");
 }
 #endif
-
-FName UPCGDynMeshPolygroupSelectionFactoryProviderSettings::GetMainOutputPin() const
-{
-	return PCGUtilsDynMeshSelectionFactoryConstants::OutputPin;
-}
 
 const FPCGDataTypeBaseId& UPCGDynMeshPolygroupSelectionFactoryProviderSettings::GetFactoryTypeId() const
 {

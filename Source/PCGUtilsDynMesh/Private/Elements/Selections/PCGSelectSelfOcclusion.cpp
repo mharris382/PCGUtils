@@ -7,23 +7,133 @@
 #include "DynamicMesh/MeshNormals.h"
 #include "Elements/PCGUtilsDynMeshSpaceHelpers.h"
 #include "PCGContext.h"
+#include "Serialization/ArchiveCrc32.h"
 #include "Spatial/SpatialInterfaces.h"
 #include "Utils/PCGLogErrors.h"
 
 #define LOCTEXT_NAMESPACE "PCGSelectSelfOcclusion"
 
+namespace
+{
+	class FSelectSelfOcclusionOperation final : public FPCGUtilsDynMeshSelectionOperation
+	{
+	public:
+		explicit FSelectSelfOcclusionOperation(const UPCGSelectSelfOcclusionFactoryData* InFactory)
+			: Factory(InFactory)
+		{
+		}
+
+		virtual bool Initialize(const FPCGUtilsDynMeshSelectionEvaluationContext& InSelectionContext) override
+		{
+			if (!FPCGUtilsDynMeshSelectionOperation::Initialize(InSelectionContext) ||
+				!Factory || !InSelectionContext.MeshData)
+			{
+				return false;
+			}
+
+			FVector ResolvedDirection = Factory->TraceDirection;
+			if (Factory->DirectionSpace == EPCGDynMeshSelfOcclusionDirectionSpace::World)
+			{
+				const FTransform ActorTransform = PCGUtilsDynMeshSpaceHelpers::ResolveMeshActorTransform(
+					Context, InSelectionContext.MeshData, /*bConvertToLocalSpace=*/true);
+				ResolvedDirection = ActorTransform.InverseTransformVectorNoScale(ResolvedDirection);
+			}
+			if (!ResolvedDirection.Normalize())
+			{
+				PCGLog::LogErrorOnGraph(
+					LOCTEXT("ZeroTraceDirection", "Select by Self Occlusion requires a non-zero Trace Direction."), Context);
+				return false;
+			}
+
+			Direction = FVector3d(ResolvedDirection);
+			NormalOffset = FMath::Max(0.0, Factory->NormalOffset);
+			DirectionOffset = FMath::Max(0.0, Factory->DirectionOffset);
+			MaximumDistance = Factory->MaximumDistance > 0.0
+				? Factory->MaximumDistance : TNumericLimits<double>::Max();
+			bWantOccluded = Factory->Result == EPCGDynMeshSelfOcclusionResult::Occluded;
+			Spatial = MakeUnique<UE::Geometry::FDynamicMeshAABBTree3>(
+				&InSelectionContext.Mesh, /*bAutoBuild=*/true);
+
+			if (Factory->ElementType == EPCGDynMeshSelfOcclusionElementType::Vertex)
+			{
+				VertexNormals = MakeUnique<UE::Geometry::FMeshNormals>(&InSelectionContext.Mesh);
+				if (InSelectionContext.Mesh.HasAttributes() &&
+					InSelectionContext.Mesh.Attributes()->PrimaryNormals())
+				{
+					VertexNormals->GetVertexNormalsFromOverlayNormals(
+						UE::Geometry::FMeshNormals::ECombineSplitNormalsMethod::Average);
+				}
+				else
+				{
+					VertexNormals->ComputeVertexNormals();
+				}
+			}
+			return true;
+		}
+
+		virtual bool TestElement(int32 ElementID) const override
+		{
+			using namespace UE::Geometry;
+			const FDynamicMesh3& Mesh = SelectionContext->Mesh;
+			FVector3d Position;
+			FVector3d Normal;
+			int32 SourceVertexID = INDEX_NONE;
+			int32 SourceTriangleID = INDEX_NONE;
+			if (Factory->ElementType == EPCGDynMeshSelfOcclusionElementType::Vertex)
+			{
+				if (!Mesh.IsVertex(ElementID)) return false;
+				Position = Mesh.GetVertex(ElementID);
+				const TArray<FVector3d>& Normals = VertexNormals->GetNormals();
+				Normal = Normals.IsValidIndex(ElementID) ? Normals[ElementID] : FVector3d::UnitZ();
+				SourceVertexID = ElementID;
+			}
+			else
+			{
+				if (!Mesh.IsTriangle(ElementID)) return false;
+				FVector3d A, B, C;
+				Mesh.GetTriVertices(ElementID, A, B, C);
+				Position = (A + B + C) / 3.0;
+				Normal = Mesh.GetTriNormal(ElementID);
+				SourceTriangleID = ElementID;
+			}
+
+			if (!Normal.Normalize()) Normal = FVector3d::UnitZ();
+			const FVector3d Origin = Position + Normal * NormalOffset + Direction * DirectionOffset;
+			IMeshSpatial::FQueryOptions QueryOptions;
+			QueryOptions.MaxDistance = MaximumDistance;
+			if (Factory->bIgnoreSourceTriangles)
+			{
+				QueryOptions.TriangleFilterF = [&Mesh, SourceVertexID, SourceTriangleID](int32 TriangleID)
+				{
+					if (TriangleID == SourceTriangleID) return false;
+					return SourceVertexID == INDEX_NONE || !Mesh.GetTriangle(TriangleID).Contains(SourceVertexID);
+				};
+			}
+
+			double HitDistance = 0.0;
+			int32 HitTriangleID = INDEX_NONE;
+			FVector3d HitBarycentrics = FVector3d::Zero();
+			const bool bOccluded = Spatial->FindNearestHitTriangle(
+				FRay3d(Origin, Direction), HitDistance, HitTriangleID, HitBarycentrics, QueryOptions);
+			return bOccluded == bWantOccluded;
+		}
+
+	private:
+		TObjectPtr<const UPCGSelectSelfOcclusionFactoryData> Factory;
+		TUniquePtr<UE::Geometry::FDynamicMeshAABBTree3> Spatial;
+		TUniquePtr<UE::Geometry::FMeshNormals> VertexNormals;
+		FVector3d Direction = FVector3d::UnitZ();
+		double MaximumDistance = TNumericLimits<double>::Max();
+		double NormalOffset = 0.0;
+		double DirectionOffset = 0.0;
+		bool bWantOccluded = true;
+	};
+}
+
 #if WITH_EDITOR
 FText UPCGSelectSelfOcclusionSettings::GetDefaultNodeTitle() const
 {
-	return LOCTEXT("Title", "Select Self Occlusion");
-}
-
-TArray<FText> UPCGSelectSelfOcclusionSettings::GetNodeTitleAliases() const
-{
-	return {
-		LOCTEXT("SelfRaycastAlias", "Select by Self Raycast"),
-		LOCTEXT("MeshOcclusionAlias", "Select by Mesh Occlusion")
-	};
+	return LOCTEXT("Title", "Select by Self Occlusion");
 }
 
 FText UPCGSelectSelfOcclusionSettings::GetNodeTooltipText() const
@@ -32,122 +142,51 @@ FText UPCGSelectSelfOcclusionSettings::GetNodeTooltipText() const
 }
 #endif
 
-FPCGElementPtr UPCGSelectSelfOcclusionSettings::CreateElement() const
+TSharedPtr<FPCGUtilsDynMeshSelectionOperation>
+UPCGSelectSelfOcclusionFactoryData::CreateNativeOperationInternal() const
 {
-	return MakeShared<FPCGSelectSelfOcclusionElement>();
+	return MakeShared<FSelectSelfOcclusionOperation>(this);
 }
 
-bool FPCGSelectSelfOcclusionElement::ComputeMatchSelection(const UPCGDynamicMeshData* MeshData,
-	const UE::Geometry::FDynamicMesh3& Mesh, const FPCGDynamicMeshSelectionCandidates& Candidates,
-	FPCGContext* Context, UE::Geometry::FGeometrySelection& OutSelection) const
+void UPCGSelectSelfOcclusionFactoryData::AddToCrc(
+	FArchiveCrc32& Ar, bool bFullDataCrc) const
 {
-	using namespace UE::Geometry;
-
-	const UPCGSelectSelfOcclusionSettings* Settings = Context->GetInputSettings<UPCGSelectSelfOcclusionSettings>();
-	check(Settings && MeshData);
-
-	FVector TraceDirection = Settings->TraceDirection;
-	if (Settings->DirectionSpace == EPCGDynMeshSelfOcclusionDirectionSpace::World)
+	Super::AddToCrc(Ar, bFullDataCrc);
+	if (bFullDataCrc)
 	{
-		const FTransform ActorTransform = PCGUtilsDynMeshSpaceHelpers::ResolveMeshActorTransform(
-			Context, MeshData, /*bConvertToLocalSpace=*/true);
-		TraceDirection = ActorTransform.InverseTransformVectorNoScale(TraceDirection);
+		uint8 ElementTypeValue = static_cast<uint8>(ElementType);
+		uint8 ResultValue = static_cast<uint8>(Result);
+		uint8 DirectionSpaceValue = static_cast<uint8>(DirectionSpace);
+		FVector DirectionValue = TraceDirection;
+		double MaximumDistanceValue = MaximumDistance;
+		double NormalOffsetValue = NormalOffset;
+		double DirectionOffsetValue = DirectionOffset;
+		bool bIgnore = bIgnoreSourceTriangles;
+		Ar << ElementTypeValue << ResultValue << DirectionValue << DirectionSpaceValue;
+		Ar << MaximumDistanceValue << NormalOffsetValue << DirectionOffsetValue << bIgnore;
 	}
-	if (!TraceDirection.Normalize())
+}
+
+UPCGUtilsDynMeshFactoryData* UPCGSelectSelfOcclusionSettings::CreateFactory(
+	FPCGContext* InContext, UPCGUtilsDynMeshFactoryData* InFactory) const
+{
+	UPCGSelectSelfOcclusionFactoryData* Factory = InFactory
+		? Cast<UPCGSelectSelfOcclusionFactoryData>(InFactory)
+		: FPCGContext::NewObject_AnyThread<UPCGSelectSelfOcclusionFactoryData>(InContext);
+	if (!Factory)
 	{
-		PCGLog::LogErrorOnGraph(
-			LOCTEXT("ZeroTraceDirection", "Select Self Occlusion requires a non-zero Trace Direction."), Context);
-		return false;
+		return nullptr;
 	}
-
-	const FVector3d Direction(TraceDirection);
-	const double NormalOffset = FMath::Max(0.0, Settings->NormalOffset);
-	const double DirectionOffset = FMath::Max(0.0, Settings->DirectionOffset);
-	const double MaximumDistance = Settings->MaximumDistance > 0.0
-		? Settings->MaximumDistance : TNumericLimits<double>::Max();
-	const bool bWantOccluded = Settings->Result == EPCGDynMeshSelfOcclusionResult::Occluded;
-
-	FDynamicMeshAABBTree3 Spatial(&Mesh, /*bAutoBuild=*/true);
-
-	auto RayMatches = [&](const FVector3d& Position, const FVector3d& Normal,
-		int32 SourceVertexID, int32 SourceTriangleID)
-	{
-		FVector3d SafeNormal = Normal;
-		if (!SafeNormal.Normalize())
-		{
-			SafeNormal = FVector3d::UnitZ();
-		}
-		const FVector3d Origin = Position + SafeNormal * NormalOffset + Direction * DirectionOffset;
-
-		IMeshSpatial::FQueryOptions QueryOptions;
-		QueryOptions.MaxDistance = MaximumDistance;
-		if (Settings->bIgnoreSourceTriangles)
-		{
-			QueryOptions.TriangleFilterF = [&Mesh, SourceVertexID, SourceTriangleID](int32 TriangleID)
-			{
-				if (TriangleID == SourceTriangleID)
-				{
-					return false;
-				}
-				return SourceVertexID == INDEX_NONE || !Mesh.GetTriangle(TriangleID).Contains(SourceVertexID);
-			};
-		}
-
-		double HitDistance = 0.0;
-		int32 HitTriangleID = INDEX_NONE;
-		FVector3d HitBarycentrics = FVector3d::Zero();
-		const bool bOccluded = Spatial.FindNearestHitTriangle(
-			FRay3d(Origin, Direction), HitDistance, HitTriangleID, HitBarycentrics, QueryOptions);
-		return bOccluded == bWantOccluded;
-	};
-
-	if (Settings->ElementType == EPCGDynMeshSelfOcclusionElementType::Vertex)
-	{
-		OutSelection.InitializeTypes(EGeometryElementType::Vertex, EGeometryTopologyType::Triangle);
-
-		FMeshNormals VertexNormals(&Mesh);
-		if (Mesh.HasAttributes() && Mesh.Attributes()->PrimaryNormals())
-		{
-			VertexNormals.GetVertexNormalsFromOverlayNormals(FMeshNormals::ECombineSplitNormalsMethod::Average);
-		}
-		else
-		{
-			VertexNormals.ComputeVertexNormals();
-		}
-		const TArray<FVector3d>& Normals = VertexNormals.GetNormals();
-
-		Candidates.ProcessVertices([&](int32 VertexID)
-		{
-			if (!Mesh.IsVertex(VertexID))
-			{
-				return;
-			}
-			const FVector3d Normal = Normals.IsValidIndex(VertexID) ? Normals[VertexID] : FVector3d::UnitZ();
-			if (RayMatches(Mesh.GetVertex(VertexID), Normal, VertexID, INDEX_NONE))
-			{
-				OutSelection.Selection.Add(FGeoSelectionID::MeshVertex(VertexID).Encoded());
-			}
-		});
-	}
-	else
-	{
-		OutSelection.InitializeTypes(EGeometryElementType::Face, EGeometryTopologyType::Triangle);
-		Candidates.ProcessTriangles([&](int32 TriangleID)
-		{
-			if (!Mesh.IsTriangle(TriangleID))
-			{
-				return;
-			}
-			FVector3d A, B, C;
-			Mesh.GetTriVertices(TriangleID, A, B, C);
-			if (RayMatches((A + B + C) / 3.0, Mesh.GetTriNormal(TriangleID), INDEX_NONE, TriangleID))
-			{
-				OutSelection.Selection.Add(FGeoSelectionID::MeshTriangle(TriangleID).Encoded());
-			}
-		});
-	}
-
-	return true;
+	Factory->Priority = Priority;
+	Factory->ElementType = ElementType;
+	Factory->Result = Result;
+	Factory->TraceDirection = TraceDirection;
+	Factory->DirectionSpace = DirectionSpace;
+	Factory->MaximumDistance = MaximumDistance;
+	Factory->NormalOffset = NormalOffset;
+	Factory->DirectionOffset = DirectionOffset;
+	Factory->bIgnoreSourceTriangles = bIgnoreSourceTriangles;
+	return Super::CreateFactory(InContext, Factory);
 }
 
 #undef LOCTEXT_NAMESPACE

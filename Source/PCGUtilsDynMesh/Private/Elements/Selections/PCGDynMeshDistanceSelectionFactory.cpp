@@ -267,14 +267,6 @@ FText UPCGDynMeshDistanceSelectionFactoryProviderSettings::GetDefaultNodeTitle()
 	return LOCTEXT("Title", "Select by Distance");
 }
 
-TArray<FText> UPCGDynMeshDistanceSelectionFactoryProviderSettings::GetNodeTitleAliases() const
-{
-	return {
-		LOCTEXT("ProximityAlias", "Proximity Selector"),
-		LOCTEXT("RangeAlias", "Range Selector")
-	};
-}
-
 FText UPCGDynMeshDistanceSelectionFactoryProviderSettings::GetNodeTooltipText() const
 {
 	return LOCTEXT("Tooltip", "Creates a reusable predicate comparing each mesh element's center to the nearest target PCG point. The Build node determines the vertex, edge, or triangle domain.");
@@ -287,17 +279,12 @@ FString UPCGDynMeshDistanceSelectionFactoryProviderSettings::GetAdditionalTitleI
 }
 #endif
 
-FName UPCGDynMeshDistanceSelectionFactoryProviderSettings::GetMainOutputPin() const
-{
-	return PCGUtilsDynMeshSelectionFactoryConstants::OutputPin;
-}
-
 const FPCGDataTypeBaseId& UPCGDynMeshDistanceSelectionFactoryProviderSettings::GetFactoryTypeId() const
 {
 	return FPCGUtilsDynMeshSelectionFactoryDataTypeInfo::AsId();
 }
 
-TArray<FPCGPinProperties> UPCGDynMeshDistanceSelectionFactoryProviderSettings::InputPinProperties() const
+TArray<FPCGPinProperties> UPCGDynMeshDistanceSelectionFactoryProviderSettings::SourceInputPinProperties() const
 {
 	TArray<FPCGPinProperties> Pins;
 	Pins.Emplace_GetRef(

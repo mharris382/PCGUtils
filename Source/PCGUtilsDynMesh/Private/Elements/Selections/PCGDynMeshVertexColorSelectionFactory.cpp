@@ -248,14 +248,6 @@ FText UPCGDynMeshVertexColorSelectionFactoryProviderSettings::GetDefaultNodeTitl
 	return LOCTEXT("Title", "Select by Vertex Color");
 }
 
-TArray<FText> UPCGDynMeshVertexColorSelectionFactoryProviderSettings::GetNodeTitleAliases() const
-{
-	return {
-		LOCTEXT("ColorAlias", "Color Selector"),
-		LOCTEXT("MeshColorAlias", "Mesh Color Selector")
-	};
-}
-
 FText UPCGDynMeshVertexColorSelectionFactoryProviderSettings::GetNodeTooltipText() const
 {
 	return LOCTEXT("Tooltip", "Creates a reusable vertex-color predicate. Channel mode compares R, G, B, or A; Linear Color Distance mode selects colors within an RGBA distance threshold.");
@@ -271,11 +263,6 @@ FString UPCGDynMeshVertexColorSelectionFactoryProviderSettings::GetAdditionalTit
 	return FString::Printf(TEXT("RGBA Distance <= %.3f"), ColorDistanceThreshold);
 }
 #endif
-
-FName UPCGDynMeshVertexColorSelectionFactoryProviderSettings::GetMainOutputPin() const
-{
-	return PCGUtilsDynMeshSelectionFactoryConstants::OutputPin;
-}
 
 const FPCGDataTypeBaseId& UPCGDynMeshVertexColorSelectionFactoryProviderSettings::GetFactoryTypeId() const
 {

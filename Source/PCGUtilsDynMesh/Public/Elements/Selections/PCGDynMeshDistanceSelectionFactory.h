@@ -4,7 +4,7 @@
 #pragma once
 
 #include "CoreMinimal.h"
-#include "Factories/PCGUtilsDynMeshFactoryProvider.h"
+#include "Elements/Selections/PCGUtilsDynMeshSelectionSource.h"
 #include "Factories/PCGUtilsDynMeshSelectionComparison.h"
 #include "Factories/PCGUtilsDynMeshSelectionFactory.h"
 
@@ -72,9 +72,10 @@ protected:
 	virtual void AddToCrc(FArchiveCrc32& Ar, bool bFullDataCrc) const override;
 };
 
-UCLASS(BlueprintType, ClassGroup=(Procedural), Category="PCGUtils|DynMesh|Selections")
+UCLASS(BlueprintType, ClassGroup=(Procedural), Category="PCGUtils|DynMesh|Selections",
+	meta=(Keywords="Proximity Range Selection Selector"))
 class PCGUTILSDYNMESH_API UPCGDynMeshDistanceSelectionFactoryProviderSettings
-	: public UPCGUtilsDynMeshFactoryProviderSettings
+	: public UPCGUtilsDynMeshSelectionSourceSettings
 {
 	GENERATED_BODY()
 
@@ -82,7 +83,6 @@ public:
 #if WITH_EDITOR
 	virtual FName GetDefaultNodeName() const override { return TEXT("DynMeshDistanceSelectionFactory"); }
 	virtual FText GetDefaultNodeTitle() const override;
-	virtual TArray<FText> GetNodeTitleAliases() const override;
 	virtual FText GetNodeTooltipText() const override;
 	virtual FString GetAdditionalTitleInformation() const override;
 #endif
@@ -116,11 +116,10 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Selection", AdvancedDisplay, meta=(PCG_Overridable))
 	int32 Priority = 0;
 
-	virtual FName GetMainOutputPin() const override;
 	virtual UPCGUtilsDynMeshFactoryData* CreateFactory(
 		FPCGContext* InContext, UPCGUtilsDynMeshFactoryData* InFactory = nullptr) const override;
 
 protected:
 	virtual const FPCGDataTypeBaseId& GetFactoryTypeId() const override;
-	virtual TArray<FPCGPinProperties> InputPinProperties() const override;
+	virtual TArray<FPCGPinProperties> SourceInputPinProperties() const override;
 };

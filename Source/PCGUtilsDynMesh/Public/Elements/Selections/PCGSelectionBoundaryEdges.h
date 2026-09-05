@@ -14,7 +14,8 @@ namespace PCGSelectionBoundaryEdgesConstants
 }
 
 /** Converts an existing DynMesh selection into the edge selection around its triangle-region boundary. */
-UCLASS(BlueprintType, ClassGroup=(Procedural), Category="PCGUtils|DynMesh|Selections")
+UCLASS(BlueprintType, ClassGroup=(Procedural), Category="PCGUtils|DynMesh|Selections",
+	meta=(Keywords="Boundary of Selection Selection Outline Selection Selector"))
 class PCGUTILSDYNMESH_API UPCGSelectionBoundaryEdgesSettings : public UPCGUtilsDynMeshSelectionOperationSettings
 {
 	GENERATED_BODY()
@@ -23,7 +24,6 @@ public:
 #if WITH_EDITOR
 	virtual FName GetDefaultNodeName() const override { return TEXT("SelectionBoundaryEdges"); }
 	virtual FText GetDefaultNodeTitle() const override;
-	virtual TArray<FText> GetNodeTitleAliases() const override;
 	virtual FText GetNodeTooltipText() const override;
 	virtual FLinearColor GetNodeTitleColor() const override { return FLinearColor(0.413f, 0.25f, 1.0f, 1.0f); }
 #endif
@@ -35,13 +35,11 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Selection", AdvancedDisplay, meta=(PCG_Overridable))
 	int32 Priority = 0;
 
-	virtual UPCGUtilsDynMeshFactoryData* CreateFactory(
-		FPCGContext* InContext, UPCGUtilsDynMeshFactoryData* InFactory = nullptr) const override;
-
 protected:
 	virtual TArray<FPCGPinProperties> SelectorInputPinProperties() const override;
-	virtual bool ProcessSelection(
-		const UPCGDynamicMeshSelectionData* SelectionData,
-		FPCGContext* Context,
-		UE::Geometry::FGeometrySelection& OutSelection) const override;
+	virtual UPCGUtilsDynMeshSelectionFactoryData* CreateDecoratorFactory(
+		FPCGContext* InContext,
+		const UPCGUtilsDynMeshSelectionFactoryData* ChildSelector) const override;
+	virtual UE::Geometry::EGeometryElementType GetMaterializedOutputElementType(
+		const UPCGDynamicMeshSelectionData* SelectionData) const override;
 };

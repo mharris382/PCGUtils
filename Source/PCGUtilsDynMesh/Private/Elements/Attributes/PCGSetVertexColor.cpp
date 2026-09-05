@@ -52,7 +52,7 @@ namespace
 #if WITH_EDITOR
 FText UPCGSetVertexColorSettings::GetDefaultNodeTitle() const
 {
-	return LOCTEXT("Title", "Set Vertex Color");
+	return LOCTEXT("Title", "Set DynMesh Vertex Colors");
 }
 
 FText UPCGSetVertexColorSettings::GetNodeTooltipText() const

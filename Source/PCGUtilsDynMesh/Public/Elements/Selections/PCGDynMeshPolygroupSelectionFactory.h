@@ -51,9 +51,10 @@ protected:
 };
 
 /** Authors a reusable Selector, without requiring a mesh until the consuming node evaluates it. */
-UCLASS(BlueprintType, ClassGroup=(Procedural), Category="PCGUtils|DynMesh|Selections")
+UCLASS(BlueprintType, ClassGroup=(Procedural), Category="PCGUtils|DynMesh|Selections",
+	meta=(Keywords="PolyGroup DynMesh PolyGroup Selection Selector"))
 class PCGUTILSDYNMESH_API UPCGDynMeshPolygroupSelectionFactoryProviderSettings
-	: public UPCGUtilsDynMeshDomainSelectionFactoryProviderSettings
+	: public UPCGUtilsDynMeshDomainSelectionSourceSettings
 {
 	GENERATED_BODY()
 
@@ -61,7 +62,6 @@ public:
 #if WITH_EDITOR
 	virtual FName GetDefaultNodeName() const override { return TEXT("DynMeshPolygroupSelector"); }
 	virtual FText GetDefaultNodeTitle() const override;
-	virtual TArray<FText> GetNodeTitleAliases() const override;
 	virtual FText GetNodeTooltipText() const override;
 #endif
 
@@ -89,7 +89,6 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Selection", AdvancedDisplay, meta=(PCG_Overridable))
 	int32 Priority = 0;
 
-	virtual FName GetMainOutputPin() const override;
 	virtual UPCGUtilsDynMeshFactoryData* CreateFactory(
 		FPCGContext* InContext, UPCGUtilsDynMeshFactoryData* InFactory = nullptr) const override;
 

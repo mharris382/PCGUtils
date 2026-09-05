@@ -19,12 +19,6 @@
 
 namespace
 {
-	enum EPreconfiguredMode : int32
-	{
-		Expand = 0,
-		Contract = 1
-	};
-
 	bool GetIndexType(
 		UE::Geometry::EGeometryElementType ElementType,
 		EGeometryScriptIndexType& OutIndexType)
@@ -207,14 +201,6 @@ FText UPCGDynMeshExpandContractSelectionSettings::GetDefaultNodeTitle() const
 		: LOCTEXT("ExpandTitle", "Expand Selection");
 }
 
-TArray<FText> UPCGDynMeshExpandContractSelectionSettings::GetNodeTitleAliases() const
-{
-	return {
-		LOCTEXT("GrowAlias", "Grow Selection"),
-		LOCTEXT("ShrinkAlias", "Shrink Selection")
-	};
-}
-
 FText UPCGDynMeshExpandContractSelectionSettings::GetNodeTooltipText() const
 {
 	return bContract
@@ -225,32 +211,29 @@ FText UPCGDynMeshExpandContractSelectionSettings::GetNodeTooltipText() const
 TArray<FPCGPreConfiguredSettingsInfo>
 UPCGDynMeshExpandContractSelectionSettings::GetPreconfiguredInfo() const
 {
-	return {
-		{EPreconfiguredMode::Expand,
-			LOCTEXT("ExpandPreconfiguredTitle", "Expand Selection"),
-			LOCTEXT("ExpandPreconfiguredTooltip", "Grows a DynMesh selection to connected neighbouring elements.")},
-		{EPreconfiguredMode::Contract,
-			LOCTEXT("ContractPreconfiguredTitle", "Contract Selection"),
-			LOCTEXT("ContractPreconfiguredTooltip", "Shrinks a DynMesh selection by removing connected boundary elements.")}
-	};
+	TArray<FPCGPreConfiguredSettingsInfo> Presets = MakeRepresentationPresets(
+		LOCTEXT("ExpandDisplayName", "Expand Selection"), 0, 1);
+	Presets.Append(MakeRepresentationPresets(
+		LOCTEXT("ContractDisplayName", "Contract Selection"), 2, 3));
+	return Presets;
 }
 
 void UPCGDynMeshExpandContractSelectionSettings::ApplyPreconfiguredSettings(
 	const FPCGPreConfiguredSettingsInfo& PreconfiguredInfo)
 {
 	Super::ApplyPreconfiguredSettings(PreconfiguredInfo);
-	switch (PreconfiguredInfo.PreconfiguredIndex)
+	if (ApplyRepresentationPreset(PreconfiguredInfo.PreconfiguredIndex, 0, 1, OperationMode))
 	{
-	case EPreconfiguredMode::Expand:
 		bContract = false;
-		break;
-	case EPreconfiguredMode::Contract:
+	}
+	else if (ApplyRepresentationPreset(PreconfiguredInfo.PreconfiguredIndex, 2, 3, OperationMode))
+	{
 		bContract = true;
-		break;
-	default:
+	}
+	else
+	{
 		ensureMsgf(false, TEXT("Unknown DynMesh Expand/Contract Selection preconfiguration index: %d"),
 			PreconfiguredInfo.PreconfiguredIndex);
-		break;
 	}
 }
 #endif
@@ -262,22 +245,6 @@ TArray<FPCGPinProperties> UPCGDynMeshExpandContractSelectionSettings::SelectorIn
 		PCGDynMeshExpandContractSelectionConstants::SeedSelectorPin,
 		FPCGUtilsDynMeshSelectionFactoryDataTypeInfo::AsId(), false, false).SetRequiredPin();
 	return Pins;
-}
-
-bool UPCGDynMeshExpandContractSelectionSettings::ProcessSelection(
-	const UPCGDynamicMeshSelectionData* SelectionData,
-	FPCGContext* Context,
-	UE::Geometry::FGeometrySelection& OutSelection) const
-{
-	if (!SelectionData || !ExpandContractSelection(
-		SelectionData->GetSourceMeshData(), SelectionData->GetSelection(), Iterations,
-		bContract, bOnlyExpandToFaceNeighbours, OutSelection))
-	{
-		PCGLog::LogErrorOnGraph(
-			LOCTEXT("SelectionConversionFailed", "Expand/Contract Selection could not process the incoming selection domain."), Context);
-		return false;
-	}
-	return true;
 }
 
 TSharedPtr<FPCGUtilsDynMeshSelectionOperation>
@@ -302,36 +269,23 @@ void UPCGDynMeshExpandContractSelectionFactoryData::AddToCrc(FArchiveCrc32& Ar, 
 	}
 }
 
-UPCGUtilsDynMeshFactoryData* UPCGDynMeshExpandContractSelectionSettings::CreateFactory(
-	FPCGContext* InContext, UPCGUtilsDynMeshFactoryData* InFactory) const
+UPCGUtilsDynMeshSelectionFactoryData*
+UPCGDynMeshExpandContractSelectionSettings::CreateDecoratorFactory(
+	FPCGContext* InContext,
+	const UPCGUtilsDynMeshSelectionFactoryData* ChildSelector) const
 {
-	TArray<TObjectPtr<const UPCGUtilsDynMeshSelectionFactoryData>> SeedSelectors;
-	if (!PCGUtilsDynMeshFactories::GetInputFactories(
-		InContext, PCGDynMeshExpandContractSelectionConstants::SeedSelectorPin,
-		SeedSelectors, PCGUtilsDynMeshFactories::GetSelectionFactoryTypes()))
+	if (!ChildSelector)
 	{
 		return nullptr;
 	}
-	if (SeedSelectors.Num() != 1)
-	{
-		PCGLog::LogErrorOnGraph(
-			LOCTEXT("RequiresOneSeedSelector", "Expand/Contract Selection requires exactly one seed selector in Selector mode."), InContext);
-		return nullptr;
-	}
-
-	UPCGDynMeshExpandContractSelectionFactoryData* Factory = InFactory
-		? Cast<UPCGDynMeshExpandContractSelectionFactoryData>(InFactory)
-		: FPCGContext::NewObject_AnyThread<UPCGDynMeshExpandContractSelectionFactoryData>(InContext);
-	if (!Factory)
-	{
-		return nullptr;
-	}
+	UPCGDynMeshExpandContractSelectionFactoryData* Factory =
+		FPCGContext::NewObject_AnyThread<UPCGDynMeshExpandContractSelectionFactoryData>(InContext);
 	Factory->Priority = Priority;
-	Factory->SeedFactory = SeedSelectors[0];
+	Factory->SeedFactory = ChildSelector;
 	Factory->Iterations = Iterations;
 	Factory->bContract = bContract;
 	Factory->bOnlyExpandToFaceNeighbours = bOnlyExpandToFaceNeighbours;
-	return UPCGUtilsDynMeshFactoryProviderSettings::CreateFactory(InContext, Factory);
+	return Factory;
 }
 
 #undef LOCTEXT_NAMESPACE

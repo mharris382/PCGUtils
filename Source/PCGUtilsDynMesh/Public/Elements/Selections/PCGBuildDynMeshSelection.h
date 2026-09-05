@@ -4,16 +4,9 @@
 
 #include "CoreMinimal.h"
 #include "Elements/Selections/PCGDynamicMeshSelectionBase.h"
+#include "Elements/Selections/PCGUtilsDynMeshSelectionTypes.h"
 
 #include "PCGBuildDynMeshSelection.generated.h"
-
-UENUM(BlueprintType)
-enum class EPCGUtilsDynMeshSelectionElementType : uint8
-{
-	Triangle,
-	Vertex,
-	Edge
-};
 
 /** Evaluates a tree of selection factories against a DynMesh and emits existing materialized selection data. */
 UCLASS(BlueprintType, ClassGroup=(Procedural), Category="PCGUtils|DynMesh|Selections")

@@ -23,7 +23,7 @@ struct FPCGDynamicMeshUVProjector
 
 /** Execution-local projector cache shared by every target mesh in one node execution. */
 /** Projects planar UVs from one or more projector points. */
-UCLASS(BlueprintType, ClassGroup=(Procedural), Category="PCGUtils|DynMesh|UV")
+UCLASS(BlueprintType, ClassGroup=(Procedural), Category="PCGUtils|DynMesh|UV", meta=(Keywords="DynMesh mesh selection selector UV project texture"))
 class PCGUTILSDYNMESH_API UPCGDynamicMeshUVProjectSettings
 	: public UPCGDynamicMeshUVProcessBaseSettings
 {

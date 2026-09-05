@@ -38,7 +38,8 @@ protected:
 };
 
 /** Grows or shrinks an existing DynMesh selection across connected mesh elements. */
-UCLASS(BlueprintType, ClassGroup=(Procedural), Category="PCGUtils|DynMesh|Selections")
+UCLASS(BlueprintType, ClassGroup=(Procedural), Category="PCGUtils|DynMesh|Selections",
+	meta=(Keywords="Grow Shrink Selection Selector"))
 class PCGUTILSDYNMESH_API UPCGDynMeshExpandContractSelectionSettings : public UPCGUtilsDynMeshSelectionOperationSettings
 {
 	GENERATED_BODY()
@@ -47,12 +48,9 @@ public:
 #if WITH_EDITOR
 	virtual FName GetDefaultNodeName() const override { return TEXT("DynMeshExpandContractSelection"); }
 	virtual FText GetDefaultNodeTitle() const override;
-	virtual TArray<FText> GetNodeTitleAliases() const override;
 	virtual FText GetNodeTooltipText() const override;
 	virtual FLinearColor GetNodeTitleColor() const override { return FLinearColor(0.413f, 0.25f, 1.0f, 1.0f); }
 	virtual TArray<FPCGPreConfiguredSettingsInfo> GetPreconfiguredInfo() const override;
-	virtual bool OnlyExposePreconfiguredSettings() const override { return true; }
-	virtual bool GroupPreconfiguredSettings() const override { return false; }
 	virtual void ApplyPreconfiguredSettings(const FPCGPreConfiguredSettingsInfo& PreconfiguredInfo) override;
 #endif
 
@@ -73,13 +71,9 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Selection", AdvancedDisplay, meta=(PCG_Overridable))
 	int32 Priority = 0;
 
-	virtual UPCGUtilsDynMeshFactoryData* CreateFactory(
-		FPCGContext* InContext, UPCGUtilsDynMeshFactoryData* InFactory = nullptr) const override;
-
 protected:
 	virtual TArray<FPCGPinProperties> SelectorInputPinProperties() const override;
-	virtual bool ProcessSelection(
-		const UPCGDynamicMeshSelectionData* SelectionData,
-		FPCGContext* Context,
-		UE::Geometry::FGeometrySelection& OutSelection) const override;
+	virtual UPCGUtilsDynMeshSelectionFactoryData* CreateDecoratorFactory(
+		FPCGContext* InContext,
+		const UPCGUtilsDynMeshSelectionFactoryData* ChildSelector) const override;
 };

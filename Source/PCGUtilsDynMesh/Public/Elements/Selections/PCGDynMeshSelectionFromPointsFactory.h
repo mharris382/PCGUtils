@@ -37,9 +37,10 @@ protected:
 	virtual void AddToCrc(FArchiveCrc32& Ar, bool bFullDataCrc) const override;
 };
 
-UCLASS(BlueprintType, ClassGroup=(Procedural), Category="PCGUtils|DynMesh|Selections")
+UCLASS(BlueprintType, ClassGroup=(Procedural), Category="PCGUtils|DynMesh|Selections",
+	meta=(Keywords="Vertex IDs Point Indices Selection Selector"))
 class PCGUTILSDYNMESH_API UPCGDynMeshSelectionFromPointsFactoryProviderSettings
-	: public UPCGUtilsDynMeshDomainSelectionFactoryProviderSettings
+	: public UPCGUtilsDynMeshDomainSelectionSourceSettings
 {
 	GENERATED_BODY()
 
@@ -47,7 +48,6 @@ public:
 #if WITH_EDITOR
 	virtual FName GetDefaultNodeName() const override { return TEXT("DynMeshSelectionFromPointsFactory"); }
 	virtual FText GetDefaultNodeTitle() const override;
-	virtual TArray<FText> GetNodeTitleAliases() const override;
 	virtual FText GetNodeTooltipText() const override;
 	virtual FString GetAdditionalTitleInformation() const override;
 #endif
@@ -59,11 +59,10 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Selection", AdvancedDisplay, meta=(PCG_Overridable))
 	int32 Priority = 0;
 
-	virtual FName GetMainOutputPin() const override;
 	virtual UPCGUtilsDynMeshFactoryData* CreateFactory(
 		FPCGContext* InContext, UPCGUtilsDynMeshFactoryData* InFactory = nullptr) const override;
 
 protected:
 	virtual const FPCGDataTypeBaseId& GetFactoryTypeId() const override;
-	virtual TArray<FPCGPinProperties> InputPinProperties() const override;
+	virtual TArray<FPCGPinProperties> SourceInputPinProperties() const override;
 };

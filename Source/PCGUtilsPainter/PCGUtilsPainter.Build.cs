@@ -27,6 +27,7 @@ public class PCGUtilsPainter : ModuleRules
                 "PCG",
                 "PCGGeometryScriptInterop",
                 "PCGUtils",
+                "PCGUtilsCore",
                 "PCGUtilsDynMesh"
             }
         );

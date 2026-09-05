@@ -7,8 +7,21 @@
 #include "GeometryScript/GeometryScriptSelectionTypes.h"
 #include "GeometryScript/MeshSelectionFunctions.h"
 #include "PCGContext.h"
+#include "PCGNode.h"
 #include "Serialization/ArchiveCrc32.h"
 #include "UDynamicMesh.h"
+
+void UPCGUtilsDynMeshDomainSelectionFactoryProviderSettings::ApplyDeprecationBeforeUpdatePins(
+	UPCGNode* InOutNode, TArray<TObjectPtr<UPCGPin>>& InputPins,
+	TArray<TObjectPtr<UPCGPin>>& OutputPins)
+{
+	Super::ApplyDeprecationBeforeUpdatePins(InOutNode, InputPins, OutputPins);
+	if (InOutNode)
+	{
+		InOutNode->RenameInputPin(TEXT("Factories"), TEXT("Selectors"));
+		InOutNode->RenameOutputPin(TEXT("Selection Factory"), TEXT("Selector"));
+	}
+}
 
 namespace
 {
@@ -291,6 +304,20 @@ void UPCGUtilsDynMeshDomainSelectionFactoryData::AddToCrc(
 
 UPCGUtilsDynMeshFactoryData*
 UPCGUtilsDynMeshDomainSelectionFactoryProviderSettings::CreateFactory(
+	FPCGContext* InContext, UPCGUtilsDynMeshFactoryData* InFactory) const
+{
+	UPCGUtilsDynMeshDomainSelectionFactoryData* DomainFactory =
+		Cast<UPCGUtilsDynMeshDomainSelectionFactoryData>(InFactory);
+	if (!DomainFactory)
+	{
+		return nullptr;
+	}
+	DomainFactory->bAllowPartialInclusion = bAllowPartialInclusion;
+	return Super::CreateFactory(InContext, DomainFactory);
+}
+
+UPCGUtilsDynMeshFactoryData*
+UPCGUtilsDynMeshDomainSelectionSourceSettings::CreateFactory(
 	FPCGContext* InContext, UPCGUtilsDynMeshFactoryData* InFactory) const
 {
 	UPCGUtilsDynMeshDomainSelectionFactoryData* DomainFactory =

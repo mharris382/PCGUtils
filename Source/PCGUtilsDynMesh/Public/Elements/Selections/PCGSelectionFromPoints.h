@@ -18,6 +18,13 @@ class PCGUTILSDYNMESH_API UPCGSelectionFromPointsSettings : public UPCGDynamicMe
 	GENERATED_BODY()
 
 public:
+	UPCGSelectionFromPointsSettings()
+	{
+#if WITH_EDITORONLY_DATA
+		bExposeToLibrary = false;
+#endif
+	}
+
 #if WITH_EDITOR
 	virtual FName GetDefaultNodeName() const override { return TEXT("SelectionFromPoints"); }
 	virtual FText GetDefaultNodeTitle() const override;

@@ -21,7 +21,7 @@ enum class EPCGRemeshMode : uint8
  * (with its outer boundary held fixed) and welded back into the untouched remainder of the source mesh, via the
  * shared PCGUtilsDynMesh Mesh Target Handle infrastructure (see MeshTarget/PCGUtilsMeshTargetFunctions.h).
  */
-UCLASS(BlueprintType, ClassGroup=(Procedural), Category="PCGUtils|DynMesh")
+UCLASS(BlueprintType, ClassGroup=(Procedural), Category="PCGUtils|DynMesh", meta=(Keywords="DynMesh mesh selection selector remesh triangulate"))
 class PCGUTILSDYNMESH_API UPCGRemeshSettings : public UPCGUtilsDynMeshProcessBaseSettings
 {
 	GENERATED_BODY()

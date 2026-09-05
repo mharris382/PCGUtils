@@ -16,7 +16,8 @@ namespace PCGDynMeshExpandToConnectedSelectionConstants
 }
 
 /** Expands a materialized triangle selection to complete connected regions. */
-UCLASS(BlueprintType, ClassGroup=(Procedural), Category="PCGUtils|DynMesh|Selections")
+UCLASS(BlueprintType, ClassGroup=(Procedural), Category="PCGUtils|DynMesh|Selections",
+	meta=(Keywords="Select Connected Component Flood Selection Selector"))
 class PCGUTILSDYNMESH_API UPCGDynMeshExpandToConnectedSelectionSettings : public UPCGUtilsDynMeshSelectionOperationSettings
 {
 	GENERATED_BODY()
@@ -25,7 +26,6 @@ public:
 #if WITH_EDITOR
 	virtual FName GetDefaultNodeName() const override { return TEXT("DynMeshExpandToConnectedSelection"); }
 	virtual FText GetDefaultNodeTitle() const override;
-	virtual TArray<FText> GetNodeTitleAliases() const override;
 	virtual FText GetNodeTooltipText() const override;
 	virtual FString GetAdditionalTitleInformation() const override;
 	virtual FLinearColor GetNodeTitleColor() const override { return FLinearColor(0.413f, 0.25f, 1.0f, 1.0f); }
@@ -38,15 +38,11 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Selection", AdvancedDisplay, meta=(PCG_Overridable))
 	int32 Priority = 0;
 
-	virtual UPCGUtilsDynMeshFactoryData* CreateFactory(
-		FPCGContext* InContext, UPCGUtilsDynMeshFactoryData* InFactory = nullptr) const override;
-
 protected:
 	virtual TArray<FPCGPinProperties> SelectorInputPinProperties() const override;
-	virtual bool ProcessSelection(
-		const UPCGDynamicMeshSelectionData* SelectionData,
-		FPCGContext* Context,
-		UE::Geometry::FGeometrySelection& OutSelection) const override;
+	virtual UPCGUtilsDynMeshSelectionFactoryData* CreateDecoratorFactory(
+		FPCGContext* InContext,
+		const UPCGUtilsDynMeshSelectionFactoryData* ChildSelector) const override;
 };
 
 /** Factory that caches the connected triangle regions reached from one child seed selector. */
@@ -83,11 +79,13 @@ public:
 	UPCGDynMeshExpandToConnectedSelectionFactoryProviderSettings()
 	{
 		OperationMode = EPCGUtilsDynMeshSelectionOperationMode::Selector;
+#if WITH_EDITORONLY_DATA
+		bExposeToLibrary = false;
+#endif
 	}
 #if WITH_EDITOR
 	virtual FName GetDefaultNodeName() const override { return TEXT("DynMeshExpandToConnectedSelectionFactory"); }
 	virtual FText GetDefaultNodeTitle() const override;
-	virtual TArray<FText> GetNodeTitleAliases() const override;
 	virtual FText GetNodeTooltipText() const override;
 	virtual FString GetAdditionalTitleInformation() const override;
 #endif
