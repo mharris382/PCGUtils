@@ -12,6 +12,7 @@
 
 class USplineComponent;
 class UStaticMesh;
+class UStaticMeshComponent;
 class UActorComponent;
 
 /**
@@ -90,6 +91,37 @@ public:
 		FName PinName = TEXT("Mesh"),
 		FName AttributeName = TEXT("AssetPath"),
 		FString Tag = TEXT(""));
+
+	/**
+	 * Assigns meshes from tagged PCG Param Data to supplied static mesh components. Candidates are
+	 * considered in DataCollection order and components in array order; each candidate and component
+	 * can be consumed only once, so duplicate tags are matched deterministically one-to-one. A candidate
+	 * matches when one of its PCG tags equals one of the component's ComponentTags. Unmatched components
+	 * keep their authored mesh; when bSetSMVisibility is true they are hidden without clearing that mesh.
+	 * MeshAttributeName must name an FSoftObjectPath attribute containing a UStaticMesh asset reference.
+	 */
+	UFUNCTION(BlueprintCallable, Category = "PCGUtils|PCG",
+		meta = (Keywords = "PCG post generate tagged static mesh component bake asset path one to one"))
+	static void LinkTaggedStaticMeshes(
+		const FPCGDataCollection& DataCollection,
+		const TArray<UStaticMeshComponent*>& StaticMeshComponents,
+		FName MeshPinName = TEXT("Meshes"),
+		FName MeshAttributeName = TEXT("AssetPath"),
+		bool bSetSMVisibility = false);
+
+	/**
+	 * Single-component convenience wrapper for LinkTaggedStaticMeshes. The supplied component consumes at
+	 * most one matching PCG mesh. An unmatched component keeps its authored mesh, and is hidden only when
+	 * bSetSMVisibility is true. MeshAttributeName must name an FSoftObjectPath UStaticMesh asset reference.
+	 */
+	UFUNCTION(BlueprintCallable, Category = "PCGUtils|PCG",
+		meta = (Keywords = "PCG post generate tagged static mesh component bake asset path"))
+	static void LinkTaggedStaticMesh(
+		const FPCGDataCollection& DataCollection,
+		UStaticMeshComponent* StaticMeshComponent,
+		FName MeshPinName = TEXT("Meshes"),
+		FName MeshAttributeName = TEXT("AssetPath"),
+		bool bSetSMVisibility = false);
 	
 	/** Creates native point-array data and copies all legacy FPCGPoint properties into its SoA ranges. */
 	static class UPCGPointArrayData* CreatePointArrayDataFromPoints(

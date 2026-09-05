@@ -3,6 +3,7 @@
 #include "PCGUtilsHelpers.h"
 
 #include "PCGActorBase.h"
+#include "Components/StaticMeshComponent.h"
 #include "Components/SplineComponent.h"
 #include "GameFramework/Actor.h"
 #include "Helpers/PCGHelpers.h"
@@ -18,6 +19,76 @@
 #include "PCGPoint.h"
 #include "PCGComponent.h"
 #include "PCGContext.h"
+
+DEFINE_LOG_CATEGORY_STATIC(LogPCGUtilsHelpers, Log, All);
+
+namespace PCGUtilsHelpers
+{
+	enum class EStaticMeshResolveResult : uint8
+	{
+		Success,
+		NotParamData,
+		MissingMetadata,
+		MissingAttribute,
+		InvalidAssetPath,
+		NotStaticMesh
+	};
+
+	EStaticMeshResolveResult ResolveStaticMeshFromTaggedData(
+		const FPCGTaggedData& TaggedData,
+		const FName AttributeName,
+		UStaticMesh*& OutMesh)
+	{
+		OutMesh = nullptr;
+
+		const UPCGParamData* ParamData = Cast<UPCGParamData>(TaggedData.Data);
+		if (!ParamData)
+		{
+			return EStaticMeshResolveResult::NotParamData;
+		}
+
+		const UPCGMetadata* Metadata = ParamData->ConstMetadata();
+		if (!Metadata)
+		{
+			return EStaticMeshResolveResult::MissingMetadata;
+		}
+
+		const FPCGMetadataAttribute<FSoftObjectPath>* Attribute =
+			Metadata->GetConstTypedAttribute<FSoftObjectPath>(AttributeName);
+		if (!Attribute)
+		{
+			return EStaticMeshResolveResult::MissingAttribute;
+		}
+
+		const FSoftObjectPath AssetPath = Attribute->GetValueFromItemKey(PCGFirstEntryKey);
+		if (AssetPath.IsNull())
+		{
+			return EStaticMeshResolveResult::InvalidAssetPath;
+		}
+
+		UObject* Object = AssetPath.ResolveObject();
+		if (!Object)
+		{
+			Object = AssetPath.TryLoad();
+		}
+
+		OutMesh = Cast<UStaticMesh>(Object);
+		return OutMesh ? EStaticMeshResolveResult::Success : EStaticMeshResolveResult::NotStaticMesh;
+	}
+
+	const TCHAR* DescribeResolveFailure(const EStaticMeshResolveResult Result)
+	{
+		switch (Result)
+		{
+		case EStaticMeshResolveResult::NotParamData: return TEXT("data is not PCG Param Data");
+		case EStaticMeshResolveResult::MissingMetadata: return TEXT("Param Data has no metadata");
+		case EStaticMeshResolveResult::MissingAttribute: return TEXT("the expected FSoftObjectPath attribute is missing or has another type");
+		case EStaticMeshResolveResult::InvalidAssetPath: return TEXT("the asset path is empty");
+		case EStaticMeshResolveResult::NotStaticMesh: return TEXT("the asset cannot be resolved to a UStaticMesh");
+		default: return TEXT("unknown failure");
+		}
+	}
+}
 
 // ─────────────────────────────────────────────────────────────────────────────
 // ComputeSplineBoundingBox
@@ -277,41 +348,112 @@ UStaticMesh* UPCGUtilsHelpers::ResolveStaticMeshFromData(
 			continue;
 		}
 
-		const UPCGParamData* ParamData = Cast<UPCGParamData>(TaggedData.Data);
-		if (!ParamData)
-		{
-			continue;
-		}
-
-		const UPCGMetadata* Metadata = ParamData->ConstMetadata();
-		if (!Metadata)
-		{
-			continue;
-		}
-
-		const FPCGMetadataAttribute<FSoftObjectPath>* Attribute =
-			Metadata->GetConstTypedAttribute<FSoftObjectPath>(AttributeName);
-		if (!Attribute)
-		{
-			continue;
-		}
-
-		const FSoftObjectPath AssetPath = Attribute->GetValueFromItemKey(PCGFirstEntryKey);
-		if (AssetPath.IsNull())
-		{
-			continue;
-		}
-
-		const FSoftObjectPtr SoftObjectReference(AssetPath);
-		UObject* Object = SoftObjectReference.Get();
-
-		if (UStaticMesh* Mesh = Cast<UStaticMesh>(Object))
+		UStaticMesh* Mesh = nullptr;
+		if (PCGUtilsHelpers::ResolveStaticMeshFromTaggedData(TaggedData, AttributeName, Mesh) ==
+			PCGUtilsHelpers::EStaticMeshResolveResult::Success)
 		{
 			return Mesh;
 		}
 	}
 
 	return nullptr;
+}
+
+void UPCGUtilsHelpers::LinkTaggedStaticMeshes(
+	const FPCGDataCollection& DataCollection,
+	const TArray<UStaticMeshComponent*>& StaticMeshComponents,
+	FName MeshPinName,
+	FName MeshAttributeName,
+	bool bSetSMVisibility)
+{
+	struct FMeshCandidate
+	{
+		const FPCGTaggedData* TaggedData = nullptr;
+		UStaticMesh* Mesh = nullptr;
+		bool bConsumed = false;
+	};
+
+	TArray<FMeshCandidate> Candidates;
+	const TArray<FPCGTaggedData>& TaggedDataCollection = DataCollection.GetAllInputs();
+	for (int32 DataIndex = 0; DataIndex < TaggedDataCollection.Num(); ++DataIndex)
+	{
+		const FPCGTaggedData& TaggedData = TaggedDataCollection[DataIndex];
+		if (TaggedData.Pin != MeshPinName)
+		{
+			continue;
+		}
+
+		UStaticMesh* Mesh = nullptr;
+		const PCGUtilsHelpers::EStaticMeshResolveResult ResolveResult =
+			PCGUtilsHelpers::ResolveStaticMeshFromTaggedData(TaggedData, MeshAttributeName, Mesh);
+		if (ResolveResult != PCGUtilsHelpers::EStaticMeshResolveResult::Success)
+		{
+			UE_LOG(LogPCGUtilsHelpers, Warning,
+				TEXT("LinkTaggedStaticMeshes: data index %d on pin '%s' is not a valid mesh candidate: %s (attribute '%s')."),
+				DataIndex, *MeshPinName.ToString(), PCGUtilsHelpers::DescribeResolveFailure(ResolveResult),
+				*MeshAttributeName.ToString());
+			continue;
+		}
+
+		Candidates.Add({ &TaggedData, Mesh });
+	}
+
+	for (UStaticMeshComponent* StaticMeshComponent : StaticMeshComponents)
+	{
+		if (!IsValid(StaticMeshComponent))
+		{
+			continue;
+		}
+
+		FMeshCandidate* MatchingCandidate = nullptr;
+		for (FMeshCandidate& Candidate : Candidates)
+		{
+			if (Candidate.bConsumed)
+			{
+				continue;
+			}
+
+			for (const FName& ComponentTag : StaticMeshComponent->ComponentTags)
+			{
+				if (Candidate.TaggedData->Tags.Contains(ComponentTag.ToString()))
+				{
+					MatchingCandidate = &Candidate;
+					break;
+				}
+			}
+
+			if (MatchingCandidate)
+			{
+				break;
+			}
+		}
+
+		if (MatchingCandidate)
+		{
+			MatchingCandidate->bConsumed = true;
+			StaticMeshComponent->SetStaticMesh(MatchingCandidate->Mesh);
+			if (bSetSMVisibility)
+			{
+				StaticMeshComponent->SetVisibility(true);
+			}
+		}
+		else if (bSetSMVisibility)
+		{
+			StaticMeshComponent->SetVisibility(false);
+		}
+	}
+}
+
+void UPCGUtilsHelpers::LinkTaggedStaticMesh(
+	const FPCGDataCollection& DataCollection,
+	UStaticMeshComponent* StaticMeshComponent,
+	FName MeshPinName,
+	FName MeshAttributeName,
+	bool bSetSMVisibility)
+{
+	TArray<UStaticMeshComponent*> Components;
+	Components.Add(StaticMeshComponent);
+	LinkTaggedStaticMeshes(DataCollection, Components, MeshPinName, MeshAttributeName, bSetSMVisibility);
 }
 
 

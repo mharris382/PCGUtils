@@ -20,7 +20,9 @@ public:
 	virtual FText GetNodeTooltipText() const override;
 #endif
 	virtual TSharedPtr<const FPCGUtilsDynMeshProcessOperation> CreateProcessOperation(FPCGContext* Context) const override;
-
+	
+	virtual FString GetAdditionalTitleInformation() const override;
+	
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category=Settings, meta=(PCG_Overridable))
 	EGeometryScriptBooleanOperation BooleanOperation = EGeometryScriptBooleanOperation::Intersection;
 
@@ -32,6 +34,10 @@ public:
 		EditCondition="BooleanOperation == EGeometryScriptBooleanOperation::Union || BooleanOperation == EGeometryScriptBooleanOperation::Subtract", EditConditionHides))
 	bool bAssignOperandPolygroup = false;
 
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category=Settings, meta=(PCG_Overridable,
+		EditCondition="bAssignOperandPolygroup && BooleanOperation == EGeometryScriptBooleanOperation::Union || BooleanOperation == EGeometryScriptBooleanOperation::Subtract", EditConditionHides))
+	int32 OperandPolygroup = 0;
+	
 	/** Self-union each operand on a private copy before the boolean. Upstream meshes are never modified. */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category=Settings, meta=(PCG_Overridable))
 	bool bSelfUnionOperand = false;
