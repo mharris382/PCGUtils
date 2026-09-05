@@ -19,7 +19,8 @@ namespace
 		FGeometryScriptMeshSelfUnionOptions SelfUnionOptions;
 		bool bAssignOperandPolygroup = false;
 		bool bSelfUnionOperand = false;
-
+		int32 OperandPolygroup = 0;
+		
 		virtual bool Execute(const FPCGUtilsDynMeshProcessInvocation& Invocation,
 			FPCGUtilsDynMeshProcessOutcome& OutOutcome) const override
 		{
@@ -30,7 +31,7 @@ namespace
 			if (!SourceOperand) { return false; }
 			const bool bGroupOperand = bAssignOperandPolygroup &&
 				(BooleanOperation == EGeometryScriptBooleanOperation::Union || BooleanOperation == EGeometryScriptBooleanOperation::Subtract);
-
+			const int GroupOperand = OperandPolygroup;
 			// The Geometry Script boolean API only reads its tool, despite taking a non-const pointer.
 			UDynamicMesh* Operand = const_cast<UDynamicMesh*>(SourceOperand);
 			if (bGroupOperand || bSelfUnionOperand)
@@ -45,14 +46,14 @@ namespace
 				{
 					// Group after self-union so any repair faces also belong to this operand. The engine boolean
 					// remaps the tool's group to a fresh target group, retaining the primary's existing groups.
-					Operand->EditMesh([](UE::Geometry::FDynamicMesh3& Mesh)
+					Operand->EditMesh([GroupOperand](UE::Geometry::FDynamicMesh3& Mesh)
 					{
-						if (!Mesh.HasTriangleGroups()) { Mesh.EnableTriangleGroups(0); }
-						for (int32 TriangleID : Mesh.TriangleIndicesItr()) { Mesh.SetTriangleGroup(TriangleID, 0); }
+						if (!Mesh.HasTriangleGroups()) { Mesh.EnableTriangleGroups(GroupOperand); }
+						for (int32 TriangleID : Mesh.TriangleIndicesItr()) { Mesh.SetTriangleGroup(TriangleID, GroupOperand); }
 					});
-					Target->EditMesh([](UE::Geometry::FDynamicMesh3& Mesh)
+					Target->EditMesh([GroupOperand](UE::Geometry::FDynamicMesh3& Mesh)
 					{
-						if (!Mesh.HasTriangleGroups()) { Mesh.EnableTriangleGroups(0); }
+						if (!Mesh.HasTriangleGroups()) { Mesh.EnableTriangleGroups(GroupOperand); }
 					});
 				}
 			}
@@ -85,7 +86,13 @@ TSharedPtr<const FPCGUtilsDynMeshProcessOperation> UPCGDynMeshBooleanSettings::C
 	Operation->SelfUnionOptions = OperandSelfUnionOptions;
 	Operation->bAssignOperandPolygroup = bAssignOperandPolygroup;
 	Operation->bSelfUnionOperand = bSelfUnionOperand;
+	Operation->OperandPolygroup = OperandPolygroup;
 	return Operation;
+}
+
+FString UPCGDynMeshBooleanSettings::GetAdditionalTitleInformation() const
+{
+	return UEnum::GetValueAsString(BooleanOperation);
 }
 
 #undef LOCTEXT_NAMESPACE

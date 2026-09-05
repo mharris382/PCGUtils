@@ -25,6 +25,8 @@ public:
 private:
 #if WITH_EDITOR
 	void RegisterPinColors();
+	void OnModulesChanged(FName ModuleName, EModuleChangeReason ChangeReason);
 	void OnPreExit();
+	bool bPinColorsRegistered = false;
 #endif
 };
