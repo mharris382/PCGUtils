@@ -174,7 +174,7 @@ UPCGDynMeshPainterFromPointsProviderSettings::UPCGDynMeshPainterFromPointsProvid
 #if WITH_EDITOR
 FText UPCGDynMeshPainterFromPointsProviderSettings::GetDefaultNodeTitle() const
 {
-	return LOCTEXT("Title", "Paint from Points");
+	return LOCTEXT("Title", "Bounds Brush Painter");
 }
 
 FText UPCGDynMeshPainterFromPointsProviderSettings::GetNodeTooltipText() const
@@ -234,7 +234,7 @@ UPCGUtilsDynMeshFactoryData* UPCGDynMeshPainterFromPointsProviderSettings::Creat
 		if (!CreateReader(ValueSelector, ValueAccessor, ValueKeys))
 		{
 			PCGLog::LogErrorOnGraph(FText::Format(
-				LOCTEXT("MissingValue", "Paint from Points could not read scalar selector '{0}' from its point data."),
+				LOCTEXT("MissingValue", "Bounds Brush Painter could not read scalar selector '{0}' from its point data."),
 				FText::FromString(ValueSelector.ToString())), InContext);
 			return nullptr;
 		}
@@ -245,7 +245,7 @@ UPCGUtilsDynMeshFactoryData* UPCGDynMeshPainterFromPointsProviderSettings::Creat
 			!CreateReader(RadiusSelector, RadiusAccessor, RadiusKeys))
 		{
 			PCGLog::LogErrorOnGraph(FText::Format(
-				LOCTEXT("MissingRadius", "Paint from Points could not read radius selector '{0}' from its point data."),
+				LOCTEXT("MissingRadius", "Bounds Brush Painter could not read radius selector '{0}' from its point data."),
 				FText::FromString(RadiusSelector.ToString())), InContext);
 			return nullptr;
 		}
@@ -256,7 +256,7 @@ UPCGUtilsDynMeshFactoryData* UPCGDynMeshPainterFromPointsProviderSettings::Creat
 			InnerRadiusSelector, InnerRadiusAccessor, InnerRadiusKeys))
 		{
 			PCGLog::LogErrorOnGraph(FText::Format(
-				LOCTEXT("MissingInnerRadius", "Paint from Points could not read inner-radius selector '{0}' from its point data."),
+				LOCTEXT("MissingInnerRadius", "Bounds Brush Painter could not read inner-radius selector '{0}' from its point data."),
 				FText::FromString(InnerRadiusSelector.ToString())), InContext);
 			return nullptr;
 		}
@@ -267,7 +267,7 @@ UPCGUtilsDynMeshFactoryData* UPCGDynMeshPainterFromPointsProviderSettings::Creat
 			!CreateReader(FalloffPowerSelector, PowerAccessor, PowerKeys))
 		{
 			PCGLog::LogErrorOnGraph(FText::Format(
-				LOCTEXT("MissingFalloffPower", "Paint from Points could not read falloff-power selector '{0}' from its point data."),
+				LOCTEXT("MissingFalloffPower", "Bounds Brush Painter could not read falloff-power selector '{0}' from its point data."),
 				FText::FromString(FalloffPowerSelector.ToString())), InContext);
 			return nullptr;
 		}
@@ -284,7 +284,7 @@ UPCGUtilsDynMeshFactoryData* UPCGDynMeshPainterFromPointsProviderSettings::Creat
 					EPCGAttributeAccessorFlags::AllowBroadcastAndConstructible))
 			{
 				PCGLog::LogErrorOnGraph(FText::Format(
-					LOCTEXT("UnreadableValue", "Paint from Points could not read selector '{0}' for every input point."),
+					LOCTEXT("UnreadableValue", "Bounds Brush Painter could not read selector '{0}' for every input point."),
 					FText::FromString(ValueSelector.ToString())), InContext);
 				return nullptr;
 			}
@@ -309,7 +309,7 @@ UPCGUtilsDynMeshFactoryData* UPCGDynMeshPainterFromPointsProviderSettings::Creat
 					WorldRadii.GetMin() <= UE_SMALL_NUMBER)
 				{
 					PCGLog::LogErrorOnGraph(FText::Format(
-						LOCTEXT("InvalidBoundsRadius", "Paint from Points requires non-zero fitted bounds on every point. Point {0} has a degenerate bound or scale."),
+						LOCTEXT("InvalidBoundsRadius", "Bounds Brush Painter requires non-zero fitted bounds on every point. Point {0} has a degenerate bound or scale."),
 						FText::AsNumber(PointIndex)), InContext);
 					return nullptr;
 				}
@@ -321,7 +321,7 @@ UPCGUtilsDynMeshFactoryData* UPCGDynMeshPainterFromPointsProviderSettings::Creat
 					Point.OuterRadius <= UE_SMALL_NUMBER)
 				{
 					PCGLog::LogErrorOnGraph(FText::Format(
-						LOCTEXT("InvalidAttributeRadius", "Paint from Points requires a positive radius for every point. Point {0} has an invalid radius."),
+						LOCTEXT("InvalidAttributeRadius", "Bounds Brush Painter requires a positive radius for every point. Point {0} has an invalid radius."),
 						FText::AsNumber(PointIndex)), InContext);
 					return nullptr;
 				}
@@ -334,7 +334,7 @@ UPCGUtilsDynMeshFactoryData* UPCGDynMeshPainterFromPointsProviderSettings::Creat
 				EPCGAttributeAccessorFlags::AllowBroadcastAndConstructible))
 			{
 				PCGLog::LogErrorOnGraph(FText::Format(
-					LOCTEXT("InvalidInnerRadius", "Paint from Points could not read an inner radius for point {0}."),
+					LOCTEXT("InvalidInnerRadius", "Bounds Brush Painter could not read an inner radius for point {0}."),
 					FText::AsNumber(PointIndex)), InContext);
 				return nullptr;
 			}
@@ -347,7 +347,7 @@ UPCGUtilsDynMeshFactoryData* UPCGDynMeshPainterFromPointsProviderSettings::Creat
 					EPCGAttributeAccessorFlags::AllowBroadcastAndConstructible))
 			{
 				PCGLog::LogErrorOnGraph(FText::Format(
-					LOCTEXT("InvalidFalloffPower", "Paint from Points could not read a falloff power for point {0}."),
+					LOCTEXT("InvalidFalloffPower", "Bounds Brush Painter could not read a falloff power for point {0}."),
 					FText::AsNumber(PointIndex)), InContext);
 				return nullptr;
 			}
@@ -358,7 +358,7 @@ UPCGUtilsDynMeshFactoryData* UPCGDynMeshPainterFromPointsProviderSettings::Creat
 	if (!bSawPointData)
 	{
 		PCGLog::LogErrorOnGraph(
-			LOCTEXT("MissingPoints", "Paint from Points requires point data on its Points pin."), InContext);
+			LOCTEXT("MissingPoints", "Bounds Brush Painter requires point data on its Points pin."), InContext);
 		return nullptr;
 	}
 

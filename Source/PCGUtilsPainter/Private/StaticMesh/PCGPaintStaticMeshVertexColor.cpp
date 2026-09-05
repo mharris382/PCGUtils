@@ -154,13 +154,13 @@ bool FPCGPaintStaticMeshVertexColorElement::ExecuteInternal(FPCGContext* Context
 	}
 
 	// Build the Painter operation once. The evaluation context is geometry-agnostic; a DynMesh-only Painter
-	// (Points to Painter) rejects it in Initialize.
+	// (Painter by Vertex ID) rejects it in Initialize.
 	TSharedPtr<FPCGUtilsDynMeshPainterOperation> Operation = PainterFactory->CreateOperation(Context);
 	const FPCGUtilsDynMeshPainterEvaluationContext PainterContext(FTransform::Identity);
 	if (!Operation || !Operation->Initialize(PainterContext))
 	{
 		PCGLog::LogErrorOnGraph(
-			LOCTEXT("PainterInitFailed", "Paint Static Mesh Vertex Colors could not initialize its Painter. Points to Painter is Dynamic Mesh-only and cannot target a Static Mesh Component."),
+			LOCTEXT("PainterInitFailed", "Paint Static Mesh Vertex Colors could not initialize its Painter. Painter by Vertex ID is Dynamic Mesh-only and cannot target a Static Mesh Component."),
 			Context);
 		return true;
 	}

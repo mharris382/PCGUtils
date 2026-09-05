@@ -46,13 +46,13 @@ bool FPCGUtilsDynMeshPainterCompositionTest::RunTest(const FString&)
 
 	const UPCGDynMeshPainterFromPointsProviderSettings* PointProviderDefaults =
 		NewObject<UPCGDynMeshPainterFromPointsProviderSettings>();
-	TestEqual(TEXT("Paint from Points defaults its value selector to $Density"),
+	TestEqual(TEXT("Bounds Brush Painter defaults its value selector to $Density"),
 		PointProviderDefaults->ValueSelector.GetPointProperty(), EPCGPointProperties::Density);
-	TestEqual(TEXT("Paint from Points defaults to fitted point bounds"),
+	TestEqual(TEXT("Bounds Brush Painter defaults to fitted point bounds"),
 		PointProviderDefaults->RadiusSource, EPCGUtilsDynMeshPainterRadiusSource::Bounds);
-	TestEqual(TEXT("Paint from Points defaults its falloff power to $Steepness"),
+	TestEqual(TEXT("Bounds Brush Painter defaults its falloff power to $Steepness"),
 		PointProviderDefaults->FalloffPowerSelector.GetPointProperty(), EPCGPointProperties::Steepness);
-	TestTrue(TEXT("Paint from Points exposes Clamp Value enabled by default"),
+	TestTrue(TEXT("Bounds Brush Painter exposes Clamp Value enabled by default"),
 		PointProviderDefaults->bClampValue);
 
 	UPCGDynMeshPainterMathFactoryData* Multiply = NewObject<UPCGDynMeshPainterMathFactoryData>();
@@ -267,11 +267,12 @@ bool FPCGUtilsDynMeshPointsToPainterTest::RunTest(const FString&)
 	UPCGDynMeshPointsToPainterFactoryData* Factory =
 		NewObject<UPCGDynMeshPointsToPainterFactoryData>();
 	Factory->PointDataSets = {FirstPoints, SecondPoints};
+	Factory->bUseVertexIDs = false; // Explicit compatibility coverage for old point-order graphs.
 	Factory->Mode = EPCGUtilsDynMeshPointsToPainterMode::Scalar;
 	Factory->ValueSelector.SetPointProperty(EPCGPointProperties::Density);
 	TSharedPtr<FPCGUtilsDynMeshPainterOperation> Operation = Factory->CreateOperation(nullptr);
 	const bool bScalarInitialized = Operation && Operation->Initialize(EvaluationContext);
-	TestTrue(TEXT("Points to Painter initializes against the matching second dataset"), bScalarInitialized);
+	TestTrue(TEXT("Painter by Vertex ID initializes against the matching second dataset"), bScalarInitialized);
 	if (!bScalarInitialized)
 	{
 		return false;
@@ -283,7 +284,7 @@ bool FPCGUtilsDynMeshPointsToPainterTest::RunTest(const FString&)
 	Factory->ValueSelector.SetPointProperty(EPCGPointProperties::Color);
 	Operation = Factory->CreateOperation(nullptr);
 	const bool bColorInitialized = Operation && Operation->Initialize(EvaluationContext);
-	TestTrue(TEXT("Color Points to Painter initializes"), bColorInitialized);
+	TestTrue(TEXT("Color Painter by Vertex ID initializes"), bColorInitialized);
 	if (!bColorInitialized)
 	{
 		return false;

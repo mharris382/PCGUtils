@@ -14,6 +14,7 @@ namespace
 {
 	const FName APin = TEXT("A");
 	const FName BPin = TEXT("B");
+	const FName MaskPin = TEXT("Mask");
 
 	class FPainterMathOperation final : public FPCGUtilsDynMeshPainterOperation
 	{
@@ -37,54 +38,38 @@ namespace
 			{
 				return false;
 			}
-			if (A->GetOutputType() != EPCGUtilsDynMeshPainterValueType::Scalar ||
-				B->GetOutputType() != EPCGUtilsDynMeshPainterValueType::Scalar)
+			if (Factory->Mask)
 			{
-				PCGLog::LogErrorOnGraph(
-					LOCTEXT("ScalarOperandsRequired", "Painter Math currently requires scalar Painter operands."),
-					Context);
-				return false;
+				Mask = Factory->Mask->CreateOperation(Context);
+				if (!Mask || !Mask->Initialize(InPainterContext) || Mask->GetOutputType() != EPCGUtilsDynMeshPainterValueType::Scalar)
+				{
+					PCGLog::LogErrorOnGraph(LOCTEXT("InvalidMask", "Painter Blend requires a scalar Mask Painter."), Context);
+					return false;
+				}
 			}
 			return true;
 		}
 
 		virtual EPCGUtilsDynMeshPainterValueType GetOutputType() const override
 		{
-			return EPCGUtilsDynMeshPainterValueType::Scalar;
+			return A->GetOutputType() == EPCGUtilsDynMeshPainterValueType::Color || B->GetOutputType() == EPCGUtilsDynMeshPainterValueType::Color
+				? EPCGUtilsDynMeshPainterValueType::Color : EPCGUtilsDynMeshPainterValueType::Scalar;
 		}
 
 		virtual FPCGUtilsDynMeshPainterValue Evaluate(
 			const FPCGUtilsDynMeshPainterSample& Sample) const override
 		{
-			const float AValue = A->Evaluate(Sample).Scalar;
-			const float BValue = B->Evaluate(Sample).Scalar;
-			float Result = 0.0f;
-			switch (Factory->Operation)
-			{
-			case EPCGUtilsDynMeshPainterMathOperation::Add:
-				Result = AValue + BValue;
-				break;
-			case EPCGUtilsDynMeshPainterMathOperation::Subtract:
-				Result = AValue - BValue;
-				break;
-			case EPCGUtilsDynMeshPainterMathOperation::Min:
-				Result = FMath::Min(AValue, BValue);
-				break;
-			case EPCGUtilsDynMeshPainterMathOperation::Max:
-				Result = FMath::Max(AValue, BValue);
-				break;
-			case EPCGUtilsDynMeshPainterMathOperation::Multiply:
-			default:
-				Result = AValue * BValue;
-				break;
-			}
-			return FPCGUtilsDynMeshPainterValue::MakeScalar(Result);
+			const float MaskValue = Mask ? Mask->Evaluate(Sample).Scalar : 1.0f;
+			const float Weight = FMath::IsFinite(MaskValue) && FMath::IsFinite(Factory->Factor)
+				? FMath::Clamp(Factory->Factor, 0.0f, 1.0f) * FMath::Clamp(MaskValue, 0.0f, 1.0f) : 0.0f;
+			return PCGUtilsPainters::BlendValues(A->Evaluate(Sample), B->Evaluate(Sample), Factory->Operation, Weight);
 		}
 
 	private:
 		TObjectPtr<const UPCGDynMeshPainterMathFactoryData> Factory;
 		TSharedPtr<FPCGUtilsDynMeshPainterOperation> A;
 		TSharedPtr<FPCGUtilsDynMeshPainterOperation> B;
+		TSharedPtr<FPCGUtilsDynMeshPainterOperation> Mask;
 	};
 
 }
@@ -102,26 +87,25 @@ void UPCGDynMeshPainterMathFactoryData::AddToCrc(FArchiveCrc32& Ar, bool bFullDa
 	{
 		uint8 OperationValue = static_cast<uint8>(Operation);
 		Ar << OperationValue;
+		float FactorValue = Factor;
+		Ar << FactorValue;
 	}
 }
 
 #if WITH_EDITOR
 FText UPCGDynMeshPainterMathProviderSettings::GetDefaultNodeTitle() const
 {
-	switch (Operation)
-	{
-	case EPCGUtilsDynMeshPainterMathOperation::Add: return LOCTEXT("AddTitle", "Painter +");
-	case EPCGUtilsDynMeshPainterMathOperation::Subtract: return LOCTEXT("SubtractTitle", "Painter −");
-	case EPCGUtilsDynMeshPainterMathOperation::Min: return LOCTEXT("MinTitle", "Painter Min");
-	case EPCGUtilsDynMeshPainterMathOperation::Max: return LOCTEXT("MaxTitle", "Painter Max");
-	case EPCGUtilsDynMeshPainterMathOperation::Multiply:
-	default: return LOCTEXT("MultiplyTitle", "Painter ×");
-	}
+	return LOCTEXT("Title", "Painter Blend");
+}
+
+FString UPCGDynMeshPainterMathProviderSettings::GetAdditionalTitleInformation() const
+{
+	return StaticEnum<EPCGUtilsDynMeshPainterMathOperation>()->GetDisplayNameTextByValue(static_cast<int64>(Operation)).ToString();
 }
 
 FText UPCGDynMeshPainterMathProviderSettings::GetNodeTooltipText() const
 {
-	return LOCTEXT("Tooltip", "Combines two reusable Painter scalar fields directly at evaluation time.");
+	return LOCTEXT("Tooltip", "Blends base A with blend B in linear value space. Factor interpolates from A to the blend result. Scalars broadcast to color channels; undefined blend channels preserve the base. Alpha is an ordinary channel, not implicit opacity. Results are not clamped.");
 }
 #endif
 
@@ -140,6 +124,7 @@ TArray<FPCGPinProperties> UPCGDynMeshPainterMathProviderSettings::InputPinProper
 	TArray<FPCGPinProperties> Pins;
 	Pins.Emplace_GetRef(APin, FPCGUtilsDynMeshPainterFactoryDataTypeInfo::AsId(), false, false).SetRequiredPin();
 	Pins.Emplace_GetRef(BPin, FPCGUtilsDynMeshPainterFactoryDataTypeInfo::AsId(), false, false).SetRequiredPin();
+	Pins.Emplace(MaskPin, FPCGUtilsDynMeshPainterFactoryDataTypeInfo::AsId(), false, false);
 	return Pins;
 }
 
@@ -148,8 +133,10 @@ UPCGUtilsDynMeshFactoryData* UPCGDynMeshPainterMathProviderSettings::CreateFacto
 {
 	const UPCGUtilsDynMeshPainterFactoryData* APainter = nullptr;
 	const UPCGUtilsDynMeshPainterFactoryData* BPainter = nullptr;
+	const UPCGUtilsDynMeshPainterFactoryData* MaskPainter = nullptr;
 	if (!PCGUtilsDynMeshPainterFactories::GetSinglePainter(InContext, APin, APainter, true) ||
-		!PCGUtilsDynMeshPainterFactories::GetSinglePainter(InContext, BPin, BPainter, true))
+		!PCGUtilsDynMeshPainterFactories::GetSinglePainter(InContext, BPin, BPainter, true) ||
+		!PCGUtilsDynMeshPainterFactories::GetSinglePainter(InContext, MaskPin, MaskPainter, false))
 	{
 		return nullptr;
 	}
@@ -164,8 +151,10 @@ UPCGUtilsDynMeshFactoryData* UPCGDynMeshPainterMathProviderSettings::CreateFacto
 
 	Factory->Priority = Priority;
 	Factory->Operation = Operation;
+	Factory->Factor = Factor;
 	Factory->A = APainter;
 	Factory->B = BPainter;
+	Factory->Mask = MaskPainter;
 	return Super::CreateFactory(InContext, Factory);
 }
 

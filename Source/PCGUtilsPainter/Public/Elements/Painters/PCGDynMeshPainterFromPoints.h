@@ -117,7 +117,7 @@ protected:
 };
 
 /** Converts PCG points into reusable per-point spherical or ellipsoidal scalar brushes. */
-UCLASS(BlueprintType, ClassGroup=(Procedural), Category="PCGUtils|DynMesh|Painters")
+UCLASS(BlueprintType, ClassGroup=(Procedural), Category="PCGUtils|DynMesh|Painters", meta=(Keywords="Painter bounds point points brush stroke radius falloff"))
 class PCGUTILSPAINTER_API UPCGDynMeshPainterFromPointsProviderSettings
 	: public UPCGUtilsDynMeshFactoryProviderSettings
 {

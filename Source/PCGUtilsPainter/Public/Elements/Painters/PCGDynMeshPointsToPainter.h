@@ -35,13 +35,19 @@ public:
 	UPROPERTY()
 	FPCGAttributePropertyInputSelector ValueSelector;
 
+	UPROPERTY()
+	bool bUseVertexIDs = true;
+
+	UPROPERTY()
+	FName VertexIDAttribute = TEXT("VertexIndex");
+
 protected:
 	virtual TSharedPtr<FPCGUtilsDynMeshPainterOperation> CreateOperationInternal() const override;
 	virtual void AddToCrc(FArchiveCrc32& Ar, bool bFullDataCrc) const override;
 };
 
-/** Converts vertex-index-aligned PCG point datasets into a scalar or color Painter. */
-UCLASS(BlueprintType, ClassGroup=(Procedural), Category="PCGUtils|DynMesh|Painters")
+/** Maps point values to explicit DynMesh vertex IDs, independently of point positions and bounds. */
+UCLASS(BlueprintType, ClassGroup=(Procedural), Category="PCGUtils|DynMesh|Painters", meta=(Keywords="Painter vertex ID IDs points index color scalar"))
 class PCGUTILSPAINTER_API UPCGDynMeshPointsToPainterProviderSettings
 	: public UPCGUtilsDynMeshFactoryProviderSettings
 {
@@ -49,6 +55,15 @@ class PCGUTILSPAINTER_API UPCGDynMeshPointsToPainterProviderSettings
 
 public:
 	UPCGDynMeshPointsToPainterProviderSettings();
+	virtual void Serialize(FArchive& Ar) override;
+
+	/** Use explicit vertex IDs. Disable only for legacy full-mesh point-order correspondence. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Mapping", meta=(PCG_Overridable))
+	bool bUseVertexIDs = true;
+
+	/** Integer point attribute matching the Vertex Index output of DynMesh To Points. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Mapping", meta=(PCG_Overridable, EditCondition="bUseVertexIDs", EditConditionHides))
+	FName VertexIDAttribute = TEXT("VertexIndex");
 
 #if WITH_EDITOR
 	virtual FName GetDefaultNodeName() const override { return TEXT("DynMeshPointsToPainter"); }

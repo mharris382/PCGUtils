@@ -10,6 +10,7 @@
 #include "PCGContext.h"
 #include "PCGPin.h"
 #include "Serialization/ArchiveCrc32.h"
+#include "Serialization/CustomVersion.h"
 #include "Utils/PCGLogErrors.h"
 
 #define LOCTEXT_NAMESPACE "PCGDynMeshPointsToPainter"
@@ -17,6 +18,8 @@
 namespace
 {
 	const FName PointsPinName = TEXT("Points");
+	const FGuid VertexIDMappingVersion(0x925AF375, 0xD20347A1, 0xAB84F3BE, 0x108FDB52);
+	FCustomVersionRegistration RegisterVertexIDMappingVersion(VertexIDMappingVersion, 1, TEXT("PCGUtilsPainterVertexIDMapping"));
 
 	class FPointsToPainterOperation final : public FPCGUtilsDynMeshPainterOperation
 	{
@@ -35,7 +38,7 @@ namespace
 			if (!InPainterContext.Mesh)
 			{
 				PCGLog::LogErrorOnGraph(
-					LOCTEXT("RequiresDynMesh", "Points to Painter can only be evaluated against a Dynamic Mesh target. It maps a per-vertex point dataset onto DynMesh vertex-iteration order and has no Static Mesh equivalent."),
+					LOCTEXT("RequiresDynMesh", "Painter by Vertex ID requires a DynMesh target. DynMesh vertex IDs do not identify Static Mesh render vertices; no spatial projection is performed."),
 					Context);
 				return false;
 			}
@@ -43,7 +46,7 @@ namespace
 				Factory->PointDataSets.Num() != InPainterContext.DataSetCount)
 			{
 				PCGLog::LogErrorOnGraph(FText::Format(
-					LOCTEXT("DataSetCountMismatch", "Points to Painter received {0} point datasets for {1} DynMesh inputs. The datasets must be paired one-to-one in matching order."),
+					LOCTEXT("DataSetCountMismatch", "Painter by Vertex ID received {0} point datasets for {1} DynMesh inputs. The datasets must be paired one-to-one in matching order."),
 					FText::AsNumber(Factory->PointDataSets.Num()),
 					FText::AsNumber(InPainterContext.DataSetCount)), Context);
 				return false;
@@ -51,16 +54,16 @@ namespace
 			if (!Factory->PointDataSets.IsValidIndex(InPainterContext.DataSetIndex))
 			{
 				PCGLog::LogErrorOnGraph(
-					LOCTEXT("InvalidDataSetIndex", "Points to Painter could not resolve the point dataset matching this DynMesh input."),
+					LOCTEXT("InvalidDataSetIndex", "Painter by Vertex ID could not resolve the point dataset matching this DynMesh input."),
 					Context);
 				return false;
 			}
 
 			PointData = Factory->PointDataSets[InPainterContext.DataSetIndex];
-			if (!PointData || PointData->GetNumPoints() != InPainterContext.Mesh->VertexCount())
+			if (!PointData || (!Factory->bUseVertexIDs && PointData->GetNumPoints() != InPainterContext.Mesh->VertexCount()))
 			{
 				PCGLog::LogErrorOnGraph(FText::Format(
-					LOCTEXT("PointCountMismatch", "Points to Painter requires one point per DynMesh vertex. DynMesh input {0} has {1} vertices but its matching point dataset has {2} points."),
+					LOCTEXT("PointCountMismatch", "Painter by Vertex ID legacy point-order mode requires one point per DynMesh vertex. DynMesh input {0} has {1} vertices but its matching point dataset has {2} points."),
 					FText::AsNumber(InPainterContext.DataSetIndex),
 					FText::AsNumber(InPainterContext.Mesh->VertexCount()),
 					FText::AsNumber(PointData ? PointData->GetNumPoints() : 0)), Context);
@@ -74,14 +77,38 @@ namespace
 			if (!Accessor || !Keys)
 			{
 				PCGLog::LogErrorOnGraph(FText::Format(
-					LOCTEXT("InvalidValueSelector", "Points to Painter could not read selector '{0}' from point dataset {1}."),
+					LOCTEXT("InvalidValueSelector", "Painter by Vertex ID could not read selector '{0}' from point dataset {1}."),
 					FText::FromString(Factory->ValueSelector.ToString()),
 					FText::AsNumber(InPainterContext.DataSetIndex)), Context);
 				return false;
 			}
 
-			bVertexIDsArePointIndices = InPainterContext.Mesh->IsCompactV();
-			if (!bVertexIDsArePointIndices)
+			bVertexIDsArePointIndices = !Factory->bUseVertexIDs && InPainterContext.Mesh->IsCompactV();
+			if (Factory->bUseVertexIDs)
+			{
+				FPCGAttributePropertyInputSelector IDSelector;
+				IDSelector.SetAttributeName(Factory->VertexIDAttribute);
+				const auto IDAccessor = PCGAttributeAccessorHelpers::CreateConstAccessor(PointData, IDSelector);
+				const auto IDKeys = PCGAttributeAccessorHelpers::CreateConstKeys(PointData, IDSelector);
+				if (Factory->VertexIDAttribute.IsNone() || !IDAccessor || !IDKeys)
+				{
+					PCGLog::LogErrorOnGraph(LOCTEXT("MissingVertexIDs", "Painter by Vertex ID requires its configured integer Vertex ID attribute."), Context);
+					return false;
+				}
+				VertexToPointIndex.Init(INDEX_NONE, InPainterContext.Mesh->MaxVertexID());
+				for (int32 PointIndex = 0; PointIndex < PointData->GetNumPoints(); ++PointIndex)
+				{
+					int32 VertexID = INDEX_NONE;
+					if (!IDAccessor->Get<int32>(VertexID, PointIndex, *IDKeys) ||
+						!InPainterContext.Mesh->IsVertex(VertexID) || VertexToPointIndex[VertexID] != INDEX_NONE)
+					{
+						PCGLog::LogErrorOnGraph(LOCTEXT("InvalidVertexIDs", "Painter by Vertex ID requires unique, valid integer IDs belonging to the target DynMesh."), Context);
+						return false;
+					}
+					VertexToPointIndex[VertexID] = PointIndex;
+				}
+			}
+			else if (!bVertexIDsArePointIndices)
 			{
 				VertexToPointIndex.Init(INDEX_NONE, InPainterContext.Mesh->MaxVertexID());
 				int32 PointIndex = 0;
@@ -160,6 +187,10 @@ void UPCGDynMeshPointsToPainterFactoryData::AddToCrc(FArchiveCrc32& Ar, bool bFu
 	uint8 ModeValue = static_cast<uint8>(Mode);
 	Ar << ModeValue;
 	ValueSelector.AddToCrc(Ar);
+	bool bUseIDs = bUseVertexIDs;
+	FName IDAttribute = VertexIDAttribute;
+	Ar << bUseIDs;
+	Ar << IDAttribute;
 	TArray<uint32> OrderedDataCrcs;
 	OrderedDataCrcs.Reserve(PointDataSets.Num());
 	for (const UPCGBasePointData* PointData : PointDataSets)
@@ -175,15 +206,25 @@ UPCGDynMeshPointsToPainterProviderSettings::UPCGDynMeshPointsToPainterProviderSe
 	ColorValueSelector.SetPointProperty(EPCGPointProperties::Color);
 }
 
+void UPCGDynMeshPointsToPainterProviderSettings::Serialize(FArchive& Ar)
+{
+	Ar.UsingCustomVersion(VertexIDMappingVersion);
+	Super::Serialize(Ar);
+	if (Ar.IsLoading() && Ar.CustomVer(VertexIDMappingVersion) < 1)
+	{
+		bUseVertexIDs = false;
+	}
+}
+
 #if WITH_EDITOR
 FText UPCGDynMeshPointsToPainterProviderSettings::GetDefaultNodeTitle() const
 {
-	return LOCTEXT("Title", "Points to Painter");
+	return LOCTEXT("Title", "Painter by Vertex ID");
 }
 
 FText UPCGDynMeshPointsToPainterProviderSettings::GetNodeTooltipText() const
 {
-	return LOCTEXT("Tooltip", "Converts vertex-aligned PCG point datasets into a scalar or color Painter. Point datasets and consuming DynMesh inputs must be paired one-to-one in matching order. Point order must remain unchanged, and every point count must equal its matching mesh's vertex count.");
+	return LOCTEXT("Tooltip", "Maps point values to explicit DynMesh vertex IDs, not point positions or bounds. Datasets pair one-to-one with consuming meshes. Missing IDs produce zero scalar influence or undefined color channels. Disable Use Vertex IDs only for legacy full-mesh point-order mapping.");
 }
 
 FString UPCGDynMeshPointsToPainterProviderSettings::GetAdditionalTitleInformation() const
@@ -224,7 +265,7 @@ UPCGUtilsDynMeshFactoryData* UPCGDynMeshPointsToPainterProviderSettings::CreateF
 	if (PointDataSets.IsEmpty())
 	{
 		PCGLog::LogErrorOnGraph(
-			LOCTEXT("MissingPoints", "Points to Painter requires point data on its Points pin."), InContext);
+			LOCTEXT("MissingPoints", "Painter by Vertex ID requires point data on its Points pin."), InContext);
 		return nullptr;
 	}
 
@@ -237,6 +278,8 @@ UPCGUtilsDynMeshFactoryData* UPCGDynMeshPointsToPainterProviderSettings::CreateF
 	}
 
 	Factory->Priority = Priority;
+	Factory->bUseVertexIDs = bUseVertexIDs;
+	Factory->VertexIDAttribute = VertexIDAttribute;
 	Factory->PointDataSets = MoveTemp(PointDataSets);
 	Factory->Mode = Mode;
 	Factory->ValueSelector = Mode == EPCGUtilsDynMeshPointsToPainterMode::Color

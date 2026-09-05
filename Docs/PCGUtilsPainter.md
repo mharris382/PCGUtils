@@ -37,7 +37,7 @@ by the Painter.
 
 The Painter providers:
 
-- **Paint from Points**: prepares world-space PCG points as independently sized brushes. Point Bounds mode fits an
+- **Bounds Brush Painter**: prepares world-space PCG points as independently sized brushes. Point Bounds mode fits an
   oriented ellipsoid to each point's transformed bounds, including non-uniform extents; Attribute mode reads a
   uniform world-space radius from a normal input selector (default `Radius`). Values use a selector defaulting to
   `$Density`. An optional inner-radius selector (default `InnerRadius`) creates a solid homothetic core, after which
@@ -46,16 +46,22 @@ The Painter providers:
   Value` option, which clamps the final result to `[0,1]`.
 - **Axis Gradient Painter**: evaluates a clamped projection between Start and End along a normalized axis, in
   either DynMesh-local or world space, with optional inversion.
-- **Painter Math**: evaluates two child Painters directly and combines them with Add, Subtract, Multiply, Min, or
-  Max. Its inputs must be scalar Painters. Nested expressions do not create intermediate point data.
+- **Painter Blend**: blends base `A` with blend `B` using Add, Subtract (`A-B`), Multiply, Darken (Min),
+  Lighten (Max), Mix (Normal), or Screen. Scalar/scalar inputs return a scalar; mixed/color inputs return color.
+  Scalars broadcast to the color operand's valid channels. The base defines output channels; undefined blend
+  channels preserve the base rather than writing zero. Alpha is an ordinary channel, not implicit opacity.
+  `Factor` and optional scalar `Mask` are independently clamped to `[0,1]` and multiplied; non-finite weights
+  act as zero. The result is `lerp(A, blend(A,B), weight)` in linear value space, without output clamping.
+  Default Multiply with Factor 1 preserves old scalar behavior. No intermediate points are made.
 - **Combine Painters**: accepts optional `R`, `G`, `B`, and `A` Painter pins and produces one color Painter. A scalar
   child supplies the channel represented by its pin; a color child supplies that channel only when it defines it.
-- **Points to Painter**: turns vertex-aligned PCG point datasets back into a Painter. Scalar mode reads a normal
-  input selector defaulting to `$Density`; Color mode reads one defaulting to `$Color`. Multiple point datasets
-  pair one-to-one, in order, with the DynMesh inputs evaluated by the consuming process. Every point count must
-  equal the matching mesh's full vertex count and point order must remain unchanged, even when only a vertex
-  selection will be painted. This provider is DynMesh-specific — it depends on `FDynamicMesh3` vertex iteration
-  order — and has no Static Mesh equivalent.
+- **Painter by Vertex ID**: maps point values to explicit DynMesh vertex IDs using the configurable `Vertex ID
+  Attribute` (default `VertexIndex`, an int32 attribute matching DynMesh To Points). Scalar mode defaults to
+  `$Density`; Color mode defaults to `$Color`. Points may be reordered or filtered. IDs must be unique and valid
+  in the consuming mesh; duplicate or invalid IDs reject initialization. Missing IDs return zero scalar influence
+  or undefined color channels. Point positions and bounds are irrelevant. Multiple datasets still pair one-to-one
+  with consuming DynMesh inputs. This is explicit correspondence, not surface projection or brush evaluation.
+  Old serialized graphs retain legacy point-order mapping; new nodes default to `Use Vertex IDs` enabled.
 
 The Painter consumers:
 
@@ -78,30 +84,31 @@ consistent across color seams.
 
 The point round-trip pattern is:
 
-`DynMesh To Points -> native PCG point processing -> Points to Painter -> Painter consumer`
+`DynMesh To Points -> native PCG point processing -> Painter by Vertex ID -> Painter consumer`
 
-Points to Painter retains a full one-point-per-vertex interface so point index remains aligned with DynMesh vertex
-iteration order. This costs more storage than a native Painter. Evaluation remains selection-scoped: the Painter
-consumer reads values only for selected vertices, so an inexpensive Selector can still protect high-poly meshes
-from expensive per-vertex Painter work.
+Enable the Vertex Index attribute on DynMesh To Points and preserve it during point processing. Painter by
+Vertex ID does not infer identity from position or apply brush falloff. Legacy mode (`Use Vertex IDs` disabled)
+requires the full vertex count and unchanged vertex-iteration order. Evaluation remains selection-scoped through
+the consuming processor. DynMesh vertex IDs are not Static Mesh render-vertex IDs; this Painter remains
+DynMesh-specific. Cross-target projection is intentionally outside this refactor.
 
 ### Graph examples
 
 Scarlet-macaw palette coordinate:
 
-`Marker Points ($Density) -> Paint from Points (Smooth, Max) -> Paint DynMesh Vertex Color (Write Channels = R)`
+`Marker Points ($Density) -> Bounds Brush Painter (Smooth, Max) -> Paint DynMesh Vertex Color (Write Channels = R)`
 
 The material reads `VertexColor.R` as its palette/gradient lookup coordinate.
 
 Branch wind mask:
 
-`Axis Gradient Painter -> Painter Math (Multiply).A`
+`Axis Gradient Painter -> Painter Blend (Multiply).A`
 
-`Paint from Points -----> Painter Math (Multiply).B -> Paint DynMesh Vertex Color (Write Channels = A)`
+`Bounds Brush Painter -----> Painter Blend (Multiply).B -> Paint DynMesh Vertex Color (Write Channels = A)`
 
 Combined color Painter:
 
-`Paint from Points -> Combine Painters.R`
+`Bounds Brush Painter -> Combine Painters.R`
 
 `Axis Gradient ----> Combine Painters.A -> Paint DynMesh Vertex Color (Write Channels = R, A)`
 
@@ -118,7 +125,7 @@ asset.
 - **Targets** are resolved from a soft-object-path attribute on the `Target` input (default: the standard
   `ComponentReference` attribute, which `Get Static Mesh Data` now emits by default). Duplicate paths are
   de-duplicated; unresolved / unloaded paths are counted and warned once.
-- **`Painter`** pin — exactly one, same contract as `Paint DynMesh Vertex Color`. `Points to Painter` is
+- **`Painter`** pin — exactly one, same contract as `Paint DynMesh Vertex Color`. `Painter by Vertex ID` is
   Dynamic Mesh-only and is rejected here with a graph error.
 - **LOD Mode**: *All LODs* (default) evaluates the Painter independently against every LOD's own render vertices —
   no cross-LOD correspondence, matching the engine's runtime `FMeshVertexPainter`. *LOD 0 Only* writes just LOD 0.

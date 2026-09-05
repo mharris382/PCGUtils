@@ -94,7 +94,7 @@ struct PCGUTILSPAINTER_API FPCGUtilsDynMeshPainterSample
  * Read-only state shared by a complete Painter expression tree.
  *
  * The Painter evaluation API is geometry-agnostic: `FPCGUtilsDynMeshPainterOperation::Evaluate` consumes only a
- * `FPCGUtilsDynMeshPainterSample`. Some providers (Points to Painter) additionally need the DynMesh vertex set at
+ * `FPCGUtilsDynMeshPainterSample`. Some providers (Painter by Vertex ID) additionally need the DynMesh vertex set at
  * `Initialize` time; for those a DynMesh-targeted context is built. A geometry-agnostic consumer (Static Mesh
  * render-vertex traversal) builds the mesh-less context, and a DynMesh-only Painter must fail in `Initialize`.
  */

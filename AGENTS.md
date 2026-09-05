@@ -49,10 +49,15 @@ in `UCLASS(meta=(Keywords="..."))` rather than `GetNodeTitleAliases()`, which ad
 per alias.
 
 `Factory` is an internal C++ implementation term only. Never expose it in node titles, pin labels, tooltips,
-data-type display names, errors, or end-user documentation. The user-facing term is always `Selector`. Existing
+data-type display names, errors, or end-user documentation. Use the family term: `Selector`, `Builder`, or `Painter`. Existing
 reflected C++ types containing `Factory` remain unchanged until a redirect-backed compatibility migration exists.
 
 In `PCGUtilsFracture` the equivalent user-facing pin labels are `GC`, `Fracture` and `Selection`.
+
+Name explicit mesh-element correspondence by its key, not its container: `by Vertex ID` / `Vertex IDs` for
+point attributes identifying vertices. Do not call this pattern merely `From Points`. Spatial influence is a
+different operation: `Bounds Brush Painter` uses point bounds and falloff, not vertex correspondence. Keep
+`point`/`points` as search keywords for both patterns; do not add duplicate palette aliases for synonyms.
 
 ## Attributes written to PCG data
 

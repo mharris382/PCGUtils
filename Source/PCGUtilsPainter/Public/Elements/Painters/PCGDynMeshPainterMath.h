@@ -14,9 +14,19 @@ enum class EPCGUtilsDynMeshPainterMathOperation : uint8
 	Add UMETA(DisplayName="Add"),
 	Subtract UMETA(DisplayName="Subtract"),
 	Multiply UMETA(DisplayName="Multiply"),
-	Min UMETA(DisplayName="Min"),
-	Max UMETA(DisplayName="Max")
+	Min UMETA(DisplayName="Darken (Min)"),
+	Max UMETA(DisplayName="Lighten (Max)"),
+	Mix UMETA(DisplayName="Mix (Normal)"),
+	Screen UMETA(DisplayName="Screen")
 };
+
+namespace PCGUtilsPainters
+{
+	/** Channel-wise blending in linear value space. Alpha is a channel, not implicit opacity. */
+	PCGUTILSPAINTER_API FPCGUtilsDynMeshPainterValue BlendValues(
+		const FPCGUtilsDynMeshPainterValue& Base, const FPCGUtilsDynMeshPainterValue& Blend,
+		EPCGUtilsDynMeshPainterMathOperation Operation, float Factor);
+}
 
 UCLASS(BlueprintType, ClassGroup=(Procedural), Category="PCGUtils|DynMesh|Painters")
 class PCGUTILSPAINTER_API UPCGDynMeshPainterMathFactoryData
@@ -34,13 +44,19 @@ public:
 	UPROPERTY()
 	TObjectPtr<const UPCGUtilsDynMeshPainterFactoryData> B;
 
+	UPROPERTY()
+	float Factor = 1.0f;
+
+	UPROPERTY()
+	TObjectPtr<const UPCGUtilsDynMeshPainterFactoryData> Mask;
+
 protected:
 	virtual TSharedPtr<FPCGUtilsDynMeshPainterOperation> CreateOperationInternal() const override;
 	virtual void AddToCrc(FArchiveCrc32& Ar, bool bFullDataCrc) const override;
 };
 
-/** Composes two Painter fields without materializing intermediate PCG data. */
-UCLASS(BlueprintType, ClassGroup=(Procedural), Category="PCGUtils|DynMesh|Painters")
+/** Blends Base (A) with Blend (B) without materializing intermediate PCG data. */
+UCLASS(BlueprintType, ClassGroup=(Procedural), Category="PCGUtils|DynMesh|Painters", meta=(Keywords="Painter blend math color colour mix normal add subtract multiply screen darken lighten"))
 class PCGUTILSPAINTER_API UPCGDynMeshPainterMathProviderSettings
 	: public UPCGUtilsDynMeshFactoryProviderSettings
 {
@@ -51,6 +67,7 @@ public:
 	virtual FName GetDefaultNodeName() const override { return TEXT("DynMeshPainterMath"); }
 	virtual FText GetDefaultNodeTitle() const override;
 	virtual FText GetNodeTooltipText() const override;
+	virtual FString GetAdditionalTitleInformation() const override;
 	virtual bool ShouldDrawNodeCompact() const override { return true; }
 	virtual bool ShouldShowCompactNodeTitle() const override { return true; }
 #endif
@@ -60,6 +77,10 @@ public:
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Painter", AdvancedDisplay, meta=(PCG_Overridable))
 	int32 Priority = 0;
+
+	/** Interpolate from A to the channel-wise blend result. Alpha is blended like other channels, not used as opacity. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Painter", meta=(PCG_Overridable, ClampMin="0", ClampMax="1"))
+	float Factor = 1.0f;
 
 	virtual FName GetMainOutputPin() const override;
 	virtual UPCGUtilsDynMeshFactoryData* CreateFactory(

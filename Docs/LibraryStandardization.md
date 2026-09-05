@@ -35,6 +35,18 @@ Smooth, Extrude, and Inset. Reflected class names and runtime geometry behavior 
 
 ## Remaining implementation phases
 
+Painter correspondence update (2026-09-05): Bounds Brush Painter and Painter by Vertex ID names/keywords are
+implemented. New ID nodes use an explicit int32 VertexIndex attribute (configurable), support reordered/sparse
+point datasets, and reject duplicate/invalid IDs. Legacy serialized graphs retain point-order behavior via a
+custom version. The full editor target now builds and all 34 PCGUtils.DynMesh tests pass, including the new
+VertexIDMapping and BlendValues tests. The legacy point-order test also passes. No manual graph migration or
+interactive editor UX validation is claimed by this automation result.
+
+Painter Blend is implemented with a stable title, operation subtitle, existing serialized enum values preserved,
+Mix/Screen additions, scalar/color handling, constant Factor and optional scalar Mask. Base A defines the output
+channels; missing blend B channels preserve A. Alpha is an ordinary channel, not implicit opacity. The numerical
+tests cover all seven modes, factor interpolation, scalar broadcast, and undefined channel preservation.
+
 1. Foundation extraction and regression verification: complete.
 2. Centralize processor editor capabilities without changing runtime policy. Hide irrelevant selection/output
    controls on queries, required-selection operations, and mesh-only outputs. Standardize processor titles,
@@ -42,13 +54,11 @@ Smooth, Extrude, and Inset. Reflected class names and runtime geometry behavior 
 3. Converge DynMesh To Points and DynMesh Selection To Points into one public, selection-aware converter using
    the process settings base and shared read-only resolver. Preserve old graphs through a hidden compatibility
    class, including legacy coordinate defaults. Expose generated attribute names and independent output flags.
-4. Rename Painter Math to Painter Blend and implement scalar/color blends. Preserve serialized enum values.
-   Define Base/Blend operand order, factor/mask, valid-channel handling, scalar broadcast, and alpha explicitly.
-   Cover Mix, Add, Subtract, Multiply, Screen, Darken, and Lighten with tests.
-5. Make DynMesh Points To Painter explicitly source-bound: source mesh/selection, optional Selector, and point
-   values. Retain source dependencies and allow evaluation on unrelated targets, including static mesh render
-   vertices, through source-surface projection and interpolation. Specify spaces, mapping validation, outside
-   selection behavior, and any distance limit; use direct IDs only with proven source identity.
+4. Painter Blend implementation and numerical regression tests: complete. Interactive pin/migration and
+   dedicated Mask integration coverage remain part of final integration verification.
+5. Standardize explicit correspondence as Painter by Vertex ID and spatial influence as Bounds Brush Painter.
+   Explicit ID lookup must not depend on point order, positions, or bounds. Retain an explicit legacy point-order
+   mode. Surface projection/interpolation is excluded from this refactor; it is a separate feature, not ID mapping.
 6. Update Painter terminology/docs and test generic fields on both DynMesh and static-mesh-style evaluation
    contexts. Preserve Set Vertex Color's distinct overlay/seam behavior rather than merging it blindly.
 7. Add palette/pin contract and integration coverage; compile all affected modules and run automation. Record
