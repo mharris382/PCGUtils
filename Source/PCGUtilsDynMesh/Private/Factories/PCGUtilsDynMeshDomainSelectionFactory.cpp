@@ -47,20 +47,6 @@ namespace
 		}
 	}
 
-	EGeometryScriptIndexType ToScriptIndexType(UE::Geometry::EGeometryElementType ElementType)
-	{
-		switch (ElementType)
-		{
-		case UE::Geometry::EGeometryElementType::Vertex:
-			return EGeometryScriptIndexType::Vertex;
-		case UE::Geometry::EGeometryElementType::Edge:
-			return EGeometryScriptIndexType::Edge;
-		case UE::Geometry::EGeometryElementType::Face:
-		default:
-			return EGeometryScriptIndexType::Triangle;
-		}
-	}
-
 	void AddElement(
 		const UE::Geometry::FDynamicMesh3& Mesh,
 		UE::Geometry::EGeometryElementType ElementType,
@@ -188,7 +174,7 @@ namespace
 			ScriptSelection.SetSelection(ConvertedSelection);
 			TArray<int32> ConvertedIDs;
 			const EGeometryScriptIndexType RequestedIndexType =
-				ToScriptIndexType(InSelectionContext.Domain.ElementType);
+				PCGUtilsDynMeshSelectionDomains::ToScriptIndexType(InSelectionContext.Domain.ElementType);
 			if (ScriptSelection.ConvertToMeshIndexArray(
 				InSelectionContext.Mesh, ConvertedIDs, RequestedIndexType) != RequestedIndexType)
 			{
@@ -212,6 +198,21 @@ namespace
 		TSet<int32> ConvertedElementIDs;
 		bool bUseNativeOperation = false;
 	};
+}
+
+EGeometryScriptIndexType PCGUtilsDynMeshSelectionDomains::ToScriptIndexType(
+	UE::Geometry::EGeometryElementType ElementType)
+{
+	switch (ElementType)
+	{
+	case UE::Geometry::EGeometryElementType::Vertex:
+		return EGeometryScriptIndexType::Vertex;
+	case UE::Geometry::EGeometryElementType::Edge:
+		return EGeometryScriptIndexType::Edge;
+	case UE::Geometry::EGeometryElementType::Face:
+	default:
+		return EGeometryScriptIndexType::Triangle;
+	}
 }
 
 bool PCGUtilsDynMeshSelectionDomains::ConvertSelection(

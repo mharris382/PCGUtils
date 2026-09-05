@@ -6,11 +6,19 @@
 #include "Elements/Selections/PCGUtilsDynMeshSelectionSource.h"
 #include "Factories/PCGUtilsDynMeshFactoryProvider.h"
 #include "Factories/PCGUtilsDynMeshSelectionFactory.h"
+#include "GeometryScript/GeometryScriptSelectionTypes.h"
 
 #include "PCGUtilsDynMeshDomainSelectionFactory.generated.h"
 
 namespace PCGUtilsDynMeshSelectionDomains
 {
+	/**
+	 * Maps a geometry element domain to the matching Geometry Script mesh index type
+	 * (Vertex -> Vertex, Edge -> Edge, Face/any other -> Triangle).
+	 */
+	PCGUTILSDYNMESH_API EGeometryScriptIndexType ToScriptIndexType(
+		UE::Geometry::EGeometryElementType ElementType);
+
 	/** Converts a Triangle-topology selection to the requested vertex, edge, or face element domain. */
 	PCGUTILSDYNMESH_API bool ConvertSelection(
 		const UPCGDynamicMeshData* MeshData,

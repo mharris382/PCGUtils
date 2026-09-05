@@ -12,20 +12,6 @@
 
 namespace
 {
-	EGeometryScriptIndexType ToScriptIndexType(UE::Geometry::EGeometryElementType ElementType)
-	{
-		switch (ElementType)
-		{
-		case UE::Geometry::EGeometryElementType::Vertex:
-			return EGeometryScriptIndexType::Vertex;
-		case UE::Geometry::EGeometryElementType::Edge:
-			return EGeometryScriptIndexType::Edge;
-		case UE::Geometry::EGeometryElementType::Face:
-		default:
-			return EGeometryScriptIndexType::Triangle;
-		}
-	}
-
 	class FLiteralSelectionOperation final : public FPCGUtilsDynMeshSelectionOperation
 	{
 	public:
@@ -55,7 +41,8 @@ namespace
 			FGeometryScriptMeshSelection ScriptSelection;
 			ScriptSelection.SetSelection(ConvertedSelection);
 			TArray<int32> ElementIDs;
-			const EGeometryScriptIndexType IndexType = ToScriptIndexType(InSelectionContext.Domain.ElementType);
+			const EGeometryScriptIndexType IndexType =
+				PCGUtilsDynMeshSelectionDomains::ToScriptIndexType(InSelectionContext.Domain.ElementType);
 			if (ScriptSelection.ConvertToMeshIndexArray(
 				InSelectionContext.Mesh, ElementIDs, IndexType) != IndexType)
 			{
