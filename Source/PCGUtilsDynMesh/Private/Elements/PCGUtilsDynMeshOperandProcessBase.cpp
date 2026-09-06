@@ -16,6 +16,12 @@
 FPCGDataTypeIdentifier UPCGUtilsDynMeshOperandProcessBaseSettings::GetOperandProcessDataTypes() const
 {
 	const FPCGDataTypeIdentifier MeshType(EPCGDataType::DynamicMesh);
+	if (!SupportsDeferredBuilderProcessing())
+	{
+		// A derived node that cannot defer to a Builder (e.g. DynMesh Boolean while separating operand
+		// contributions) offers concrete DynMesh on all three geometry pins, with no graph-type ambiguity.
+		return MeshType;
+	}
 	const FPCGDataTypeIdentifier BuilderType(FPCGUtilsDynMeshBuilderFactoryDataTypeInfo::AsId());
 	const FPCGDataTypeIdentifier AllTypes = MeshType | BuilderType;
 
@@ -131,6 +137,12 @@ bool FPCGUtilsDynMeshOperandProcessBaseElement::ExecuteInternal(FPCGContext* Con
 	if (Inputs.IsEmpty()) { return true; }
 
 	const bool bBuilders = Cast<UPCGUtilsDynMeshBuilderFactoryData>(Inputs[0].Data) != nullptr;
+	if (bBuilders && !Settings->SupportsDeferredBuilderProcessing())
+	{
+		PCGLog::LogErrorOnGraph(LOCTEXT("BuilderUnsupported",
+			"This DynMesh operand process does not support Builder inputs in its current configuration. Connect concrete DynMeshes, or change the setting that disabled deferred processing."), Context);
+		return true;
+	}
 	auto Validate = [Context, bBuilders](const TArray<FPCGTaggedData>& Data)
 	{
 		for (const FPCGTaggedData& Input : Data)
@@ -192,6 +204,9 @@ bool FPCGUtilsDynMeshOperandProcessBaseElement::ExecuteInternal(FPCGContext* Con
 		UPCGDynamicMeshData* WorkingMesh = bBuilders ? nullptr :
 			CastChecked<UPCGDynamicMeshData>(Output.Data->DuplicateData(Context));
 		bool bSucceeded = true;
+		// Auxiliary mesh outputs from the final operand application, routed once the primary result is known.
+		// A sequential fold reports them only for its last operand; that is the documented behaviour.
+		TArray<FPCGUtilsDynMeshAuxiliaryMeshOutput> PendingAuxiliaryOutputs;
 		for (int32 BIndex = FirstB; BIndex < EndB; ++BIndex)
 		{
 			if (bBuilders)
@@ -221,6 +236,7 @@ bool FPCGUtilsDynMeshOperandProcessBaseElement::ExecuteInternal(FPCGContext* Con
 					break;
 				}
 				Output.Data = WorkingMesh;
+				PendingAuxiliaryOutputs = MoveTemp(Outcome.AuxiliaryMeshOutputs);
 			}
 			if (Settings->TagInheritanceMode == EPCGBooleanOperationTagInheritanceMode::B)
 			{
@@ -231,7 +247,18 @@ bool FPCGUtilsDynMeshOperandProcessBaseElement::ExecuteInternal(FPCGContext* Con
 				Output.Tags.Append(Operands[BIndex].Tags);
 			}
 		}
-		if (bSucceeded) { Context->OutputData.TaggedData.Add(MoveTemp(Output)); }
+		if (bSucceeded)
+		{
+			for (const FPCGUtilsDynMeshAuxiliaryMeshOutput& Aux : PendingAuxiliaryOutputs)
+			{
+				if (Aux.Pin.IsNone() || !Aux.MeshData) { continue; }
+				FPCGTaggedData& AuxOutput = Context->OutputData.TaggedData.Emplace_GetRef();
+				AuxOutput.Data = Aux.MeshData;
+				AuxOutput.Tags = Output.Tags;
+				AuxOutput.Pin = Aux.Pin;
+			}
+			Context->OutputData.TaggedData.Add(MoveTemp(Output));
+		}
 	}
 	return true;
 }

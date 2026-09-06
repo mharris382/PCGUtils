@@ -539,6 +539,16 @@ bool FPCGUtilsDynMeshProcessBaseElement::ExecuteInternal(FPCGContext* Context) c
 			Output.Data = OutputData;
 		}
 		Output.Pin = Settings->GetMainOutputPinLabel();
+
+		// Generic secondary mesh results (e.g. a Boolean operand partition). Each rides its own named pin and
+		// inherits this input's tags. Deferred Builder chains never reach here - they carry a single mesh.
+		for (const FPCGUtilsDynMeshAuxiliaryMeshOutput& Aux : Outcome.AuxiliaryMeshOutputs)
+		{
+			if (Aux.Pin.IsNone() || !Aux.MeshData) { continue; }
+			FPCGTaggedData& AuxOutput = Context->OutputData.TaggedData.Emplace_GetRef(Input);
+			AuxOutput.Data = Aux.MeshData;
+			AuxOutput.Pin = Aux.Pin;
+		}
 	}
 	Settings->EmitAdditionalOutputs(Context);
 	return true;

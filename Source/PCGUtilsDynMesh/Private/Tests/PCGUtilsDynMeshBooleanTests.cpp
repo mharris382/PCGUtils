@@ -328,4 +328,107 @@ bool FPCGDynMeshBooleanPinsTest::RunTest(const FString&)
 	return true;
 }
 
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FPCGDynMeshBooleanSeparateContributionsTest,
+	"PCGUtils.DynMesh.Boolean.SeparateOperandContributions", EAutomationTestFlags::EditorContext | EAutomationTestFlags::ProductFilter)
+
+bool FPCGDynMeshBooleanSeparateContributionsTest::RunTest(const FString&)
+{
+	using namespace PCGUtilsDynMeshBooleanTests;
+
+	// Pin structure: separated mode replaces the single Out with Out A / Out B and drops Builder support.
+	{
+		auto* Node = NewObject<UPCGNode>();
+		auto* Settings = NewObject<UPCGDynMeshBooleanSettings>(Node);
+		Settings->bSeparateOperandContributions = true;
+		Node->SetSettingsInterface(Settings);
+		TestNull(TEXT("Separated mode drops the combined Out pin"), Node->GetOutputPin(TEXT("Out")));
+		TestNotNull(TEXT("Separated mode adds Out A"), Node->GetOutputPin(TEXT("Out A")));
+		TestNotNull(TEXT("Separated mode adds Out B"), Node->GetOutputPin(TEXT("Out B")));
+		const FPCGDataTypeIdentifier BuilderType(FPCGUtilsDynMeshBuilderFactoryDataTypeInfo::AsId());
+		TestFalse(TEXT("Separated mode rejects Builder inputs"),
+			Node->GetInputPin(TEXT("InA"))->Properties.AllowedTypes.Intersects(BuilderType));
+	}
+
+	auto TriangleCount = [](const FPCGTaggedData& Data)
+	{
+		return Mesh(CastChecked<UPCGDynamicMeshData>(Data.Data)).TriangleCount();
+	};
+	auto ByPin = [](const TArray<FPCGTaggedData>& Output, const TCHAR* Pin)
+	{
+		return Output.FilterByPredicate([Pin](const FPCGTaggedData& D) { return D.Pin == FName(Pin); });
+	};
+
+	// Union / Intersection / Subtract: Out A and Out B partition the whole boolean result exactly once.
+	for (auto Op : { EGeometryScriptBooleanOperation::Union, EGeometryScriptBooleanOperation::Intersection,
+		EGeometryScriptBooleanOperation::Subtract })
+	{
+		auto* A = Box();
+		auto* B = Box(FVector(40.0, 15.0, 10.0), 80.0);
+		// Distinct pre-existing PolyGroups on both operands must not influence the provenance partition.
+		A->GetMutableDynamicMesh()->EditMesh([](UE::Geometry::FDynamicMesh3& M)
+		{
+			M.EnableTriangleGroups(0);
+			for (int32 TID : M.TriangleIndicesItr()) { M.SetTriangleGroup(TID, 3); }
+		});
+		B->GetMutableDynamicMesh()->EditMesh([](UE::Geometry::FDynamicMesh3& M)
+		{
+			M.EnableTriangleGroups(0);
+			for (int32 TID : M.TriangleIndicesItr()) { M.SetTriangleGroup(TID, 9); }
+		});
+
+		auto* Combined = NewObject<UPCGDynMeshBooleanSettings>();
+		Combined->BooleanOperation = Op;
+		Combined->BooleanOperationOptions.bAllowEmptyResult = true;
+		const auto CombinedOut = Run(Combined, { Tagged(A, TEXT("A")) }, { Tagged(B, TEXT("B")) });
+		if (!TestEqual(TEXT("Combined mode emits one result"), CombinedOut.Num(), 1)) { return false; }
+		const int32 CombinedTris = TriangleCount(CombinedOut[0]);
+
+		auto* Separated = NewObject<UPCGDynMeshBooleanSettings>();
+		Separated->BooleanOperation = Op;
+		Separated->BooleanOperationOptions.bAllowEmptyResult = true;
+		Separated->bSeparateOperandContributions = true;
+		const auto SeparatedOut = Run(Separated, { Tagged(A, TEXT("A")) }, { Tagged(B, TEXT("B")) });
+
+		const auto OutA = ByPin(SeparatedOut, TEXT("Out A"));
+		const auto OutB = ByPin(SeparatedOut, TEXT("Out B"));
+		if (!TestEqual(TEXT("Exactly one Out A"), OutA.Num(), 1)) { return false; }
+		const int32 ATris = TriangleCount(OutA[0]);
+		const int32 BTris = OutB.Num() == 1 ? TriangleCount(OutB[0]) : 0;
+
+		TestEqual(FString::Printf(TEXT("Out A + Out B partitions the whole result (%s)"), *UEnum::GetValueAsString(Op)),
+			ATris + BTris, CombinedTris);
+		TestTrue(TEXT("Out A carries geometry"), ATris > 0);
+		if (Op != EGeometryScriptBooleanOperation::Subtract)
+		{
+			TestTrue(TEXT("Out B carries geometry for a combining op with overlap"), BTris > 0);
+		}
+	}
+
+	// Single-mesh operations: the result is entirely InA-derived, so Out B is empty.
+	{
+		auto* A = Box();
+		auto* B = Box(FVector(35, 10, 5), 80);
+		auto* Settings = NewObject<UPCGDynMeshBooleanSettings>();
+		Settings->BooleanOperation = EGeometryScriptBooleanOperation::TrimInside;
+		Settings->bSeparateOperandContributions = true;
+		const auto Output = Run(Settings, { Tagged(A, TEXT("A")) }, { Tagged(B, TEXT("B")) });
+		TestEqual(TEXT("Trim emits only Out A"), ByPin(Output, TEXT("Out A")).Num(), 1);
+		TestEqual(TEXT("Trim emits no Out B"), ByPin(Output, TEXT("Out B")).Num(), 0);
+	}
+
+	// Missing operand: InA passes through on Out A, nothing on Out B.
+	{
+		auto* Settings = NewObject<UPCGDynMeshBooleanSettings>();
+		Settings->BooleanOperation = EGeometryScriptBooleanOperation::Subtract;
+		Settings->bSeparateOperandContributions = true;
+		auto* A = Box();
+		const auto Output = Run(Settings, { Tagged(A, TEXT("A")) }, {});
+		if (!TestEqual(TEXT("Missing operand emits one output"), Output.Num(), 1)) { return false; }
+		TestEqual(TEXT("Missing operand output is on Out A"), Output[0].Pin, FName(TEXT("Out A")));
+		TestTrue(TEXT("Missing operand passes InA through by reference"), Output[0].Data == A);
+	}
+
+	return true;
+}
+
 #endif

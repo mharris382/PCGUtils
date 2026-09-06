@@ -142,6 +142,21 @@ Both meshes must already be in the same coordinate space (normally target-actor-
 - **Self Union Operand** (off by default) applies Geometry Script self-union to each operand before the boolean,
   with overrideable self-union options. Group assignment runs afterward, including any self-union repair faces.
   Both conveniences prepare a private operand copy and never change shared upstream data.
+- **Separate Operand Contributions** (off by default) is a structural switch: it replaces the single `Out` pin
+  with `Out A` and `Out B`, and the node stops accepting Builder inputs (it reproduces the boolean directly, so
+  it cannot defer). It is not a runtime override. One boolean still runs per pairing; its result is then
+  partitioned by which operand each triangle came from. `Out A` is the InA-derived surface (for Subtract, the
+  surviving InA shell); `Out B` is the InB-derived surface, including generated cut and cavity walls. Provenance
+  is read from the boolean itself (`FMeshBoolean::TrackPerTriangleSourceMesh`), never from PolyGroups, so
+  pre-existing groups on either operand have no effect on the split. Post-boolean hole-fill triangles are
+  attributed to whichever operand owns the majority of their boundary loop's rim (ties go to InA); no result
+  triangle is dropped. Every final triangle lands on exactly one of `Out A` / `Out B`. Single-mesh operations
+  (`Trim*`, `New PolyGroup*`) and a missing InB put the whole result on `Out A` and leave `Out B` empty; an
+  empty result with **Allow Empty Result** disabled passes InA through on `Out A`. Sequential folds report the
+  partition for the last operand only. **Assign Operand Polygroup** is hidden in this mode — the split supersedes
+  it. This mode runs immediately on concrete DynMesh data; the auxiliary `Out B` result travels the generic
+  `FPCGUtilsDynMeshProcessOutcome::AuxiliaryMeshOutputs` channel, so it is a reusable secondary-output mechanism
+  rather than a Boolean-specific one.
 
 Material handling follows the vanilla element: primary material slots are retained, and this node does not merge
 or remap separate operand material-slot tables. Operand material IDs should already use the primary's slot layout.

@@ -116,6 +116,19 @@ struct PCGUTILSDYNMESH_API FPCGUtilsDynMeshProcessInvocation
 	FTransform BuilderFrame = FTransform::Identity;
 };
 
+/**
+ * One additional DynMesh result an operation wants emitted on a named output pin, alongside the primary result.
+ * Deliberately carries no operation-specific semantics: the producing operation picks the pin label and the data.
+ * The immediate executors route each entry as tagged data on Pin, inheriting the primary output's tags. Deferred
+ * Builder chains have a single-mesh result contract and never carry these - an operation that produces auxiliary
+ * meshes must not advertise deferred Builder support.
+ */
+struct PCGUTILSDYNMESH_API FPCGUtilsDynMeshAuxiliaryMeshOutput
+{
+	FName Pin = NAME_None;
+	UPCGDynamicMeshData* MeshData = nullptr;
+};
+
 /** How the operation left the active selection. Defaults to the topology-preserving answer. */
 struct PCGUTILSDYNMESH_API FPCGUtilsDynMeshProcessOutcome
 {
@@ -123,6 +136,12 @@ struct PCGUTILSDYNMESH_API FPCGUtilsDynMeshProcessOutcome
 
 	/** Only read when SelectionOutcome is Replace. Must reference the invocation's MeshData. */
 	const UPCGDynamicMeshSelectionData* NewSelectionData = nullptr;
+
+	/**
+	 * Extra DynMesh results to emit next to the primary one, each on its own named pin. Empty for the common
+	 * single-output case. Entries with no Pin or no MeshData are skipped by the executor.
+	 */
+	TArray<FPCGUtilsDynMeshAuxiliaryMeshOutput> AuxiliaryMeshOutputs;
 
 	/**
 	 * A transform the operation applied to the geometry *as a whole*, reported so the Builder frame keeps
