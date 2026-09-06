@@ -24,6 +24,7 @@ struct PCGUTILSPAINTER_API FPCGUtilsPainterDynMeshTarget final : public FPCGUtil
 	virtual bool IsValid() const override { return CanonicalMesh != nullptr; }
 	virtual UE::Geometry::FDynamicMesh3* GetCanonicalMesh() override { return CanonicalMesh; }
 	virtual const UPCGDynamicMeshData* GetCanonicalMeshData() const override { return MeshData; }
+	virtual bool IsNativeDynMeshTarget() const override { return true; }
 	virtual FTransform GetLocalToWorld() const override { return LocalToWorld; }
 	virtual int32 GetDataSetIndex() const override { return DataSetIndex; }
 	virtual int32 GetDataSetCount() const override { return DataSetCount; }

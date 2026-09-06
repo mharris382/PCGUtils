@@ -50,6 +50,12 @@ namespace
 			return true;
 		}
 
+		virtual bool Prepare(const FPCGUtilsDynMeshPainterEvaluationContext& InPainterContext) override
+		{
+			return A->Prepare(InPainterContext) && B->Prepare(InPainterContext)
+				&& (!Mask || Mask->Prepare(InPainterContext));
+		}
+
 		virtual EPCGUtilsDynMeshPainterValueType GetOutputType() const override
 		{
 			return A->GetOutputType() == EPCGUtilsDynMeshPainterValueType::Color || B->GetOutputType() == EPCGUtilsDynMeshPainterValueType::Color

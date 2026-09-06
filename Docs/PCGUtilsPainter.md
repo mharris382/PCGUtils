@@ -33,17 +33,45 @@ Original target
 
 - `FPCGUtilsPainterDynMeshTarget` — the canonical mesh *is* the input `UPCGDynamicMeshData`; evaluation writes
   in place and `Commit()` is a no-op. `Paint DynMesh Vertex Color` routes through this.
-- `FPCGUtilsPainterStaticMeshTarget` — `Prepare()` builds a transient connectivity-preserving `FDynamicMesh3`
-  of LOD0 (one base vertex per unique render-vertex *position*, so UV / hard-normal / material / render-vertex
-  splits do **not** become disconnected islands; per-render-vertex color and geometry seams stay in overlays),
-  records the exact render-vertex ↔ canonical-vertex ↔ color-element correspondence, and builds the LOD0 AABB
-  tree once. `Commit()` writes LOD0's override colors straight from that correspondence, then transfers only
-  the painted write-channels to every lower LOD by closest-point surface projection.
+- `FPCGUtilsPainterStaticMeshTarget` — `Prepare()` builds a transient `FDynamicMesh3` of LOD0 by
+  **position-welding** the render buffers: render vertices whose positions are within `CanonicalWeldTolerance`
+  become one canonical base vertex, while per-render-vertex color / normal / UV differences stay in overlays.
+  It records the exact render-vertex ↔ canonical-vertex ↔ color-element correspondence and builds the LOD0
+  AABB tree once. `Commit()` writes LOD0's override colors straight from that correspondence, then transfers
+  only the painted write-channels to every lower LOD by closest-point surface projection.
 
-The LOD0 topology is reconstructed by position-welding the render buffers (weld tolerance default 0.01 asset
-units). This is the most reliable UE 5.8 runtime path; genuinely coincident authored vertices that the mesh
-build did not weld would remain split, and a non-manifold edge in LOD0 render data drops the offending
-triangle from the canonical mesh (rare; warned).
+### Canonical topology: what position welding can and cannot do
+
+Position welding merges render vertices by proximity alone. It has no access to the authored mesh's vertex
+identity, so it cannot distinguish:
+
+- **render-buffer duplicates at a UV / hard-normal / tangent / material seam** — the static-mesh build
+  produces these at *bit-identical* positions, so any positive tolerance welds them back into one geometric
+  vertex. This is the desired behaviour and the reason the node uses welding.
+- **two authored-distinct vertices that happen to sit within tolerance** — e.g. two separate mesh pieces
+  touching at a shared corner. Position welding **will merge these into one canonical vertex**, joining what
+  the artist authored as separate geometry.
+
+There is no reliable runtime signal in UE 5.8 to tell these apart. `FStaticMeshLODResources::WedgeMap`
+(wedge → render-vertex) is only populated for some build configurations, and the authored `FMeshDescription`
+(editor-only) would move the ambiguity into a render-vertex ↔ source-vertex position match rather than
+removing it. V1 therefore accepts the ambiguity and keeps welding, because:
+
+- seams are the overwhelmingly common case and weld perfectly (distance 0);
+- the tolerance is exposed (`CanonicalWeldTolerance`, default `0.01` asset units ≈ 0.1 mm) and validated —
+  negative or non-finite values are rejected with a graph warning and fall back to `0` (no welding);
+- component override-color write-back is unaffected either way (it is keyed by render vertex, not canonical
+  vertex).
+
+Consequence for topology-dependent Painters (`Random Value by Mesh Island`): islands are the connected
+components of this canonical mesh. A false weld can join two islands; a `0` tolerance splits every seam into
+its own island. Leave the tolerance at its default unless a specific mesh needs otherwise.
+
+**Non-manifold triangles** in LOD0 render data are *retained*: their three corners are split onto separate
+canonical vertices and color elements so the canonical mesh stays a complete representation of the render
+surface. A graph warning reports the count; mesh-island results near those triangles may treat the split
+corners as separate islands. Only genuinely degenerate or duplicate triangles are dropped, again with a
+counted warning, and their render vertices keep their base color deterministically.
 
 The module exists for feature organisation and target expansion, not to make Painting independent of the DynMesh
 toolkit. The core Painter *evaluation* API (`FPCGUtilsDynMeshPainterSample` / `...PainterValue` /
@@ -62,6 +90,25 @@ valid channels for a mesh sample containing local/world position, local/world no
 ID. A scalar does not choose its destination channel; a consuming node decides where to broadcast it. A color does
 identify channels, so a consumer writes only the intersection of its requested channels and the channels supplied
 by the Painter.
+
+### Operation lifecycle: Initialize -> Prepare -> Evaluate
+
+`FPCGUtilsDynMeshPainterOperation` runs once per operation instance, per root operation and target:
+
+1. **`Initialize(Context)`** — validate configuration, resolve pin inputs, create and `Initialize` child
+   operations. A composite (Painter Blend, Combine Painters, Selection Painter Switch) builds its children here.
+2. **`Prepare(Context)`** — the optional one-off, mesh-wide topology pass a factory needs before per-vertex
+   evaluation (connected components, one selector evaluation, a cached vertex lookup). The default is a no-op,
+   so every existing stateless Painter is unaffected. A composite MUST call `Prepare` on its children.
+   `Context.Mesh` (the canonical Dynamic Mesh) is always valid here, for every target domain.
+3. **`Evaluate(Sample)`** — per vertex sample. `const`, and after `Prepare` the operation is immutable and safe
+   for concurrent calls.
+
+A failed `Initialize` or `Prepare` logs on the graph and discards the whole Painter, like any invalid factory
+input. `FPCGUtilsDynMeshPainterEvaluationContext` now always carries the canonical `FDynamicMesh3` and a
+`UPCGDynamicMeshData` view of it (real graph data for a Dynamic Mesh target, a transient wrapper for a Static
+Mesh target); `bIsNativeDynMeshTarget` is the narrower "participates in DynMesh<->Points dataset pairing" flag
+that only `Painter by Vertex ID` requires.
 
 The Painter providers:
 
@@ -89,7 +136,31 @@ The Painter providers:
   in the consuming mesh; duplicate or invalid IDs reject initialization. Missing IDs return zero scalar influence
   or undefined color channels. Point positions and bounds are irrelevant. Multiple datasets still pair one-to-one
   with consuming DynMesh inputs. This is explicit correspondence, not surface projection or brush evaluation.
-  Old serialized graphs retain legacy point-order mapping; new nodes default to `Use Vertex IDs` enabled.
+  Old serialized graphs retain legacy point-order mapping; new nodes default to `Use Vertex IDs` enabled. This
+  is the one Painter that requires a **native** Dynamic Mesh target and is rejected on a Static Mesh Component.
+- **Random Value by Mesh Island**: a topology-dependent scalar Painter. Its `Prepare()` pass finds the
+  connected vertex components of the whole canonical mesh (`FMeshConnectedComponents::FindConnectedVertices`,
+  edge connectivity) and gives each one a deterministic value in `[Min Value, Max Value]`, hashed from the
+  node `Seed` and the component's smallest canonical vertex ID (so inserting geometry elsewhere does not shift
+  other islands). `Evaluate` returns the cached per-vertex value. Islands are canonical base-topology
+  components: UV / normal / colour-overlay seams and material boundaries never split one, and the outer paint
+  Write Selection never redefines them. Empty meshes and sparse IDs are safe; an edge-isolated loose vertex
+  becomes its own single-vertex island keyed by its own ID (a real per-island value, never a silent floor).
+  Topology rebuilding or vertex-ID reassignment can change which value an island gets.
+- **Selection Painter Switch** / **Selection to Painter**: two presentations of one binary Painter
+  multiplexer. A **Value Selection** (any DynMesh Selector, including composite Selection Logic) classifies
+  every canonical-mesh vertex during `Prepare()` — evaluated once, in the vertex domain, with the Selector
+  library's own domain conversion for vertex / edge / triangle native selectors — and each vertex returns its
+  Selected branch or its Unselected branch. Each branch is independently a **Constant** scalar or a connected
+  **Painter**; only the chosen branch is evaluated per vertex (no evaluate-both-and-lerp), and constant
+  branches are normalised into a shared constant Painter operation so all four combinations share one path.
+  A branch set to Painter with nothing connected is a graph error. `Selection to Painter` is the same
+  implementation preset to constant `1` / `0` with the Painter branch pins hidden — the plain
+  "selection -> scalar mask" case.
+
+  The Value Selection is independent of the outer paint node's DynMesh **Write Selection**: the Value
+  Selection decides *what value* a vertex gets over the whole mesh, the Write Selection decides *whether* that
+  vertex is written.
 
 The Painter consumers:
 
@@ -196,7 +267,7 @@ representations of one surface in future systems.
 
 ## Roadmap
 
-Deferred: `Random Value by Mesh Island` Painter factory (relies on the canonical-mesh connectivity this
-established), render-vertex selection, Mesh Paint Texture backend, per-instance ISM/HISM painting, Geometry
-Collection backend, cached/persistent LOD correspondence, runtime/cooked traversal, and dropping `DynMesh` from
+Deferred: render-vertex selection, Mesh Paint Texture backend, per-instance ISM/HISM painting, Geometry
+Collection backend, cached/persistent LOD correspondence, runtime/cooked traversal, spatially stable island
+IDs across topology rebuilds, weighted / feathered Selector output for the switch, and dropping `DynMesh` from
 the generic core Painter identifiers (cosmetic).

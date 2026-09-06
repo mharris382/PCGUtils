@@ -38,7 +38,14 @@ namespace
 			if (!InPainterContext.Mesh)
 			{
 				PCGLog::LogErrorOnGraph(
-					LOCTEXT("RequiresDynMesh", "Painter by Vertex ID requires a DynMesh target. DynMesh vertex IDs do not identify Static Mesh render vertices; no spatial projection is performed."),
+					LOCTEXT("NoCanonicalMesh", "Painter by Vertex ID has no canonical mesh to bind its point datasets to."),
+					Context);
+				return false;
+			}
+			if (!InPainterContext.bIsNativeDynMeshTarget)
+			{
+				PCGLog::LogErrorOnGraph(
+					LOCTEXT("RequiresDynMesh", "Painter by Vertex ID requires a native DynMesh target. DynMesh vertex IDs do not identify Static Mesh render vertices; no spatial projection is performed."),
 					Context);
 				return false;
 			}

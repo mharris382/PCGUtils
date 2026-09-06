@@ -6,11 +6,14 @@
 #include "Geometry/PCGUtilsDynMeshSurfaceCorrespondence.h"
 
 #include "Components/StaticMeshComponent.h"
+#include "Data/PCGDynamicMeshData.h"
 #include "DynamicMesh/DynamicMeshAABBTree3.h"
 #include "DynamicMesh/DynamicMeshAttributeSet.h"
 #include "Engine/StaticMesh.h"
+#include "PCGContext.h"
 #include "RawIndexBuffer.h"
 #include "Rendering/PositionVertexBuffer.h"
+#include "Rendering/StaticMeshVertexBuffer.h"
 #include "Spatial/PointHashGrid3.h"
 #include "StaticMeshResources.h"
 #include "Utils/PCGLogErrors.h"
@@ -105,6 +108,19 @@ bool FPCGUtilsPainterStaticMeshTarget::Prepare(FPCGContext* Context)
 		return false;
 	}
 
+	// --- Validate the weld tolerance --------------------------------------------------------------------
+	// Position welding can only ever merge vertices; it cannot tell a render-buffer seam duplicate apart from
+	// two authored-distinct vertices that happen to sit within tolerance. Keep the tolerance tight and finite.
+	double WeldTolerance = Config.WeldTolerance;
+	if (!FMath::IsFinite(WeldTolerance) || WeldTolerance < 0.0)
+	{
+		PCGLog::LogWarningOnGraph(FText::Format(
+			LOCTEXT("BadWeldTolerance", "'{0}': Canonical Weld Tolerance was {1}; using 0 (no welding — render-vertex seams stay separate)."),
+			FText::FromString(Component->GetName()), FText::AsNumber(Config.WeldTolerance)), Context);
+		WeldTolerance = 0.0;
+	}
+	const double WeldToleranceSq = WeldTolerance * WeldTolerance;
+
 	// --- Build the connectivity-preserving canonical mesh -------------------------------------------------
 	CanonicalMesh = FDynamicMesh3();
 
@@ -112,8 +128,6 @@ bool FPCGUtilsPainterStaticMeshTarget::Prepare(FPCGContext* Context)
 	TArray<FVector3d> CanonicalPositions;
 	CanonicalPositions.Reserve(NumRenderVerts);
 
-	const double WeldTolerance = FMath::Max(Config.WeldTolerance, 0.0);
-	const double WeldToleranceSq = WeldTolerance * WeldTolerance;
 	TPointHashGrid3d<int32> Grid(FMath::Max(WeldTolerance * 2.0, UE_DOUBLE_KINDA_SMALL_NUMBER), INDEX_NONE);
 	Grid.Reserve(NumRenderVerts);
 
@@ -145,23 +159,81 @@ bool FPCGUtilsPainterStaticMeshTarget::Prepare(FPCGContext* Context)
 		RenderVertexToCanonicalVID[RenderVert] = CanonicalVID;
 	}
 
-	const int32 NumRenderTris = Indices.Num() / 3;
-	TArray<int32> RenderTriToCanonicalTID;
-	RenderTriToCanonicalTID.Init(INDEX_NONE, NumRenderTris);
-	TArray<FIndex3i> RenderTriElements;
-	RenderTriElements.SetNumUninitialized(NumRenderTris);
+	// --- Seed the primary color + normal overlays: one element per render vertex, split at every render seam.
+	// The normal overlay carries the LOD0 render buffer's tangent-Z per render vertex so Painter samples on a
+	// Static Mesh target get real (baked, seam-preserving) surface normals rather than a flat up vector.
+	TArray<FColor> BaseColors;
+	PCGUtilsPainterStaticMeshBackend::GetBaseLODColors(Component, 0, Config.BaseColorMode, BaseColors);
+	if (BaseColors.Num() != NumRenderVerts)
+	{
+		BaseColors.Init(FColor::White, NumRenderVerts);
+	}
 
-	int32 SkippedTriangles = 0;
+	const FStaticMeshVertexBuffer& TangentBuffer = LOD0.VertexBuffers.StaticMeshVertexBuffer;
+	const bool bHaveRenderNormals =
+		static_cast<int32>(TangentBuffer.GetNumVertices()) == NumRenderVerts;
+
+	CanonicalMesh.EnableAttributes();
+	CanonicalMesh.Attributes()->EnablePrimaryColors();
+	if (CanonicalMesh.Attributes()->NumNormalLayers() < 1)
+	{
+		CanonicalMesh.Attributes()->SetNumNormalLayers(1);
+	}
+	FDynamicMeshColorOverlay* ColorOverlay = CanonicalMesh.Attributes()->PrimaryColors();
+	FDynamicMeshNormalOverlay* NormalOverlay = CanonicalMesh.Attributes()->PrimaryNormals();
+	check(ColorOverlay && NormalOverlay);
+
+	auto RenderNormal = [&](int32 RenderVert) -> FVector3f
+	{
+		if (!bHaveRenderNormals)
+		{
+			return FVector3f::ZAxisVector;
+		}
+		const FVector3f Normal(FVector4f(TangentBuffer.VertexTangentZ(RenderVert)));
+		return Normal.GetSafeNormal(UE_SMALL_NUMBER, FVector3f::ZAxisVector);
+	};
+
+	LOD0SeedColors.SetNumUninitialized(NumRenderVerts);
+	RenderVertexToReadElement.SetNumUninitialized(NumRenderVerts);
+	for (int32 RenderVert = 0; RenderVert < NumRenderVerts; ++RenderVert)
+	{
+		const FVector4f Color = NormalizedColor(BaseColors[RenderVert]);
+		LOD0SeedColors[RenderVert] = Color;
+		const int32 ColorElementID = ColorOverlay->AppendElement(Color);
+		const int32 NormalElementID = NormalOverlay->AppendElement(RenderNormal(RenderVert));
+		if (ColorElementID != RenderVert || NormalElementID != RenderVert)
+		{
+			// Engine invariant: a fresh overlay allocates element IDs 0..N-1 in append order. If a future engine
+			// change breaks that, skip this component rather than write mismatched colours.
+			PCGLog::LogWarningOnGraph(FText::Format(
+				LOCTEXT("OverlayElementDrift", "'{0}' LOD0: colour/normal overlay element allocation is not sequential; skipped."),
+				FText::FromString(Component->GetName())), Context);
+			return false;
+		}
+		RenderVertexToReadElement[RenderVert] = RenderVert;
+	}
+
+	// --- Build triangles. Non-manifold triangles are RETAINED by duplicating their corners onto fresh
+	// canonical vertices + fresh color elements, so the canonical mesh stays a complete representation of the
+	// render surface (important for island detection and lower-LOD projection). Only genuinely degenerate
+	// triangles (a corner collapsed onto another by welding, or a duplicate face) are dropped.
+	const int32 NumRenderTris = Indices.Num() / 3;
+	TArray<bool> RenderVertexPlacedOnManifoldTri;
+	RenderVertexPlacedOnManifoldTri.Init(false, NumRenderVerts);
+
+	int32 DroppedTriangles = 0;
+	int32 NonManifoldTrianglesRecovered = 0;
+
 	for (int32 Tri = 0; Tri < NumRenderTris; ++Tri)
 	{
 		const uint32 RA = Indices[Tri * 3 + 0];
 		const uint32 RB = Indices[Tri * 3 + 1];
 		const uint32 RC = Indices[Tri * 3 + 2];
-		if (!RenderVertexToCanonicalVID.IsValidIndex(RA)
-			|| !RenderVertexToCanonicalVID.IsValidIndex(RB)
-			|| !RenderVertexToCanonicalVID.IsValidIndex(RC))
+		if (!RenderVertexToCanonicalVID.IsValidIndex(static_cast<int32>(RA))
+			|| !RenderVertexToCanonicalVID.IsValidIndex(static_cast<int32>(RB))
+			|| !RenderVertexToCanonicalVID.IsValidIndex(static_cast<int32>(RC)))
 		{
-			++SkippedTriangles;
+			++DroppedTriangles;
 			continue;
 		}
 
@@ -171,51 +243,62 @@ bool FPCGUtilsPainterStaticMeshTarget::Prepare(FPCGContext* Context)
 		if (VA == VB || VB == VC || VA == VC)
 		{
 			// Collapsed to a sliver by welding — no surface to carry attributes.
-			++SkippedTriangles;
+			++DroppedTriangles;
 			continue;
 		}
 
-		// NonManifoldID / DuplicateTriangleID / InvalidID are all negative. A non-manifold edge in LOD0 render
-		// data is rare; dropping the offending triangle keeps the color-element <-> render-vertex identity map
-		// exact, which matters far more than reconstructing a non-manifold fan.
-		const int32 TID = CanonicalMesh.AppendTriangle(VA, VB, VC);
-		if (TID < 0)
+		const FIndex3i RenderElements(static_cast<int32>(RA), static_cast<int32>(RB), static_cast<int32>(RC));
+
+		int32 TID = CanonicalMesh.AppendTriangle(VA, VB, VC);
+		if (TID >= 0)
 		{
-			++SkippedTriangles;
+			ColorOverlay->SetTriangle(TID, RenderElements);
+			NormalOverlay->SetTriangle(TID, RenderElements);
+			RenderVertexPlacedOnManifoldTri[RA] = true;
+			RenderVertexPlacedOnManifoldTri[RB] = true;
+			RenderVertexPlacedOnManifoldTri[RC] = true;
 			continue;
 		}
 
-		RenderTriToCanonicalTID[Tri] = TID;
-		RenderTriElements[Tri] = FIndex3i(static_cast<int32>(RA), static_cast<int32>(RB), static_cast<int32>(RC));
+		if (TID == FDynamicMesh3::NonManifoldID)
+		{
+			// Duplicate the three corners onto their own canonical vertices + color/normal elements.
+			const int32 DupVA = CanonicalMesh.AppendVertex(FVector3d(PositionBuffer.VertexPosition(RA)));
+			const int32 DupVB = CanonicalMesh.AppendVertex(FVector3d(PositionBuffer.VertexPosition(RB)));
+			const int32 DupVC = CanonicalMesh.AppendVertex(FVector3d(PositionBuffer.VertexPosition(RC)));
+			const int32 DupEA = ColorOverlay->AppendElement(LOD0SeedColors[RA]);
+			const int32 DupEB = ColorOverlay->AppendElement(LOD0SeedColors[RB]);
+			const int32 DupEC = ColorOverlay->AppendElement(LOD0SeedColors[RC]);
+			const FIndex3i DupColorElements(DupEA, DupEB, DupEC);
+			const FIndex3i DupNormalElements(
+				NormalOverlay->AppendElement(RenderNormal(RA)),
+				NormalOverlay->AppendElement(RenderNormal(RB)),
+				NormalOverlay->AppendElement(RenderNormal(RC)));
+
+			TID = CanonicalMesh.AppendTriangle(DupVA, DupVB, DupVC);
+			if (TID >= 0)
+			{
+				ColorOverlay->SetTriangle(TID, DupColorElements);
+				NormalOverlay->SetTriangle(TID, DupNormalElements);
+				// Only redirect a render vertex to a duplicate element if nothing else covers it.
+				if (!RenderVertexPlacedOnManifoldTri[RA]) { RenderVertexToReadElement[RA] = DupEA; }
+				if (!RenderVertexPlacedOnManifoldTri[RB]) { RenderVertexToReadElement[RB] = DupEB; }
+				if (!RenderVertexPlacedOnManifoldTri[RC]) { RenderVertexToReadElement[RC] = DupEC; }
+				++NonManifoldTrianglesRecovered;
+				continue;
+			}
+		}
+
+		// DuplicateTriangleID / InvalidID / a duplicated triangle that still failed: nothing to represent.
+		++DroppedTriangles;
 	}
 
-	// --- Seed the primary color overlay: one element per render vertex, split at every render seam --------
-	TArray<FColor> BaseColors;
-	PCGUtilsPainterStaticMeshBackend::GetBaseLODColors(Component, 0, Config.BaseColorMode, BaseColors);
-	if (BaseColors.Num() != NumRenderVerts)
-	{
-		BaseColors.Init(FColor::White, NumRenderVerts);
-	}
-
-	CanonicalMesh.EnableAttributes();
-	CanonicalMesh.Attributes()->EnablePrimaryColors();
-	FDynamicMeshColorOverlay* ColorOverlay = CanonicalMesh.Attributes()->PrimaryColors();
-	check(ColorOverlay);
-
-	LOD0SeedColors.SetNumUninitialized(NumRenderVerts);
+	// A manifold placement always wins the read element back from a duplicate.
 	for (int32 RenderVert = 0; RenderVert < NumRenderVerts; ++RenderVert)
 	{
-		const FVector4f Color = NormalizedColor(BaseColors[RenderVert]);
-		LOD0SeedColors[RenderVert] = Color;
-		const int32 ElementID = ColorOverlay->AppendElement(Color);
-		check(ElementID == RenderVert);
-	}
-
-	for (int32 Tri = 0; Tri < NumRenderTris; ++Tri)
-	{
-		if (RenderTriToCanonicalTID[Tri] != INDEX_NONE)
+		if (RenderVertexPlacedOnManifoldTri[RenderVert])
 		{
-			ColorOverlay->SetTriangle(RenderTriToCanonicalTID[Tri], RenderTriElements[Tri]);
+			RenderVertexToReadElement[RenderVert] = RenderVert;
 		}
 	}
 
@@ -227,14 +310,31 @@ bool FPCGUtilsPainterStaticMeshTarget::Prepare(FPCGContext* Context)
 		return false;
 	}
 
-	if (SkippedTriangles > 0)
+	if (NonManifoldTrianglesRecovered > 0)
 	{
 		PCGLog::LogWarningOnGraph(FText::Format(
-			LOCTEXT("SkippedTris", "'{0}' LOD0 conversion skipped {1} degenerate or unrepresentable triangle(s)."),
-			FText::FromString(Component->GetName()), FText::AsNumber(SkippedTriangles)), Context);
+			LOCTEXT("NonManifoldRecovered", "'{0}' LOD0 had {1} non-manifold triangle(s); their corners were split onto separate canonical vertices to keep the mesh complete. Mesh-island results near those triangles may treat the split corners as separate islands."),
+			FText::FromString(Component->GetName()), FText::AsNumber(NonManifoldTrianglesRecovered)), Context);
+	}
+	if (DroppedTriangles > 0)
+	{
+		PCGLog::LogWarningOnGraph(FText::Format(
+			LOCTEXT("DroppedTris", "'{0}' LOD0 conversion dropped {1} degenerate or duplicate triangle(s). Render vertices used only by those triangles keep their base color."),
+			FText::FromString(Component->GetName()), FText::AsNumber(DroppedTriangles)), Context);
 	}
 
 	CanonicalTree = MakeUnique<FDynamicMeshAABBTree3>(&CanonicalMesh, /*bAutoBuild=*/true);
+
+	// A UPCGDynamicMeshData view of the canonical mesh (identical IDs) so selector-driven Painters can run
+	// DynMesh Geometry Script conversion utilities on a Static Mesh target. Copy is cheap for one LOD0 mesh.
+	if (Context)
+	{
+		CanonicalProxyData = FPCGContext::NewObject_AnyThread<UPCGDynamicMeshData>(Context);
+		if (CanonicalProxyData)
+		{
+			CanonicalProxyData->Initialize(FDynamicMesh3(CanonicalMesh));
+		}
+	}
 
 	bPrepared = true;
 	return true;
@@ -250,8 +350,9 @@ void FPCGUtilsPainterStaticMeshTarget::CommitLOD0(TArray<FColor>& OutColors) con
 
 	for (int32 RenderVert = 0; RenderVert < NumRenderVerts; ++RenderVert)
 	{
-		const FVector4f Color = (ColorOverlay && ColorOverlay->IsElement(RenderVert))
-			? ColorOverlay->GetElement(RenderVert)
+		const int32 ElementID = RenderVertexToReadElement[RenderVert];
+		const FVector4f Color = (ColorOverlay && ColorOverlay->IsElement(ElementID))
+			? ColorOverlay->GetElement(ElementID)
 			: LOD0SeedColors[RenderVert];
 		OutColors[RenderVert] = QuantizeColor(Color, Config.bConvertToSRGB);
 	}

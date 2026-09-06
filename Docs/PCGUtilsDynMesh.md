@@ -152,6 +152,22 @@ or remap separate operand material-slot tables. Operand material IDs should alre
 Handle-based elements still derive from the process settings base and pass their settings to
 `FPCGUtilsMeshTargetFunctions::CreateTarget(..., Settings)`, ensuring that Selector inputs are honored.
 
+## PolyGroup attribute processes
+
+Both derive from `UPCGUtilsDynMeshProcessBaseSettings`, override `GetRequiredSelectionDomain()` to `Face`
+(the base converts any incoming selection to triangles), are topology-preserving, and support deferred Builder
+processing.
+
+- **Set DynMesh PolyGroup** — assigns one `Polygroup ID` (or a freshly allocated one) to the selected
+  triangles via Geometry Script `SetPolygroupForMeshSelection`. With no selection the whole mesh is used
+  (`CreateSelectAllMeshSelection`). The default PolyGroup layer is enabled if absent; an extended layer at
+  the configured index is grown into existence.
+- **Clear DynMesh PolyGroups** — resets the selected triangles' PolyGroup IDs to `Clear Value`. Geometry
+  Script `ClearPolygroups` has no selection option and clears a whole layer, so this node extracts the
+  selection into a region (`FPCGUtilsMeshTargetFunctions::CreateTargetInPlace(Invocation, Region)`), clears
+  it, and welds it back with `RestoreRegion` — unselected triangles keep their groups. With no selection the
+  whole layer is cleared.
+
 ## Shared geometry utilities
 
 `Geometry/PCGUtilsDynMeshSurfaceCorrespondence.h` is a standalone GeometryCore-only helper (no PCG element,

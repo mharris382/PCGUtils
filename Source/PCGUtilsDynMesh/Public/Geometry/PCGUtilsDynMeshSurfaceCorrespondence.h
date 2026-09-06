@@ -6,15 +6,11 @@
 #include "Containers/ArrayView.h"
 #include "Misc/EnumClassFlags.h"
 
-namespace UE::Geometry
-{
-	class FDynamicMesh3;
-	template<class TriangleMeshType> class TMeshAABBTree3;
-	using FDynamicMeshAABBTree3 = TMeshAABBTree3<FDynamicMesh3>;
-	template<typename RealType, int ElementSize, typename VectorType>
-	class TDynamicMeshVectorOverlay;
-	using FDynamicMeshColorOverlay = TDynamicMeshVectorOverlay<float, 4, FVector4f>;
-}
+// These engine types are template-instantiation typedefs (FDynamicMeshAABBTree3, FDynamicMeshColorOverlay);
+// forward-declaring them as `using` aliases clashes with the engine's own typedefs under MSVC, so include
+// the real headers instead of guessing at a safe forward declaration.
+#include "DynamicMesh/DynamicMeshAABBTree3.h"
+#include "DynamicMesh/DynamicMeshAttributeSet.h"
 
 /**
  * General, reusable surface-correspondence utility: for each destination sample, find the closest point on a
@@ -91,7 +87,7 @@ namespace PCGUtilsDynMeshSurfaceCorrespondence
 	 */
 	PCGUTILSDYNMESH_API FMeshSurfaceProjectionResult ProjectPoints(
 		const UE::Geometry::FDynamicMeshAABBTree3& SourceTree,
-		TConstArrayView<UE::Geometry::FVector3d> DestinationPoints,
+		TConstArrayView<FVector3d> DestinationPoints,
 		const FProjectionOptions& Options = FProjectionOptions());
 
 	/**

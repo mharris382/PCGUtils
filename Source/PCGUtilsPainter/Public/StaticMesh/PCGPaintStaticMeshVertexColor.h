@@ -13,6 +13,13 @@
  * Which LODs of each target component receive the painted result. This is a target-level policy, not a
  * per-Painter setting: the complete Painter graph is always evaluated exactly once, on a canonical Dynamic
  * Mesh representation of LOD0.
+ *
+ * Serialization note: the two enumerators keep their original numeric values (AllLODs = 0, LOD0Only = 1) and
+ * their original user-facing meaning ("all LODs get painted" vs "only LOD 0"). Old graphs load unchanged and
+ * no pins move. What changed is the *mechanism* behind `AllLODs`: it previously re-evaluated the whole Painter
+ * independently on each LOD's own render vertices; it now evaluates once on LOD0 and projects the result to
+ * lower LODs. For position/gradient Painters the visible result is equivalent; for randomized or
+ * topology-dependent Painters the new behaviour is the intended, consistent one.
  */
 UENUM(BlueprintType)
 enum class EPCGPaintStaticMeshLODMode : uint8
@@ -22,9 +29,9 @@ enum class EPCGPaintStaticMeshLODMode : uint8
 	 * projection and barycentric interpolation. Lower LODs never re-run the Painter, so randomized or
 	 * topology-dependent Painters stay spatially consistent across LODs.
 	 */
-	AllLODs UMETA(DisplayName="All LODs"),
+	AllLODs = 0 UMETA(DisplayName="All LODs"),
 	/** Evaluate and write LOD 0 only; leave lower LODs at their asset / previous colors. */
-	LOD0Only UMETA(DisplayName="LOD 0 Only"),
+	LOD0Only = 1 UMETA(DisplayName="LOD 0 Only"),
 };
 
 /** Starting color for each render vertex before the Painter modifies its write channels. */

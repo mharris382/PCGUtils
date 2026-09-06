@@ -4,21 +4,25 @@
 
 #include "CoreMinimal.h"
 #include "DynamicMesh/DynamicMesh3.h"
+#include "DynamicMesh/DynamicMeshAABBTree3.h"
 #include "Factories/PCGUtilsDynMeshPainterFactory.h"
 #include "StaticMesh/PCGUtilsPainterStaticMeshBackend.h"
 #include "Target/PCGUtilsPainterTarget.h"
 
 class UStaticMeshComponent;
-namespace UE::Geometry { class FDynamicMeshAABBTree3; }
 
 /**
  * Painter target for a `UStaticMeshComponent`'s per-component override vertex colors.
  *
- * `Prepare()` builds a transient, connectivity-preserving `FDynamicMesh3` of LOD0: one base vertex per unique
- * render-vertex position (so UV / hard-normal / material / render-vertex splits do NOT become disconnected
- * islands), with the per-render-vertex color and geometry seams kept in overlays. It also records the exact
- * render-vertex -> canonical-vertex and render-vertex -> color-overlay-element correspondence, and builds the
- * LOD0 AABB tree once.
+ * `Prepare()` builds a transient `FDynamicMesh3` of LOD0 by position-welding the render buffers: render
+ * vertices within `WeldTolerance` become one canonical base vertex, and per-render-vertex color / normal / UV
+ * differences stay in overlays. This reconnects UV / hard-normal / material / render-vertex seam duplicates
+ * (which the build emits at identical positions) but, having no access to authored vertex identity, it can
+ * also merge two authored-distinct vertices that happen to sit within tolerance — see PCGUtilsPainter.md,
+ * "Canonical topology". Non-manifold triangles are retained by splitting their corners; degenerate/duplicate
+ * triangles are dropped. A primary normal overlay is seeded from LOD0's render tangent-Z so Painter samples
+ * get real (baked, seam-preserving) surface normals. `Prepare()` records the exact render-vertex ->
+ * canonical-vertex and render-vertex -> color-overlay-element correspondence and builds the LOD0 AABB tree once.
  *
  * `Commit()` writes LOD0's override colors straight from that exact correspondence, then — unless
  * `bTransferToLowerLODs` is false — projects every lower LOD's render vertices onto the painted LOD0 surface
@@ -58,7 +62,8 @@ struct PCGUTILSPAINTER_API FPCGUtilsPainterStaticMeshTarget final : public FPCGU
 	/** True after a successful Prepare(). */
 	virtual bool IsValid() const override { return bPrepared; }
 	virtual UE::Geometry::FDynamicMesh3* GetCanonicalMesh() override { return bPrepared ? &CanonicalMesh : nullptr; }
-	virtual const UPCGDynamicMeshData* GetCanonicalMeshData() const override { return nullptr; }
+	virtual const UPCGDynamicMeshData* GetCanonicalMeshData() const override { return CanonicalProxyData; }
+	virtual bool IsNativeDynMeshTarget() const override { return false; }
 	virtual FTransform GetLocalToWorld() const override { return ComponentToWorld; }
 	virtual bool Commit(FPCGContext* Context) override;
 
@@ -76,8 +81,22 @@ private:
 	UE::Geometry::FDynamicMesh3 CanonicalMesh;
 	TUniquePtr<UE::Geometry::FDynamicMeshAABBTree3> CanonicalTree;
 
+	/**
+	 * A `UPCGDynamicMeshData` copy of `CanonicalMesh` (identical vertex/triangle IDs), created on the PCG
+	 * context so it lives for the element execution. Lets Painter operations reuse DynMesh Geometry Script
+	 * utilities (selector domain conversion) on a Static Mesh target. Raw pointer: GC-rooted by the context.
+	 */
+	class UPCGDynamicMeshData* CanonicalProxyData = nullptr;
+
 	/** Size = LOD0 render-vertex count. Maps each render vertex to its canonical base-vertex ID. */
 	TArray<int32> RenderVertexToCanonicalVID;
+
+	/**
+	 * Size = LOD0 render-vertex count. The primary color-overlay element to read for each render vertex when
+	 * committing LOD0. Identity in the common case (element i == render vertex i); a render vertex that ended up
+	 * only on a duplicated non-manifold triangle points at that triangle's replacement element instead.
+	 */
+	TArray<int32> RenderVertexToReadElement;
 
 	/**
 	 * Size = LOD0 render-vertex count. The seeded LOD0 base color per render vertex, as a plain normalized

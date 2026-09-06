@@ -91,33 +91,34 @@ struct PCGUTILSPAINTER_API FPCGUtilsDynMeshPainterSample
 };
 
 /**
- * Read-only state shared by a complete Painter expression tree.
+ * Read-only state shared by a complete Painter expression tree, for the whole Initialize -> Prepare -> Evaluate
+ * lifecycle.
  *
- * The Painter evaluation API is geometry-agnostic: `FPCGUtilsDynMeshPainterOperation::Evaluate` consumes only a
- * `FPCGUtilsDynMeshPainterSample`. Some providers (Painter by Vertex ID) additionally need the DynMesh vertex set at
- * `Initialize` time; for those a DynMesh-targeted context is built. A geometry-agnostic consumer (Static Mesh
- * render-vertex traversal) builds the mesh-less context, and a DynMesh-only Painter must fail in `Initialize`.
+ * `Mesh` is the **canonical Dynamic Mesh** the Painter graph runs against and is now ALWAYS present, whatever
+ * the original target domain: for a native Dynamic Mesh target it is that mesh; for a Static Mesh Component
+ * target it is the transient connectivity-preserving LOD0 representation. Topology-dependent Painters
+ * (`Random Value by Mesh Island`, `Selection Painter Switch`) read it directly during `Prepare()` and work on
+ * every target automatically.
+ *
+ * `MeshData` is a `UPCGDynamicMeshData` view of `Mesh` — the real graph data for a native Dynamic Mesh target,
+ * a transient wrapper for other targets — provided so operations can reuse Geometry Script utilities (e.g.
+ * DynMesh selection domain conversion). It is non-null whenever `Mesh` is.
+ *
+ * `bIsNativeDynMeshTarget` is the narrower question "did this target originate as a graph `UPCGDynamicMeshData`
+ * that participates in DynMesh<->Points dataset pairing?". Only `Painter by Vertex ID` needs that; it rejects a
+ * target where this is false.
  */
 struct PCGUTILSPAINTER_API FPCGUtilsDynMeshPainterEvaluationContext
 {
-	/** DynMesh-targeted context. */
 	FPCGUtilsDynMeshPainterEvaluationContext(
 		const UPCGDynamicMeshData* InMeshData,
 		const UE::Geometry::FDynamicMesh3& InMesh,
 		const FTransform& InLocalToWorld,
 		int32 InDataSetIndex = 0,
-		int32 InDataSetCount = 1)
+		int32 InDataSetCount = 1,
+		bool bInIsNativeDynMeshTarget = true)
 		: MeshData(InMeshData), Mesh(&InMesh), LocalToWorld(InLocalToWorld),
-		  DataSetIndex(InDataSetIndex), DataSetCount(InDataSetCount)
-	{
-	}
-
-	/** Geometry-agnostic context. `Mesh` / `MeshData` stay null; DynMesh-only Painters must reject it. */
-	explicit FPCGUtilsDynMeshPainterEvaluationContext(
-		const FTransform& InLocalToWorld,
-		int32 InDataSetIndex = 0,
-		int32 InDataSetCount = 1)
-		: LocalToWorld(InLocalToWorld),
+		  bIsNativeDynMeshTarget(bInIsNativeDynMeshTarget),
 		  DataSetIndex(InDataSetIndex), DataSetCount(InDataSetCount)
 	{
 	}
@@ -125,6 +126,7 @@ struct PCGUTILSPAINTER_API FPCGUtilsDynMeshPainterEvaluationContext
 	const UPCGDynamicMeshData* MeshData = nullptr;
 	const UE::Geometry::FDynamicMesh3* Mesh = nullptr;
 	FTransform LocalToWorld = FTransform::Identity;
+	bool bIsNativeDynMeshTarget = true;
 	/** Pairing coordinates for Painters backed by ordered per-DynMesh external datasets. */
 	int32 DataSetIndex = 0;
 	int32 DataSetCount = 1;
@@ -156,11 +158,31 @@ protected:
 	virtual TSharedPtr<FPCGUtilsDynMeshPainterOperation> CreateOperationInternal() const;
 };
 
-/** Runtime scalar-or-color field evaluated for mesh samples by a Painter consumer. */
+/**
+ * Runtime scalar-or-color field evaluated for mesh samples by a Painter consumer.
+ *
+ * Lifecycle (driven once per operation instance by the Painter execution layer, per root operation and target):
+ *
+ *   1. `Initialize(Context)` — validate configuration, resolve pin inputs, and create + `Initialize` any child
+ *      operations. Cheap. A composite must build its children here.
+ *   2. `Prepare(Context)` — the optional one-off, mesh-wide topology pass a factory needs before per-vertex
+ *      evaluation (connected components, one selector evaluation, a cached vertex lookup, ...). The default is a
+ *      no-op, so existing stateless Painters are unaffected. A composite MUST call `Prepare` on its children.
+ *      `Context.Mesh` (the canonical Dynamic Mesh) is always valid here.
+ *   3. `Evaluate(Sample)` — called for every (possibly parallel) vertex sample. After `Prepare` returns true the
+ *      operation MUST be immutable: `Evaluate` is `const` and must be safe for concurrent calls.
+ *
+ * A failed `Initialize` or `Prepare` returns false (after logging on the graph) and the whole Painter is
+ * discarded, exactly as an invalid factory input already is.
+ */
 class PCGUTILSPAINTER_API FPCGUtilsDynMeshPainterOperation : public FPCGUtilsDynMeshOperation
 {
 public:
 	virtual bool Initialize(const FPCGUtilsDynMeshPainterEvaluationContext& InPainterContext);
+
+	/** One-off mesh-wide preparation before any Evaluate(). Default: no-op. Composites must prepare children. */
+	virtual bool Prepare(const FPCGUtilsDynMeshPainterEvaluationContext& InPainterContext) { return true; }
+
 	virtual EPCGUtilsDynMeshPainterValueType GetOutputType() const = 0;
 	virtual FPCGUtilsDynMeshPainterValue Evaluate(
 		const FPCGUtilsDynMeshPainterSample& Sample) const = 0;

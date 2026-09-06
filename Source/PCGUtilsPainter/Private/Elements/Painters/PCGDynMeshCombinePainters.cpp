@@ -54,6 +54,18 @@ namespace
 			return bHasPainter;
 		}
 
+		virtual bool Prepare(const FPCGUtilsDynMeshPainterEvaluationContext& InPainterContext) override
+		{
+			for (const TSharedPtr<FPCGUtilsDynMeshPainterOperation>& Child : ChildOperations)
+			{
+				if (Child && !Child->Prepare(InPainterContext))
+				{
+					return false;
+				}
+			}
+			return true;
+		}
+
 		virtual EPCGUtilsDynMeshPainterValueType GetOutputType() const override
 		{
 			return EPCGUtilsDynMeshPainterValueType::Color;

@@ -151,12 +151,14 @@ bool FPCGPaintStaticMeshVertexColorElement::ExecuteInternal(FPCGContext* Context
 		return true;
 	}
 
-	// Fail fast — before touching any component — if the Painter cannot target a non-DynMesh canonical mesh.
-	// The Static Mesh canonical mesh carries no backing UPCGDynamicMeshData, so this mesh-less probe context is
-	// exactly what EvaluatePainterGraphOntoTarget will build per component.
+	// Fail fast — before touching any component — if the Painter is incompatible with a non-native-DynMesh
+	// target (Painter by Vertex ID). Probe against an empty canonical mesh with bIsNativeDynMeshTarget = false,
+	// which is exactly the flag EvaluatePainterGraphOntoTarget will pass per component.
 	{
+		UE::Geometry::FDynamicMesh3 ProbeMesh;
 		TSharedPtr<FPCGUtilsDynMeshPainterOperation> Probe = PainterFactory->CreateOperation(Context);
-		const FPCGUtilsDynMeshPainterEvaluationContext ProbeContext(FTransform::Identity);
+		const FPCGUtilsDynMeshPainterEvaluationContext ProbeContext(
+			nullptr, ProbeMesh, FTransform::Identity, 0, 1, /*bIsNativeDynMeshTarget=*/false);
 		if (!Probe || !Probe->Initialize(ProbeContext))
 		{
 			PCGLog::LogErrorOnGraph(

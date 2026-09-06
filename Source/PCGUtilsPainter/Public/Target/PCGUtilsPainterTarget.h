@@ -38,11 +38,17 @@ struct PCGUTILSPAINTER_API FPCGUtilsPainterTarget
 	virtual UE::Geometry::FDynamicMesh3* GetCanonicalMesh() = 0;
 
 	/**
-	 * The PCG data backing the canonical mesh, when the target originated as a native Dynamic Mesh. Painters
-	 * that need the DynMesh vertex set at Initialize time (Painter by Vertex ID) require this; a target that
-	 * is not a native Dynamic Mesh returns null, and such a Painter then fails Initialize as designed.
+	 * A `UPCGDynamicMeshData` view of the canonical mesh — the real graph data for a native Dynamic Mesh
+	 * target, a transient wrapper the target materializes for other targets. Non-null once `IsValid()`.
+	 * Painter operations reuse it for Geometry Script utilities (e.g. DynMesh selection domain conversion).
 	 */
 	virtual const UPCGDynamicMeshData* GetCanonicalMeshData() const { return nullptr; }
+
+	/**
+	 * True only when this target originated as a graph `UPCGDynamicMeshData` that participates in
+	 * DynMesh<->Points dataset pairing. `Painter by Vertex ID` requires it; every other Painter ignores it.
+	 */
+	virtual bool IsNativeDynMeshTarget() const { return false; }
 
 	/** Canonical-mesh-local -> world. Identity when the caller wants purely local evaluation. */
 	virtual FTransform GetLocalToWorld() const { return FTransform::Identity; }
