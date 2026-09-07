@@ -7,6 +7,40 @@ Unreal Engine **5.8** · MIT licensed · <https://github.com/mharris382/PCGUtils
 
 ---
 
+## Contents
+
+- [Overview](#overview)
+- [Dynamic Mesh Processing](#dynamic-mesh-processing)
+  - [One contract for every operation](#one-contract-for-every-operation)
+  - [Selectors](#selectors)
+  - [DynMesh ↔ Points](#dynmesh-points)
+  - [Builders](#builders)
+  - [World space and local space](#world-space-and-local-space)
+  - [Operation families](#operation-families)
+- [Procedural Vertex Painting](#procedural-vertex-painting)
+  - [How a Painter graph is built](#how-a-painter-graph-is-built)
+  - [Targets and limits](#targets-and-limits)
+  - [What you get out of it](#what-you-get-out-of-it)
+- [PCG Authoring Utilities](#pcg-authoring-utilities)
+  - [PCGActorBase](#pcgactorbase)
+  - [Splines and paths](#splines-and-paths)
+  - [PCG Marker](#pcg-marker)
+  - [Provider interfaces and shared data](#provider-interfaces-and-shared-data)
+  - [Component query nodes](#component-query-nodes)
+- [Procedural Asset Authoring](#procedural-asset-authoring)
+  - [Save parameters and bake identity](#save-parameters-and-bake-identity)
+  - [A representative workflow](#a-representative-workflow)
+  - [Committing LODs](#committing-lods)
+  - [Batch runs and data caching](#batch-runs-and-data-caching)
+- [Experimental — Procedural Fracture](#experimental--procedural-fracture)
+- [Also in the plugin](#also-in-the-plugin)
+- [Installation](#installation)
+- [Requirements and dependencies](#requirements-and-dependencies)
+- [Examples and documentation](#examples-and-documentation)
+- [License, acknowledgements and support](#license-acknowledgements-and-support)
+
+---
+
 ## Overview
 
 PCGUtils began as a set of conveniences for building reusable PCG tools: an actor base that manages its own
@@ -95,6 +129,7 @@ reusable. There is one node per algorithm, not two.
 
 `[ADD SCREENSHOT/GIF HERE - Dynamic Mesh selection created using point data and PCG/PCGEx composite filters]`
 
+<a id="dynmesh-points"></a>
 ### DynMesh ↔ Points
 
 This is one of the defining ideas of the module.
