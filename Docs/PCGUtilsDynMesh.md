@@ -194,6 +194,35 @@ space; `FProjectionOptions::DestinationToSource` (default identity) maps destina
 the Painter Static Mesh target for LOD0 → lower-LOD colour transfer; intended for reuse by any future
 attribute-transfer system.
 
+## Surface pathing
+
+Two conversion nodes bridge PCG paths/points and DynMesh surface topology using Unreal's geodesic solvers. Both
+derive from `UPCGUtilsDynMeshProcessBaseSettings`, override `GetRequiredSelectionDomain()` to `Face`, and accept
+a Selection or Selector that restricts pathing to the selected triangle region (extracted as a submesh). Both
+are read-only with respect to the mesh and emit ordered `UPCGPointArrayData` paths on a `Paths` pin, matching
+what **DynMesh Selection To Paths** produces — same closed-loop `@Data` Bool contract, first point never repeated
+at the end — with one addition: points carry a real frame (X = path tangent, Z = surface normal, the Sample
+DynMesh convention), because a surface path is normally fed straight into spline conversion or mesh spawning.
+
+- **Route Path On DynMesh** takes a sparse guide path on its `Path` pin, projects every guide point onto the
+  mesh once, and joins each consecutive pair with the shortest surface path, concatenated into one path. It
+  routes the closing segment too when the input reports itself closed through **Is Closed Attribute Name**.
+  **Max Projection Distance** (`0` = unlimited) bounds how far a guide point may float off the geometry.
+- **Trace Surface Path** takes seed points on its `Seeds` pin and traces a straight surface path from each, in
+  the seed's own direction, until **Max Path Length** or a mesh/selection boundary. Direction comes from a
+  transform axis by default, or from a Vector attribute selector. Each seed produces its own output path;
+  optional `@Data` attributes record the seed index and whether the trace ended on a boundary.
+
+Neither node competes with PCGEx's cluster pathfinding: there are no heuristics, costs, obstacles or flood
+fills. The value is solving directly on the real triangle surface with no cluster conversion step.
+
+`Geometry/PCGUtilsDynMeshSurfacePathing.h` holds the geometry half — a standalone GeometryCore/DynamicMesh-only
+helper with no PCG dependency, like `PCGUtilsDynMeshSurfaceCorrespondence.h`, which it uses for projection.
+`FSurfaceRouter` runs the same algorithm as `GetShortestSurfacePath()` (Dijkstra seed path, then
+`FDeformableEdgePath::Minimize`) but makes **one** working mesh copy per guide path instead of one per segment,
+by poking every anchor into that copy up front; the Geometry Script wrapper deep-copies the whole mesh on every
+call. `TraceSurfacePath()` drives `FMeshGeodesicSurfaceTracer` against a const mesh and copies nothing.
+
 ## Selection modifiers
 
 ### PolyGroup Selector
