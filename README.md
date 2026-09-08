@@ -143,7 +143,7 @@ work, and then turns the result back into something a mesh operation can consume
 Dynamic Mesh
    └─▶ DynMesh To Points / Sample DynMesh / Selection To Points
           └─▶ PCG + PCGEx point filtering, attribute math, scatter, sorting
-                 └─▶ Select from Vertex IDs / Select in Bounds  (Selector)
+                 └─▶ Select from Vertex IDs / Triangle IDs / Select in Bounds  (Selector)
                         └─▶ any Dynamic Mesh operation
 ```
 
@@ -155,7 +155,7 @@ The nodes that bridge the two representations:
 | **Sample DynMesh** | Surface → points, matching the vanilla Mesh Sampler's sampling modes and metadata conventions, but scoped by a selection or Selector. |
 | **DynMesh Selection To Points** | The vertices a selection touches → points. |
 | **DynMesh Selection To Paths** | Selection boundaries → path data. |
-| **Select from Vertex IDs** | Points carrying vertex IDs → Selector. |
+| **Select from Vertex IDs** | Points carrying vertex IDs → Selector. Switch its ID Mode to Triangle IDs (alias: *Selection From Triangle IDs*) to read triangle IDs instead, producing a triangle-native selection. |
 | **Select in Bounds** | Point bounds → Selector. |
 | **Apply Points To Dynamic Mesh** | Points → vertex positions, normals, vertex colors (whole or per-channel) and UV channels. |
 | **Painter by Vertex ID** | Points → per-vertex paint values, by explicit vertex correspondence. |
