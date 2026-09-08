@@ -5,7 +5,7 @@
 #include "CoreMinimal.h"
 #include "Factories/PCGUtilsDynMeshFactoryProvider.h"
 #include "Factories/PCGUtilsDynMeshPainterFactory.h"
-
+#include "Curves/CurveFloat.h"
 #include "PCGDynMeshAxisGradientPainter.generated.h"
 
 UENUM(BlueprintType)
@@ -33,7 +33,16 @@ public:
 
 	UPROPERTY()
 	float EndDistance = 100.0f;
+	
+	UPROPERTY()
+	float GradientStart = 0.0f;
 
+	UPROPERTY()
+	float GradientEnd = 1.0f;
+	
+	UPROPERTY()
+	TObjectPtr<UCurveFloat> Curve;
+	
 	UPROPERTY()
 	bool bInvert = false;
 
@@ -72,6 +81,15 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Painter", meta=(PCG_Overridable))
 	float EndDistance = 100.0f;
 
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Painter", meta=(PCG_Overridable))
+	float GradientStart = 0.0f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Painter", meta=(PCG_Overridable))
+	float GradientEnd = 1.0f;
+	
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Painter", meta=(PCG_Overridable))
+	TSoftObjectPtr<UCurveFloat> Curve;
+	
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Painter", meta=(PCG_Overridable))
 	bool bInvert = false;
 

@@ -40,8 +40,12 @@ namespace
 			float Value = FMath::Clamp(static_cast<float>(
 				(Projection - Factory->StartDistance) /
 				(Factory->EndDistance - Factory->StartDistance)), 0.0f, 1.0f);
-			return FPCGUtilsDynMeshPainterValue::MakeScalar(
-				Factory->bInvert ? 1.0f - Value : Value);
+			Value = (Factory->bInvert ? 1.0f - Value : Value);
+			if (Factory->Curve){
+				Value = Factory->Curve->GetFloatValue(Value);
+			}
+			Value = FMath::Lerp(Factory->GradientStart, Factory->GradientEnd, Value);
+			return FPCGUtilsDynMeshPainterValue::MakeScalar(Value);
 		}
 
 	private:
@@ -131,6 +135,9 @@ UPCGUtilsDynMeshFactoryData* UPCGDynMeshAxisGradientPainterProviderSettings::Cre
 	Factory->EndDistance = EndDistance;
 	Factory->bInvert = bInvert;
 	Factory->CoordinateSpace = CoordinateSpace;
+	Factory->GradientStart = GradientStart;
+	Factory->GradientEnd = GradientEnd;
+	Factory->Curve = Curve.Get(); 
 	return Super::CreateFactory(InContext, Factory);
 }
 
