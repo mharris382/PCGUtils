@@ -104,7 +104,11 @@ FText UPCGRoutePathOnDynMeshSettings::GetNodeTooltipText() const
 TArray<FPCGPinProperties> UPCGRoutePathOnDynMeshSettings::InputPinProperties() const
 {
 	TArray<FPCGPinProperties> Pins = Super::InputPinProperties();
-	Pins.Emplace_GetRef(PCGRoutePathOnDynMeshConstants::PathInputPin, EPCGDataType::Point, true, true)
+
+	// Pin order follows the repository rule: the data the output is a mutation of comes first, then the required
+	// dependency it is mutated against, then optional pins. The base class contributes Mesh (required) and
+	// Selector (optional) in that order, so Path only has to go in front of both.
+	Pins.EmplaceAt_GetRef(0, PCGRoutePathOnDynMeshConstants::PathInputPin, EPCGDataType::Point, true, true)
 		.SetRequiredPin();
 	return Pins;
 }
@@ -188,8 +192,45 @@ bool FPCGRoutePathOnDynMeshElement::ExecuteInternal(FPCGContext* Context) const
 			const int32 NumSegments = bClosed ? NumGuides : NumGuides - 1;
 
 			TArray<FVector3d> RoutedPositions;
+			// Index-aligned with RoutedPositions: which guide points each routed point came from. Routing
+			// inserts a point at every triangle crossing, so this correspondence is the only thing that lets the
+			// routed path stay a mutation of the guide path rather than an unrelated new one.
+			TArray<Common::FPathSourceRef> RoutedSources;
 			TArray<FVector3d> SegmentPositions;
+			TArray<double> SegmentDistances;
 			TArray<FSegmentFailure> Failures;
+
+			// Records where along [StartGuide, EndGuide] each point AppendSegment just kept actually sits.
+			// The span is parameterized by arc length along the solved surface path, not by index, because the
+			// solver spaces points by triangle crossings and index spacing would skew the blend.
+			auto AppendSegmentSources =
+				[&RoutedSources, &SegmentDistances](
+					TConstArrayView<FVector3d> Segment, int32 FirstKept, int32 StartGuide, int32 EndGuide)
+			{
+				if (Segment.IsEmpty() || FirstKept >= Segment.Num())
+				{
+					return;
+				}
+
+				SegmentDistances.SetNumUninitialized(Segment.Num(), EAllowShrinking::No);
+				SegmentDistances[0] = 0.0;
+				for (int32 Index = 1; Index < Segment.Num(); ++Index)
+				{
+					SegmentDistances[Index] =
+						SegmentDistances[Index - 1] + FVector3d::Distance(Segment[Index - 1], Segment[Index]);
+				}
+
+				const double TotalLength = SegmentDistances[Segment.Num() - 1];
+				for (int32 Index = FMath::Max(FirstKept, 0); Index < Segment.Num(); ++Index)
+				{
+					// A zero-length segment has no meaningful parameter; its points all sit on the start anchor.
+					const float Alpha = (TotalLength > UE_DOUBLE_SMALL_NUMBER)
+						? static_cast<float>(SegmentDistances[Index] / TotalLength)
+						: 0.0f;
+					RoutedSources.Add(Common::FPathSourceRef{
+						StartGuide, EndGuide, FMath::Clamp(Alpha, 0.0f, 1.0f)});
+				}
+			};
 
 			for (int32 SegmentIndex = 0; SegmentIndex < NumSegments; ++SegmentIndex)
 			{
@@ -201,7 +242,14 @@ bool FPCGRoutePathOnDynMeshElement::ExecuteInternal(FPCGContext* Context) const
 
 				if (Status == Pathing::ESurfaceRouteStatus::Ok)
 				{
+					const int32 NumBefore = RoutedPositions.Num();
 					Pathing::AppendSegment(RoutedPositions, SegmentPositions, Pathing::PathJoinTolerance);
+
+					// AppendSegment drops the segment's leading point when it welds onto the previous segment's
+					// end, so the kept run is the tail of SegmentPositions of exactly the length it added.
+					const int32 NumKept = RoutedPositions.Num() - NumBefore;
+					AppendSegmentSources(
+						SegmentPositions, SegmentPositions.Num() - NumKept, StartIndex, EndIndex);
 				}
 				else if (Status == Pathing::ESurfaceRouteStatus::Coincident)
 				{
@@ -210,6 +258,7 @@ bool FPCGRoutePathOnDynMeshElement::ExecuteInternal(FPCGContext* Context) const
 					if (RoutedPositions.IsEmpty() && Anchors[StartIndex].bValid)
 					{
 						RoutedPositions.Add(Anchors[StartIndex].Position);
+						RoutedSources.Add(Common::FPathSourceRef{StartIndex, StartIndex, 0.0f});
 					}
 				}
 				else
@@ -241,6 +290,7 @@ bool FPCGRoutePathOnDynMeshElement::ExecuteInternal(FPCGContext* Context) const
 					<= Pathing::PathJoinTolerance * Pathing::PathJoinTolerance)
 			{
 				RoutedPositions.Pop();
+				RoutedSources.Pop();
 			}
 
 			if (RoutedPositions.Num() < 2)
@@ -260,6 +310,16 @@ bool FPCGRoutePathOnDynMeshElement::ExecuteInternal(FPCGContext* Context) const
 			OutputOptions.bClosed = bClosed && bFullyRouted;
 			OutputOptions.IsClosedAttributeName = Settings->IsClosedAttributeName;
 			OutputOptions.PointSteepness = Settings->PointSteepness;
+
+			// The routed path is this guide path, mutated onto the surface: it is initialized from the guide path so
+			// its attributes survive, and RoutedSources says which guide points every routed point inherits from.
+			if (Settings->MetadataInheritance != EPCGUtilsDynMeshRoutePathInheritance::None)
+			{
+				OutputOptions.Inheritance.SourceData = GuideData;
+				OutputOptions.Inheritance.PointSources = RoutedSources;
+				OutputOptions.Inheritance.bInterpolate =
+					(Settings->MetadataInheritance == EPCGUtilsDynMeshRoutePathInheritance::Interpolate);
+			}
 
 			UPCGPointArrayData* OutputData =
 				Common::BuildPathData(Context, RoutedPositions, *Surface.Tree, OutputOptions);

@@ -2,6 +2,7 @@
 
 #include "Elements/Conversion/PCGUtilsDynMeshSurfacePathCommon.h"
 
+#include "Data/PCGBasePointData.h"
 #include "Data/PCGDynamicMeshData.h"
 #include "Data/PCGDynamicMeshSelectionData.h"
 #include "Data/PCGPointArrayData.h"
@@ -12,6 +13,7 @@
 #include "Helpers/PCGHelpers.h"
 #include "Metadata/PCGMetadata.h"
 #include "Metadata/PCGMetadataAttributeTpl.h"
+#include "Metadata/PCGMetadataDomain.h"
 #include "PCGContext.h"
 #include "UDynamicMesh.h"
 #include "Utils/PCGLogErrors.h"
@@ -146,15 +148,55 @@ namespace PCGUtilsDynMeshSurfacePathCommon
 			return nullptr;
 		}
 
+		const FPathSourceInheritance& Inheritance = Options.Inheritance;
+		const UPCGBasePointData* SourceData = Inheritance.SourceData;
+
+		// A source with a mismatched correspondence array is a caller bug, not user data: refuse to inherit
+		// rather than index out of a short array or silently pair points with the wrong guide points.
+		if (SourceData && !ensureMsgf(Inheritance.PointSources.Num() == MeshLocalPositions.Num(),
+			TEXT("BuildPathData was given %d path positions but %d source references; inheritance disabled."),
+			MeshLocalPositions.Num(), Inheritance.PointSources.Num()))
+		{
+			SourceData = nullptr;
+		}
+
 		UPCGPointArrayData* OutputData = FPCGContext::NewObject_AnyThread<UPCGPointArrayData>(Context);
 		if (!OutputData)
 		{
 			return nullptr;
 		}
 
+		if (SourceData)
+		{
+			// The routed path is the guide path mutated onto the surface, so it inherits the guide path's
+			// attributes (all domains) and target actor. Spatial-data inheritance is off because that would
+			// parent the point storage and force the guide path's point count onto a path that has its own.
+			FPCGInitializeFromDataParams InitParams(SourceData);
+			InitParams.bInheritSpatialData = false;
+			OutputData->InitializeFromDataWithParams(InitParams);
+		}
+
 		OutputData->SetNumPoints(MeshLocalPositions.Num(), false);
 		OutputData->AllocateProperties(EPCGPointNativeProperties::All);
 		FPCGPointValueRanges OutRanges(OutputData, false);
+
+		// Element-domain handles for per-point metadata. The @Data domain needs no per-point work: it came
+		// across whole with InitializeFromDataWithParams.
+		FPCGMetadataDomain* OutElementDomain = nullptr;
+		const FPCGMetadataDomain* SourceElementDomain = nullptr;
+		if (SourceData)
+		{
+			UPCGMetadata* OutMetadata = OutputData->MutableMetadata();
+			const UPCGMetadata* SourceMetadata = SourceData->ConstMetadata();
+			OutElementDomain = OutMetadata ? OutMetadata->GetMetadataDomain(PCGMetadataDomainID::Elements) : nullptr;
+			SourceElementDomain =
+				SourceMetadata ? SourceMetadata->GetConstMetadataDomain(PCGMetadataDomainID::Elements) : nullptr;
+		}
+
+		const FConstPCGPointValueRanges SourceRanges = SourceData
+			? FConstPCGPointValueRanges(SourceData)
+			: FConstPCGPointValueRanges();
+		const int32 NumSourcePoints = SourceData ? SourceData->GetNumPoints() : 0;
 
 		for (int32 Index = 0; Index < MeshLocalPositions.Num(); ++Index)
 		{
@@ -181,15 +223,64 @@ namespace PCGUtilsDynMeshSurfacePathCommon
 			const FTransform PointTransform(FRotationMatrix::MakeFromXZ(Tangent, Normal).ToQuat(), Position);
 
 			// A default-constructed point carries PCGInvalidEntryKey, so no uninitialized metadata entry can
-			// escape into the output.
+			// escape into the output even when there is nothing to inherit from.
 			FPCGPoint OutPoint{};
-			OutPoint.Transform = PointTransform;
 			OutPoint.Color = FVector4::One();
 			OutPoint.Density = 1.0f;
-			OutPoint.Steepness = Options.PointSteepness;
-			OutPoint.Seed = PCGHelpers::ComputeSeedFromPosition(Position);
 			OutPoint.BoundsMin = FVector::ZeroVector;
 			OutPoint.BoundsMax = FVector::ZeroVector;
+
+			const FPathSourceRef SourceRef = SourceData ? Inheritance.PointSources[Index] : FPathSourceRef();
+			if (SourceData && SourceRef.IsValid()
+				&& SourceRef.StartIndex < NumSourcePoints && SourceRef.EndIndex < NumSourcePoints)
+			{
+				const FPCGPoint StartPoint = SourceRanges.GetPoint(SourceRef.StartIndex);
+				const FPCGPoint EndPoint = SourceRanges.GetPoint(SourceRef.EndIndex);
+				const FPCGPoint& NearestPoint =
+					(SourceRef.NearestIndex() == SourceRef.StartIndex) ? StartPoint : EndPoint;
+
+				// Everything starts as a straight copy of the nearest guide point, which is also the correct and
+				// only answer for values that cannot be meaningfully averaged.
+				OutPoint = NearestPoint;
+
+				const bool bBlend = Inheritance.bInterpolate
+					&& SourceRef.StartIndex != SourceRef.EndIndex
+					&& SourceRef.Alpha > 0.0f && SourceRef.Alpha < 1.0f;
+
+				if (bBlend)
+				{
+					const float Alpha = SourceRef.Alpha;
+					OutPoint.Density = FMath::Lerp(StartPoint.Density, EndPoint.Density, Alpha);
+					OutPoint.Color = FMath::Lerp(StartPoint.Color, EndPoint.Color, Alpha);
+					OutPoint.BoundsMin = FMath::Lerp(StartPoint.BoundsMin, EndPoint.BoundsMin, (double)Alpha);
+					OutPoint.BoundsMax = FMath::Lerp(StartPoint.BoundsMax, EndPoint.BoundsMax, (double)Alpha);
+
+					// A new blended entry is only worth allocating when the two guide points actually differ.
+					// Otherwise the nearest point's key is inherited straight through the metadata parenting
+					// set up by InitializeFromDataWithParams, at no cost.
+					if (OutElementDomain && SourceElementDomain
+						&& StartPoint.MetadataEntry != EndPoint.MetadataEntry)
+					{
+						PCGMetadataEntryKey BlendedKey = PCGInvalidEntryKey;
+						OutElementDomain->InitializeOnSet(
+							BlendedKey, NearestPoint.MetadataEntry, SourceElementDomain);
+
+						// ComputeWeightedAttribute only touches attributes that allow interpolation, so
+						// non-blendable values keep what InitializeOnSet seeded from the nearest guide point.
+						TStaticArray<TPair<PCGMetadataEntryKey, float>, 2> Coefficients;
+						Coefficients[0] = {StartPoint.MetadataEntry, 1.0f - Alpha};
+						Coefficients[1] = {EndPoint.MetadataEntry, Alpha};
+						OutElementDomain->ComputeWeightedAttribute(
+							BlendedKey, Coefficients, SourceElementDomain);
+
+						OutPoint.MetadataEntry = BlendedKey;
+					}
+				}
+			}
+
+			OutPoint.Transform = PointTransform;
+			OutPoint.Steepness = Options.PointSteepness;
+			OutPoint.Seed = PCGHelpers::ComputeSeedFromPosition(Position);
 
 			OutRanges.SetFromPoint(Index, OutPoint);
 		}
@@ -198,11 +289,13 @@ namespace PCGUtilsDynMeshSurfacePathCommon
 		{
 			if (UPCGMetadata* Metadata = OutputData->MutableMetadata())
 			{
+				// bOverrideParent is required: an inherited path already carries this attribute from its guide
+				// path, and this node's answer for the routed path - not the guide path's - is the correct one.
 				if (FPCGMetadataAttribute<bool>* IsClosedAttribute = Metadata->FindOrCreateAttribute<bool>(
 					FPCGAttributeIdentifier(Options.IsClosedAttributeName, PCGMetadataDomainID::Data),
 					Options.bClosed,
 					/*bAllowsInterpolation=*/false,
-					/*bOverrideParent=*/false,
+					/*bOverrideParent=*/true,
 					/*bOverwriteIfTypeMismatch=*/true))
 				{
 					IsClosedAttribute->SetValue(PCGInvalidEntryKey, Options.bClosed);

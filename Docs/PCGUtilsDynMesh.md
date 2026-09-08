@@ -204,10 +204,21 @@ what **DynMesh Selection To Paths** produces — same closed-loop `@Data` Bool c
 at the end — with one addition: points carry a real frame (X = path tangent, Z = surface normal, the Sample
 DynMesh convention), because a surface path is normally fed straight into spline conversion or mesh spawning.
 
-- **Route Path On DynMesh** takes a sparse guide path on its `Path` pin, projects every guide point onto the
-  mesh once, and joins each consecutive pair with the shortest surface path, concatenated into one path. It
-  routes the closing segment too when the input reports itself closed through **Is Closed Attribute Name**.
-  **Max Projection Distance** (`0` = unlimited) bounds how far a guide point may float off the geometry.
+- **Route Path On DynMesh** takes a sparse guide path on its `Path` pin — first, ahead of `Mesh`, because the
+  output is that path mutated onto the surface — projects every guide point onto the mesh once, and joins each
+  consecutive pair with the shortest surface path, concatenated into one path. It routes the closing segment too
+  when the input reports itself closed through **Is Closed Attribute Name**. **Max Projection Distance**
+  (`0` = unlimited) bounds how far a guide point may float off the geometry.
+
+  The routed path keeps the guide path's identity: it is initialized from the guide path, so its attributes in
+  every metadata domain (`@Data` included), its tags and its target actor survive. Routing inserts a point at
+  every triangle crossing, so most output points fall between two guide points; each one records which pair
+  brackets it and how far along by arc length. **Metadata Inheritance** decides what those in-between points get
+  — `Interpolate` (default) weights attributes that allow interpolation between the bracketing pair and takes
+  everything else from the nearer guide point, `Nearest Source Point` copies wholesale from the nearer one, and
+  `None` emits a standalone path that inherits nothing. Transform, Steepness and Seed are always the node's own
+  regardless of mode. **Trace Surface Path** does not inherit this way: its output is one path per seed rather
+  than a mutation of a path, so its seed points' attributes are not carried onto the traced points.
 - **Trace Surface Path** takes seed points on its `Seeds` pin and traces a straight surface path from each, in
   the seed's own direction, until **Max Path Length** or a mesh/selection boundary. Direction comes from a
   transform axis by default, or from a Vector attribute selector. Each seed produces its own output path;

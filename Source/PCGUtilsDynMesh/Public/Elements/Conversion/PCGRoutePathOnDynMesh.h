@@ -14,6 +14,30 @@ namespace PCGRoutePathOnDynMeshConstants
 	inline const FName PathsOutputPin = TEXT("Paths");
 }
 
+/** How a routed path inherits the guide path's attributes and per-point values. */
+UENUM(BlueprintType)
+enum class EPCGUtilsDynMeshRoutePathInheritance : uint8
+{
+	/**
+	 * Blend between the two guide points a routed point falls between. Attributes that allow interpolation
+	 * (floats, doubles, vectors, rotators, quats, transforms) are weighted by how far along the span the point
+	 * sits; everything else - strings, names, bools, soft object paths - comes from the nearer guide point.
+	 */
+	Interpolate,
+
+	/**
+	 * Copy every attribute from the single nearest guide point, with no blending. Use this when an attribute
+	 * that happens to be a float is really an identifier or an index, where an averaged value is meaningless.
+	 */
+	NearestSourcePoint UMETA(DisplayName = "Nearest Source Point"),
+
+	/**
+	 * Emit a standalone path that inherits nothing from the guide path - no attributes, no target actor, no
+	 * per-point values. Only appropriate when the guide path is a throwaway construction input.
+	 */
+	None
+};
+
 /**
  * Turns a sparse guide path into a dense path that follows a DynMesh surface.
  *
@@ -83,6 +107,21 @@ public:
 	 */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Routing", meta=(PCG_Overridable))
 	FName IsClosedAttributeName = TEXT("IsClosed");
+
+	/**
+	 * Where each routed point's attributes and per-point values come from in the guide path.
+	 *
+	 * A routed path is the guide path moved onto the mesh, not a new dataset, so it keeps the guide path's
+	 * attributes in every metadata domain, its tags and its target actor. Routing does add points the guide path
+	 * never had - the geodesic solver inserts one at every triangle crossing - and this setting decides what
+	 * those in-between points are given.
+	 *
+	 * Transform, Steepness and Seed are always this node's own regardless of the mode: the surface-aligned frame
+	 * is the whole point of routing, Steepness comes from Point Steepness, and Seed is recomputed from the
+	 * routed position so points sharing a guide point do not share a seed.
+	 */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Points", meta=(PCG_Overridable))
+	EPCGUtilsDynMeshRoutePathInheritance MetadataInheritance = EPCGUtilsDynMeshRoutePathInheritance::Interpolate;
 
 	/** Steepness assigned to every generated path point. */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Points", meta=(PCG_Overridable, ClampMin="0", ClampMax="1"))
