@@ -29,11 +29,20 @@ namespace
 				return false;
 			}
 
-			if (Factory->VertexIndexAttribute.IsNone())
+			const bool bTriangleMode =
+				Factory->IDMode == EPCGDynMeshSelectionFromPointsIDMode::TriangleIDs;
+			const FName AttributeName = bTriangleMode
+				? Factory->TriangleIdAttribute
+				: Factory->VertexIndexAttribute;
+			const FText ElementNoun = bTriangleMode
+				? LOCTEXT("TriangleNoun", "triangle ID")
+				: LOCTEXT("VertexNoun", "vertex ID");
+
+			if (AttributeName.IsNone())
 			{
-				PCGLog::LogErrorOnGraph(
-					LOCTEXT("EmptyAttribute", "Select from Points requires a Vertex Index Attribute name."),
-					Context);
+				PCGLog::LogErrorOnGraph(FText::Format(
+					LOCTEXT("EmptyAttribute", "Select from Points requires a {0} attribute name."),
+					ElementNoun), Context);
 				return false;
 			}
 
@@ -44,23 +53,26 @@ namespace
 				const FPCGMetadataDomain* ElementsDomain = Metadata
 					? Metadata->GetConstMetadataDomain(PCGMetadataDomainID::Elements) : nullptr;
 				const FPCGMetadataAttribute<int32>* Attribute = ElementsDomain
-					? ElementsDomain->GetConstTypedAttribute<int32>(Factory->VertexIndexAttribute) : nullptr;
+					? ElementsDomain->GetConstTypedAttribute<int32>(AttributeName) : nullptr;
 				if (!Data || !Attribute)
 				{
 					PCGLog::LogWarningOnGraph(FText::Format(
 						LOCTEXT("MissingAttribute", "Select from Points skipped point data without the integer attribute '{0}'."),
-						FText::FromName(Factory->VertexIndexAttribute)), Context);
+						FText::FromName(AttributeName)), Context);
 					continue;
 				}
 
 				const auto Entries = Data->GetConstMetadataEntryValueRange();
-				SelectedVertexIDs.Reserve(SelectedVertexIDs.Num() + Entries.Num());
+				SelectedElementIDs.Reserve(SelectedElementIDs.Num() + Entries.Num());
 				for (const int64 Entry : Entries)
 				{
-					const int32 VertexID = Attribute->GetValueFromItemKey(Entry);
-					if (InSelectionContext.Mesh.IsVertex(VertexID))
+					const int32 ElementID = Attribute->GetValueFromItemKey(Entry);
+					const bool bValid = bTriangleMode
+						? InSelectionContext.Mesh.IsTriangle(ElementID)
+						: InSelectionContext.Mesh.IsVertex(ElementID);
+					if (bValid)
 					{
-						SelectedVertexIDs.Add(VertexID);
+						SelectedElementIDs.Add(ElementID);
 					}
 					else
 					{
@@ -72,8 +84,8 @@ namespace
 			if (InvalidIndexCount > 0)
 			{
 				PCGLog::LogWarningOnGraph(FText::Format(
-					LOCTEXT("InvalidIndices", "Select from Points ignored {0} invalid or stale vertex indices."),
-					FText::AsNumber(InvalidIndexCount)), Context);
+					LOCTEXT("InvalidIndices", "Select from Points ignored {0} invalid or stale {1}s."),
+					FText::AsNumber(InvalidIndexCount), ElementNoun), Context);
 			}
 
 			return true;
@@ -81,12 +93,12 @@ namespace
 
 		virtual bool TestElement(int32 ElementID) const override
 		{
-			return SelectedVertexIDs.Contains(ElementID);
+			return SelectedElementIDs.Contains(ElementID);
 		}
 
 	private:
 		TObjectPtr<const UPCGDynMeshSelectionFromPointsFactoryData> Factory;
-		TSet<int32> SelectedVertexIDs;
+		TSet<int32> SelectedElementIDs;
 	};
 }
 
@@ -101,25 +113,71 @@ void UPCGDynMeshSelectionFromPointsFactoryData::AddToCrc(FArchiveCrc32& Ar, bool
 	Super::AddToCrc(Ar, bFullDataCrc);
 	if (bFullDataCrc)
 	{
-		FName AttributeName = VertexIndexAttribute;
-		Ar << AttributeName;
+		uint8 ModeValue = static_cast<uint8>(IDMode);
+		FName VertexAttributeName = VertexIndexAttribute;
+		FName TriangleAttributeName = TriangleIdAttribute;
+		Ar << ModeValue;
+		Ar << VertexAttributeName;
+		Ar << TriangleAttributeName;
 	}
 }
 
 #if WITH_EDITOR
 FText UPCGDynMeshSelectionFromPointsFactoryProviderSettings::GetDefaultNodeTitle() const
 {
-	return LOCTEXT("Title", "Select from Vertex IDs");
+	return IDMode == EPCGDynMeshSelectionFromPointsIDMode::TriangleIDs
+		? LOCTEXT("TitleTriangle", "Select from Triangle IDs")
+		: LOCTEXT("Title", "Select from Vertex IDs");
 }
 
 FText UPCGDynMeshSelectionFromPointsFactoryProviderSettings::GetNodeTooltipText() const
 {
-	return LOCTEXT("Tooltip", "Creates a reusable selection predicate from integer vertex IDs stored on PCG points. Vertex IDs are converted implicitly when the consuming Build node requests edges or triangles.");
+	return IDMode == EPCGDynMeshSelectionFromPointsIDMode::TriangleIDs
+		? LOCTEXT("TooltipTriangle", "Creates a reusable selection predicate from triangle IDs stored on PCG points. The predicate is triangle-native and is converted implicitly when a consuming Build node requests vertices or edges.")
+		: LOCTEXT("Tooltip", "Creates a reusable selection predicate from vertex IDs stored on PCG points. The predicate is vertex-native and is converted implicitly when a consuming Build node requests edges or triangles.");
 }
 
 FString UPCGDynMeshSelectionFromPointsFactoryProviderSettings::GetAdditionalTitleInformation() const
 {
-	return VertexIndexAttribute.ToString();
+	return IDMode == EPCGDynMeshSelectionFromPointsIDMode::TriangleIDs
+		? TriangleIdAttribute.ToString()
+		: VertexIndexAttribute.ToString();
+}
+
+TArray<FPCGPreConfiguredSettingsInfo>
+UPCGDynMeshSelectionFromPointsFactoryProviderSettings::GetPreconfiguredInfo() const
+{
+	TArray<FPCGPreConfiguredSettingsInfo> Presets = MakeRepresentationPresets(
+		LOCTEXT("VertexIDsPresetName", "Select from Vertex IDs"),
+		PCGDynMeshSelectionFromPointsFactoryConstants::VertexIDSelectorPreconfiguredIndex,
+		PCGDynMeshSelectionFromPointsFactoryConstants::VertexIDSelectionPreconfiguredIndex);
+	Presets.Append(MakeRepresentationPresets(
+		LOCTEXT("TriangleIDsPresetName", "Selection From Triangle IDs"),
+		PCGDynMeshSelectionFromPointsFactoryConstants::TriangleIDSelectorPreconfiguredIndex,
+		PCGDynMeshSelectionFromPointsFactoryConstants::TriangleIDSelectionPreconfiguredIndex));
+	return Presets;
+}
+
+void UPCGDynMeshSelectionFromPointsFactoryProviderSettings::ApplyPreconfiguredSettings(
+	const FPCGPreConfiguredSettingsInfo& PreconfiguredInfo)
+{
+	// Handles the shared Selector/Selection representation for the Vertex ID (base) preset indices.
+	Super::ApplyPreconfiguredSettings(PreconfiguredInfo);
+
+	if (ApplyRepresentationPreset(PreconfiguredInfo.PreconfiguredIndex,
+		PCGDynMeshSelectionFromPointsFactoryConstants::TriangleIDSelectorPreconfiguredIndex,
+		PCGDynMeshSelectionFromPointsFactoryConstants::TriangleIDSelectionPreconfiguredIndex,
+		Representation))
+	{
+		IDMode = EPCGDynMeshSelectionFromPointsIDMode::TriangleIDs;
+	}
+	else if (PreconfiguredInfo.PreconfiguredIndex
+			== PCGDynMeshSelectionFromPointsFactoryConstants::VertexIDSelectorPreconfiguredIndex
+		|| PreconfiguredInfo.PreconfiguredIndex
+			== PCGDynMeshSelectionFromPointsFactoryConstants::VertexIDSelectionPreconfiguredIndex)
+	{
+		IDMode = EPCGDynMeshSelectionFromPointsIDMode::VertexIDs;
+	}
 }
 #endif
 
@@ -167,7 +225,9 @@ UPCGUtilsDynMeshFactoryData* UPCGDynMeshSelectionFromPointsFactoryProviderSettin
 
 	Factory->Priority = Priority;
 	Factory->PointData = MoveTemp(Inputs);
+	Factory->IDMode = IDMode;
 	Factory->VertexIndexAttribute = VertexIndexAttribute;
+	Factory->TriangleIdAttribute = TriangleIdAttribute;
 	return Super::CreateFactory(InContext, Factory);
 }
 
