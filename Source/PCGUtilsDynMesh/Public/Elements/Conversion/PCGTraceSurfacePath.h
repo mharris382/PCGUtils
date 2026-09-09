@@ -127,6 +127,25 @@ public:
 		meta=(PCG_Overridable, EditCondition="bOutputReachedBoundary", EditConditionHides))
 	FName ReachedBoundaryAttributeName = TEXT("ReachedBoundary");
 
+	/**
+	 * Give every point of a traced path the attributes of the seed point that produced it.
+	 *
+	 * The path is initialized from the seed data, so the seed dataset's attributes in every metadata domain
+	 * (@Data included), its tags and its target actor come across. The seed's own per-point attributes land on
+	 * the traced points themselves - the element domain - and are deliberately not folded into the @Data domain:
+	 * @Data already carries the seed dataset's own attributes plus this node's Seed Index and Reached Boundary,
+	 * and hoisting element attributes up there would collide with them by name. Density, Color and Bounds come
+	 * from the seed too; every point of one path shares one seed, so nothing is interpolated.
+	 *
+	 * Transform, Steepness and Seed are always this node's own: the surface-aligned frame is the whole point of
+	 * tracing, Steepness comes from Point Steepness, and Seed is recomputed per traced position so that the
+	 * points of one path do not all share the seed point's seed.
+	 *
+	 * Disable to emit standalone paths that inherit nothing from the seed data.
+	 */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Points", meta=(PCG_Overridable))
+	bool bInheritSeedAttributes = true;
+
 	/** Steepness assigned to every generated path point. */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Points", meta=(PCG_Overridable, ClampMin="0", ClampMax="1"))
 	float PointSteepness = 1.0f;

@@ -217,12 +217,19 @@ DynMesh convention), because a surface path is normally fed straight into spline
   — `Interpolate` (default) weights attributes that allow interpolation between the bracketing pair and takes
   everything else from the nearer guide point, `Nearest Source Point` copies wholesale from the nearer one, and
   `None` emits a standalone path that inherits nothing. Transform, Steepness and Seed are always the node's own
-  regardless of mode. **Trace Surface Path** does not inherit this way: its output is one path per seed rather
-  than a mutation of a path, so its seed points' attributes are not carried onto the traced points.
+  regardless of mode.
 - **Trace Surface Path** takes seed points on its `Seeds` pin and traces a straight surface path from each, in
   the seed's own direction, until **Max Path Length** or a mesh/selection boundary. Direction comes from a
   transform axis by default, or from a Vector attribute selector. Each seed produces its own output path;
   optional `@Data` attributes record the seed index and whether the trace ended on a boundary.
+
+  A traced path belongs to the seed that produced it, so **Inherit Seed Attributes** (on by default) initializes
+  it from the seed data — the dataset's attributes in every metadata domain, its tags and its target actor — and
+  gives every traced point that one seed point's own attributes, along with its Density, Color and Bounds. Those
+  per-point attributes stay on the **element domain** rather than being hoisted to `@Data`: `@Data` already holds
+  the seed dataset's own attributes plus Seed Index and Reached Boundary, so hoisting would collide by name.
+  Nothing is interpolated — every point of one path shares a single seed — and Transform, Steepness and Seed are
+  the node's own, as with Route Path On DynMesh.
 
 Neither node competes with PCGEx's cluster pathfinding: there are no heuristics, costs, obstacles or flood
 fills. The value is solving directly on the real triangle surface with no cluster conversion step.

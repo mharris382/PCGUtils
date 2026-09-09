@@ -58,9 +58,11 @@ namespace
 		{
 			return;
 		}
+		// bOverrideParent is required: a path that inherited from its seed data may already carry a @Data
+		// attribute of this name, and this node's value for this path - not the seed dataset's - is the right one.
 		if (FPCGMetadataAttribute<T>* Attribute = Metadata->FindOrCreateAttribute<T>(
 			FPCGAttributeIdentifier(AttributeName, PCGMetadataDomainID::Data),
-			Value, /*bAllowsInterpolation=*/false, /*bOverrideParent=*/false, /*bOverwriteIfTypeMismatch=*/true))
+			Value, /*bAllowsInterpolation=*/false, /*bOverrideParent=*/true, /*bOverwriteIfTypeMismatch=*/true))
 		{
 			Attribute->SetValue(PCGInvalidEntryKey, Value);
 		}
@@ -230,6 +232,9 @@ bool FPCGTraceSurfacePathElement::ExecuteInternal(FPCGContext* Context) const
 			int32 NumDegenerateTraces = 0;
 			int32 NumDetailedWarnings = 0;
 			TArray<FVector3d> TracedPositions;
+			// Every point of one traced path comes from the same single seed, so this is one repeated reference
+			// rather than a per-point correspondence. Declared out here to be reused across seeds.
+			TArray<Common::FPathSourceRef> TracedSources;
 
 			for (int32 SeedIndex = 0; SeedIndex < NumSeeds; ++SeedIndex)
 			{
@@ -274,6 +279,21 @@ bool FPCGTraceSurfacePathElement::ExecuteInternal(FPCGContext* Context) const
 				OutputOptions.bClosed = false;
 				OutputOptions.IsClosedAttributeName = Settings->IsClosedAttributeName;
 				OutputOptions.PointSteepness = Settings->PointSteepness;
+
+				// The traced path belongs to its seed: it is initialized from the seed data so the dataset's
+				// attributes, tags and target actor survive, and every traced point takes this seed point's own
+				// attributes on the element domain.
+				if (Settings->bInheritSeedAttributes)
+				{
+					TracedSources.Reset(TracedPositions.Num());
+					TracedSources.Init(
+						Common::FPathSourceRef{SeedIndex, SeedIndex, 0.0f}, TracedPositions.Num());
+
+					OutputOptions.Inheritance.SourceData = SeedData;
+					OutputOptions.Inheritance.PointSources = TracedSources;
+					// One source point per path: there is no second point to blend towards.
+					OutputOptions.Inheritance.bInterpolate = false;
+				}
 
 				UPCGPointArrayData* OutputData =
 					Common::BuildPathData(Context, TracedPositions, *Surface.Tree, OutputOptions);
