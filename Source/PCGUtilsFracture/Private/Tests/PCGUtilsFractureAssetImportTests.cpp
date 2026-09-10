@@ -5,8 +5,11 @@
 #if WITH_AUTOMATION_TESTS
 
 #include "Elements/Conversion/PCGGeometryCollectionFromAsset.h"
+#include "Elements/Fracture/PCGPlanarFracture.h"
+#include "Elements/Selections/PCGGeometryCollectionSelectBones.h"
 #include "GeometryCollection/GeometryCollection.h"
 #include "GeometryCollection/GeometryCollectionObject.h"
+#include "FunctionLibraries/PCGUtilsGeometryCollectionHierarchy.h"
 #include "Materials/MaterialInterface.h"
 #include "Tests/PCGUtilsFractureTestHelpers.h"
 
@@ -38,6 +41,38 @@ namespace PCGUtilsFractureAssetImportTests
 		Settings->bExtractMaterials = bExtractMaterials;
 		Settings->bSynchronousLoad = true;
 		return FirstOutput<UPCGGeometryCollectionData>(Run(Settings, {}));
+	}
+
+	const UPCGUtilsGeometryCollectionSelectionFactoryData* SelectPieces()
+	{
+		UPCGGeometryCollectionSelectBonesSettings* Settings =
+			NewObject<UPCGGeometryCollectionSelectBonesSettings>();
+		Settings->Mode = EPCGGeometryCollectionBoneSelectionMode::Pieces;
+		return FirstOutput<UPCGUtilsGeometryCollectionSelectionFactoryData>(Run(Settings, {}));
+	}
+
+	/**
+	 * One slicing plane on X. Deliberately not a Voronoi re-fracture: a grouped Voronoi diagram over already
+	 * small cells can legitimately cut nothing, so it cannot carry an assertion.
+	 */
+	const UPCGGeometryCollectionData* SliceOnce(const UPCGGeometryCollectionData* Collection)
+	{
+		UPCGSliceFractureSettings* SliceSettings = NewObject<UPCGSliceFractureSettings>();
+		SliceSettings->SlicesX = 1;
+		SliceSettings->SlicesY = 0;
+		SliceSettings->SlicesZ = 0;
+		const UPCGUtilsFractureFactoryData* Operation =
+			FirstOutput<UPCGUtilsFractureFactoryData>(Run(SliceSettings, {}));
+		if (!Operation)
+		{
+			return nullptr;
+		}
+
+		UPCGFractureGeometryCollectionSettings* FractureSettings =
+			NewObject<UPCGFractureGeometryCollectionSettings>();
+		return FirstOutput<UPCGGeometryCollectionData>(Run(FractureSettings, {
+			{PCGFractureGeometryCollectionConstants::CollectionInputPin, Collection},
+			{PCGUtilsFractureFactoryConstants::FracturesInputPin, Operation}}));
 	}
 
 	int32 AssetBoneCount(const UGeometryCollection* Asset)
@@ -88,33 +123,51 @@ bool FPCGUtilsFractureAssetImportTest::RunTest(const FString&)
 	// A new lineage, not a revision of something: nothing upstream produced this collection.
 	TestEqual(TEXT("An import starts a fresh lineage"), Imported->GetRevision(), 0);
 
-	// --- The contract. Mutate the import hard, then prove the asset is untouched.
-	const UPCGGeometryCollectionData* Refractured = UniformFracture(Imported, 4, 4);
-	if (TestNotNull(TEXT("The imported collection can be fractured again"), Refractured))
 	{
-		TestTrue(TEXT("Re-fracturing added bones"),
-			Refractured->GetCollection().NumElements(FGeometryCollection::TransformGroup) > AssetBonesBefore);
+		TArray<int32> ImportedPieces;
+		PCGUtilsGeometryCollectionHierarchy::GatherPieces(Imported->GetCollection(), ImportedPieces);
+		TestTrue(TEXT("The import exposes pieces"), ImportedPieces.Num() > 0);
+	}
+
+	// --- The contract. Mutate the import destructively, then prove the asset is untouched. Pruning is the
+	// sharpest test available: it removes bones *and* reindexes the rest, so any sharing would show up.
+	const UPCGGeometryCollectionData* Pruned = Prune(Imported, SelectPieces());
+	if (TestNotNull(TEXT("The imported collection can be pruned"), Pruned))
+	{
+		TestTrue(TEXT("Pruning removed bones from the copy"),
+			Pruned->GetCollection().NumElements(FGeometryCollection::TransformGroup) < AssetBonesBefore);
 	}
 	TestEqual(TEXT("The asset still has its original bone count"), AssetBoneCount(Asset), AssetBonesBefore);
-
-	// Pruning reindexes, which would be visible in the asset if anything were shared.
-	const UPCGUtilsGeometryCollectionSelectionFactoryData* Pieces = nullptr;
-	{
-		TArray<int32> SourcePieces;
-		PCGUtilsGeometryCollectionHierarchy::GatherPieces(Imported->GetCollection(), SourcePieces);
-		TestTrue(TEXT("The import exposes pieces"), SourcePieces.Num() > 0);
-	}
-	TestEqual(TEXT("Reading the import did not disturb the asset"), AssetBoneCount(Asset), AssetBonesBefore);
+	TestEqual(TEXT("The import itself is also unchanged by the prune"),
+		Imported->GetCollection().NumElements(FGeometryCollection::TransformGroup), AssetBonesBefore);
 
 	// Two imports of one asset are independent states, so a selection authored against one is correctly
 	// rejected against the other rather than silently applying to the wrong bones.
 	const UPCGGeometryCollectionData* SecondImport = Import(Asset);
 	if (TestNotNull(TEXT("The asset imported a second time"), SecondImport))
 	{
-		TestNotEqual(TEXT("Each import is its own lineage"),
-			Imported->GetCollectionId(), SecondImport->GetCollectionId());
-		TestNotEqual(TEXT("Each import is its own state"),
-			Imported->GetStateId(), SecondImport->GetStateId());
+		TestTrue(TEXT("Each import is its own lineage"),
+			Imported->GetCollectionId() != SecondImport->GetCollectionId());
+		TestTrue(TEXT("Each import is its own state"),
+			Imported->GetStateId() != SecondImport->GetStateId());
+	}
+
+	// --- An import is fracture-ready, which is the other half of being usable at all. Asserted on a solid,
+	// where a single slicing plane must cut.
+	{
+		UGeometryCollection* SolidAsset = MakeAsset(ToCollection(Box()));
+		const UPCGGeometryCollectionData* ImportedSolid = Import(SolidAsset);
+		if (TestNotNull(TEXT("A solid asset imported"), ImportedSolid))
+		{
+			const UPCGGeometryCollectionData* Sliced = SliceOnce(ImportedSolid);
+			if (TestNotNull(TEXT("The imported solid can be fractured"), Sliced))
+			{
+				TestEqual(TEXT("One plane halves the imported solid"), CountPieces(Sliced), 2);
+			}
+			TestEqual(TEXT("Fracturing the import left the asset alone"),
+				AssetBoneCount(SolidAsset),
+				ImportedSolid->GetCollection().NumElements(FGeometryCollection::TransformGroup));
+		}
 	}
 
 	// --- Materials ride along when asked, and are left off when not.

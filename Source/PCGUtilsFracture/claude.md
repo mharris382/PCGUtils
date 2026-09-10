@@ -35,6 +35,16 @@ DynMesh -> GC -> fracture -> bones as points -> ordinary PCG/PCGEx filtering
 Nothing here creates an asset, actor, component, package or transaction. Every collection lives and dies inside
 one graph execution.
 
+There are two ways into the domain, and both copy rather than reference. `GC | From DynMesh` builds a collection
+from mesh data; `GC | From Asset` imports an existing Geometry Collection asset, deep-copying its
+`FGeometryCollection` through `CopyTo` exactly as `CreateMutableCopy` does - the asset is immutable and is never
+written to, which is the same relationship the engine's Mesh To Dynamic Mesh node has with a static mesh. An
+imported collection is published as a *new lineage*, so it arrives with the Level attribute, bone ids and
+material sections the rest of the module assumes, and any bone selection authored against a different import is
+correctly rejected. Because an asset's collection did not come from this module, the import validates
+`ValidateFractureRequirements` and names what is missing rather than letting the fracture backend return a bare
+`INDEX_NONE` later.
+
 ---
 
 ## Dependency direction

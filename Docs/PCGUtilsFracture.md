@@ -43,6 +43,7 @@ Searching `GC` returns all of it; `GC Select` returns only the bone selections.
 
 | Node | In | Out |
 |---|---|---|
+| **GC \| From Asset** | *(none)* - reads a Geometry Collection asset | `GC` |
 | **GC \| From DynMesh** (compact) | `DynMesh` | `GC` |
 | **GC \| Fracture** | `GC`, `Fracture`, `Selection` (optional) | `GC` |
 | **GC \| Uniform Voronoi Fracture** | *(none)* | `Fracture`, `Result` (optional) |
