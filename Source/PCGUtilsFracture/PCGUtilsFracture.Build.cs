@@ -34,6 +34,10 @@ public class PCGUtilsFracture : ModuleRules
                 "FractureEngine",
                 "PlanarCut",
 
+                // UGeometryCollection, the asset UObject GC | From Asset imports. The FGeometryCollection it
+                // holds comes from Chaos below; only the asset wrapper lives here.
+                "GeometryCollectionEngine",
+
                 "PCG",
                 "PCGGeometryScriptInterop",
                 "PCGUtils",
@@ -50,5 +54,11 @@ public class PCGUtilsFracture : ModuleRules
         // FGeometryCollection, FManagedArrayCollection, GeometryCollectionAlgo and the collection facades all
         // live in the Chaos module. Matches how FractureEngine itself pulls Chaos in.
         SetupModulePhysicsSupport(Target);
+
+        // The processor settings and bridge structs remain loadable in packaged builds; execution is editor-only.
+        if (Target.bBuildEditor)
+        {
+            PrivateDependencyModuleNames.AddRange(new string[] { "DataflowEngine", "GeometryCollectionEngine" });
+        }
     }
 }

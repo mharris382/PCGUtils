@@ -2,6 +2,20 @@
 
 Module-specific conventions for `PCGUtilsFracture`. Repository-wide rules are in `AGENTS.md`.
 
+## Editor-gated Dataflow exception
+
+`GC | Dataflow Processor` is the explicit exception to the direct-backend-only convention below. Its settings,
+element, and DataflowCore bridge structs are runtime-loadable; DataflowEngine execution is gated with
+`WITH_EDITOR` and its asset reference with `WITH_EDITORONLY_DATA`. Outside the editor it errors and emits no
+output. It uses a private transient UGeometryCollection solely as the engine's variable-override owner; no
+package, saved asset, actor, component, or terminal write is performed. Do not extend this into a runtime graph host.
+
+The processor deliberately excludes selections, accepts named GC/point inputs, and publishes every GC output
+as a new lineage with regenerated bone identities. All batches use fresh contexts and N:N/N:1 cardinalities;
+PCG evaluation caching is disabled. Dataflow node and variable edits invalidate loaded settings. The plugin's
+GeometryCollectionPlugin dependency is editor-target-only; individual Dataflow node wrappers are not a new
+implementation layer for ordinary fracture elements. See `Docs/PCGUtilsDataflowProcessor.md` for the interface.
+
 ---
 
 ## What this module is for

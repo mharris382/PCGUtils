@@ -64,6 +64,11 @@
     ],
     "Plugins": [
         {
+            "Name": "GeometryCollectionPlugin",
+            "Enabled": true,
+            "TargetAllowList": [ "Editor" ]
+        },
+        {
             "Name": "PCG",
             "Enabled": true
         },

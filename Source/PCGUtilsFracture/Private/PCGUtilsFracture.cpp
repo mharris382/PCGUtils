@@ -3,6 +3,8 @@
 #include "PCGUtilsFracture.h"
 
 #if WITH_EDITOR
+#include "Dataflow/PCGUtilsDataflowNodes.h"
+#include "Dataflow/DataflowNodeFactory.h"
 #include "Data/PCGGeometryCollectionData.h"
 #include "Data/Registry/PCGDataTypeRegistry.h"
 #include "Factories/PCGUtilsFractureFactory.h"
@@ -18,6 +20,9 @@ DEFINE_LOG_CATEGORY(LogPCGUtilsFracture);
 void FPCGUtilsFractureModule::StartupModule()
 {
 #if WITH_EDITOR
+	DATAFLOW_NODE_REGISTER_CREATION_FACTORY(FPCGUtilsDataflowCollectionInputNode);
+	DATAFLOW_NODE_REGISTER_CREATION_FACTORY(FPCGUtilsDataflowPointsInputNode);
+	DATAFLOW_NODE_REGISTER_CREATION_FACTORY(FPCGUtilsDataflowCollectionOutputNode);
 	if (FPCGModule::IsPCGModuleLoaded())
 	{
 		RegisterPinColors();

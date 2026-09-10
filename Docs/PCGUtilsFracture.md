@@ -458,3 +458,9 @@ already implements bounds/sphere/plane/volume/size selection for future selector
 the hierarchy decorators as ordinary base selectors over pieces, needing no hierarchy handling of their own.
 
 The staged plan behind all of this is in `PCGUtilsFractureArchitectureInvestigation.md` at the project root.
+
+## Experimental Dataflow processor
+
+`GC | Dataflow Processor` hosts a Dataflow asset with named GC/point inputs, GC outputs, inline variables and
+optional parameter-data overrides. Inputs pair N:N or broadcast N:1. Execution is editor-only and uncached;
+every GC output starts a new lineage. See [the processor guide](PCGUtilsDataflowProcessor.md) for setup and limits.
