@@ -59,6 +59,54 @@ point attributes identifying vertices. Do not call this pattern merely `From Poi
 different operation: `Bounds Brush Painter` uses point bounds and falloff, not vertex correspondence. Keep
 `point`/`points` as search keywords for both patterns; do not add duplicate palette aliases for synonyms.
 
+### Context-menu naming
+
+The palette is the only map users have of this library, and PCG gives a native element no free-form category
+string: `UPCGEditorGraphSchema::GetNativeElementActions` derives the category solely from
+`StaticEnum<EPCGSettingsType>()->GetDisplayNameTextByValue(GetType())`. There is no per-class hook and no
+extension point, so every element here lands under `Dynamic Mesh` and **the family prefix in the node title is
+the grouping mechanism.** Treat the prefix as structural, not decorative.
+
+Every user-visible palette entry - a node title *and* every `FPCGPreConfiguredSettingsInfo::Label` - takes the
+form `[CATEGORY] | [ELEMENT_NAME]`, with a space on **both** sides of every pipe. The spaces are part of the
+convention: `DynMesh | Extrude Faces`, never `DynMesh|Extrude Faces`. (They cost nothing in search - the engine
+splits the search text on spaces and concatenates the words with no separator, so both forms glob to the same
+`dynmesh|extrudefaces`.)
+
+| Family | Form | Examples |
+| --- | --- | --- |
+| DynMesh process | `DynMesh \| [PROCESS]` | `DynMesh \| Extrude Faces`, `DynMesh \| Remesh` |
+| Primitive builder | `Builder \| [SHAPE]` | `Builder \| Box`, `Builder \| Cylinder` |
+| DynMesh selection | `Select \| [NAME]` | `Select \| In Bounds`, `Select \| By Normal` |
+| Painter | `Painter \| [NAME]` | `Painter \| Bounds Brush`, `Painter \| Blend` |
+| Fracture element | `GC \| [NAME]` | `GC \| Fracture`, `GC \| Prune` |
+| GC selection | `GC \| Select \| [NAME]` | `GC \| Select \| Contact`, `GC \| Select \| Parent` |
+
+**The name never repeats its family.** `DynMesh | Extrude Faces`, not `DynMesh | Extrude DynMesh Faces`. A
+selection name contains none of `select`, `selection` or `selector`: `Select | In Bounds`, not
+`Select | Select in Bounds`. A GC selection name additionally omits `GC`. A compact node's title - the text drawn
+on the node when `ShouldShowCompactNodeTitle()` is true and no `GetCompactNodeIcon()` is supplied - follows the
+same exclusions and carries no prefix, because the pins already say what it operates on.
+
+Search is what the prefixes buy, and it behaves in one specific way worth knowing before inventing keywords.
+`FEdGraphSchemaAction::UpdateSearchText` globs the entry's title, its `Keywords` metadata and its category into
+one lowercased string, splitting each on spaces and concatenating the words with **no separator**;
+`SGraphActionMenu` then requires every space-separated search term to appear as a substring. So:
+
+- an element whose title lacks the family word needs it in `Keywords` - this is why every `Select | `, `Builder | `
+  and `Painter | ` entry carries `DynMesh` as a keyword, so one search returns the whole library;
+- a term can straddle two adjacent words, so check a new keyword list for accidental substrings. In
+  particular nothing in a `Select | ` entry may contain `gc`, and nothing in a `GC | Select | ` entry may contain
+  `dynmesh`, or the two families stop being separable by search;
+- the `Dynamic Mesh` category contributes `dynamicmesh`, which deliberately does not contain `dynmesh`.
+
+`PCGUtils.Palette.SearchContract` (in `PCGUtilsFracture/Private/Tests`) reimplements that search model and
+asserts the whole contract. Extend it when you add a family; do not hand-verify in the editor instead.
+
+One more consequence of the category rule: an element deriving straight from `UPCGSettings` must override
+`GetType()`. Forgetting it is silent and drops the node into `Generic`, where nobody will find it - this is
+exactly how the Builder materializer went missing until it was rebuilt as `DynMesh | Realize Builders`.
+
 ## Attributes written to PCG data
 
 Two rules, both about the user being able to see and control what a node produces.
@@ -95,6 +143,30 @@ followed by a mutable metadata-entry range, set every new entry to `PCGInvalidEn
 `InitializeOnSet()`, or initialize point values when sizing the array. `InitializeOnSet()` does not repair an
 arbitrary nonnegative value left by uninitialized storage, which can produce unreadable attributes and the graph
 warning that an output does not have valid point metadata.
+
+## Unity builds
+
+A module's `.cpp` files are concatenated into one translation unit (`Module.<Name>.cpp`) unless something pulls
+them apart, so **an anonymous namespace is module-wide, not file-local.** Two files declaring a same-named
+file-local helper are a redefinition error in that blob.
+
+This does not reliably show up while you are working, because UBT's *adaptive* unity build excludes files in the
+working set - the ones you just edited - and compiles them standalone. A file you are actively changing is
+therefore the one file whose collisions you cannot see. The same code then fails for someone who syncs it and
+builds clean, which is exactly how a collision between two pre-existing files can appear to be "caused" by an
+unrelated change: adding `.cpp` files to a module repartitions the blobs.
+
+So:
+
+- Name a file-local helper for its subject, not its shape. `BoneSelectionModeFromPreconfiguredIndex`, not
+  `ModeFromPreconfiguredIndex`; the generic name is the one another file will also want.
+- Keep `using namespace` out of an anonymous namespace. It leaks into the whole blob, and what it makes
+  ambiguous is some other file's code.
+- A member function of a class declared in an anonymous namespace is scoped to that class and is safe -
+  `TestElement`, `Evaluate` and `Initialize` repeat freely across the selector and painter factories.
+
+**Before pushing a change that adds or removes module `.cpp` files, build once with `-DisableAdaptiveUnity`.**
+That forces every file into its blob and is the only local build that sees what a fresh checkout sees.
 
 ## Validation
 

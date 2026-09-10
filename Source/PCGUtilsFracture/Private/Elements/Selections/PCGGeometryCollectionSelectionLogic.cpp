@@ -21,7 +21,7 @@ namespace
 	constexpr int32 PreconfiguredXor = 2;
 	constexpr int32 PreconfiguredSubtract = 3;
 
-	EMode ModeFromPreconfiguredIndex(int32 InIndex, bool& bOutFound)
+	EMode LogicModeFromPreconfiguredIndex(int32 InIndex, bool& bOutFound)
 	{
 		bOutFound = true;
 		switch (InIndex)
@@ -150,7 +150,7 @@ void UPCGGeometryCollectionSelectionLogicSettings::ApplyPreconfiguredSettings(
 	const FPCGPreConfiguredSettingsInfo& PreconfiguredInfo)
 {
 	bool bFound = false;
-	const EMode NewMode = ModeFromPreconfiguredIndex(PreconfiguredInfo.PreconfiguredIndex, bFound);
+	const EMode NewMode = LogicModeFromPreconfiguredIndex(PreconfiguredInfo.PreconfiguredIndex, bFound);
 	if (bFound)
 	{
 		Mode = NewMode;

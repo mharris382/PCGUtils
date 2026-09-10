@@ -14,6 +14,10 @@
 
 namespace
 {
+	// Names in an anonymous namespace are file-local only in a non-unity build. Under unity this file shares a
+	// translation unit with its siblings, so a generic helper name like "ModeFromPreconfiguredIndex" collides
+	// with the one in PCGGeometryCollectionSelectionLogic.cpp. Keep file-local helpers named for their subject.
+
 	/** Palette entry per mode, so each reads as its own node rather than one node with a dropdown. */
 	constexpr int32 PreconfiguredAll = 0;
 	constexpr int32 PreconfiguredNone = 1;
@@ -22,7 +26,7 @@ namespace
 	constexpr int32 PreconfiguredClusters = 4;
 	constexpr int32 PreconfiguredAtLevel = 5;
 
-	EPCGGeometryCollectionBoneSelectionMode ModeFromPreconfiguredIndex(int32 InIndex, bool& bOutFound)
+	EPCGGeometryCollectionBoneSelectionMode BoneSelectionModeFromPreconfiguredIndex(int32 InIndex, bool& bOutFound)
 	{
 		bOutFound = true;
 		switch (InIndex)
@@ -173,7 +177,7 @@ void UPCGGeometryCollectionSelectBonesSettings::ApplyPreconfiguredSettings(
 {
 	bool bFound = false;
 	const EPCGGeometryCollectionBoneSelectionMode NewMode =
-		ModeFromPreconfiguredIndex(PreconfiguredInfo.PreconfiguredIndex, bFound);
+		BoneSelectionModeFromPreconfiguredIndex(PreconfiguredInfo.PreconfiguredIndex, bFound);
 	if (bFound)
 	{
 		Mode = NewMode;
