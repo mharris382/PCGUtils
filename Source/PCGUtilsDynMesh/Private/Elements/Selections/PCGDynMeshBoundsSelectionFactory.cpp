@@ -219,7 +219,7 @@ void UPCGDynMeshBoundsSelectionFactoryData::AddToCrc(FArchiveCrc32& Ar, bool bFu
 #if WITH_EDITOR
 FText UPCGDynMeshBoundsSelectionFactoryProviderSettings::GetDefaultNodeTitle() const
 {
-	return LOCTEXT("Title", "Select in Bounds");
+	return LOCTEXT("Title", "Select|In Bounds");
 }
 
 FText UPCGDynMeshBoundsSelectionFactoryProviderSettings::GetNodeTooltipText() const

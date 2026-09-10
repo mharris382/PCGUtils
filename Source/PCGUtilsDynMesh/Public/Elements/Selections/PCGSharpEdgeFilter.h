@@ -31,7 +31,7 @@ protected:
 };
 
 UCLASS(BlueprintType, ClassGroup=(Procedural), Category="PCGUtils|DynMesh|Selections",
-	meta=(Keywords="Select Selection Selector Sharp Crease Edge"))
+	meta=(Keywords="Select Selection Selector Sharp Crease Edge DynMesh"))
 class PCGUTILSDYNMESH_API UPCGSharpEdgeFilterSettings : public UPCGUtilsDynMeshDomainSelectionSourceSettings
 {
 	GENERATED_BODY()

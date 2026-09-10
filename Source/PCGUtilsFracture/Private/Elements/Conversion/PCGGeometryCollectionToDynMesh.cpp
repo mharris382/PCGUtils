@@ -184,7 +184,7 @@ namespace
 #if WITH_EDITOR
 FText UPCGGeometryCollectionToDynMeshSettings::GetDefaultNodeTitle() const
 {
-	return LOCTEXT("Title", "GC To DynMesh");
+	return LOCTEXT("Title", "GC|To DynMesh");
 }
 
 FText UPCGGeometryCollectionToDynMeshSettings::GetNodeTooltipText() const

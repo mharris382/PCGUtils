@@ -45,7 +45,7 @@ namespace
 #if WITH_EDITOR
 FText UPCGSharpEdgeFilterSettings::GetDefaultNodeTitle() const
 {
-	return LOCTEXT("Title", "Sharp Edge Filter");
+	return LOCTEXT("Title", "Select|Sharp Edges");
 }
 
 FText UPCGSharpEdgeFilterSettings::GetNodeTooltipText() const

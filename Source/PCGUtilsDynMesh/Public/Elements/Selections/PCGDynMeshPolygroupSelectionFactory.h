@@ -52,7 +52,7 @@ protected:
 
 /** Authors a reusable Selector, without requiring a mesh until the consuming node evaluates it. */
 UCLASS(BlueprintType, ClassGroup=(Procedural), Category="PCGUtils|DynMesh|Selections",
-	meta=(Keywords="PolyGroup DynMesh PolyGroup Selection Selector"))
+	meta=(Keywords="PolyGroup DynMesh PolyGroup Selection Selector Select"))
 class PCGUTILSDYNMESH_API UPCGDynMeshPolygroupSelectionFactoryProviderSettings
 	: public UPCGUtilsDynMeshDomainSelectionSourceSettings
 {

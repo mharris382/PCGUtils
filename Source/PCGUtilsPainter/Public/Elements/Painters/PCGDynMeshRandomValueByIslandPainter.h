@@ -44,7 +44,7 @@ protected:
  * island pass.
  */
 UCLASS(BlueprintType, ClassGroup=(Procedural), Category="PCGUtils|DynMesh|Painters",
-	meta=(Keywords="random island connected component mesh piece per-island noise mask painter scalar"))
+	meta=(Keywords="random island connected component mesh piece per-island noise mask painter scalar DynMesh"))
 class PCGUTILSPAINTER_API UPCGDynMeshRandomValueByIslandPainterProviderSettings
 	: public UPCGUtilsDynMeshFactoryProviderSettings
 {

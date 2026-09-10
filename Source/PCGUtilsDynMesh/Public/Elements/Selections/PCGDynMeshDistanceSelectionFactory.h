@@ -73,7 +73,7 @@ protected:
 };
 
 UCLASS(BlueprintType, ClassGroup=(Procedural), Category="PCGUtils|DynMesh|Selections",
-	meta=(Keywords="Proximity Range Selection Selector"))
+	meta=(Keywords="Proximity Range Selection Selector DynMesh Select"))
 class PCGUTILSDYNMESH_API UPCGDynMeshDistanceSelectionFactoryProviderSettings
 	: public UPCGUtilsDynMeshSelectionSourceSettings
 {

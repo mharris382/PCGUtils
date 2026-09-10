@@ -56,7 +56,7 @@ protected:
 };
 
 /** Blends Base (A) with Blend (B) without materializing intermediate PCG data. */
-UCLASS(BlueprintType, ClassGroup=(Procedural), Category="PCGUtils|DynMesh|Painters", meta=(Keywords="Painter blend math color colour mix normal add subtract multiply screen darken lighten"))
+UCLASS(BlueprintType, ClassGroup=(Procedural), Category="PCGUtils|DynMesh|Painters", meta=(Keywords="Painter blend math color colour mix normal add subtract multiply screen darken lighten DynMesh"))
 class PCGUTILSPAINTER_API UPCGDynMeshPainterMathProviderSettings
 	: public UPCGUtilsDynMeshFactoryProviderSettings
 {

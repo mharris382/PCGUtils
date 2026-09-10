@@ -59,7 +59,7 @@ UPCGGeometryCollectionSelectContactSettings::UPCGGeometryCollectionSelectContact
 #if WITH_EDITOR
 FText UPCGGeometryCollectionSelectContactSettings::GetDefaultNodeTitle() const
 {
-	return LOCTEXT("Title", "Select Contact");
+	return LOCTEXT("Title", "GC|Select|Contact");
 }
 
 FText UPCGGeometryCollectionSelectContactSettings::GetNodeTooltipText() const

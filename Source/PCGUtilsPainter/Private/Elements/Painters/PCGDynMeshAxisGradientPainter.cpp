@@ -84,7 +84,7 @@ void UPCGDynMeshAxisGradientPainterFactoryData::AddToCrc(FArchiveCrc32& Ar, bool
 #if WITH_EDITOR
 FText UPCGDynMeshAxisGradientPainterProviderSettings::GetDefaultNodeTitle() const
 {
-	return LOCTEXT("Title", "Axis Gradient Painter");
+	return LOCTEXT("Title", "Painter|Axis Gradient");
 }
 
 FText UPCGDynMeshAxisGradientPainterProviderSettings::GetNodeTooltipText() const

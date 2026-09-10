@@ -89,7 +89,7 @@ namespace
 #if WITH_EDITOR
 FText UPCGSelectionFromSplineSettings::GetDefaultNodeTitle() const
 {
-	return LOCTEXT("NodeTitle", "Select Near Spline");
+	return LOCTEXT("NodeTitle", "Select|Near Spline");
 }
 
 FText UPCGSelectionFromSplineSettings::GetNodeTooltipText() const

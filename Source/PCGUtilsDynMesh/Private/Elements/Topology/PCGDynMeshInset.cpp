@@ -41,10 +41,10 @@ namespace
 }
 
 #if WITH_EDITOR
-FText UPCGDynMeshInsetSettings::GetDefaultNodeTitle() const { return LOCTEXT("Title", "Inset DynMesh Faces"); }
+FText UPCGDynMeshInsetSettings::GetDefaultNodeTitle() const { return LOCTEXT("Title", "DynMesh|Inset Faces"); }
 FText UPCGDynMeshInsetSettings::GetNodeTooltipText() const
 {
-	return LOCTEXT("Tooltip", "Insets selected faces (negative distance outsets). The inner faces are the result selection by default; border faces or both are optional. Can assign a named result PolyGroup and emit a reusable Result Selector. Supports DynMesh, Selection and Builder inputs.");
+	return LOCTEXT("Tooltip", "Insets selected faces (negative distance outsets). The inner faces are the result selection by default; border faces or both are optional. Can assign a named result PolyGroup and emit a reusable Selector on the Result pin. Supports DynMesh, Selection and Builder inputs.");
 }
 #endif
 

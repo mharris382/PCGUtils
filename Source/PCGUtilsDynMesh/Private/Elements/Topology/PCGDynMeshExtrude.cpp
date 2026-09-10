@@ -54,10 +54,10 @@ namespace
 }
 
 #if WITH_EDITOR
-FText UPCGDynMeshExtrudeSettings::GetDefaultNodeTitle() const { return LOCTEXT("Title", "Extrude DynMesh Faces"); }
+FText UPCGDynMeshExtrudeSettings::GetDefaultNodeTitle() const { return LOCTEXT("Title", "DynMesh|Extrude Faces"); }
 FText UPCGDynMeshExtrudeSettings::GetNodeTooltipText() const
 {
-	return LOCTEXT("Tooltip", "Linearly extrudes selected faces. The cap is the result selection by default; sides or both are optional. Can assign a named result PolyGroup and emit a reusable Result Selector. Supports DynMesh, Selection and Builder inputs.");
+	return LOCTEXT("Tooltip", "Linearly extrudes selected faces. The cap is the result selection by default; sides or both are optional. Can assign a named result PolyGroup and emit a reusable Selector on the Result pin. Supports DynMesh, Selection and Builder inputs.");
 }
 #endif
 

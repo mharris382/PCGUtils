@@ -51,7 +51,7 @@ protected:
 };
 
 UCLASS(BlueprintType, ClassGroup=(Procedural), Category="PCGUtils|DynMesh|Selections",
-	meta=(Keywords="Select Selection Selector Spline Tube Selection From Spline"))
+	meta=(Keywords="Select Selection Selector Spline Tube Selection From Spline DynMesh"))
 class PCGUTILSDYNMESH_API UPCGSelectionFromSplineSettings : public UPCGUtilsDynMeshDomainSelectionSourceSettings
 {
 	GENERATED_BODY()

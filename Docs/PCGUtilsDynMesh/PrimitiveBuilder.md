@@ -9,6 +9,16 @@
 > `UPCGUtilsDynMeshBuilderFactoryData` / `FPCGUtilsDynMeshBuilderOperation`. See
 > `DynMesh Builder - Deferred Process.md` and `DynMesh_Builder_Refactor_Notes.md` at the repo root. This
 > document is rewritten as part of that task's Phase 8.
+>
+> **Status note 2 (node renamed and split).** The Builder half of `Create Primitive` is now its own node,
+> **`DynMesh|Realize Builders`** (`UPCGDynMeshRealizeBuildersSettings`), with the Seeds and Builders pins and
+> the Output Mode setting, and nothing else. `Create Primitive` is deprecated and no longer exposed to the
+> context menu; it keeps working for existing graphs and delegates its Builder path to the same shared
+> `PCGUtilsDynMeshBuilderRealization::Realize()` implementation. The old node was effectively undiscoverable:
+> it derived straight from `UPCGSettings` without overriding `GetType()`, so it sat in the `Generic` palette
+> bucket, and its Builder mode hid behind an Advanced "Use Legacy Mode" checkbox that defaulted to on. Where
+> this document says "Create Primitive in Builder mode", read "DynMesh|Realize Builders". The individual
+> primitive nodes are now titled `Builder|Box`, `Builder|Cylinder` and so on.
 
 `Create Primitive` can now be driven two ways: its original single-inline-primitive behavior (**legacy
 mode**, still the default), or a new **Builder** pipeline that supports per-primitive fitting, padding, and

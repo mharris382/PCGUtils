@@ -175,7 +175,7 @@ void UPCGGeometryCollectionSelectionFromPointsFactoryData::AddToCrc(FArchiveCrc3
 #if WITH_EDITOR
 FText UPCGGeometryCollectionSelectionFromPointsSettings::GetDefaultNodeTitle() const
 {
-	return LOCTEXT("Title", "Select Bones From Points");
+	return LOCTEXT("Title", "GC|Select|Bones From Points");
 }
 
 FText UPCGGeometryCollectionSelectionFromPointsSettings::GetNodeTooltipText() const

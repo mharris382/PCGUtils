@@ -1,34 +1,12 @@
 #pragma once
 
 #include "CoreMinimal.h"
+#include "Elements/Creation/PCGDynMeshRealizeBuilders.h"
 #include "PCGSettings.h"
 
 #include "PCGCreatePrimitive.generated.h"
 
 class UPCGCreatePrimitiveSettingsBase;
-
-/**
- * How a materializer splits the Builder expressions it evaluates into output Dynamic Mesh data.
- *
- * The two axes are independent: whether seeds are kept apart, and whether Builders are kept apart. Splitting
- * by Builder also removes the need to merge material arrays, since each output then holds exactly one
- * Builder's geometry and its material IDs already index that Builder's own array.
- */
-UENUM(BlueprintType)
-enum class EPCGUtilsDynMeshBuilderOutputMode : uint8
-{
-	/** One DynMesh per seed point, with every connected Builder composed into it. */
-	PerSeed,
-
-	/** One DynMesh for everything: every Builder, for every seed, appended together. */
-	Single,
-
-	/** One DynMesh per connected Builder, each holding that Builder's result for every seed. */
-	PerBuilder,
-
-	/** One DynMesh per Builder per seed - the finest split, Builders x seeds outputs. */
-	PerBuilderPerSeed
-};
 
 /** How each seed point places its copy of the primitive. */
 UENUM(BlueprintType)
@@ -51,7 +29,8 @@ enum class EPCGCreatePrimitiveSeedPlacement : uint8
  * Every Builder on that pin is evaluated for every seed and appended into one mesh, so a set of Builders that
  * pad and align differently against the same seed bounds composes a compound shape.
  */
-UCLASS(BlueprintType, ClassGroup=(Procedural), Category="PCGUtils|DynMesh")
+UCLASS(BlueprintType, ClassGroup=(Procedural), Category="PCGUtils|DynMesh",
+	meta=(Keywords="DEPRECATED legacy DynMesh create primitive"))
 class PCGUTILSDYNMESH_API UPCGCreatePrimitiveSettings : public UPCGSettings
 {
 	GENERATED_BODY()

@@ -86,7 +86,7 @@ namespace
 #if WITH_EDITOR
 FText UPCGSelectDynamicMeshTrianglesSettings::GetDefaultNodeTitle() const
 {
-	return LOCTEXT("Title", "Select Mesh Triangles");
+	return LOCTEXT("Title", "Select|Triangles");
 }
 
 FText UPCGSelectDynamicMeshTrianglesSettings::GetNodeTooltipText() const

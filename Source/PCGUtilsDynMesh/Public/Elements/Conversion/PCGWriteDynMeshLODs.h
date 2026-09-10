@@ -44,7 +44,7 @@ enum class EPCGUtilsLODAssignmentMode : uint8
  * discrete LOD of an external asset, so there is no partial-mesh semantics. The element therefore builds on the
  * engine DynMesh base rather than UPCGUtilsDynMeshProcessBaseSettings.
  */
-UCLASS(BlueprintType, ClassGroup = (Procedural), Category = "PCGUtils|DynMesh")
+UCLASS(BlueprintType, ClassGroup = (Procedural), Category = "PCGUtils|DynMesh", meta=(Keywords="DynMesh mesh write LOD LODs static"))
 class PCGUTILSDYNMESH_API UPCGWriteDynMeshLODsSettings : public UPCGDynamicMeshBaseSettings
 {
 	GENERATED_BODY()

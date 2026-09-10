@@ -250,7 +250,7 @@ namespace
 #if WITH_EDITOR
 FText UPCGDynMeshBooleanSettings::GetDefaultNodeTitle() const
 {
-	return LOCTEXT("Title", "DynMesh Boolean");
+	return LOCTEXT("Title", "DynMesh|Boolean");
 }
 
 FText UPCGDynMeshBooleanSettings::GetNodeTooltipText() const

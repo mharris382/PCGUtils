@@ -30,7 +30,7 @@ protected:
 };
 
 UCLASS(BlueprintType, ClassGroup=(Procedural), Category="PCGUtils|DynMesh|Selections",
-	meta=(Keywords="Normal Direction Selection Selector"))
+	meta=(Keywords="Normal Direction Selection Selector DynMesh Select"))
 class PCGUTILSDYNMESH_API UPCGDynMeshNormalSelectionFactoryProviderSettings
 	: public UPCGUtilsDynMeshSelectionSourceSettings
 {

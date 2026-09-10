@@ -65,7 +65,7 @@ protected:
 };
 
 UCLASS(BlueprintType, ClassGroup=(Procedural), Category="PCGUtils|DynMesh|Selections",
-	meta=(Keywords="Vertex IDs Triangle IDs Face IDs Point Indices Selection Selector Selection From Triangle IDs"))
+	meta=(Keywords="Vertex IDs Triangle IDs Face IDs Point Indices Selection Selector Selection From Triangle IDs DynMesh Select"))
 class PCGUTILSDYNMESH_API UPCGDynMeshSelectionFromPointsFactoryProviderSettings
 	: public UPCGUtilsDynMeshDomainSelectionSourceSettings
 {

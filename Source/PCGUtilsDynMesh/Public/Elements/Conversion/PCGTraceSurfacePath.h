@@ -41,7 +41,7 @@ enum class EPCGUtilsDynMeshTraceDirectionAxis : uint8
  * then acts as a boundary the trace terminates on.
  */
 UCLASS(BlueprintType, ClassGroup=(Procedural), Category="PCGUtils|DynMesh",
-	meta=(Keywords="geodesic trace surface path crack vine streak straight"))
+	meta=(Keywords="geodesic trace surface path crack vine streak straight DynMesh mesh"))
 class PCGUTILSDYNMESH_API UPCGTraceSurfacePathSettings : public UPCGUtilsDynMeshProcessBaseSettings
 {
 	GENERATED_BODY()

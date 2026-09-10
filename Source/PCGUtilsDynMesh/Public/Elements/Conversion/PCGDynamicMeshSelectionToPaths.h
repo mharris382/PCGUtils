@@ -9,7 +9,7 @@
  * Converts the boundary loops of a Dynamic Mesh Selection's implied triangle region into ordered PCG point data.
  * Each output data item is a closed PCGEx-compatible path (its first point is not repeated at the end).
  */
-UCLASS(BlueprintType, ClassGroup=(Procedural), Category="PCGUtils|DynMesh")
+UCLASS(BlueprintType, ClassGroup=(Procedural), Category="PCGUtils|DynMesh", meta=(Keywords="DynMesh mesh selection selector to paths convert"))
 class PCGUTILSDYNMESH_API UPCGDynamicMeshSelectionToPathsSettings : public UPCGUtilsDynMeshProcessBaseSettings
 {
 	GENERATED_BODY()

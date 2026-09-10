@@ -8,6 +8,7 @@
 #include "DynamicMesh/DynamicMeshAttributeSet.h"
 #include "Elements/Selections/PCGDynMeshPolygroupSelectionFactory.h"
 #include "PCGContext.h"
+#include "PCGNode.h"
 #include "PCGPin.h"
 #include "Serialization/ArchiveCrc32.h"
 #include "UDynamicMesh.h"
@@ -109,6 +110,19 @@ void UPCGUtilsDynMeshTopologyProcessBaseSettings::AddProcessOperationToCrc(FArch
 	{
 		FName Name = GetResultPolygroupName();
 		Ar << Name;
+	}
+}
+
+void UPCGUtilsDynMeshTopologyProcessBaseSettings::ApplyDeprecationBeforeUpdatePins(
+	UPCGNode* InOutNode, TArray<TObjectPtr<UPCGPin>>& InputPins,
+	TArray<TObjectPtr<UPCGPin>>& OutputPins)
+{
+	Super::ApplyDeprecationBeforeUpdatePins(InOutNode, InputPins, OutputPins);
+	if (InOutNode)
+	{
+		// The pin carries a Selector; saying so twice on a pin whose type already reads Selector was noise.
+		InOutNode->RenameOutputPin(TEXT("Result Selector"),
+			PCGUtilsDynMeshTopologyProcessConstants::ResultSelectorPin);
 	}
 }
 

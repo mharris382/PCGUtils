@@ -39,7 +39,7 @@ protected:
 
 /** Grows or shrinks an existing DynMesh selection across connected mesh elements. */
 UCLASS(BlueprintType, ClassGroup=(Procedural), Category="PCGUtils|DynMesh|Selections",
-	meta=(Keywords="Grow Shrink Selection Selector"))
+	meta=(Keywords="Grow Shrink Selection Selector DynMesh Select"))
 class PCGUTILSDYNMESH_API UPCGDynMeshExpandContractSelectionSettings : public UPCGUtilsDynMeshSelectionOperationSettings
 {
 	GENERATED_BODY()

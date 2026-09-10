@@ -45,15 +45,16 @@ FName UPCGUtilsDynMeshSelectionSourceSettings::GetMainOutputPin() const
 TArray<FPCGPreConfiguredSettingsInfo> UPCGUtilsDynMeshSelectionSourceSettings::MakeRepresentationPresets(
 	const FText& DisplayName, int32 SelectorIndex, int32 SelectionIndex)
 {
+	// SelectionIndex stays part of the contract - ApplyPreconfiguredSettings still honours it for graphs
+	// created before the alias was withdrawn - it simply no longer earns a palette entry of its own.
+	(void)SelectionIndex;
 	return {
 		{SelectorIndex,
-			FText::Format(LOCTEXT("SelectorPresetTitle", "{0} (Selector)"), DisplayName),
-			LOCTEXT("SelectorPresetTooltip", "Creates the deferred, composable Selector representation."),
-			LOCTEXT("SelectorPresetSearchHints", "selector deferred factory")},
-		{SelectionIndex,
-			FText::Format(LOCTEXT("SelectionPresetTitle", "{0} (Selection)"), DisplayName),
-			LOCTEXT("SelectionPresetTooltip", "Evaluates immediately and outputs a mesh-bound Selection data stream."),
-			LOCTEXT("SelectionPresetSearchHints", "selection materialized inline live data")}
+			DisplayName,
+			LOCTEXT("SelectorPresetTooltip",
+				"Authors the selection as a deferred, composable Selector. Switch Representation on the placed "
+				"node to materialize a mesh-bound Selection instead."),
+			LOCTEXT("SelectorPresetSearchHints", "select selector selection deferred materialized DynMesh")}
 	};
 }
 

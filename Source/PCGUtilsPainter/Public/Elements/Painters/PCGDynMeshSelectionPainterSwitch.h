@@ -94,7 +94,7 @@ protected:
  * (Selected Value / Unselected Value, default 1 / 0); the Painter branch pins and source modes are hidden.
  */
 UCLASS(BlueprintType, ClassGroup=(Procedural), Category="PCGUtils|DynMesh|Painters",
-	meta=(Keywords="selection selector painter mask convert to scalar boolean switch multiplexer"))
+	meta=(Keywords="selection selector painter mask convert to scalar boolean switch multiplexer DynMesh"))
 class PCGUTILSPAINTER_API UPCGDynMeshSelectionToPainterProviderSettings
 	: public UPCGDynMeshSelectionPainterSwitchProviderSettingsBase
 {
@@ -124,7 +124,7 @@ protected:
  * Full presentation: each branch is Constant or Painter independently, covering every branch combination.
  */
 UCLASS(BlueprintType, ClassGroup=(Procedural), Category="PCGUtils|DynMesh|Painters",
-	meta=(Keywords="selection selector painter mask switch multiplexer branch constant blend if"))
+	meta=(Keywords="selection selector painter mask switch multiplexer branch constant blend if DynMesh"))
 class PCGUTILSPAINTER_API UPCGDynMeshSelectionPainterSwitchProviderSettings
 	: public UPCGDynMeshSelectionPainterSwitchProviderSettingsBase
 {

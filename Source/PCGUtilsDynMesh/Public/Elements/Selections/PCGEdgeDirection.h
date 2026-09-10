@@ -69,7 +69,7 @@ protected:
 };
 
 UCLASS(BlueprintType, ClassGroup=(Procedural), Category="PCGUtils|DynMesh|Selections",
-	meta=(Keywords="Select Selection Selector Edge Direction Parallel Perpendicular"))
+	meta=(Keywords="Select Selection Selector Edge Direction Parallel Perpendicular DynMesh"))
 class PCGUTILSDYNMESH_API UPCGEdgeDirectionSettings : public UPCGUtilsDynMeshDomainSelectionSourceSettings
 {
 	GENERATED_BODY()

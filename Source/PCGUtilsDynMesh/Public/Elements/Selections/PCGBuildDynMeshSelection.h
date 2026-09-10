@@ -9,7 +9,7 @@
 #include "PCGBuildDynMeshSelection.generated.h"
 
 /** Evaluates a tree of selection factories against a DynMesh and emits existing materialized selection data. */
-UCLASS(BlueprintType, ClassGroup=(Procedural), Category="PCGUtils|DynMesh|Selections")
+UCLASS(BlueprintType, ClassGroup=(Procedural), Category="PCGUtils|DynMesh|Selections", meta=(Keywords="DynMesh mesh build selection selector"))
 class PCGUTILSDYNMESH_API UPCGBuildDynMeshSelectionSettings
 	: public UPCGDynamicMeshSelectionBaseSettings
 {

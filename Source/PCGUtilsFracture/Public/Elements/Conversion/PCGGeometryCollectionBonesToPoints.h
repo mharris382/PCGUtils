@@ -23,7 +23,7 @@ namespace PCGGeometryCollectionBonesToPointsConstants
  * is for.
  */
 UCLASS(BlueprintType, ClassGroup=(Procedural), Category="PCGUtils|Fracture",
-	meta=(Keywords="Geometry Collection Bones Chunks Fracture Pieces To Points GC"))
+	meta=(Keywords="Geometry Collection Bones Chunks Fracture Pieces To Points GC Convert GeometryCollection"))
 class PCGUTILSFRACTURE_API UPCGGeometryCollectionBonesToPointsSettings : public UPCGUtilsFractureElementBaseSettings
 {
 	GENERATED_BODY()

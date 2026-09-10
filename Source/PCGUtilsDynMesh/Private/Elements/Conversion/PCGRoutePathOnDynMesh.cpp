@@ -89,7 +89,7 @@ namespace
 #if WITH_EDITOR
 FText UPCGRoutePathOnDynMeshSettings::GetDefaultNodeTitle() const
 {
-	return RouteNodeTitle();
+	return LOCTEXT("NodeTitle", "DynMesh|Route Path");
 }
 
 FText UPCGRoutePathOnDynMeshSettings::GetNodeTooltipText() const

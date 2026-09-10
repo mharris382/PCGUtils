@@ -3,6 +3,7 @@
 #pragma once
 
 #include "CoreMinimal.h"
+#include "PCGCommon.h"
 #include "Elements/PCGUtilsFractureElementBase.h"
 
 #include "PCGDynMeshToGeometryCollection.generated.h"
@@ -18,7 +19,7 @@ namespace PCGDynMeshToGeometryCollectionConstants
  * procedural modelling step. No asset, actor or component is created.
  */
 UCLASS(BlueprintType, ClassGroup=(Procedural), Category="PCGUtils|Fracture",
-	meta=(Keywords="Geometry Collection Mesh To Collection Fracture GC"))
+	meta=(Keywords="Geometry Collection Mesh To Collection Fracture GC From DynMesh Convert GeometryCollection"))
 class PCGUTILSFRACTURE_API UPCGDynMeshToGeometryCollectionSettings : public UPCGUtilsFractureElementBaseSettings
 {
 	GENERATED_BODY()
@@ -26,6 +27,13 @@ class PCGUTILSFRACTURE_API UPCGDynMeshToGeometryCollectionSettings : public UPCG
 public:
 #if WITH_EDITOR
 	virtual FName GetDefaultNodeName() const override { return TEXT("DynMeshToGC"); }
+	/** A data bridge: the icon says everything the node does, so it draws compact with no title text. */
+	virtual bool ShouldDrawNodeCompact() const override { return true; }
+	virtual bool GetCompactNodeIcon(FName& OutCompactNodeIcon) const override
+	{
+		OutCompactNodeIcon = PCGNodeConstants::Icons::CompactNodeConvert;
+		return true;
+	}
 	virtual FText GetDefaultNodeTitle() const override;
 	virtual FText GetNodeTooltipText() const override;
 #endif

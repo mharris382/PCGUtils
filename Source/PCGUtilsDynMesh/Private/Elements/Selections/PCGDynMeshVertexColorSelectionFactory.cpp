@@ -245,7 +245,7 @@ void UPCGDynMeshVertexColorSelectionFactoryData::AddToCrc(FArchiveCrc32& Ar, boo
 #if WITH_EDITOR
 FText UPCGDynMeshVertexColorSelectionFactoryProviderSettings::GetDefaultNodeTitle() const
 {
-	return LOCTEXT("Title", "Select by Vertex Color");
+	return LOCTEXT("Title", "Select|By Vertex Color");
 }
 
 FText UPCGDynMeshVertexColorSelectionFactoryProviderSettings::GetNodeTooltipText() const

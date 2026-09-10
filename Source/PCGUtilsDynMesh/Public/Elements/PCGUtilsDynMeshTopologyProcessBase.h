@@ -10,7 +10,7 @@ namespace UE::Geometry { class FDynamicMesh3; }
 
 namespace PCGUtilsDynMeshTopologyProcessConstants
 {
-	inline const FName ResultSelectorPin = TEXT("Result Selector");
+	inline const FName ResultSelectorPin = TEXT("Result");
 }
 
 /** The region retained after a face operation separates and stitches a cap to its original boundary. */
@@ -64,7 +64,7 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Result", meta=(PCG_Overridable, EditCondition="!bOutputResultSelector"))
 	bool bAssignResultPolygroup = false;
 
-	/** Emit a reusable Result Selector. Automatically enables result PolyGroup assignment, including on deferred Builders. */
+	/** Emit a reusable Selector on the Result pin. Automatically enables result PolyGroup assignment, including on deferred Builders. */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Result", meta=(PCG_Overridable))
 	bool bOutputResultSelector = false;
 
@@ -84,6 +84,9 @@ public:
 protected:
 	virtual TSharedPtr<FPCGUtilsDynMeshTopologyOperation> CreateTopologyOperation(FPCGContext* Context) const PURE_VIRTUAL(
 		UPCGUtilsDynMeshTopologyProcessBaseSettings::CreateTopologyOperation, return nullptr;);
+	virtual void ApplyDeprecationBeforeUpdatePins(
+		UPCGNode* InOutNode, TArray<TObjectPtr<UPCGPin>>& InputPins,
+		TArray<TObjectPtr<UPCGPin>>& OutputPins) override;
 	virtual void AddProcessOperationToCrc(FArchiveCrc32& Ar) const override;
 	virtual void EmitAdditionalOutputs(FPCGContext* Context) const override;
 	virtual TArray<FPCGPinProperties> OutputPinProperties() const override;

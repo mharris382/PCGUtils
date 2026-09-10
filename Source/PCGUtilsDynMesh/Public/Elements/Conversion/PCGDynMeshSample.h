@@ -18,7 +18,7 @@
  * the source geometry is always resolved directly from PCGUtilsDynMesh data, never loaded/converted from a
  * Static/Skeletal Mesh.
  */
-UCLASS(BlueprintType, ClassGroup=(Procedural), Category="PCGUtils|DynMesh")
+UCLASS(BlueprintType, ClassGroup=(Procedural), Category="PCGUtils|DynMesh", meta=(Keywords="DynMesh mesh sample surface selection selector"))
 class PCGUTILSDYNMESH_API UPCGDynMeshSampleSettings : public UPCGUtilsDynMeshProcessBaseSettings
 {
 	GENERATED_BODY()

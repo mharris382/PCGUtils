@@ -153,7 +153,7 @@ FText UPCGDynMeshSelectionFactoryGroupProviderSettings::GetDefaultNodeTitle() co
 	case EPCGUtilsDynMeshSelectionFactoryGroupMode::Not:
 		return LOCTEXT("NotTitle", "NOT");
 	default:
-		return LOCTEXT("Title", "Selection Logic");
+		return LOCTEXT("Title", "Logic");
 	}
 }
 
@@ -167,11 +167,11 @@ TArray<FPCGPreConfiguredSettingsInfo>
 UPCGDynMeshSelectionFactoryGroupProviderSettings::GetPreconfiguredInfo() const
 {
 	TArray<FPCGPreConfiguredSettingsInfo> Presets = MakeRepresentationPresets(
-		LOCTEXT("AndDisplayName", "Selectors AND"), 0, 1);
+		LOCTEXT("AndDisplayName", "Select|AND"), 0, 1);
 	Presets.Append(MakeRepresentationPresets(
-		LOCTEXT("OrDisplayName", "Selectors OR"), 2, 3));
+		LOCTEXT("OrDisplayName", "Select|OR"), 2, 3));
 	Presets.Append(MakeRepresentationPresets(
-		LOCTEXT("NotDisplayName", "Selector NOT"), 4, 5));
+		LOCTEXT("NotDisplayName", "Select|NOT"), 4, 5));
 	return Presets;
 }
 

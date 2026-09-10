@@ -66,7 +66,7 @@ namespace
 #if WITH_EDITOR
 FText UPCGDynamicMeshSelectionToPointsSettings::GetDefaultNodeTitle() const
 {
-	return LOCTEXT("Title", "DynMesh Selection To Points");
+	return LOCTEXT("Title", "DynMesh|Selection To Points");
 }
 
 FText UPCGDynamicMeshSelectionToPointsSettings::GetNodeTooltipText() const

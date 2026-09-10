@@ -123,7 +123,7 @@ bool FPCGUtilsDynMeshTransformOperation::Execute(
 #if WITH_EDITOR
 FText UPCGTransformDynMeshSettings::GetDefaultNodeTitle() const
 {
-	return LOCTEXT("NodeTitle", "Transform DynMesh");
+	return LOCTEXT("NodeTitle", "DynMesh|Transform");
 }
 
 FText UPCGTransformDynMeshSettings::GetNodeTooltipText() const

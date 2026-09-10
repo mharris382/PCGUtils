@@ -41,7 +41,7 @@ protected:
 };
 
 UCLASS(BlueprintType, ClassGroup=(Procedural), Category="PCGUtils|DynMesh|Selections",
-	meta=(Keywords="Select Bounds Point Bounds Selection Selector"))
+	meta=(Keywords="Select Bounds Point Bounds Selection Selector DynMesh"))
 class PCGUTILSDYNMESH_API UPCGDynMeshBoundsSelectionFactoryProviderSettings
 	: public UPCGUtilsDynMeshSelectionSourceSettings
 {

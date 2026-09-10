@@ -59,20 +59,20 @@ contract; it does not implement a second mesh/Builder executor. Derived operatio
 1. Replaces the active selection with those faces, bound to the processed mesh. This applies to immediate
    `Output Selection Data` and to the internal selection carried by a Builder, independent of pin presentation.
 2. Optionally assigns the result faces to one fresh default PolyGroup with **Assign Result Polygroup**.
-3. Optionally emits a reusable **Result Selector**, using the existing PolyGroup Selector and its domain adapter.
-   **Output Result Selector** automatically enables group assignment. Both options default off.
+3. Optionally emits a reusable Selector on the **Result** pin, using the existing PolyGroup Selector and its
+   domain adapter. **Output Result Selector** automatically enables group assignment. Both options default off.
 
 The reusable Selector cannot capture a default numeric group ID: a deferred Builder has not allocated one yet,
 and separate input meshes can allocate different IDs. The base therefore also records a named extended PolyGroup
 layer, with `1` for result faces and `0` for other faces. **Result Polygroup Name** specifies this name; `None`
 generates a name from the authoring node's object path, stable across PCG property overrides and saved-graph
 reloads. A new or renamed/copied node has its own automatic name. Use an explicit name when referencing a region
-from a separate **Select by PolyGroup** node (set **Group Layer Name** to that name and **Group IDs** to `1`).
+from a separate **Select|By PolyGroup** node (set **Group Layer Name** to that name and **Group IDs** to `1`).
 
 Reusing an explicit name replaces that region. Empty result regions clear the named layer and produce an empty
-Selector result; there is no fallback to the highest group. The emitted Result Selector also selects nothing on
+Selector result; there is no fallback to the highest group. The emitted Selector also selects nothing on
 meshes that lack its named layer. One descriptor serves all outputs and all Builder seeds without owning a mesh.
-The Result Selector pin is always declared and keeps its Selector type when `Out` becomes a Builder pin, so
+The **Result** pin is always declared and keeps its Selector type when `Out` becomes a Builder pin, so
 property overrides may enable it. It emits data only when enabled and a primary output was produced.
 
 This is a mesh-attribute region, not an arbitrary topology-history system. Surviving membership follows the
@@ -83,13 +83,13 @@ named region. Each retained region adds one extended integer PolyGroup layer.
 
 ### Extrude, Inset and Bevel
 
-- **Extrude DynMesh Faces** uses Geometry Script's underlying linear-extrude operation and options. Its result
+- **DynMesh|Extrude Faces** uses Geometry Script's underlying linear-extrude operation and options. Its result
   defaults to the extruded cap faces. Choose side faces or cap and border faces when needed.
-- **Inset DynMesh Faces** uses the corresponding inset/outset operation, with inner faces as its default result.
+- **DynMesh|Inset Faces** uses the corresponding inset/outset operation, with inner faces as its default result.
   Border-only and combined results are also available. Negative distance outsets. UV Scale applies to the border.
-- **Bevel Edges** now reports the newly created bevel faces through the same base, replacing invalidated edge IDs.
+- **DynMesh|Bevel Edges** now reports the newly created bevel faces through the same base, replacing invalidated edge IDs.
   Its existing bare-mesh behavior (bevel every edge) is retained. It now supports result Selection data and a
-  reusable Result Selector.
+  reusable Selector on its **Result** pin.
 
 Extrude and Inset enable **Require Selection** by default; Bevel leaves it off for compatibility. All three accept
 DynMesh, Selection and Builder inputs and the optional Selector. The shared resolver converts input selection
@@ -102,7 +102,7 @@ To author **Select Up Face → Extrude → Inset → Extrude** with concrete mes
 1. Connect an upward normal Selector to the first Extrude's `Selector` input, and the mesh to `In`.
 2. Enable **Output Result Selector** on the first Extrude and Inset. Keep `Out` as DynMesh if downstream nodes
    require full mesh data.
-3. Connect each node's `Out` to the next node's `In`, and its `Result Selector` to the next node's `Selector`.
+3. Connect each node's `Out` to the next node's `In`, and its `Result` pin to the next node's `Selector`.
 
 Alternatively, enable **Output Selection Data** and chain those results directly. In Builder mode the same
 operation settings and Selector wiring work, while `Out` remains a Builder. The Builder also carries the result

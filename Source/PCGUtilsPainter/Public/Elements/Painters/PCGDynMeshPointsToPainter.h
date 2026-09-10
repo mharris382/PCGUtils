@@ -47,7 +47,7 @@ protected:
 };
 
 /** Maps point values to explicit DynMesh vertex IDs, independently of point positions and bounds. */
-UCLASS(BlueprintType, ClassGroup=(Procedural), Category="PCGUtils|DynMesh|Painters", meta=(Keywords="Painter vertex ID IDs points index color scalar"))
+UCLASS(BlueprintType, ClassGroup=(Procedural), Category="PCGUtils|DynMesh|Painters", meta=(Keywords="Painter vertex ID IDs points index color scalar DynMesh"))
 class PCGUTILSPAINTER_API UPCGDynMeshPointsToPainterProviderSettings
 	: public UPCGUtilsDynMeshFactoryProviderSettings
 {

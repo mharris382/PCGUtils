@@ -126,8 +126,8 @@ void UPCGDynMeshSelectionFromPointsFactoryData::AddToCrc(FArchiveCrc32& Ar, bool
 FText UPCGDynMeshSelectionFromPointsFactoryProviderSettings::GetDefaultNodeTitle() const
 {
 	return IDMode == EPCGDynMeshSelectionFromPointsIDMode::TriangleIDs
-		? LOCTEXT("TitleTriangle", "Select from Triangle IDs")
-		: LOCTEXT("Title", "Select from Vertex IDs");
+		? LOCTEXT("TitleTriangle", "Select|From Triangle IDs")
+		: LOCTEXT("Title", "Select|From Vertex IDs");
 }
 
 FText UPCGDynMeshSelectionFromPointsFactoryProviderSettings::GetNodeTooltipText() const
@@ -148,11 +148,11 @@ TArray<FPCGPreConfiguredSettingsInfo>
 UPCGDynMeshSelectionFromPointsFactoryProviderSettings::GetPreconfiguredInfo() const
 {
 	TArray<FPCGPreConfiguredSettingsInfo> Presets = MakeRepresentationPresets(
-		LOCTEXT("VertexIDsPresetName", "Select from Vertex IDs"),
+		LOCTEXT("VertexIDsPresetName", "Select|From Vertex IDs"),
 		PCGDynMeshSelectionFromPointsFactoryConstants::VertexIDSelectorPreconfiguredIndex,
 		PCGDynMeshSelectionFromPointsFactoryConstants::VertexIDSelectionPreconfiguredIndex);
 	Presets.Append(MakeRepresentationPresets(
-		LOCTEXT("TriangleIDsPresetName", "Selection From Triangle IDs"),
+		LOCTEXT("TriangleIDsPresetName", "Select|From Triangle IDs"),
 		PCGDynMeshSelectionFromPointsFactoryConstants::TriangleIDSelectorPreconfiguredIndex,
 		PCGDynMeshSelectionFromPointsFactoryConstants::TriangleIDSelectionPreconfiguredIndex));
 	return Presets;

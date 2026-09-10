@@ -112,7 +112,7 @@ namespace
 #if WITH_EDITOR
 FText UPCGSmoothDynamicMeshSettings::GetDefaultNodeTitle() const
 {
-	return LOCTEXT("NodeTitle", "Smooth DynMesh");
+	return LOCTEXT("NodeTitle", "DynMesh|Smooth");
 }
 
 FText UPCGSmoothDynamicMeshSettings::GetNodeTooltipText() const

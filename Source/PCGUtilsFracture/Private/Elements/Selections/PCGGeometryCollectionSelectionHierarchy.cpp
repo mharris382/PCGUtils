@@ -54,17 +54,17 @@ namespace
 	{
 		switch (InOperation)
 		{
-		case EOperation::Parent: return LOCTEXT("ParentTitle", "Select Parent");
-		case EOperation::Children: return LOCTEXT("ChildrenTitle", "Select Children");
-		case EOperation::Siblings: return LOCTEXT("SiblingsTitle", "Select Siblings");
-		case EOperation::Ancestors: return LOCTEXT("AncestorsTitle", "Select Ancestors");
-		case EOperation::Descendants: return LOCTEXT("DescendantsTitle", "Select Descendants");
-		case EOperation::ToPieces: return LOCTEXT("ToPiecesTitle", "Selection To Pieces");
-		case EOperation::ToClusters: return LOCTEXT("ToClustersTitle", "Selection To Clusters");
-		case EOperation::SameLevel: return LOCTEXT("SameLevelTitle", "Select Same Level");
-		case EOperation::ToLevel: return LOCTEXT("ToLevelTitle", "Selection To Level");
-		case EOperation::Invert: return LOCTEXT("InvertTitle", "Invert Selection");
-		default: return LOCTEXT("Title", "GC Selection Hierarchy");
+		case EOperation::Parent: return LOCTEXT("ParentTitle", "GC|Select|Parent");
+		case EOperation::Children: return LOCTEXT("ChildrenTitle", "GC|Select|Children");
+		case EOperation::Siblings: return LOCTEXT("SiblingsTitle", "GC|Select|Siblings");
+		case EOperation::Ancestors: return LOCTEXT("AncestorsTitle", "GC|Select|Ancestors");
+		case EOperation::Descendants: return LOCTEXT("DescendantsTitle", "GC|Select|Descendants");
+		case EOperation::ToPieces: return LOCTEXT("ToPiecesTitle", "GC|Select|To Pieces");
+		case EOperation::ToClusters: return LOCTEXT("ToClustersTitle", "GC|Select|To Clusters");
+		case EOperation::SameLevel: return LOCTEXT("SameLevelTitle", "GC|Select|Same Level");
+		case EOperation::ToLevel: return LOCTEXT("ToLevelTitle", "GC|Select|To Level");
+		case EOperation::Invert: return LOCTEXT("InvertTitle", "GC|Select|Invert");
+		default: return LOCTEXT("Title", "GC|Select|Hierarchy");
 		}
 	}
 

@@ -62,7 +62,7 @@ protected:
 };
 
 UCLASS(BlueprintType, ClassGroup=(Procedural), Category="PCGUtils|DynMesh|Selections",
-	meta=(Keywords="Color Mesh Color Selection Selector"))
+	meta=(Keywords="Color Mesh Color Selection Selector DynMesh Select"))
 class PCGUTILSDYNMESH_API UPCGDynMeshVertexColorSelectionFactoryProviderSettings
 	: public UPCGUtilsDynMeshSelectionSourceSettings
 {

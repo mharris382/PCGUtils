@@ -15,7 +15,7 @@ namespace PCGSelectionBoundaryEdgesConstants
 
 /** Converts an existing DynMesh selection into the edge selection around its triangle-region boundary. */
 UCLASS(BlueprintType, ClassGroup=(Procedural), Category="PCGUtils|DynMesh|Selections",
-	meta=(Keywords="Boundary of Selection Selection Outline Selection Selector"))
+	meta=(Keywords="Boundary of Selection Selection Outline Selection Selector DynMesh Select"))
 class PCGUTILSDYNMESH_API UPCGSelectionBoundaryEdgesSettings : public UPCGUtilsDynMeshSelectionOperationSettings
 {
 	GENERATED_BODY()

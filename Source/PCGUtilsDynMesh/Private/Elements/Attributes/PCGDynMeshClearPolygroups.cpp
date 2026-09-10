@@ -13,7 +13,7 @@
 #if WITH_EDITOR
 FText UPCGDynMeshClearPolygroupsSettings::GetDefaultNodeTitle() const
 {
-	return LOCTEXT("Title", "Clear DynMesh PolyGroups");
+	return LOCTEXT("Title", "DynMesh|Clear PolyGroups");
 }
 
 FText UPCGDynMeshClearPolygroupsSettings::GetNodeTooltipText() const

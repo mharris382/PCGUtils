@@ -72,7 +72,7 @@ namespace
 #if WITH_EDITOR
 FText UPCGTraceSurfacePathSettings::GetDefaultNodeTitle() const
 {
-	return TraceNodeTitle();
+	return LOCTEXT("NodeTitle", "DynMesh|Trace Surface Path");
 }
 
 FText UPCGTraceSurfacePathSettings::GetNodeTooltipText() const

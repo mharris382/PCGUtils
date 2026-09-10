@@ -21,8 +21,8 @@ bool FPCGUtilsCoreModuleContractTest::RunTest(const FString&)
 		UPCGUtilsDynMeshFactoryData::StaticClass()->FindPropertyByName(TEXT("Priority")));
 	const UPCGMaterialSettings* Material = GetDefault<UPCGMaterialSettings>();
 	const UPCGSetVertexColorSettings* Color = GetDefault<UPCGSetVertexColorSettings>();
-	TestEqual(TEXT("Material title is explicit"), Material->GetDefaultNodeTitle().ToString(), FString(TEXT("Set DynMesh Material")));
-	TestEqual(TEXT("Vertex color title is explicit"), Color->GetDefaultNodeTitle().ToString(), FString(TEXT("Set DynMesh Vertex Colors")));
+	TestEqual(TEXT("Material title is explicit"), Material->GetDefaultNodeTitle().ToString(), FString(TEXT("DynMesh|Set Material")));
+	TestEqual(TEXT("Vertex color title is explicit"), Color->GetDefaultNodeTitle().ToString(), FString(TEXT("DynMesh|Set Vertex Colors")));
 	for (const UPCGSettings* Settings : { static_cast<const UPCGSettings*>(Material), static_cast<const UPCGSettings*>(Color) })
 	{
 		TestEqual(TEXT("Processor stays in the mesh palette"), Settings->GetType(), EPCGSettingsType::DynamicMesh);

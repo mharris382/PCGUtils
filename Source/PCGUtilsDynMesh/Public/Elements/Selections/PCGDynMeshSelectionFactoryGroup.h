@@ -38,7 +38,7 @@ protected:
 };
 
 UCLASS(BlueprintType, ClassGroup=(Procedural), Category="PCGUtils|DynMesh|Selections",
-	meta=(Keywords="Intersect Add Union Invert Selection Logic Selector"))
+	meta=(Keywords="Intersect Add Union Invert Selection Logic Selector DynMesh Select AND OR NOT"))
 class PCGUTILSDYNMESH_API UPCGDynMeshSelectionFactoryGroupProviderSettings
 	: public UPCGUtilsDynMeshSelectionSourceSettings
 {

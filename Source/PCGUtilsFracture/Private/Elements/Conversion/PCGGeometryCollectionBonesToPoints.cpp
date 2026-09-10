@@ -266,7 +266,7 @@ namespace
 #if WITH_EDITOR
 FText UPCGGeometryCollectionBonesToPointsSettings::GetDefaultNodeTitle() const
 {
-	return LOCTEXT("Title", "GC Bones To Points");
+	return LOCTEXT("Title", "GC|Bones To Points");
 }
 
 FText UPCGGeometryCollectionBonesToPointsSettings::GetNodeTooltipText() const

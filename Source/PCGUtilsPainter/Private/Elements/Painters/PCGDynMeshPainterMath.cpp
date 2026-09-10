@@ -101,7 +101,7 @@ void UPCGDynMeshPainterMathFactoryData::AddToCrc(FArchiveCrc32& Ar, bool bFullDa
 #if WITH_EDITOR
 FText UPCGDynMeshPainterMathProviderSettings::GetDefaultNodeTitle() const
 {
-	return LOCTEXT("Title", "Painter Blend");
+	return LOCTEXT("Title", "Painter|Blend");
 }
 
 FString UPCGDynMeshPainterMathProviderSettings::GetAdditionalTitleInformation() const

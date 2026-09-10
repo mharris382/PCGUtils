@@ -15,7 +15,7 @@
  * without paying to copy or resolve the rest of the mesh, so it intentionally accepts only DynMesh Selection
  * data - no bare DynMesh input, no Selector pin. A bare mesh's vertices are already served by DynMesh To Points.
  */
-UCLASS(BlueprintType, ClassGroup=(Procedural), Category="PCGUtils|DynMesh")
+UCLASS(BlueprintType, ClassGroup=(Procedural), Category="PCGUtils|DynMesh", meta=(Keywords="DynMesh mesh selection selector to points convert"))
 class PCGUTILSDYNMESH_API UPCGDynamicMeshSelectionToPointsSettings : public UPCGDynamicMeshBaseSettings
 {
 	GENERATED_BODY()

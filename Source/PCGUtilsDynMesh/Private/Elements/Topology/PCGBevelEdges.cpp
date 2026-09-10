@@ -20,12 +20,12 @@ UPCGBevelEdgesSettings::UPCGBevelEdgesSettings()
 #if WITH_EDITOR
 FText UPCGBevelEdgesSettings::GetDefaultNodeTitle() const
 {
-	return LOCTEXT("Title", "Bevel DynMesh Edges");
+	return LOCTEXT("Title", "DynMesh|Bevel Edges");
 }
 
 FText UPCGBevelEdgesSettings::GetNodeTooltipText() const
 {
-	return LOCTEXT("Tooltip", "Bevels a DynMesh edge selection, or every edge when a bare mesh is supplied. Newly created bevel faces become the result selection. Can assign a named result PolyGroup and emit a reusable Result Selector, for DynMesh and Builder inputs.");
+	return LOCTEXT("Tooltip", "Bevels a DynMesh edge selection, or every edge when a bare mesh is supplied. Newly created bevel faces become the result selection. Can assign a named result PolyGroup and emit a reusable Selector on the Result pin, for DynMesh and Builder inputs.");
 }
 #endif
 

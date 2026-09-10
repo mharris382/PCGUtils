@@ -174,7 +174,7 @@ UPCGDynMeshPainterFromPointsProviderSettings::UPCGDynMeshPainterFromPointsProvid
 #if WITH_EDITOR
 FText UPCGDynMeshPainterFromPointsProviderSettings::GetDefaultNodeTitle() const
 {
-	return LOCTEXT("Title", "Bounds Brush Painter");
+	return LOCTEXT("Title", "Painter|Bounds Brush");
 }
 
 FText UPCGDynMeshPainterFromPointsProviderSettings::GetNodeTooltipText() const

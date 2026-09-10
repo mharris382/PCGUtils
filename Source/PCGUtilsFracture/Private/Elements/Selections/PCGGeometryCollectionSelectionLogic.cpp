@@ -44,7 +44,7 @@ namespace
 		case EMode::Or: return LOCTEXT("OrTitle", "OR");
 		case EMode::Xor: return LOCTEXT("XorTitle", "XOR");
 		case EMode::Subtract: return LOCTEXT("SubtractTitle", "Subtract");
-		default: return LOCTEXT("Title", "GC Selection Logic");
+		default: return LOCTEXT("Title", "GC|Select|Logic");
 		}
 	}
 
@@ -52,11 +52,11 @@ namespace
 	{
 		switch (InMode)
 		{
-		case EMode::And: return LOCTEXT("AndDisplay", "GC Selection AND");
-		case EMode::Or: return LOCTEXT("OrDisplay", "GC Selection OR");
-		case EMode::Xor: return LOCTEXT("XorDisplay", "GC Selection XOR");
-		case EMode::Subtract: return LOCTEXT("SubtractDisplay", "GC Selection Subtract");
-		default: return LOCTEXT("Title", "GC Selection Logic");
+		case EMode::And: return LOCTEXT("AndDisplay", "GC|Select|AND");
+		case EMode::Or: return LOCTEXT("OrDisplay", "GC|Select|OR");
+		case EMode::Xor: return LOCTEXT("XorDisplay", "GC|Select|XOR");
+		case EMode::Subtract: return LOCTEXT("SubtractDisplay", "GC|Select|Subtract");
+		default: return LOCTEXT("Title", "GC|Select|Logic");
 		}
 	}
 }
@@ -124,7 +124,7 @@ void UPCGGeometryCollectionSelectionLogicFactoryData::AddToCrc(FArchiveCrc32& Ar
 #if WITH_EDITOR
 FText UPCGGeometryCollectionSelectionLogicSettings::GetDefaultNodeTitle() const
 {
-	return ModeTitle(Mode);
+	return ModeDisplayName(Mode);
 }
 
 FText UPCGGeometryCollectionSelectionLogicSettings::GetNodeTooltipText() const

@@ -15,7 +15,7 @@ namespace PCGDynMeshBooleanConstants
 }
 
 /** Whole-solid boolean. Partial mesh selections are intentionally unsupported. */
-UCLASS(BlueprintType, ClassGroup=(Procedural), Category="PCGUtils|DynMesh|Topology", HideCategories=(Selector))
+UCLASS(BlueprintType, ClassGroup=(Procedural), Category="PCGUtils|DynMesh|Topology", HideCategories=(Selector), meta=(Keywords="DynMesh mesh boolean union subtract intersect csg"))
 class PCGUTILSDYNMESH_API UPCGDynMeshBooleanSettings : public UPCGUtilsDynMeshOperandProcessBaseSettings
 {
 	GENERATED_BODY()

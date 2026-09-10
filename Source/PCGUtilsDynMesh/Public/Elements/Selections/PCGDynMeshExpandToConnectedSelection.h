@@ -17,7 +17,7 @@ namespace PCGDynMeshExpandToConnectedSelectionConstants
 
 /** Expands a materialized triangle selection to complete connected regions. */
 UCLASS(BlueprintType, ClassGroup=(Procedural), Category="PCGUtils|DynMesh|Selections",
-	meta=(Keywords="Select Connected Component Flood Selection Selector"))
+	meta=(Keywords="Select Connected Component Flood Selection Selector DynMesh"))
 class PCGUTILSDYNMESH_API UPCGDynMeshExpandToConnectedSelectionSettings : public UPCGUtilsDynMeshSelectionOperationSettings
 {
 	GENERATED_BODY()

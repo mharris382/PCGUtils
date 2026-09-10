@@ -18,7 +18,7 @@
 #if WITH_EDITOR
 FText UPCGPruneGeometryCollectionSettings::GetDefaultNodeTitle() const
 {
-	return LOCTEXT("Title", "Prune GC");
+	return LOCTEXT("Title", "GC|Prune");
 }
 
 FText UPCGPruneGeometryCollectionSettings::GetNodeTooltipText() const

@@ -4,6 +4,7 @@
 
 #include "CoreMinimal.h"
 #include "Data/PCGGeometryCollectionData.h"
+#include "PCGCommon.h"
 #include "Elements/PCGUtilsFractureElementBase.h"
 
 #include "PCGGeometryCollectionToDynMesh.generated.h"
@@ -47,7 +48,7 @@ enum class EPCGGeometryCollectionToDynMeshSpace : uint8
  * interior/exterior surface tagging as named PolyGroup layers.
  */
 UCLASS(BlueprintType, ClassGroup=(Procedural), Category="PCGUtils|Fracture",
-	meta=(Keywords="Geometry Collection To Mesh Fracture GC Piece Split"))
+	meta=(Keywords="Geometry Collection To Mesh Fracture GC Piece Split From DynMesh Convert GeometryCollection"))
 class PCGUTILSFRACTURE_API UPCGGeometryCollectionToDynMeshSettings : public UPCGUtilsFractureElementBaseSettings
 {
 	GENERATED_BODY()
@@ -55,6 +56,13 @@ class PCGUTILSFRACTURE_API UPCGGeometryCollectionToDynMeshSettings : public UPCG
 public:
 #if WITH_EDITOR
 	virtual FName GetDefaultNodeName() const override { return TEXT("GCToDynMesh"); }
+	/** A data bridge: the icon says everything the node does, so it draws compact with no title text. */
+	virtual bool ShouldDrawNodeCompact() const override { return true; }
+	virtual bool GetCompactNodeIcon(FName& OutCompactNodeIcon) const override
+	{
+		OutCompactNodeIcon = PCGNodeConstants::Icons::CompactNodeConvert;
+		return true;
+	}
 	virtual FText GetDefaultNodeTitle() const override;
 	virtual FText GetNodeTooltipText() const override;
 	virtual FString GetAdditionalTitleInformation() const override;

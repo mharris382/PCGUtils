@@ -32,27 +32,27 @@ namespace
 	FText ClassName::GetDefaultNodeTitle() const { return LOCTEXT(#ClassName "_Title", Title); } \
 	FText ClassName::GetNodeTooltipText() const { return LOCTEXT(#ClassName "_Tooltip", Tooltip); }
 
-PCG_DEFINE_BUILDER_TEXT(UPCGBoxBuilderSettings, "Box Builder",
+PCG_DEFINE_BUILDER_TEXT(UPCGBoxBuilderSettings, "Builder|Box",
 	"A deferred Box: every dimension and step count is an overridable pin. Feed it, with any other Builders, into Create Primitive's Builders pin.")
-PCG_DEFINE_BUILDER_TEXT(UPCGSphereBuilderSettings, "Sphere Builder",
+PCG_DEFINE_BUILDER_TEXT(UPCGSphereBuilderSettings, "Builder|Sphere",
 	"A deferred Sphere (LatLong or Box tessellation) with overridable radius and step counts.")
-PCG_DEFINE_BUILDER_TEXT(UPCGCapsuleBuilderSettings, "Capsule Builder",
+PCG_DEFINE_BUILDER_TEXT(UPCGCapsuleBuilderSettings, "Builder|Capsule",
 	"A deferred Capsule with overridable radius, line length, and step counts.")
-PCG_DEFINE_BUILDER_TEXT(UPCGCylinderBuilderSettings, "Cylinder Builder",
+PCG_DEFINE_BUILDER_TEXT(UPCGCylinderBuilderSettings, "Builder|Cylinder",
 	"A deferred Cylinder with overridable radius, height, step counts, and capping.")
-PCG_DEFINE_BUILDER_TEXT(UPCGConeBuilderSettings, "Cone Builder",
+PCG_DEFINE_BUILDER_TEXT(UPCGConeBuilderSettings, "Builder|Cone",
 	"A deferred Cone or truncated cone with overridable base/top radii, height, and step counts.")
-PCG_DEFINE_BUILDER_TEXT(UPCGTorusBuilderSettings, "Torus Builder",
+PCG_DEFINE_BUILDER_TEXT(UPCGTorusBuilderSettings, "Builder|Torus",
 	"A deferred Torus with overridable major/minor radii, step counts, and revolve options for partial arcs.")
-PCG_DEFINE_BUILDER_TEXT(UPCGRectangleBuilderSettings, "Rectangle Builder",
+PCG_DEFINE_BUILDER_TEXT(UPCGRectangleBuilderSettings, "Builder|Rectangle",
 	"A deferred flat Rectangle with overridable dimensions and subdivision counts.")
-PCG_DEFINE_BUILDER_TEXT(UPCGRoundedRectangleBuilderSettings, "Rounded Rectangle Builder",
+PCG_DEFINE_BUILDER_TEXT(UPCGRoundedRectangleBuilderSettings, "Builder|Rounded Rectangle",
 	"A deferred flat Rounded Rectangle with overridable dimensions, corner radius, and subdivision counts.")
-PCG_DEFINE_BUILDER_TEXT(UPCGDiscBuilderSettings, "Disc Builder",
+PCG_DEFINE_BUILDER_TEXT(UPCGDiscBuilderSettings, "Builder|Disc",
 	"A deferred Disc, pie wedge, or annulus with overridable radius, angle range, and hole radius.")
-PCG_DEFINE_BUILDER_TEXT(UPCGLinearStairsBuilderSettings, "Linear Stairs Builder",
+PCG_DEFINE_BUILDER_TEXT(UPCGLinearStairsBuilderSettings, "Builder|Linear Stairs",
 	"Deferred straight stairs with overridable step size and count.")
-PCG_DEFINE_BUILDER_TEXT(UPCGCurvedStairsBuilderSettings, "Curved Stairs Builder",
+PCG_DEFINE_BUILDER_TEXT(UPCGCurvedStairsBuilderSettings, "Builder|Curved Stairs",
 	"Deferred curved stairs with overridable step size, inner radius, curve angle, and count.")
 
 #undef PCG_DEFINE_BUILDER_TEXT

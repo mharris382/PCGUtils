@@ -42,7 +42,7 @@ protected:
 };
 
 UCLASS(BlueprintType, ClassGroup=(Procedural), Category="PCGUtils|DynMesh|Selections",
-	meta=(Keywords="Select Selection Selector Triangle Face Edge Length Normal"))
+	meta=(Keywords="Select Selection Selector Triangle Face Edge Length Normal DynMesh"))
 class PCGUTILSDYNMESH_API UPCGSelectDynamicMeshTrianglesSettings : public UPCGUtilsDynMeshDomainSelectionSourceSettings
 {
 	GENERATED_BODY()

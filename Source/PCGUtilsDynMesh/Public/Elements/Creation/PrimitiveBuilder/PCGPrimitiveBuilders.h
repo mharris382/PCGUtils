@@ -22,7 +22,7 @@
  * node only supplies its own parameters and the Geometry Script options object built from them.
  */
 
-UCLASS(BlueprintType, ClassGroup=(Procedural), Category="PCGUtils|DynMesh|Creation")
+UCLASS(BlueprintType, ClassGroup=(Procedural), Category="PCGUtils|DynMesh|Creation", meta=(Keywords="DynMesh Builder Build Builders primitive deferred create realize shape box cube"))
 class PCGUTILSDYNMESH_API UPCGBoxBuilderSettings : public UPCGPrimitiveBuilderProviderSettingsBase
 {
 	GENERATED_BODY()
@@ -62,7 +62,7 @@ protected:
 	virtual UPCGCreatePrimitiveSettingsBase* CreatePrimitiveSettings(FPCGContext* InContext) const override;
 };
 
-UCLASS(BlueprintType, ClassGroup=(Procedural), Category="PCGUtils|DynMesh|Creation")
+UCLASS(BlueprintType, ClassGroup=(Procedural), Category="PCGUtils|DynMesh|Creation", meta=(Keywords="DynMesh Builder Build Builders primitive deferred create realize shape sphere ball"))
 class PCGUTILSDYNMESH_API UPCGSphereBuilderSettings : public UPCGPrimitiveBuilderProviderSettingsBase
 {
 	GENERATED_BODY()
@@ -111,7 +111,7 @@ protected:
 	virtual UPCGCreatePrimitiveSettingsBase* CreatePrimitiveSettings(FPCGContext* InContext) const override;
 };
 
-UCLASS(BlueprintType, ClassGroup=(Procedural), Category="PCGUtils|DynMesh|Creation")
+UCLASS(BlueprintType, ClassGroup=(Procedural), Category="PCGUtils|DynMesh|Creation", meta=(Keywords="DynMesh Builder Build Builders primitive deferred create realize shape capsule pill"))
 class PCGUTILSDYNMESH_API UPCGCapsuleBuilderSettings : public UPCGPrimitiveBuilderProviderSettingsBase
 {
 	GENERATED_BODY()
@@ -148,7 +148,7 @@ protected:
 	virtual UPCGCreatePrimitiveSettingsBase* CreatePrimitiveSettings(FPCGContext* InContext) const override;
 };
 
-UCLASS(BlueprintType, ClassGroup=(Procedural), Category="PCGUtils|DynMesh|Creation")
+UCLASS(BlueprintType, ClassGroup=(Procedural), Category="PCGUtils|DynMesh|Creation", meta=(Keywords="DynMesh Builder Build Builders primitive deferred create realize shape cylinder tube"))
 class PCGUTILSDYNMESH_API UPCGCylinderBuilderSettings : public UPCGPrimitiveBuilderProviderSettingsBase
 {
 	GENERATED_BODY()
@@ -185,7 +185,7 @@ protected:
 	virtual UPCGCreatePrimitiveSettingsBase* CreatePrimitiveSettings(FPCGContext* InContext) const override;
 };
 
-UCLASS(BlueprintType, ClassGroup=(Procedural), Category="PCGUtils|DynMesh|Creation")
+UCLASS(BlueprintType, ClassGroup=(Procedural), Category="PCGUtils|DynMesh|Creation", meta=(Keywords="DynMesh Builder Build Builders primitive deferred create realize shape cone frustum"))
 class PCGUTILSDYNMESH_API UPCGConeBuilderSettings : public UPCGPrimitiveBuilderProviderSettingsBase
 {
 	GENERATED_BODY()
@@ -225,7 +225,7 @@ protected:
 	virtual UPCGCreatePrimitiveSettingsBase* CreatePrimitiveSettings(FPCGContext* InContext) const override;
 };
 
-UCLASS(BlueprintType, ClassGroup=(Procedural), Category="PCGUtils|DynMesh|Creation")
+UCLASS(BlueprintType, ClassGroup=(Procedural), Category="PCGUtils|DynMesh|Creation", meta=(Keywords="DynMesh Builder Build Builders primitive deferred create realize shape torus donut ring"))
 class PCGUTILSDYNMESH_API UPCGTorusBuilderSettings : public UPCGPrimitiveBuilderProviderSettingsBase
 {
 	GENERATED_BODY()
@@ -263,7 +263,7 @@ protected:
 	virtual UPCGCreatePrimitiveSettingsBase* CreatePrimitiveSettings(FPCGContext* InContext) const override;
 };
 
-UCLASS(BlueprintType, ClassGroup=(Procedural), Category="PCGUtils|DynMesh|Creation")
+UCLASS(BlueprintType, ClassGroup=(Procedural), Category="PCGUtils|DynMesh|Creation", meta=(Keywords="DynMesh Builder Build Builders primitive deferred create realize shape rectangle rect quad plane"))
 class PCGUTILSDYNMESH_API UPCGRectangleBuilderSettings : public UPCGPrimitiveBuilderProviderSettingsBase
 {
 	GENERATED_BODY()
@@ -294,7 +294,7 @@ protected:
 	virtual UPCGCreatePrimitiveSettingsBase* CreatePrimitiveSettings(FPCGContext* InContext) const override;
 };
 
-UCLASS(BlueprintType, ClassGroup=(Procedural), Category="PCGUtils|DynMesh|Creation")
+UCLASS(BlueprintType, ClassGroup=(Procedural), Category="PCGUtils|DynMesh|Creation", meta=(Keywords="DynMesh Builder Build Builders primitive deferred create realize shape rounded rectangle rect quad plane"))
 class PCGUTILSDYNMESH_API UPCGRoundedRectangleBuilderSettings : public UPCGPrimitiveBuilderProviderSettingsBase
 {
 	GENERATED_BODY()
@@ -331,7 +331,7 @@ protected:
 	virtual UPCGCreatePrimitiveSettingsBase* CreatePrimitiveSettings(FPCGContext* InContext) const override;
 };
 
-UCLASS(BlueprintType, ClassGroup=(Procedural), Category="PCGUtils|DynMesh|Creation")
+UCLASS(BlueprintType, ClassGroup=(Procedural), Category="PCGUtils|DynMesh|Creation", meta=(Keywords="DynMesh Builder Build Builders primitive deferred create realize shape disc circle pie annulus"))
 class PCGUTILSDYNMESH_API UPCGDiscBuilderSettings : public UPCGPrimitiveBuilderProviderSettingsBase
 {
 	GENERATED_BODY()
@@ -370,7 +370,7 @@ protected:
 	virtual UPCGCreatePrimitiveSettingsBase* CreatePrimitiveSettings(FPCGContext* InContext) const override;
 };
 
-UCLASS(BlueprintType, ClassGroup=(Procedural), Category="PCGUtils|DynMesh|Creation")
+UCLASS(BlueprintType, ClassGroup=(Procedural), Category="PCGUtils|DynMesh|Creation", meta=(Keywords="DynMesh Builder Build Builders primitive deferred create realize shape linear stairs steps staircase"))
 class PCGUTILSDYNMESH_API UPCGLinearStairsBuilderSettings : public UPCGPrimitiveBuilderProviderSettingsBase
 {
 	GENERATED_BODY()
@@ -405,7 +405,7 @@ protected:
 	virtual UPCGCreatePrimitiveSettingsBase* CreatePrimitiveSettings(FPCGContext* InContext) const override;
 };
 
-UCLASS(BlueprintType, ClassGroup=(Procedural), Category="PCGUtils|DynMesh|Creation")
+UCLASS(BlueprintType, ClassGroup=(Procedural), Category="PCGUtils|DynMesh|Creation", meta=(Keywords="DynMesh Builder Build Builders primitive deferred create realize shape curved spiral stairs steps staircase"))
 class PCGUTILSDYNMESH_API UPCGCurvedStairsBuilderSettings : public UPCGPrimitiveBuilderProviderSettingsBase
 {
 	GENERATED_BODY()

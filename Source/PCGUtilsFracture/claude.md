@@ -388,7 +388,14 @@ because the instance methods cache a Proximity attribute onto the collection and
 ## Naming
 
 C++ spells out `GeometryCollection`; user-facing text uses `GC`. So `UPCGGeometryCollectionBonesToPointsSettings`
-in code, "GC Bones To Points" in the palette, `GC` on pins, `GC_` on attributes. See `AGENTS.md` for why.
+in code, "GC|Bones To Points" in the palette, `GC` on pins, `GC_` on attributes. See `AGENTS.md` for why.
+
+Every palette entry in this module is prefixed `GC|`, and every bone selection `GC|Select|`, with the name
+itself carrying none of `GC`, `select`, `selection` or `selector` - `GC|Select|Contact`, not
+`GC|Select|Select Contact`. The prefix is not decoration: PCG derives the palette category from
+`EPCGSettingsType` alone, so with no `GeometryCollection` value in that enum the title prefix is the only
+thing separating this module from the DynMesh nodes it shares the `Dynamic Mesh` bucket with. `AGENTS.md`
+has the full rule and the search-text mechanics; `PCGUtils.Palette.SearchContract` enforces them.
 
 ## Node conventions
 
@@ -397,7 +404,11 @@ in code, "GC Bones To Points" in the palette, `GC` on pins, `GC_` on attributes.
   compile.
 - Settings are `PCG_Overridable` by default, matching the DynMesh module.
 - Pin labels are `GC`, `Fracture`, `Selection`, `Points`, `DynMesh`, `Sites`. `Factory` never appears on a graph
-  surface; use `GC` rather than `Geometry Collection` in titles, and add the spelled-out form as a title alias.
+  surface; use `GC` rather than `Geometry Collection` in titles, and put the spelled-out form in `Keywords`
+  (not a title alias, which would add a duplicate palette entry).
+- The two DynMesh bridges draw compact with the standard convert icon, so they carry no title text on the
+  canvas at all. Their palette titles are `GC|From DynMesh` and `GC|To DynMesh`, and their keywords include
+  `To`/`From` so that dragging off a pin and typing "to GC" finds them.
 - All three fracture-domain data types share the domain colour `#2F7FA3`
   (`PCGUtilsFracture::DomainColorHex`). Colour identifies the domain; the icon identifies the semantic type. Do
   not invent per-type shades.

@@ -41,7 +41,7 @@ namespace
 #if WITH_EDITOR
 FText UPCGFractureGeometryCollectionSettings::GetDefaultNodeTitle() const
 {
-	return LOCTEXT("Title", "Fracture GC");
+	return LOCTEXT("Title", "GC|Fracture");
 }
 
 FText UPCGFractureGeometryCollectionSettings::GetNodeTooltipText() const

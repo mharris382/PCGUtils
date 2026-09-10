@@ -13,7 +13,7 @@ enum class EPCGDynMeshActorSpaceTransformDirection : uint8
 };
 
 /** Transforms Dynamic Mesh data between actor-local and world space. Exposed only through ToWorld and ToLocal aliases. */
-UCLASS(BlueprintType, ClassGroup=(Procedural), Category="PCGUtils|DynMesh")
+UCLASS(BlueprintType, ClassGroup=(Procedural), Category="PCGUtils|DynMesh", meta=(Keywords="DynMesh mesh to world local space actor transform"))
 class PCGUTILSDYNMESH_API UPCGDynMeshActorSpaceTransformSettings : public UPCGDynamicMeshBaseSettings
 {
 	GENERATED_BODY()

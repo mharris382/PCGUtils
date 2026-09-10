@@ -26,7 +26,7 @@ protected:
 };
 
 /** Combines up to four Painters into one channel-aware color Painter. */
-UCLASS(BlueprintType, ClassGroup=(Procedural), Category="PCGUtils|DynMesh|Painters")
+UCLASS(BlueprintType, ClassGroup=(Procedural), Category="PCGUtils|DynMesh|Painters", meta=(Keywords="DynMesh Painter combine merge stack layer"))
 class PCGUTILSPAINTER_API UPCGDynMeshCombinePaintersProviderSettings
 	: public UPCGUtilsDynMeshFactoryProviderSettings
 {

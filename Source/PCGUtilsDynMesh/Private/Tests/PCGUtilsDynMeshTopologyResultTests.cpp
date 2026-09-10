@@ -84,7 +84,7 @@ namespace PCGUtilsDynMeshTopologyResultTests
 
 	const UPCGDynMeshPolygroupSelectionFactoryData* Selector(const FPCGDataCollection& Output)
 	{
-		const auto Values = Output.GetInputsByPin(TEXT("Result Selector"));
+		const auto Values = Output.GetInputsByPin(TEXT("Result"));
 		return Values.Num() == 1 ? Cast<UPCGDynMeshPolygroupSelectionFactoryData>(Values[0].Data) : nullptr;
 	}
 
@@ -318,7 +318,7 @@ bool FPCGDynMeshTopologyIdentityTest::RunTest(const FString&)
 	Node->GetInputPin(TEXT("In"))->AddEdgeTo(Anchor->GetOutputPin(TEXT("Out")));
 	TestTrue(TEXT("Builder input narrows primary output to Builder"), Node->GetOutputPin(TEXT("Out"))->GetCurrentTypesID() == BuilderType);
 	TestTrue(TEXT("Companion pin stays Selector when primary output becomes Builder"),
-		Node->GetOutputPin(TEXT("Result Selector"))->GetCurrentTypesID() == FPCGDataTypeIdentifier(FPCGUtilsDynMeshSelectionFactoryDataTypeInfo::AsId()));
+		Node->GetOutputPin(TEXT("Result"))->GetCurrentTypesID() == FPCGDataTypeIdentifier(FPCGUtilsDynMeshSelectionFactoryDataTypeInfo::AsId()));
 	Settings->bOutputResultSelector = true;
 	Settings->Options.Distance = 20;
 	auto A = Build(BoxBuilder());
@@ -328,7 +328,7 @@ bool FPCGDynMeshTopologyIdentityTest::RunTest(const FString&)
 		for (int32 ID : Edit.TriangleIndicesItr()) { Edit.SetTriangleGroup(ID, Edit.GetTriangleGroup(ID) + 1000); }
 	});
 	const auto Output = Run(Settings, { A.MeshData, B.MeshData }, NewObject<UPCGDynMeshNormalSelectionFactoryData>());
-	TestEqual(TEXT("One mesh-independent Selector for all primary results"), Output.GetInputsByPin(TEXT("Result Selector")).Num(), 1);
+	TestEqual(TEXT("One mesh-independent Selector for all primary results"), Output.GetInputsByPin(TEXT("Result")).Num(), 1);
 	TestEqual(TEXT("Both primary meshes emitted"), Output.GetInputsByPin(TEXT("Out")).Num(), 2);
 	for (int32 Index = 0; Index < 2; ++Index)
 	{

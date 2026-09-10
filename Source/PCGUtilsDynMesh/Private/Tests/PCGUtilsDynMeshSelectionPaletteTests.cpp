@@ -60,60 +60,64 @@ bool FPCGDynMeshSelectionPaletteContractTest::RunTest(const FString&)
 		TestFalse(*FString::Printf(TEXT("%s is hidden"), *Settings->GetClass()->GetName()), Settings->bExposeToLibrary);
 	}
 
+	// One palette entry per selection query. The materialized Selection representation is still reachable
+	// through the Representation property on a placed node, but it no longer duplicates every entry in the
+	// context menu - that duplication was the single biggest source of palette noise in the DynMesh library.
 	auto* Connected = NewObject<UPCGDynMeshExpandToConnectedSelectionSettings>();
 	const TArray<FPCGPreConfiguredSettingsInfo> ConnectedPresets = Connected->GetPreconfiguredInfo();
-	TestEqual(TEXT("Connected exposes exactly two representations"), ConnectedPresets.Num(), 2);
-	if (ConnectedPresets.Num() == 2)
+	TestEqual(TEXT("Connected exposes exactly one representation"), ConnectedPresets.Num(), 1);
+	if (ConnectedPresets.Num() == 1)
 	{
-		TestTrue(TEXT("Selector preset has a visible suffix"), ConnectedPresets[0].Label.ToString().EndsWith(TEXT("(Selector)")));
-		TestTrue(TEXT("Selection preset has a visible suffix"), ConnectedPresets[1].Label.ToString().EndsWith(TEXT("(Selection)")));
-		TestTrue(TEXT("Selection preset is searchable as Selection"), ConnectedPresets[1].SearchHints.ToString().Contains(TEXT("selection")));
+		const FString Label = ConnectedPresets[0].Label.ToString();
+		TestFalse(TEXT("No Selector suffix survives"), Label.Contains(TEXT("(Selector)")));
+		TestFalse(TEXT("No Selection alias survives"), Label.Contains(TEXT("(Selection)")));
+		TestTrue(TEXT("Selection queries carry the Select family prefix"), Label.StartsWith(TEXT("Select|")));
 
 		Connected->ApplyPreconfiguredSettings(ConnectedPresets[0]);
-		TestEqual(TEXT("Selector preset selects deferred representation"), Connected->OperationMode,
+		TestEqual(TEXT("The remaining preset selects the deferred representation"), Connected->OperationMode,
 			EPCGUtilsDynMeshSelectionOperationMode::Selector);
-		Connected->ApplyPreconfiguredSettings(ConnectedPresets[1]);
-		TestEqual(TEXT("Selection preset selects materialized representation"), Connected->OperationMode,
-			EPCGUtilsDynMeshSelectionOperationMode::Selection);
 	}
 
 	const auto* ExpandContract = NewObject<UPCGDynMeshExpandContractSelectionSettings>();
-	TestEqual(TEXT("Expand and Contract each expose both representations"),
-		ExpandContract->GetPreconfiguredInfo().Num(), 4);
+	TestEqual(TEXT("Expand and Contract are two entries, not four"),
+		ExpandContract->GetPreconfiguredInfo().Num(), 2);
 
 	auto* Bounds = NewObject<UPCGDynMeshBoundsSelectionFactoryProviderSettings>();
 	const TArray<FPCGPreConfiguredSettingsInfo> BoundsPresets = Bounds->GetPreconfiguredInfo();
-	TestEqual(TEXT("A source selection exposes exactly two representations"), BoundsPresets.Num(), 2);
-	if (BoundsPresets.Num() == 2)
+	TestEqual(TEXT("A source selection exposes exactly one representation"), BoundsPresets.Num(), 1);
+	if (BoundsPresets.Num() == 1)
 	{
-		Bounds->ApplyPreconfiguredSettings(BoundsPresets[1]);
-		TestEqual(TEXT("Source Selection preset selects materialized representation"), Bounds->Representation,
-			EPCGUtilsDynMeshSelectionRepresentation::Selection);
-		TestEqual(TEXT("Source Selection preset outputs the Selection pin"), Bounds->GetMainOutputPin(),
+		Bounds->ApplyPreconfiguredSettings(BoundsPresets[0]);
+		TestEqual(TEXT("Source preset selects the deferred representation"), Bounds->Representation,
+			EPCGUtilsDynMeshSelectionRepresentation::Selector);
+		TestEqual(TEXT("Source preset outputs the Selector pin"), Bounds->GetMainOutputPin(),
+			PCGUtilsDynMeshSelectionFactoryConstants::OutputPin);
+
+		// The representation itself is intact - only its palette alias went away.
+		Bounds->Representation = EPCGUtilsDynMeshSelectionRepresentation::Selection;
+		TestEqual(TEXT("Selection representation still resolves to the Selection pin"), Bounds->GetMainOutputPin(),
 			PCGUtilsDynMeshSelectionSourceConstants::SelectionPin);
 	}
 
 	const auto* Logic = NewObject<UPCGDynMeshSelectionFactoryGroupProviderSettings>();
-	TestEqual(TEXT("AND, OR, and NOT each expose both representations"),
-		Logic->GetPreconfiguredInfo().Num(), 6);
+	TestEqual(TEXT("AND, OR, and NOT are three entries, not six"),
+		Logic->GetPreconfiguredInfo().Num(), 3);
 
 	auto VerifyConvertedSource = [this](UPCGUtilsDynMeshSelectionSourceSettings* Settings, const TCHAR* Name)
 	{
 		const TArray<FPCGPreConfiguredSettingsInfo> Presets = Settings->GetPreconfiguredInfo();
-		TestEqual(*FString::Printf(TEXT("%s exposes Selector and Selection"), Name), Presets.Num(), 2);
-		if (Presets.Num() != 2)
+		TestEqual(*FString::Printf(TEXT("%s exposes one entry"), Name), Presets.Num(), 1);
+		if (Presets.Num() != 1)
 		{
 			return;
 		}
 
-		TestTrue(*FString::Printf(TEXT("%s Selector suffix is centralized"), Name),
-			Presets[0].Label.ToString().EndsWith(TEXT("(Selector)")));
-		TestTrue(*FString::Printf(TEXT("%s Selection suffix is centralized"), Name),
-			Presets[1].Label.ToString().EndsWith(TEXT("(Selection)")));
+		TestFalse(*FString::Printf(TEXT("%s carries no representation suffix"), Name),
+			Presets[0].Label.ToString().Contains(TEXT("(")));
 		Settings->ApplyPreconfiguredSettings(Presets[0]);
 		TestEqual(*FString::Printf(TEXT("%s deferred output is Selector"), Name),
 			Settings->GetMainOutputPin(), PCGUtilsDynMeshSelectionFactoryConstants::OutputPin);
-		Settings->ApplyPreconfiguredSettings(Presets[1]);
+		Settings->Representation = EPCGUtilsDynMeshSelectionRepresentation::Selection;
 		TestEqual(*FString::Printf(TEXT("%s inline output is Selection"), Name),
 			Settings->GetMainOutputPin(), PCGUtilsDynMeshSelectionSourceConstants::SelectionPin);
 	};
@@ -122,6 +126,8 @@ bool FPCGDynMeshSelectionPaletteContractTest::RunTest(const FString&)
 	VerifyConvertedSource(SelfOcclusion, TEXT("Self Occlusion"));
 	auto* Spline = NewObject<UPCGSelectionFromSplineSettings>();
 	VerifyConvertedSource(Spline, TEXT("Spline"));
+
+	// VerifyConvertedSource leaves Spline in the materialized representation.
 	const TArray<FPCGPinProperties> SplineSelectionInputs = Spline->AllInputPinProperties();
 	TestTrue(TEXT("Spline Selection mode has Candidates and Spline inputs"),
 		SplineSelectionInputs.ContainsByPredicate([](const FPCGPinProperties& Pin)

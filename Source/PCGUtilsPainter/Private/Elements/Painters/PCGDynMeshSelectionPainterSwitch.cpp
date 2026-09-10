@@ -258,7 +258,7 @@ UPCGUtilsDynMeshFactoryData* UPCGDynMeshSelectionPainterSwitchProviderSettingsBa
 #if WITH_EDITOR
 FText UPCGDynMeshSelectionToPainterProviderSettings::GetDefaultNodeTitle() const
 {
-	return LOCTEXT("SelToPainterTitle", "Selection to Painter");
+	return LOCTEXT("SelToPainterTitle", "Painter|From Selection");
 }
 
 FText UPCGDynMeshSelectionToPainterProviderSettings::GetNodeTooltipText() const
@@ -282,7 +282,7 @@ void UPCGDynMeshSelectionToPainterProviderSettings::ConfigureBranches(
 #if WITH_EDITOR
 FText UPCGDynMeshSelectionPainterSwitchProviderSettings::GetDefaultNodeTitle() const
 {
-	return LOCTEXT("SwitchTitle", "Selection Painter Switch");
+	return LOCTEXT("SwitchTitle", "Painter|Selection Switch");
 }
 
 FText UPCGDynMeshSelectionPainterSwitchProviderSettings::GetNodeTooltipText() const

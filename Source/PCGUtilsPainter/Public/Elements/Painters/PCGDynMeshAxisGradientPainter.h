@@ -56,7 +56,7 @@ protected:
 };
 
 /** Creates a clamped linear scalar gradient projected along an axis. */
-UCLASS(BlueprintType, ClassGroup=(Procedural), Category="PCGUtils|DynMesh|Painters")
+UCLASS(BlueprintType, ClassGroup=(Procedural), Category="PCGUtils|DynMesh|Painters", meta=(Keywords="DynMesh Painter axis gradient ramp linear height"))
 class PCGUTILSPAINTER_API UPCGDynMeshAxisGradientPainterProviderSettings
 	: public UPCGUtilsDynMeshFactoryProviderSettings
 {

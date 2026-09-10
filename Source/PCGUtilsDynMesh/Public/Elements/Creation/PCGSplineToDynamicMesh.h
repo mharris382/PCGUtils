@@ -10,7 +10,7 @@
 class UStaticMesh;
 
 /** Bakes a spline mesh for every segment of each input PCG spline. */
-UCLASS(BlueprintType, ClassGroup = (Procedural), Category="PCGUtils|DynMesh")
+UCLASS(BlueprintType, ClassGroup = (Procedural), Category="PCGUtils|DynMesh", meta=(Keywords="DynMesh mesh spline from to convert"))
 class PCGUTILSDYNMESH_API UPCGSplineToDynamicMeshSettings : public UPCGSettings
 {
 	GENERATED_BODY()

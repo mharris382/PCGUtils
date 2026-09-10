@@ -120,7 +120,7 @@ void UPCGDynMeshCombinePaintersFactoryData::AddToCrc(FArchiveCrc32& Ar, bool bFu
 #if WITH_EDITOR
 FText UPCGDynMeshCombinePaintersProviderSettings::GetDefaultNodeTitle() const
 {
-	return LOCTEXT("Title", "Combine Painters");
+	return LOCTEXT("Title", "Painter|Combine");
 }
 
 FText UPCGDynMeshCombinePaintersProviderSettings::GetNodeTooltipText() const

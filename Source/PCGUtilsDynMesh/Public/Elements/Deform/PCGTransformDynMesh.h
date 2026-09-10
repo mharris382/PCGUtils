@@ -76,7 +76,7 @@ private:
  * preserved rather than cleared. Connecting a DynMesh Builder to the input makes this node defer: it emits a
  * Builder describing the transform instead of touching any geometry.
  */
-UCLASS(BlueprintType, ClassGroup=(Procedural), Category="PCGUtils|DynMesh|Deform")
+UCLASS(BlueprintType, ClassGroup=(Procedural), Category="PCGUtils|DynMesh|Deform", meta=(Keywords="DynMesh mesh selection selector transform move rotate scale"))
 class PCGUTILSDYNMESH_API UPCGTransformDynMeshSettings : public UPCGUtilsDynMeshProcessBaseSettings
 {
 	GENERATED_BODY()

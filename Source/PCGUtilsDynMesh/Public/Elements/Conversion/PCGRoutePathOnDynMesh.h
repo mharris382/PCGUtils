@@ -54,7 +54,7 @@ enum class EPCGUtilsDynMeshRoutePathInheritance : uint8
  * a vine is kept to one wall of a larger mesh.
  */
 UCLASS(BlueprintType, ClassGroup=(Procedural), Category="PCGUtils|DynMesh",
-	meta=(Keywords="geodesic path route surface vine cable crack shortest"))
+	meta=(Keywords="geodesic path route surface vine cable crack shortest DynMesh mesh"))
 class PCGUTILSDYNMESH_API UPCGRoutePathOnDynMeshSettings : public UPCGUtilsDynMeshProcessBaseSettings
 {
 	GENERATED_BODY()

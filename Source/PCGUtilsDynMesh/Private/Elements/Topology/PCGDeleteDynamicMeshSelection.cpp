@@ -24,7 +24,7 @@ namespace
 #if WITH_EDITOR
 FText UPCGDeleteDynamicMeshSelectionSettings::GetDefaultNodeTitle() const
 {
-	return LOCTEXT("Title", "Delete DynMesh Selection");
+	return LOCTEXT("Title", "DynMesh|Delete Selection");
 }
 
 FText UPCGDeleteDynamicMeshSelectionSettings::GetNodeTooltipText() const

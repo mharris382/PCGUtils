@@ -111,7 +111,7 @@ namespace
 #if WITH_EDITOR
 FText UPCGSeparateSelectionSettings::GetDefaultNodeTitle() const
 {
-	return LOCTEXT("Title", "Separate DynMesh Selection");
+	return LOCTEXT("Title", "DynMesh|Separate Selection");
 }
 
 FText UPCGSeparateSelectionSettings::GetNodeTooltipText() const

@@ -107,7 +107,7 @@ namespace
 #if WITH_EDITOR
 FText UPCGWriteDynMeshLODsSettings::GetDefaultNodeTitle() const
 {
-	return LOCTEXT("NodeTitle", "Write DynMesh LODs");
+	return LOCTEXT("NodeTitle", "DynMesh|Write LODs");
 }
 
 FText UPCGWriteDynMeshLODsSettings::GetNodeTooltipText() const

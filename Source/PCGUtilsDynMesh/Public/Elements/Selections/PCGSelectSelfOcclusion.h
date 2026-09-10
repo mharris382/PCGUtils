@@ -75,7 +75,7 @@ protected:
 };
 
 UCLASS(BlueprintType, ClassGroup=(Procedural), Category="PCGUtils|DynMesh|Selections",
-	meta=(Keywords="Select Self Raycast Mesh Occlusion Selection Selector"))
+	meta=(Keywords="Select Self Raycast Mesh Occlusion Selection Selector DynMesh"))
 class PCGUTILSDYNMESH_API UPCGSelectSelfOcclusionSettings : public UPCGUtilsDynMeshDomainSelectionSourceSettings
 {
 	GENERATED_BODY()
