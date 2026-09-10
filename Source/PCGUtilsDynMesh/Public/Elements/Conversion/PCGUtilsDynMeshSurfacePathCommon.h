@@ -38,9 +38,12 @@ namespace PCGUtilsDynMeshSurfacePathCommon
 	 */
 	struct PCGUTILSDYNMESH_API FResolvedSurface
 	{
-		FResolvedSurface() = default;
-		FResolvedSurface(FResolvedSurface&&) = default;
-		FResolvedSurface& operator=(FResolvedSurface&&) = default;
+		// Every one of these is defined in the .cpp, not defaulted here. Submesh is a TUniquePtr to a
+		// forward-declared type, and any implicitly-generated special member has to be able to destroy it -
+		// so defaulting one inline instantiates ~TUniquePtr against an incomplete type and fails to compile.
+		FResolvedSurface();
+		FResolvedSurface(FResolvedSurface&&);
+		FResolvedSurface& operator=(FResolvedSurface&&);
 		FResolvedSurface(const FResolvedSurface&) = delete;
 		FResolvedSurface& operator=(const FResolvedSurface&) = delete;
 		~FResolvedSurface();

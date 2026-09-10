@@ -3,6 +3,7 @@
 #include "Elements/Edit/PCGPruneGeometryCollection.h"
 
 #include "Data/PCGGeometryCollectionData.h"
+#include "Data/PCGUtilsGeometryCollectionRevisionPublisher.h"
 #include "Factories/PCGUtilsGeometryCollectionSelectionFactory.h"
 #include "FractureEngineEdit.h"
 #include "FunctionLibraries/PCGUtilsGeometryCollectionHelpers.h"
@@ -88,7 +89,7 @@ bool FPCGPruneGeometryCollectionElement::ExecuteInternal(FPCGContext* Context) c
 		FDataflowTransformSelection Selection;
 		bool bHasSelection = false;
 		{
-			const FPCGUtilsGeometryCollectionSelectionEvaluationContext EvaluationContext(InputData, *Collection);
+			const FPCGUtilsGeometryCollectionSelectionEvaluationContext EvaluationContext(*InputData, *Collection);
 			if (!PCGUtilsGeometryCollectionSelectionFactories::ResolveSelectionFromPin(
 				Context, PCGUtilsGeometryCollectionSelectionFactoryConstants::SelectionInputPin, EvaluationContext,
 				/*bRequired=*/true, Selection, bHasSelection) || !bHasSelection)
@@ -140,13 +141,16 @@ bool FPCGPruneGeometryCollectionElement::ExecuteInternal(FPCGContext* Context) c
 					"Prune GC removed every geometry-bearing bone; the result has no geometry left."), Context);
 		}
 
-		Collection->ReindexMaterials();
-
-		UPCGGeometryCollectionData* OutputData =
-			FPCGContext::NewObject_AnyThread<UPCGGeometryCollectionData>(Context);
 		// Prune reindexes every bone, so this must be a new state - otherwise a selection authored against the
-		// pre-prune collection would silently address different pieces.
-		OutputData->InitializeAsRevisionOf(InputData, Collection);
+		// pre-prune collection would silently address different pieces. DeleteBranch also removes transforms
+		// and collapses emptied clusters, so Level and the material sections both need rebuilding, which the
+		// publisher does for a structural mutation.
+		UPCGGeometryCollectionData* OutputData = PCGUtilsGeometryCollectionRevisionPublisher::PublishRevision(
+			Context, InputData, Collection, FPCGUtilsGeometryCollectionMutationResult::Structural());
+		if (!OutputData)
+		{
+			continue;
+		}
 
 		FPCGTaggedData& Output = Context->OutputData.TaggedData.Emplace_GetRef(Input);
 		Output.Data = OutputData;

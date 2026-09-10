@@ -48,10 +48,63 @@ All under the `Dynamic Mesh` palette category (the engine has no Geometry Collec
 | **GC Bones To Points** | `GC` | `Points`, `Edges` (cluster mode) |
 | **Select Bones From Points** | `Points` | `Selection` |
 | **Prune GC** | `GC`, `Selection` | `GC` |
-| **GC To DynMesh** | `GC` | `DynMesh` |
+| **GC To DynMesh** | `GC` | `DynMesh` (one, or one per piece) |
+
+Plus the selector family, which builds a `Selection` without ever touching the collection itself:
+
+| Node | In | Out |
+|---|---|---|
+| **Select Pieces / Clusters / All Bones / No Bones / Root Bones / Bones At Level** | *(none)* | `Selection` |
+| **Select Parent / Children / Siblings / Ancestors / Descendants** | `Selection` | `Selection` |
+| **Selection To Pieces / To Clusters / To Level**, **Select Same Level**, **Invert Selection** | `Selection` | `Selection` |
+| **Select Contact** | `Selection` | `Selection` |
+| **GC Selection AND / OR / XOR / Subtract** | `A`, `B` | `Selection` |
 
 `GC`, `Fracture` and `Selection` pins all use the fracture-domain colour `#2F7FA3`; the icon distinguishes the
 type. A blue selection icon is a Geometry Collection bone selection, a purple one a DynMesh element selection.
+
+---
+
+## Selecting bones
+
+A selection is a set of bones, and it is built rather than configured. Every graph starts with a **base
+selector** that answers "which bones", then moves that answer around with **decorators**:
+
+```
+Select Pieces  ──>  Select Contact  ──>  Prune GC
+                         (grows the selection to touching pieces)
+
+Select Pieces  ──>  Select Parent (All Children)  ──>  Select Children
+    the pieces         the clusters they fill completely      back down again
+```
+
+**Base selectors** take no input. `Select Pieces` is the one to reach for: a *piece* is a rigid bone that owns
+geometry, which is what renders, converts and prunes. `Select Clusters` gives the structural bones instead,
+`Select Root Bones` the top of the tree, and `Select Bones At Level` everything at one depth. `Select All
+Bones` includes clusters and roots, which is rarely what a spatial filter wants.
+
+**Decorators** take a selection and return another. Parent, Children, Siblings, Ancestors and Descendants walk
+the tree; `Selection To Pieces` resolves anything down to the pieces that make up its shape; `Selection To
+Level` lifts bones to their ancestor at a chosen depth; `Invert Selection` complements, optionally within the
+pieces only. Each one **replaces** the selection, matching the Fracture Mode buttons they come from - tick
+**Include Original** to grow instead.
+
+`Select Parent` has the one setting worth knowing: **Any Child Selected** (the default, and what Fracture Mode
+does) versus **All Children Selected**. The second is what turns a per-piece test into a per-cluster one - run
+any selector over the pieces, then keep only the clusters it matched completely.
+
+**Select Contact** grows a selection to the pieces that physically touch it, using the same precise proximity
+as the cluster output. It is the expensive one: proximity is recomputed from the geometry each execution.
+Raise **Iterations** to spread further rather than chaining several of these, since proximity is then computed
+once for the whole walk.
+
+Connecting several selectors to the **same** `Selection` pin means their union. For anything else use **GC
+Selection Logic**: AND keeps bones in both, XOR bones in exactly one, and Subtract removes B from A - "the
+exposed pieces, except the ones I already damaged".
+
+> Selections carry no collection of their own, so the same selector graph can be reused against any collection
+> state. `Select Bones From Points` is the exception: it carries recorded bone indices and checks them against
+> the collection's identity, which is what makes a stale selection an error rather than silent damage.
 
 ---
 
@@ -125,6 +178,14 @@ With `Uniform Voronoi Fracture` the minimum working graph is just three nodes: a
 `DynMesh To GC`, and `Fracture GC`.
 
 The log line reports before/after bone counts. Expect roughly one bone per site that landed inside the mesh.
+
+> **Keep Hidden Source Geometry** (advanced, off) is worth knowing about even though you will rarely change it.
+> Unreal's cutters do not delete the shape they replaced — they mark every one of its faces invisible and leave
+> it on the bone that was cut, which is now a cluster. Nothing downstream can use it: `GC To DynMesh`,
+> `GC Bones To Points` and every selector read *pieces* (rigid bones with geometry) and skip clusters. Left in
+> place it would simply be carried along, and a second fracture level would stack another hidden copy on top,
+> so this node discards it by default. Turn the setting on only if you specifically need the pre-fracture
+> surface still present in the collection.
 
 ### 6. `GC Bones To Points`
 
@@ -215,6 +276,27 @@ Pruned `GC` in. Defaults are what you want:
 
 - **Set Polygroup Per Bone** writes each source bone index into the named PolyGroup layer `GC_Bone`.
 - **Tag Internal Faces** keeps the engine's `GeometryCollectionInternalFaces` layer.
+
+**Output** chooses how many meshes come out:
+
+- **Combined** (default) appends every piece into one mesh. This is the round-trip form — one solid with a real
+  cavity in it — and the `GC_Bone` layer is what keeps the individual pieces selectable inside it.
+- **Per Piece** emits one DynMesh per fracture piece. Each output carries, on its data domain, the bone it came
+  from plus the collection's identity (`GC_BoneIndex`, `GC_SourceId`, `GC_SourceRevision`, `GC_SourceStateId`),
+  so a piece can still be traced back to the collection it was cut from. Opt-in attributes add
+  `GC_GeometryIndex`, `GC_ParentIndex`, `GC_HierarchyLevel`, `GC_IsExterior` and `GC_ExposureRatio` — the
+  surface values are measured the same way `GC Bones To Points` measures them, so the two nodes always agree
+  about a given piece.
+
+  **Space** applies to Per Piece only: `Collection` leaves each piece where it sits, `Piece Local` re-centres
+  each on its own bone origin, which is what you want when the pieces are about to be placed somewhere else.
+
+**Include Hidden Faces** (advanced, off) emits faces the collection marks hidden and keeps the
+`GeometryCollectionVisibleFaces` layer so they can be told apart. Normally hidden faces are surface nothing is
+meant to see, and leaving this off is right.
+
+> Both modes read the same cached per-piece conversion, so a graph that converts, selects against the
+> geometry, and converts again does the mesh work once rather than once per node.
 
 ### Expected result
 
@@ -350,6 +432,10 @@ The minimum input that fractures anything is **two sites inside the geometry**.
   internally (`NewCopy<FGeometryCollection>` and the assign-back). Not avoidable without forking engine code.
 - **`GC_Bone` values are post-prune indices.** Pruning reindexes bones, so the layer written by `GC To DynMesh`
   refers to the collection state it converted, not the pre-prune one.
+- **`GC_GeometryIndex` is not stable across operations.** It indexes the collection's geometry group, which is
+  compacted whenever hidden source geometry is discarded and renumbered whenever bones are pruned. Use it for
+  cross-referencing within one collection state, never as an identity. `GC_BoneIndex` plus the source
+  state id is the identity, and it is what `Select Bones From Points` checks.
 - **Chained fracture drops an authored selection.** If a second `Fracture` operation runs on the same node
   after the first changed the bone count, the authored `Selection` no longer addresses the new collection, so
   the second operation targets everything and warns.
@@ -357,9 +443,12 @@ The minimum input that fractures anything is **two sites inside the geometry**.
 ## Not in V1
 
 Plane / Slice / Radial / Brick fracture, Mesh Cutter, clustering tools, hierarchy editing beyond prune cleanup,
-GC-specific distance/bounds/volume selectors, runtime Chaos simulation, Geometry Collection assets/actors/
-components, and the cross-domain `PCGUtilsSelections` bridge.
+GC-specific distance/bounds/volume selectors, runtime Chaos simulation, Geometry Collection
+assets/actors/components, and the cross-domain `PCGUtilsSelections` bridge.
 
 Most of those are small: every `FFractureEngineFracturing` cutter has the same signature shape as Voronoi and
 drops in as a new `Fracture` operation with no executor change, and `FCollectionTransformSelectionFacade`
-already implements bounds/sphere/plane/volume/size/contact/hierarchy bone selection for future selectors.
+already implements bounds/sphere/plane/volume/size selection for future selectors - which now slot in beside
+the hierarchy decorators as ordinary base selectors over pieces, needing no hierarchy handling of their own.
+
+The staged plan behind all of this is in `PCGUtilsFractureArchitectureInvestigation.md` at the project root.

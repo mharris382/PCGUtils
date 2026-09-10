@@ -3,6 +3,7 @@
 #pragma once
 
 #include "CoreMinimal.h"
+#include "Data/PCGUtilsGeometryCollectionRevisionPublisher.h"
 #include "Dataflow/DataflowSelection.h"
 #include "Factories/PCGUtilsGeometryCollectionFactoryData.h"
 
@@ -51,12 +52,17 @@ public:
 	 * @param InContext        The *executor's* context - for allocation and logging only. Never call
 	 *                         GetInputSettings through it: those settings belong to the executor's node, not to
 	 *                         the node that authored this factory. Capture what you need at authoring time.
+	 * @param OutMutation      What the operation changed, so the publisher knows what to renormalise and a
+	 *                         derived cache knows what it may keep. Only read when the call succeeds.
+	 *                         Under-reporting is a correctness bug; when unsure use
+	 *                         FPCGUtilsGeometryCollectionMutationResult::Everything().
 	 * @return false if the operation failed (implementations log their own errors).
 	 */
 	virtual bool Fracture(
 		FGeometryCollection& InOutCollection,
 		const FDataflowTransformSelection& InTargetBones,
-		FPCGContext* InContext) const
+		FPCGContext* InContext,
+		FPCGUtilsGeometryCollectionMutationResult& OutMutation) const
 		PURE_VIRTUAL(UPCGUtilsFractureFactoryData::Fracture, return false;);
 
 	/** Short description used in the executor's summary log, e.g. "Voronoi (64 sites)". */

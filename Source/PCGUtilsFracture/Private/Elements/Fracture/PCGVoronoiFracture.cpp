@@ -19,7 +19,8 @@
 bool UPCGVoronoiFractureFactoryData::Fracture(
 	FGeometryCollection& InOutCollection,
 	const FDataflowTransformSelection& InTargetBones,
-	FPCGContext* InContext) const
+	FPCGContext* InContext,
+	FPCGUtilsGeometryCollectionMutationResult& OutMutation) const
 {
 	// Everything below is checked before calling the backend, because FFractureEngineFracturing::VoronoiFracture
 	// reports every one of these failures the same way - a bare INDEX_NONE - and the caller cannot tell them
@@ -162,6 +163,13 @@ bool UPCGVoronoiFractureFactoryData::Fracture(
 	}
 
 	const int32 BonesAfter = InOutCollection.NumElements(FGeometryCollection::TransformGroup);
+
+	// PlanarCut appends the new pieces and leaves every pre-existing bone where it was, so this is a pure
+	// append: bones below BonesBefore still mean exactly what they meant. The cut bone itself did change -
+	// it became a cluster and its geometry was hidden - which the Fracture result already reports.
+	OutMutation = FPCGUtilsGeometryCollectionMutationResult::Fracture(
+		BonesAfter > BonesBefore ? BonesBefore : INDEX_NONE);
+
 	if (BonesAfter == BonesBefore)
 	{
 		PCGLog::LogWarningOnGraph(LOCTEXT("NoGeometryChange",

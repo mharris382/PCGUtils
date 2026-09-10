@@ -62,7 +62,8 @@ public:
 	virtual bool Fracture(
 		FGeometryCollection& InOutCollection,
 		const FDataflowTransformSelection& InTargetBones,
-		FPCGContext* InContext) const override;
+		FPCGContext* InContext,
+		FPCGUtilsGeometryCollectionMutationResult& OutMutation) const override;
 
 	virtual FString GetOperationDescription() const override;
 

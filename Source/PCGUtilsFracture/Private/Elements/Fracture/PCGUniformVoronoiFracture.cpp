@@ -16,7 +16,8 @@
 bool UPCGUniformVoronoiFractureFactoryData::Fracture(
 	FGeometryCollection& InOutCollection,
 	const FDataflowTransformSelection& InTargetBones,
-	FPCGContext* InContext) const
+	FPCGContext* InContext,
+	FPCGUtilsGeometryCollectionMutationResult& OutMutation) const
 {
 	// Checked here rather than left to the backend: FFractureEngineFracturing reports every failure as a bare
 	// INDEX_NONE, so anything not caught up front becomes indistinguishable afterwards.
@@ -92,6 +93,12 @@ bool UPCGUniformVoronoiFractureFactoryData::Fracture(
 	}
 
 	const int32 BonesAfter = InOutCollection.NumElements(FGeometryCollection::TransformGroup);
+
+	// Same shape as the points-driven path: the cutter appends, so every bone below BonesBefore keeps its
+	// meaning and only the bones that were cut changed.
+	OutMutation = FPCGUtilsGeometryCollectionMutationResult::Fracture(
+		BonesAfter > BonesBefore ? BonesBefore : INDEX_NONE);
+
 	UE_LOG(LogPCGUtilsFracture, Verbose,
 		TEXT("Uniform Voronoi Fracture: %d-%d sites, group=%d, bones %d -> %d"),
 		MinSites, MaxSites, bGroupFracture ? 1 : 0, BonesBefore, BonesAfter);

@@ -35,17 +35,9 @@ bool UPCGGeometryCollectionSelectionFromPointsFactoryData::Evaluate(
 	int32 TargetRevision = INDEX_NONE;
 	if (bValidateSourceIdentity)
 	{
-		if (!InEvaluationContext.CollectionData)
-		{
-			PCGLog::LogErrorOnGraph(LOCTEXT("NoIdentity",
-				"Select Bones From Points cannot verify the source collection because the operation supplied "
-				"no identifiable collection data. Disable Validate Source Identity only if this is intended."),
-				InContext);
-			return false;
-		}
-		TargetSourceId = PCGUtilsGeometryCollectionIdentity::FoldGuid(InEvaluationContext.CollectionData->GetCollectionId());
-		TargetStateId = PCGUtilsGeometryCollectionIdentity::FoldGuid(InEvaluationContext.CollectionData->GetStateId());
-		TargetRevision = InEvaluationContext.CollectionData->GetRevision();
+		TargetSourceId = PCGUtilsGeometryCollectionIdentity::FoldGuid(InEvaluationContext.CollectionData.GetCollectionId());
+		TargetStateId = PCGUtilsGeometryCollectionIdentity::FoldGuid(InEvaluationContext.CollectionData.GetStateId());
+		TargetRevision = InEvaluationContext.CollectionData.GetRevision();
 	}
 
 	// A TSet both removes duplicates and lets us report how many distinct bones actually resolved.

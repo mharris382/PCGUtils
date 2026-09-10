@@ -40,6 +40,33 @@ and `PlanarCut` are plugins. Never depend on `FractureEditor` (editor tool mode)
 
 ---
 
+## Vocabulary: bone, piece, cluster
+
+A collection's Transform group is a tree of **bones**. Not every bone carries usable geometry, and conflating
+the two is the single easiest way to write a subtly wrong node here.
+
+| Term | Test | Meaning |
+|---|---|---|
+| **Bone** / **Transform** | `0 <= i < NumTransforms` | an element of the Transform group; what a GC Selection addresses |
+| **Piece** | `IsPiece` = rigid **and** has geometry | a fracture piece: what renders, converts, prunes and gets cut |
+| **Cluster** | `IsCluster` | structural; its shape is the union of the pieces beneath it |
+| **Root** | `IsRoot` | no parent; `DynMesh To GC` always adds one |
+
+`PCGUtilsGeometryCollectionHierarchy` owns all of these, plus `GetLevel`, `GatherPieces`, `GatherPiecesUnder`,
+`GetAncestors`, `GetDescendants` and `LowestCommonAncestor`. Use it rather than reading `Parent`,
+`SimulationType` or `TransformToGeometryIndex` directly.
+
+**"Has geometry" is not "is a piece".** Unreal's cutters do not delete the shape they replace: they mark every
+one of its faces invisible and leave it on the bone, which is now a cluster (`CutMultipleWithPlanarCells`,
+`bRemoveOldGeometry = false`). Epic's own converter skips it - "cluster geometry is typically just there for
+legacy reasons" - and so must we. The publisher removes it by default; `Fracture GC`'s
+**Keep Hidden Source Geometry** opts back in.
+
+User-facing text keeps saying **bone** (Fracture Mode does, and every attribute is named `GC_BoneIndex`), but
+should say **piece** wherever it means one.
+
+---
+
 ## The immutability contract
 
 `UPCGGeometryCollectionData` holds `TSharedPtr<const FGeometryCollection>`. There is no API that mutates one.
@@ -48,11 +75,44 @@ A node that changes a collection must:
 
 1. `CreateMutableCopy()` to get a private `TSharedRef<FGeometryCollection>`,
 2. mutate the copy,
-3. publish it through `InitializeAsRevisionOf(InputData, Copy)`.
+3. publish it through `PCGUtilsGeometryCollectionRevisionPublisher::PublishRevision(...)` - or
+   `PublishNewLineage(...)` when authoring one.
 
-Never `const_cast` a collection, and never mutate an input to add a derived attribute - `GC Bones To Points`
-computes hierarchy levels by walking `Parent` rather than calling `GenerateLevelAttribute()` for exactly this
-reason.
+Never `const_cast` a collection, and never mutate an input to add a derived attribute.
+
+**Publish, do not call `InitializeAsRevisionOf` directly.** The publisher is where a collection acquires the
+guarantees the rest of the module relies on, and adding a fourth place that half-normalises is how those
+guarantees rot. A published collection always has:
+
+- a `Level` attribute consistent with its hierarchy (**not** part of the collection schema - see below),
+- a `PCGUtils_BoneId` per bone,
+- material sections consistent with its face `MaterialID`s,
+- geometry bounds consistent with its vertices,
+- no stale `Proximity`,
+- no hidden cluster geometry, unless the caller asked to keep it.
+
+Every mutating operation says what it changed through `FPCGUtilsGeometryCollectionMutationResult`, which is
+what the publisher uses to decide which of those steps to run - and what the future geometry-view cache will
+use to decide what it may keep. Under-reporting is a correctness bug, not a performance one; when in doubt use
+`Everything()`. Fracture factories report through the `OutMutation` parameter of `Fracture()`; `Fracture GC`
+accumulates them with `Accumulate()`.
+
+### `Level` is optional, and that is why the publisher exists
+
+`FTransformCollection::Construct` registers `Transform`, `BoneName`, `BoneColor`, `Parent` and `Children` -
+**not** `Level`. But `FCollectionTransformSelectionFacade::SelectLevel`, `GetBonesByLevel`,
+`SelectContact` and `FGeometryCollectionProximityUtility::EnumerateNeighbors` all need it, and silently return
+nothing or `ensure` without it. The publisher materialises it via
+`FGeometryCollectionClusteringUtility::UpdateHierarchyLevelOfChildren(&Collection, INDEX_NONE)` whenever the
+hierarchy changed or the attribute is missing.
+
+### Identity: BoneId answers a different question from StateId
+
+`StateId` asks *are these bone indices still valid* and correctly rejects everything after any change.
+`PCGUtils_BoneId` (a non-persistent Transform-group `FGuid`) asks *is this the same bone as before* and
+survives reindexing, because a managed-array attribute travels with its element through `RemoveElements` and
+`ReorderElements`. Existing ids are never reassigned. Keep using `StateId` for selection validity; `BoneId` is
+for following a bone across revisions.
 
 Holding the *derived* `FGeometryCollection` rather than `FManagedArrayCollection` is safe and deliberate. It is
 what lets one object satisfy both the `FManagedArrayCollection&` fracture APIs and the `FGeometryCollection&`
@@ -142,6 +202,33 @@ Before writing a new selector, check `FCollectionTransformSelectionFacade` (in *
 bounds, sphere, plane-side, volume, size, contact and hierarchy selection, plus cross-domain conversion. Most
 future selectors are ~30-line wrappers over it, not new algorithms.
 
+### Base selectors decide, decorators move
+
+Two kinds of selector, and keeping them apart is what stops the selector layer sprawling:
+
+- A **base selector** answers "which bones match", from the collection alone. `GC Select Bones` (All, None,
+  Root, Pieces, Clusters, At Level) and `Select Bones From Points` are the current ones; the future geometric
+  predicates - bounds, sphere, volume, the DynMesh selector adapter - are the same kind and evaluate **pieces**.
+- A **decorator** takes a selection and returns another one, derived from
+  `UPCGUtilsGeometryCollectionSelectionDecoratorFactoryData`. `GC Selection Hierarchy` (Parent, Children,
+  Siblings, Ancestors, Descendants, To Pieces, To Clusters, Same Level, To Level, Invert) and `Select Contact`.
+  A decorator implements only `TransformSelection`, rewriting a bone array; the base handles resolving the
+  children, validating indices and applying `bIncludeOriginal`.
+
+**Do not give a geometric selector a bone-depth setting.** That was considered and rejected during the
+architecture investigation: it puts hierarchy handling into every predicate, and it still cannot express the
+distinction that actually matters - "clusters where *any* piece matched" versus "clusters where *every* piece
+matched" - which `Select Parent` does with one enum. A predicate tests pieces; a decorator decides what to do
+with the answer.
+
+Several selectors on one Selection pin mean their **union**, everywhere, and `EvaluateAndUnion` is the single
+implementation of that. Anything else - intersection, difference, exclusive or - is the `GC Selection Logic`
+node.
+
+New operations are preconfigured entries on an existing settings class rather than new classes, so one node
+family covers a whole Fracture Mode button group. Preconfigured indices are serialized into saved graphs;
+append, never reorder.
+
 ---
 
 ## Prefer Epic's backend over reimplementation
@@ -171,6 +258,78 @@ Three behaviours worth knowing because they are easy to fight:
   fracture target is `SelectAll()`, not a hand-rolled leaf set. Do not duplicate that hierarchy logic.
 
 ---
+
+## Crossing to DynMesh: one canonical view, many presentations
+
+Going from a Geometry Collection to a Dynamic Mesh is a normal capability of this module, not something each
+node reimplements. Two layers:
+
+**The canonical view** (`FPCGUtilsGeometryCollectionPieceMeshView`) is one piece as an `FDynamicMesh3`, built
+by `PCGUtilsGeometryCollectionPieceMesh::BuildPieceMeshView` and cached on the collection data. It is
+deliberately raw:
+
+- **Bone-local.** A bone's transform belongs to the collection state, not to its geometry, so a node that only
+  moves bones invalidates nothing.
+- **Unwelded, uncompacted, every face including hidden ones.** Which is what makes provenance arithmetic:
+  `GC face == TriangleID + FaceStart` and `GC vertex == VertexID + VertexStart`. Non-manifold input is the one
+  exception and records its splits in `DuplicatedVertexSource`.
+- **Classified.** Interior/exterior and visibility travel as PolyGroup layers under the engine's own names and
+  its `1 + flag` encoding, so anything that already reads a converted collection keeps working.
+
+Do **not** use `UE::Geometry::FGeometryCollectionToDynamicMeshes` for anything a selector will read. It is a
+presentation conversion: it bakes the global transform in, welds, drops isolated vertices, compacts, skips
+invisible faces, and copies the vertex normals into the tangent overlay (an engine bug). Every one of those
+destroys the correspondence. It remains the right call for *authoring* a collection - `DynMesh To GC` still
+uses `AppendMeshToCollection`.
+
+**Presentation** (`PCGUtilsGeometryCollectionMeshPresentation`) is everything a user would recognise as a
+setting on a conversion node - skip hidden faces, weld, keep isolated vertices, bake a transform, combine
+pieces, write the `GC_Bone` layer - applied on the way out. It is never stored, so the cache holds one form
+rather than one per combination of settings. Presentation renumbers everything, so read provenance from the
+view *before* presenting.
+
+### Weld before evaluating a vertex or edge predicate
+
+The canonical view is unwelded, and where an original surface meets a fracture cut there is a hard normal
+seam - so the collection stores those corners as *separate vertices*. On the raw view no vertex and no edge is
+ever shared between the two surfaces, which means:
+
+- vertex and edge counts are inflated by the split corners, so "every vertex passes" is a different question
+  than a user thinks they are asking, and
+- the exterior-biased boundary rule in `PCGUtilsGeometryCollectionSurface` has nothing to decide.
+
+Both only become meaningful after welding. Anything evaluating a **vertex- or edge-domain** predicate must
+therefore run against a welded presentation, not the cached view. A **face-domain** predicate is fine either
+way - triangles are 1:1 with collection faces before welding, which is also the only form in which provenance
+is exact. `PCGUtils.Fracture.PieceMesh.SurfaceClassification` pins down both halves of this.
+
+### The cache is safe because the data is immutable
+
+`UPCGGeometryCollectionData::GetPieceMeshCache()` can only grow within a state, so there is no invalidation to
+get wrong and no way for one consumer to affect another. `DuplicateData` shares it.
+
+Crossing revisions is the only judgement call, and `PublishRevision` owns it: views are carried over
+**only when the mutation reports no geometry change and no structural change**, re-keyed by `BoneId`. Note that
+"everything below the first new bone survived a fracture" is *false* - the cutters hide the faces of the bone
+they cut, and normalisation then removes that geometry entirely. A future cutter that reports
+`DirtyGeometryIndices` could let more through; until then, conservative is correct.
+
+### `GC To DynMesh` is a consumer, not a converter
+
+It gathers pieces, asks the cache for each view, presents, and either combines or emits one data per piece. It
+contains no conversion code of its own, and the next node that needs meshes out of a collection should be
+written the same way. Two things it owns that the layers below deliberately do not:
+
+- **Which PolyGroup layers survive.** The view always carries both; the node removes the internal-face layer
+  when `Tag Internal Faces` is off, and the visibility layer whenever hidden faces were excluded (where it
+  would say nothing anyway).
+- **Per-piece identity**, written on each output's *data domain*: `GC_BoneIndex` plus the source id/revision/
+  state trio, unconditionally, for the same reason `GC Bones To Points` writes them - a selection cannot be
+  resolved against the collection without them.
+
+Surface attributes are measured with `GetBoneSurfaceInfo` on the collection, **not** on the emitted mesh, so
+`GC_ExposureRatio` describes the piece and matches what `GC Bones To Points` reports for the same bone. Two
+nodes disagreeing about a piece would be a trap; the test asserts they agree.
 
 ## PolyGroup layers are the bridge back to DynMesh
 

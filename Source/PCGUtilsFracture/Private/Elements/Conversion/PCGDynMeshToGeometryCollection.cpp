@@ -4,6 +4,7 @@
 
 #include "Data/PCGDynamicMeshData.h"
 #include "Data/PCGGeometryCollectionData.h"
+#include "Data/PCGUtilsGeometryCollectionRevisionPublisher.h"
 #include "DynamicMesh/DynamicMesh3.h"
 #include "DynamicMesh/DynamicMeshAttributeSet.h"
 #include "DynamicMeshEditor.h"
@@ -246,9 +247,6 @@ bool FPCGDynMeshToGeometryCollectionElement::ExecuteInternal(FPCGContext* Contex
 			continue;
 		}
 
-		// Sections drive material batching for any later conversion; build them once here.
-		Collection->ReindexMaterials();
-
 		// A collection that leaves this node must be fracture-ready. The fracture backend guards on these
 		// attributes silently and just returns INDEX_NONE, so catching it at the producer is the difference
 		// between naming the missing attribute and leaving the user to guess at the far end of the graph.
@@ -263,9 +261,14 @@ bool FPCGDynMeshToGeometryCollectionElement::ExecuteInternal(FPCGContext* Contex
 			continue;
 		}
 
-		UPCGGeometryCollectionData* OutputData =
-			FPCGContext::NewObject_AnyThread<UPCGGeometryCollectionData>(Context);
-		OutputData->Initialize(Collection, MoveTemp(Batch.Materials));
+		// Publishing rather than initialising directly is what gives the collection its Level attribute, its
+		// per-bone ids and its material sections - the guarantees every downstream selector relies on.
+		UPCGGeometryCollectionData* OutputData = PCGUtilsGeometryCollectionRevisionPublisher::PublishNewLineage(
+			Context, Collection, MoveTemp(Batch.Materials));
+		if (!OutputData)
+		{
+			continue;
+		}
 
 		FPCGTaggedData& Output = Batch.SourceInput
 			? Context->OutputData.TaggedData.Emplace_GetRef(*Batch.SourceInput)

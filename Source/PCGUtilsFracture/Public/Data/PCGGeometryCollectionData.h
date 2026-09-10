@@ -3,6 +3,7 @@
 #pragma once
 
 #include "CoreMinimal.h"
+#include "Data/PCGUtilsGeometryCollectionPieceMesh.h"
 #include "Data/Registry/PCGDataType.h"
 #include "PCGData.h"
 #include "Templates/SharedPointer.h"
@@ -85,6 +86,17 @@ public:
 	int32 NumTransforms() const;
 	int32 NumGeometry() const;
 
+	/**
+	 * Piece meshes derived from this exact collection state, built on demand and shared by every consumer.
+	 *
+	 * Safe precisely because the collection is immutable: an entry cannot go stale while this object lives, so
+	 * there is no invalidation to get wrong and no way for one consumer's use to affect another's. Crossing
+	 * revisions is the only place judgement is needed, and the revision publisher owns that.
+	 *
+	 * Never null; the cache is created with the data.
+	 */
+	FPCGUtilsGeometryCollectionPieceMeshCache& GetPieceMeshCache() const { return *PieceMeshCache; }
+
 	//~ Begin UPCGData interface
 	virtual UPCGData* DuplicateData(FPCGContext* Context, bool bInitializeMetadata = true) const override;
 	virtual bool CanBeSerialized() const override { return false; }
@@ -97,6 +109,12 @@ protected:
 private:
 	/** Not a UPROPERTY: FGeometryCollection is a plain struct, not a USTRUCT. */
 	TSharedPtr<const FGeometryCollection> Collection;
+
+	/**
+	 * Derived, not state: two data objects holding the same collection are interchangeable whether or not
+	 * either has converted anything yet, which is why this is shared on DuplicateData and left out of the Crc.
+	 */
+	TSharedPtr<FPCGUtilsGeometryCollectionPieceMeshCache> PieceMeshCache;
 
 	UPROPERTY()
 	TArray<TObjectPtr<UMaterialInterface>> Materials;
@@ -118,6 +136,36 @@ namespace PCGUtilsGeometryCollectionIdentity
 	 * so distinct Guids practically never collide - and the consuming selector cross-checks bone count anyway.
 	 */
 	PCGUTILSFRACTURE_API int64 FoldGuid(const FGuid& InGuid);
+
+	// --- Per-bone identity ----------------------------------------------------------------------------
+	//
+	// StateId answers "are these bone indices still valid", which is the right question for a selection and
+	// the wrong one for a cache: it rejects everything after any change at all. BoneId answers "is this the
+	// same bone as before" and survives reindexing, because a managed-array attribute travels with its
+	// element through RemoveElements and ReorderElements.
+	//
+	// Deliberately non-persistent (FConstructionParameters Saved = false). Module collections are never
+	// serialized, and marking it unsaved keeps it out of any collection that escapes into an asset.
+
+	/** Transform-group FGuid attribute assigned by the revision publisher. */
+	PCGUTILSFRACTURE_API extern const FName BoneIdAttribute;
+
+	/**
+	 * Adds the BoneId attribute if missing and mints a Guid for every bone at or after InFirstBone whose
+	 * entry is still invalid. Existing ids are never reassigned, which is what lets a derived cache follow a
+	 * bone across revisions.
+	 *
+	 * @param InFirstBone  Skip bones before this index. Fracture appends, so passing the first new transform
+	 *                     index avoids walking bones that already have ids.
+	 * @return number of ids minted.
+	 */
+	PCGUTILSFRACTURE_API int32 EnsureBoneIds(FGeometryCollection& InOutCollection, int32 InFirstBone = 0);
+
+	/** Invalid Guid when the attribute is absent or the index is out of range. */
+	PCGUTILSFRACTURE_API FGuid GetBoneId(const FGeometryCollection& InCollection, int32 InBone);
+
+	/** INDEX_NONE when no bone carries that id. Linear; for one-off lookups rather than bulk mapping. */
+	PCGUTILSFRACTURE_API int32 FindBoneById(const FGeometryCollection& InCollection, const FGuid& InBoneId);
 
 	/** Point attribute names carrying GC provenance. Kept in one place so producer and consumer cannot drift. */
 	inline const FName BoneIndexAttribute = TEXT("GC_BoneIndex");

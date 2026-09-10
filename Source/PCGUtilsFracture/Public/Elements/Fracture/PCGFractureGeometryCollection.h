@@ -48,6 +48,20 @@ public:
 		meta=(PCG_Overridable, EditCondition="bOverrideInternalMaterial", ClampMin="0"))
 	int32 InternalMaterialID = 0;
 
+	/**
+	 * Keep the un-fractured shape of every bone that was cut, hidden inside the collection.
+	 *
+	 * Unreal's cutters do not delete the geometry they replace - they mark every one of its faces invisible
+	 * and leave it on the bone, which is now a cluster. Nothing downstream can use it: the engine's own
+	 * converter, Fracture Mode and every node in this module read pieces (rigid bones with geometry) and skip
+	 * clusters. It is simply carried along, and a second fracture level stacks another hidden copy on top.
+	 *
+	 * Leave this off. Turn it on only if you specifically need the pre-fracture surface still present in the
+	 * collection, and expect the vertex and face counts to grow with every fracture.
+	 */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Geometry", AdvancedDisplay, meta=(PCG_Overridable))
+	bool bKeepHiddenSourceGeometry = false;
+
 protected:
 	virtual TArray<FPCGPinProperties> InputPinProperties() const override;
 	virtual TArray<FPCGPinProperties> OutputPinProperties() const override;

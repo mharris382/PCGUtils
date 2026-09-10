@@ -2,6 +2,7 @@
 
 #include "FunctionLibraries/PCGUtilsGeometryCollectionHelpers.h"
 
+#include "FunctionLibraries/PCGUtilsGeometryCollectionHierarchy.h"
 #include "GeometryCollection/GeometryCollection.h"
 #include "GeometryCollection/GeometryCollectionAlgo.h"
 #include "GeometryCollection/GeometryCollectionConvexUtility.h"
@@ -10,36 +11,6 @@
 
 namespace PCGUtilsGeometryCollectionHelpers
 {
-	bool IsGeometryBearingBone(const FGeometryCollection& InCollection, int32 InBoneIndex)
-	{
-		if (!InCollection.TransformToGeometryIndex.IsValidIndex(InBoneIndex))
-		{
-			return false;
-		}
-		if (InCollection.TransformToGeometryIndex[InBoneIndex] == INDEX_NONE)
-		{
-			return false;
-		}
-		// Matches the filter FGeometryCollectionToDynamicMeshes::InitHelper applies: cluster and embedded
-		// transforms are skipped, only rigid bodies carry convertible geometry.
-		return InCollection.SimulationType.IsValidIndex(InBoneIndex)
-			&& InCollection.SimulationType[InBoneIndex] == FGeometryCollection::ESimulationTypes::FST_Rigid;
-	}
-
-	void GatherGeometryBearingBones(const FGeometryCollection& InCollection, TArray<int32>& OutBoneIndices)
-	{
-		const int32 NumTransforms = InCollection.NumElements(FGeometryCollection::TransformGroup);
-		OutBoneIndices.Reset();
-		OutBoneIndices.Reserve(NumTransforms);
-		for (int32 BoneIndex = 0; BoneIndex < NumTransforms; ++BoneIndex)
-		{
-			if (IsGeometryBearingBone(InCollection, BoneIndex))
-			{
-				OutBoneIndices.Add(BoneIndex);
-			}
-		}
-	}
-
 	void ComputeGlobalTransforms(const FGeometryCollection& InCollection, TArray<FTransform>& OutGlobalTransforms)
 	{
 		OutGlobalTransforms.Reset();
@@ -221,7 +192,7 @@ namespace PCGUtilsGeometryCollectionHelpers
 		for (int32 GeometryIndex = 0; GeometryIndex < NumGeometry; ++GeometryIndex)
 		{
 			const int32 BoneA = GeometryToBone(GeometryIndex);
-			if (BoneA == INDEX_NONE || !IsGeometryBearingBone(InCollection, BoneA))
+			if (BoneA == INDEX_NONE || !PCGUtilsGeometryCollectionHierarchy::IsPiece(InCollection, BoneA))
 			{
 				continue;
 			}
@@ -236,7 +207,7 @@ namespace PCGUtilsGeometryCollectionHelpers
 				}
 
 				const int32 BoneB = GeometryToBone(NeighbourGeometry);
-				if (BoneB == INDEX_NONE || !IsGeometryBearingBone(InCollection, BoneB))
+				if (BoneB == INDEX_NONE || !PCGUtilsGeometryCollectionHierarchy::IsPiece(InCollection, BoneB))
 				{
 					continue;
 				}
@@ -265,7 +236,7 @@ namespace PCGUtilsGeometryCollectionHelpers
 		ComputeGlobalTransforms(InCollection, GlobalTransforms);
 
 		TArray<int32> Bones;
-		GatherGeometryBearingBones(InCollection, Bones);
+		PCGUtilsGeometryCollectionHierarchy::GatherPieces(InCollection, Bones);
 		for (const int32 BoneIndex : Bones)
 		{
 			const FBox LocalBounds = GetBoneLocalBounds(InCollection, BoneIndex);
@@ -277,14 +248,122 @@ namespace PCGUtilsGeometryCollectionHelpers
 		return Bounds;
 	}
 
+	bool GatherContactNeighbors(
+		const FGeometryCollection& InCollection,
+		TConstArrayView<int32> InBones,
+		bool bIncludeNeighborsInParentLevels,
+		int32 InIterations,
+		TArray<int32>& OutBones)
+	{
+		const int32 NumGeometry = InCollection.NumElements(FGeometryCollection::GeometryGroup);
+		if (NumGeometry == 0 || InBones.IsEmpty())
+		{
+			OutBones.Reset();
+			return true;
+		}
+
+		// The static const overload: the instance methods cache a Proximity attribute onto the collection, and
+		// this module's collections are immutable. This is the expensive part, and it happens exactly once
+		// however many iterations are requested.
+		const TArray<TSet<int32>> Proximity =
+			FGeometryCollectionProximityUtility::ComputePreciseProximity(InCollection);
+		if (Proximity.Num() != NumGeometry)
+		{
+			return false;
+		}
+
+		// One step of the walk, for a single bone.
+		TArray<int32> Pieces;
+		auto AddNeighborsOf = [&](int32 InBone, TSet<int32>& OutNeighbors)
+		{
+			const int32 BoneLevel = PCGUtilsGeometryCollectionHierarchy::GetLevel(InCollection, InBone);
+
+			// Proximity exists only between pieces, so a cluster is answered through the pieces beneath it.
+			Pieces.Reset();
+			PCGUtilsGeometryCollectionHierarchy::GatherPiecesUnder(InCollection, InBone, Pieces);
+
+			for (const int32 Piece : Pieces)
+			{
+				const int32 GeometryIndex = InCollection.TransformToGeometryIndex[Piece];
+				if (!Proximity.IsValidIndex(GeometryIndex))
+				{
+					continue;
+				}
+
+				for (const int32 NeighbourGeometry : Proximity[GeometryIndex])
+				{
+					if (!InCollection.TransformIndex.IsValidIndex(NeighbourGeometry))
+					{
+						continue;
+					}
+
+					int32 Neighbour = InCollection.TransformIndex[NeighbourGeometry];
+					int32 NeighbourLevel = PCGUtilsGeometryCollectionHierarchy::GetLevel(InCollection, Neighbour);
+
+					// A neighbour nearer the root can never be walked down to this bone's level - a cluster has
+					// many children - so it is reported as-is or not at all.
+					if (bIncludeNeighborsInParentLevels && NeighbourLevel < BoneLevel)
+					{
+						OutNeighbors.Add(Neighbour);
+					}
+
+					while (NeighbourLevel > BoneLevel && Neighbour != INDEX_NONE)
+					{
+						Neighbour = PCGUtilsGeometryCollectionHierarchy::GetParent(InCollection, Neighbour);
+						--NeighbourLevel;
+					}
+
+					if (Neighbour != INDEX_NONE && Neighbour != InBone)
+					{
+						OutNeighbors.Add(Neighbour);
+					}
+				}
+			}
+		};
+
+		TSet<int32> Result;
+		TSet<int32> Visited(InBones);
+		TArray<int32> Frontier(InBones.GetData(), InBones.Num());
+
+		const int32 NumIterations = FMath::Max(1, InIterations);
+		for (int32 Iteration = 0; Iteration < NumIterations && !Frontier.IsEmpty(); ++Iteration)
+		{
+			TSet<int32> Neighbors;
+			for (const int32 Bone : Frontier)
+			{
+				AddNeighborsOf(Bone, Neighbors);
+			}
+
+			Result.Append(Neighbors);
+
+			// Only bones reached for the first time are worth expanding again; without this a dense collection
+			// re-walks the same pieces every iteration.
+			Frontier.Reset();
+			for (const int32 Neighbor : Neighbors)
+			{
+				bool bAlreadyVisited = false;
+				Visited.Add(Neighbor, &bAlreadyVisited);
+				if (!bAlreadyVisited)
+				{
+					Frontier.Add(Neighbor);
+				}
+			}
+		}
+
+		OutBones = Result.Array();
+		OutBones.Sort();
+		return true;
+	}
+
 	FString DescribeCollection(const FGeometryCollection& InCollection)
 	{
-		TArray<int32> GeometryBones;
-		GatherGeometryBearingBones(InCollection, GeometryBones);
+		// Pieces and clusters are reported separately because they are not interchangeable: only pieces carry
+		// convertible geometry, and a bone count on its own hides how much of the collection is structure.
 		return FString::Printf(
-			TEXT("bones: %d (%d geometry), faces: %d, vertices: %d"),
+			TEXT("bones: %d (%d piece(s), %d cluster(s)), faces: %d, vertices: %d"),
 			InCollection.NumElements(FGeometryCollection::TransformGroup),
-			GeometryBones.Num(),
+			PCGUtilsGeometryCollectionHierarchy::CountPieces(InCollection),
+			PCGUtilsGeometryCollectionHierarchy::CountClusters(InCollection),
 			InCollection.NumElements(FGeometryCollection::FacesGroup),
 			InCollection.NumElements(FGeometryCollection::VerticesGroup));
 	}

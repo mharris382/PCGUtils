@@ -76,6 +76,10 @@ namespace PCGUtilsDynMeshSurfacePathCommon
 		}
 	}
 
+	// Defined here, where DynamicSubmesh3.h has made FDynamicSubmesh3 complete.
+	FResolvedSurface::FResolvedSurface() = default;
+	FResolvedSurface::FResolvedSurface(FResolvedSurface&&) = default;
+	FResolvedSurface& FResolvedSurface::operator=(FResolvedSurface&&) = default;
 	FResolvedSurface::~FResolvedSurface() = default;
 
 	FResolvedSurface ResolveSurface(

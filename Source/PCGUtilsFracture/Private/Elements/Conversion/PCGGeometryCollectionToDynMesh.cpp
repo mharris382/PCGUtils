@@ -4,12 +4,17 @@
 
 #include "Data/PCGDynamicMeshData.h"
 #include "Data/PCGGeometryCollectionData.h"
+#include "Data/PCGUtilsGeometryCollectionPieceMesh.h"
 #include "DynamicMesh/DynamicMesh3.h"
 #include "DynamicMesh/DynamicMeshAttributeSet.h"
 #include "FunctionLibraries/PCGUtilsGeometryCollectionHelpers.h"
+#include "FunctionLibraries/PCGUtilsGeometryCollectionHierarchy.h"
+#include "FunctionLibraries/PCGUtilsGeometryCollectionMeshPresentation.h"
 #include "GeometryCollection/GeometryCollection.h"
-#include "GeometryCollectionToDynamicMesh.h"
 #include "Materials/MaterialInterface.h"
+#include "Metadata/PCGMetadata.h"
+#include "Metadata/PCGMetadataAttributeTpl.h"
+#include "Metadata/PCGMetadataDomain.h"
 #include "PCGContext.h"
 #include "PCGPin.h"
 #include "PCGUtilsFracture.h"
@@ -21,29 +26,158 @@
 namespace
 {
 	using namespace UE::Geometry;
+	namespace Presentation = PCGUtilsGeometryCollectionMeshPresentation;
 
-	/** Finds an extended PolyGroup layer by name, adding one if it is not already present. */
-	FDynamicMeshPolygroupAttribute* FindOrAddPolygroupLayer(FDynamicMesh3& InOutMesh, FName InLayerName)
+	/** Removes a named PolyGroup layer, for the layers the user asked not to have. */
+	void RemovePolygroupLayer(FDynamicMesh3& InOutMesh, FName InLayerName)
 	{
 		if (!InOutMesh.HasAttributes())
 		{
-			InOutMesh.EnableAttributes();
+			return;
 		}
-		FDynamicMeshAttributeSet* Attributes = InOutMesh.Attributes();
 
-		for (int32 Index = 0; Index < Attributes->NumPolygroupLayers(); ++Index)
+		FDynamicMeshAttributeSet* Attributes = InOutMesh.Attributes();
+		for (int32 Index = Attributes->NumPolygroupLayers() - 1; Index >= 0; --Index)
 		{
 			if (Attributes->GetPolygroupLayer(Index)->GetName() == InLayerName)
 			{
-				return Attributes->GetPolygroupLayer(Index);
+				// SetNumPolygroupLayers only truncates, so a layer that is not last is swapped to the end
+				// first. Order carries no meaning - every consumer resolves layers by name.
+				const int32 LastIndex = Attributes->NumPolygroupLayers() - 1;
+				if (Index != LastIndex)
+				{
+					FDynamicMeshPolygroupAttribute* Layer = Attributes->GetPolygroupLayer(Index);
+					const FDynamicMeshPolygroupAttribute* LastLayer = Attributes->GetPolygroupLayer(LastIndex);
+					const FName LastName = LastLayer->GetName();
+					for (const int32 TriangleID : InOutMesh.TriangleIndicesItr())
+					{
+						Layer->SetValue(TriangleID, LastLayer->GetValue(TriangleID));
+					}
+					Layer->SetName(LastName);
+				}
+				Attributes->SetNumPolygroupLayers(LastIndex);
+				return;
 			}
 		}
+	}
 
-		const int32 NewIndex = Attributes->NumPolygroupLayers();
-		Attributes->SetNumPolygroupLayers(NewIndex + 1);
-		FDynamicMeshPolygroupAttribute* Layer = Attributes->GetPolygroupLayer(NewIndex);
-		Layer->SetName(InLayerName);
-		return Layer;
+	/** Strips the layers the settings did not ask for, after everything that needed them has run. */
+	void ApplyLayerSettings(
+		FDynamicMesh3& InOutMesh, const UPCGGeometryCollectionToDynMeshSettings* InSettings)
+	{
+		if (!InSettings->bTagInternalFaces)
+		{
+			RemovePolygroupLayer(
+				InOutMesh, PCGUtilsGeometryCollectionPieceMesh::InternalFacePolygroupLayerName());
+		}
+
+		if (!InSettings->bIncludeHiddenFaces)
+		{
+			// Every remaining face is visible, so the layer would say nothing. Kept when hidden faces were
+			// emitted, because then it is the only way to tell them apart.
+			RemovePolygroupLayer(
+				InOutMesh, PCGUtilsGeometryCollectionPieceMesh::VisibleFacePolygroupLayerName());
+		}
+	}
+
+	/** Writes one piece's identity onto its output data's data domain. */
+	void WritePieceAttributes(
+		UPCGDynamicMeshData* InOutData,
+		const UPCGGeometryCollectionToDynMeshSettings* InSettings,
+		const UPCGGeometryCollectionData* InCollectionData,
+		int32 InBoneIndex,
+		int32 InGeometryIndex,
+		FPCGContext* InContext)
+	{
+		UPCGMetadata* Metadata = InOutData->MutableMetadata();
+		FPCGMetadataDomain* DataDomain =
+			Metadata ? Metadata->GetMetadataDomain(PCGMetadataDomainID::Data) : nullptr;
+		if (!DataDomain)
+		{
+			PCGLog::LogWarningOnGraph(
+				LOCTEXT("NoDataDomain", "GC To DynMesh could not write per-piece attributes."), InContext);
+			return;
+		}
+
+		// The data domain holds one entry, standing for the data itself.
+		if (DataDomain->GetItemCountForChild() == 0)
+		{
+			DataDomain->AddEntry();
+		}
+
+		bool bAllNamed = true;
+		auto Write = [DataDomain, InContext, &bAllNamed]<typename ValueType>(
+			bool bEnabled, FName Name, ValueType Value, const TCHAR* Label)
+		{
+			if (!bEnabled)
+			{
+				return;
+			}
+			if (Name.IsNone())
+			{
+				PCGLog::LogErrorOnGraph(FText::Format(
+					LOCTEXT("UnnamedAttribute",
+						"GC To DynMesh has {0} enabled but its attribute name is empty."),
+					FText::FromString(Label)), InContext);
+				bAllNamed = false;
+				return;
+			}
+			if (FPCGMetadataAttribute<ValueType>* Attribute =
+				DataDomain->FindOrCreateAttribute<ValueType>(Name, Value, false, true))
+			{
+				Attribute->SetValue(PCGFirstEntryKey, Value);
+			}
+		};
+
+		const FGeometryCollection& Collection = InCollectionData->GetCollection();
+
+		// Identity is unconditional: it is the contract that lets a downstream selection be resolved against
+		// the collection this piece came from.
+		Write(true, InSettings->BoneIndexAttributeName, InBoneIndex, TEXT("Bone Index"));
+		Write(true, InSettings->SourceIdAttributeName,
+			PCGUtilsGeometryCollectionIdentity::FoldGuid(InCollectionData->GetCollectionId()), TEXT("Source Id"));
+		Write(true, InSettings->SourceRevisionAttributeName,
+			InCollectionData->GetRevision(), TEXT("Source Revision"));
+		Write(true, InSettings->SourceStateIdAttributeName,
+			PCGUtilsGeometryCollectionIdentity::FoldGuid(InCollectionData->GetStateId()), TEXT("Source State Id"));
+
+		Write(InSettings->bOutputGeometryIndex, InSettings->GeometryIndexAttributeName,
+			InGeometryIndex, TEXT("Geometry Index"));
+		Write(InSettings->bOutputParentIndex, InSettings->ParentIndexAttributeName,
+			PCGUtilsGeometryCollectionHierarchy::GetParent(Collection, InBoneIndex), TEXT("Parent Index"));
+		Write(InSettings->bOutputHierarchyLevel, InSettings->HierarchyLevelAttributeName,
+			PCGUtilsGeometryCollectionHierarchy::GetLevel(Collection, InBoneIndex), TEXT("Hierarchy Level"));
+
+		if (InSettings->NeedsSurfaceInfo())
+		{
+			// Measured from the collection's own per-face flags rather than from the emitted mesh, so the
+			// value describes the piece and matches what GC Bones To Points reports for the same bone.
+			TArray<FTransform> GlobalTransforms;
+			PCGUtilsGeometryCollectionHelpers::ComputeGlobalTransforms(Collection, GlobalTransforms);
+			const FTransform BoneToCollection = GlobalTransforms.IsValidIndex(InBoneIndex)
+				? GlobalTransforms[InBoneIndex] : FTransform::Identity;
+
+			const PCGUtilsGeometryCollectionHelpers::FBoneSurfaceInfo Surface =
+				PCGUtilsGeometryCollectionHelpers::GetBoneSurfaceInfo(Collection, InBoneIndex, BoneToCollection);
+
+			Write(InSettings->bOutputIsExterior, InSettings->IsExteriorAttributeName,
+				Surface.IsExterior(), TEXT("Is Exterior"));
+			Write(InSettings->bOutputExposureRatio, InSettings->ExposureRatioAttributeName,
+				Surface.ExposureRatio(), TEXT("Exposure Ratio"));
+		}
+	}
+
+	TArray<UMaterialInterface*> ResolveMaterials(const UPCGGeometryCollectionData* InCollectionData)
+	{
+		// Face MaterialIDs index the collection's array absolutely, so every output carries the whole array
+		// rather than a per-piece subset - remapping would invalidate the ids the pieces already hold.
+		TArray<UMaterialInterface*> Materials;
+		Materials.Reserve(InCollectionData->GetMaterials().Num());
+		for (const TObjectPtr<UMaterialInterface>& Material : InCollectionData->GetMaterials())
+		{
+			Materials.Add(Material);
+		}
+		return Materials;
 	}
 }
 
@@ -56,10 +190,16 @@ FText UPCGGeometryCollectionToDynMeshSettings::GetDefaultNodeTitle() const
 FText UPCGGeometryCollectionToDynMeshSettings::GetNodeTooltipText() const
 {
 	return LOCTEXT("Tooltip",
-		"Combines the surviving Geometry Collection pieces into one DynMesh, in the collection's own local "
-		"space with no re-pivoting. Writes a PolyGroup layer per bone and keeps the engine's interior/exterior "
-		"face tagging, so fracture pieces and fracture-generated interior surfaces stay selectable via Select "
-		"by PolyGroup.");
+		"Converts the surviving Geometry Collection pieces back to DynMesh, in the collection's own local "
+		"space with no re-pivoting. Combined appends every piece into one mesh - the round-trip form, a solid "
+		"with a real cavity in it. Per Piece emits one mesh per fracture piece, each carrying the identity of "
+		"the bone it came from. Either way a PolyGroup layer per bone and the interior/exterior face tagging "
+		"survive, so pieces and cut surfaces stay selectable via Select by PolyGroup.");
+}
+
+FString UPCGGeometryCollectionToDynMeshSettings::GetAdditionalTitleInformation() const
+{
+	return OutputMode == EPCGGeometryCollectionToDynMeshOutputMode::PerPiece ? TEXT("Per Piece") : FString();
 }
 #endif
 
@@ -108,99 +248,136 @@ bool FPCGGeometryCollectionToDynMeshElement::ExecuteInternal(FPCGContext* Contex
 
 		const FGeometryCollection& Collection = CollectionData->GetCollection();
 
-		TArray<int32> GeometryBones;
-		PCGUtilsGeometryCollectionHelpers::GatherGeometryBearingBones(Collection, GeometryBones);
-		if (GeometryBones.IsEmpty())
+		TArray<int32> Pieces;
+		PCGUtilsGeometryCollectionHierarchy::GatherPieces(Collection, Pieces);
+		if (Pieces.IsEmpty())
 		{
 			PCGLog::LogErrorOnGraph(
-				LOCTEXT("EmptyCollection", "GC To DynMesh received a collection with no geometry-bearing bones."),
+				LOCTEXT("EmptyCollection", "GC To DynMesh received a collection with no fracture pieces."),
 				Context);
 			continue;
 		}
 
-		FGeometryCollectionToDynamicMeshes CollectionToMeshes;
-		FGeometryCollectionToDynamicMeshes::FToMeshOptions ToMeshOptions;
-		// Identity: the collection is already in the source DynMesh's local space and must not be re-pivoted.
-		ToMeshOptions.Transform = FTransform::Identity;
-		ToMeshOptions.bWeldVertices = Settings->bWeldVertices;
-		ToMeshOptions.bSaveIsolatedVertices = Settings->bPreserveIsolatedVertices;
-		// Engine default. Produces the named layer "GeometryCollectionInternalFaces" distinguishing
-		// fracture-generated interior surfaces from the original exterior ones.
-		ToMeshOptions.bInternalFaceTagsAsPolygroups = Settings->bTagInternalFaces;
-		ToMeshOptions.InvisibleFaces = FGeometryCollectionToDynamicMeshes::EInvisibleFaceConversion::Skip;
+		// Bone transforms are parent-relative, so collection space needs the global matrices. They are
+		// identity throughout this module's own round trip, which is why presenting is usually free.
+		TArray<FTransform> GlobalTransforms;
+		PCGUtilsGeometryCollectionHelpers::ComputeGlobalTransforms(Collection, GlobalTransforms);
 
-		if (!CollectionToMeshes.InitFromTransformSelection(Collection, GeometryBones, ToMeshOptions)
-			|| CollectionToMeshes.Meshes.IsEmpty())
+		Presentation::FPresentationOptions PresentationOptions;
+		PresentationOptions.bSkipHiddenFaces = !Settings->bIncludeHiddenFaces;
+		PresentationOptions.bWeldVertices = Settings->bWeldVertices;
+		PresentationOptions.bPreserveIsolatedVertices = Settings->bPreserveIsolatedVertices;
+
+		const bool bPerPiece = Settings->OutputMode == EPCGGeometryCollectionToDynMeshOutputMode::PerPiece;
+		const bool bPieceLocal =
+			bPerPiece && Settings->Space == EPCGGeometryCollectionToDynMeshSpace::PieceLocal;
+
+		TArray<FDynamicMesh3> PresentedMeshes;
+		TArray<Presentation::FCombinedPieceRange> Identities;
+		PresentedMeshes.SetNum(Pieces.Num());
+		Identities.Reserve(Pieces.Num());
+
+		int32 NumConverted = 0;
+		for (int32 Index = 0; Index < Pieces.Num(); ++Index)
+		{
+			const int32 BoneIndex = Pieces[Index];
+			const int32 GeometryIndex = Collection.TransformToGeometryIndex[BoneIndex];
+
+			// The shared, lazily-built canonical view: every consumer of this collection state - this node,
+			// a selector, a later per-piece export - converts each piece at most once between them.
+			const TSharedPtr<const FPCGUtilsGeometryCollectionPieceMeshView> View =
+				CollectionData->GetPieceMeshCache().GetOrBuild(Collection, GeometryIndex);
+			if (!View.IsValid())
+			{
+				continue;
+			}
+
+			const FTransform BoneToTarget = bPieceLocal
+				? FTransform::Identity
+				: (GlobalTransforms.IsValidIndex(BoneIndex) ? GlobalTransforms[BoneIndex] : FTransform::Identity);
+
+			Presentation::PresentPiece(*View, BoneToTarget, PresentationOptions, PresentedMeshes[Index]);
+
+			Presentation::FCombinedPieceRange Identity;
+			Identity.TransformIndex = BoneIndex;
+			Identity.GeometryIndex = GeometryIndex;
+			Identities.Add(Identity);
+			++NumConverted;
+		}
+
+		if (NumConverted == 0)
 		{
 			PCGLog::LogErrorOnGraph(
 				LOCTEXT("ConversionFailed", "GC To DynMesh could not convert the Geometry Collection."), Context);
 			continue;
 		}
 
-		FDynamicMesh3 CombinedMesh;
-		// Per-bone triangle ranges, recorded during the append so the PolyGroup pass can attribute every
-		// triangle to the bone it came from. AppendWithOffsets reports the offset and count for each append.
-		struct FBoneRange { int32 TransformIndex; int32 TriangleStart; int32 TriangleEnd; };
-		TArray<FBoneRange> BoneRanges;
-		BoneRanges.Reserve(CollectionToMeshes.Meshes.Num());
+		const TArray<UMaterialInterface*> Materials = ResolveMaterials(CollectionData);
 
-		for (int32 MeshIdx = 0; MeshIdx < CollectionToMeshes.Meshes.Num(); ++MeshIdx)
+		if (bPerPiece)
 		{
-			FDynamicMesh3& SourceMesh = *CollectionToMeshes.Meshes[MeshIdx].Mesh;
-			const int32 TransformIndex = CollectionToMeshes.Meshes[MeshIdx].TransformIndex;
-
-			if (MeshIdx == 0)
+			int32 NumEmitted = 0;
+			for (int32 Index = 0; Index < Identities.Num(); ++Index)
 			{
-				const int32 TriangleEnd = SourceMesh.MaxTriangleID();
-				CombinedMesh = MoveTemp(SourceMesh);
-				BoneRanges.Add({TransformIndex, 0, TriangleEnd});
-				continue;
-			}
-
-			// AppendWithOffsets only carries attributes the destination already has, so match the layouts
-			// first - otherwise the per-bone and internal-face PolyGroup layers silently do not survive.
-			CombinedMesh.EnableMatchingAttributes(SourceMesh, /*bClearExisting=*/false,
-				/*bDiscardExtraAttributes=*/false);
-
-			FDynamicMesh3::FAppendInfo AppendInfo;
-			CombinedMesh.AppendWithOffsets(SourceMesh, &AppendInfo);
-			BoneRanges.Add({
-				TransformIndex,
-				AppendInfo.TriangleOffset,
-				AppendInfo.TriangleOffset + AppendInfo.NumTriangle});
-		}
-
-		if (Settings->bSetPolygroupPerBone && !Settings->BonePolygroupLayerName.IsNone())
-		{
-			FDynamicMeshPolygroupAttribute* BoneLayer =
-				FindOrAddPolygroupLayer(CombinedMesh, Settings->BonePolygroupLayerName);
-			if (BoneLayer)
-			{
-				for (const FBoneRange& Range : BoneRanges)
+				FDynamicMesh3& PieceMesh = PresentedMeshes[Index];
+				if (PieceMesh.TriangleCount() == 0)
 				{
-					for (int32 TID = Range.TriangleStart; TID < Range.TriangleEnd; ++TID)
-					{
-						if (CombinedMesh.IsTriangle(TID))
-						{
-							BoneLayer->SetValue(TID, Range.TransformIndex);
-						}
-					}
+					continue;
 				}
+
+				// One range covering the whole mesh: the layer is redundant with one piece per output, but
+				// keeping it means a later Combine or Merge does not lose which bone a triangle came from.
+				if (Settings->bSetPolygroupPerBone)
+				{
+					Presentation::WriteBonePolygroupLayer(
+						PieceMesh, Settings->BonePolygroupLayerName,
+						{Presentation::FCombinedPieceRange{
+							Identities[Index].TransformIndex, Identities[Index].GeometryIndex,
+							0, PieceMesh.MaxTriangleID()}});
+				}
+				ApplyLayerSettings(PieceMesh, Settings);
+
+				UPCGDynamicMeshData* OutputData = FPCGContext::NewObject_AnyThread<UPCGDynamicMeshData>(Context);
+				OutputData->Initialize(MoveTemp(PieceMesh), Materials);
+
+				WritePieceAttributes(
+					OutputData, Settings, CollectionData,
+					Identities[Index].TransformIndex, Identities[Index].GeometryIndex, Context);
+
+				FPCGTaggedData& Output = Context->OutputData.TaggedData.Emplace_GetRef(Input);
+				Output.Data = OutputData;
+				Output.Pin = PCGGeometryCollectionToDynMeshConstants::MeshOutputPin;
+				++NumEmitted;
 			}
-			else
-			{
-				PCGLog::LogWarningOnGraph(FText::Format(
-					LOCTEXT("BoneLayerFailed", "GC To DynMesh could not create the PolyGroup layer '{0}'."),
-					FText::FromName(Settings->BonePolygroupLayerName)), Context);
-			}
+
+			UE_LOG(LogPCGUtilsFracture, Verbose,
+				TEXT("GC To DynMesh: %d piece(s) -> %d mesh(es), space: %s"),
+				NumConverted, NumEmitted, bPieceLocal ? TEXT("piece local") : TEXT("collection"));
+			continue;
 		}
 
-		TArray<UMaterialInterface*> Materials;
-		Materials.Reserve(CollectionData->GetMaterials().Num());
-		for (const TObjectPtr<UMaterialInterface>& Material : CollectionData->GetMaterials())
+		TArray<const FDynamicMesh3*> PresentedPointers;
+		PresentedPointers.Reserve(Identities.Num());
+		for (int32 Index = 0; Index < Identities.Num(); ++Index)
 		{
-			Materials.Add(Material);
+			PresentedPointers.Add(&PresentedMeshes[Index]);
 		}
+
+		FDynamicMesh3 CombinedMesh;
+		TArray<Presentation::FCombinedPieceRange> Ranges;
+		Presentation::CombinePieces(PresentedPointers, Identities, CombinedMesh, Ranges);
+
+		if (Settings->bSetPolygroupPerBone
+			&& !Presentation::WriteBonePolygroupLayer(CombinedMesh, Settings->BonePolygroupLayerName, Ranges))
+		{
+			PCGLog::LogWarningOnGraph(FText::Format(
+				LOCTEXT("BoneLayerFailed", "GC To DynMesh could not create the PolyGroup layer '{0}'."),
+				FText::FromName(Settings->BonePolygroupLayerName)), Context);
+		}
+		ApplyLayerSettings(CombinedMesh, Settings);
+
+		const int32 CombinedTriangles = CombinedMesh.TriangleCount();
+		const int32 CombinedVertices = CombinedMesh.VertexCount();
 
 		UPCGDynamicMeshData* OutputData = FPCGContext::NewObject_AnyThread<UPCGDynamicMeshData>(Context);
 		OutputData->Initialize(MoveTemp(CombinedMesh), Materials);
@@ -209,13 +386,9 @@ bool FPCGGeometryCollectionToDynMeshElement::ExecuteInternal(FPCGContext* Contex
 		Output.Data = OutputData;
 		Output.Pin = PCGGeometryCollectionToDynMeshConstants::MeshOutputPin;
 
-		const UE::Geometry::FDynamicMesh3* ResultMesh =
-			OutputData->GetDynamicMesh() ? OutputData->GetDynamicMesh()->GetMeshPtr() : nullptr;
 		UE_LOG(LogPCGUtilsFracture, Verbose,
-			TEXT("GC To DynMesh: %d bone(s) -> vertices: %d, triangles: %d"),
-			BoneRanges.Num(),
-			ResultMesh ? ResultMesh->VertexCount() : 0,
-			ResultMesh ? ResultMesh->TriangleCount() : 0);
+			TEXT("GC To DynMesh: %d piece(s) -> vertices: %d, triangles: %d"),
+			NumConverted, CombinedVertices, CombinedTriangles);
 	}
 
 	return true;

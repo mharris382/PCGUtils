@@ -7,6 +7,7 @@
 #include "Data/PCGPointArrayData.h"
 #include "Elements/PCGUtilsDynMeshSpaceHelpers.h"
 #include "FunctionLibraries/PCGUtilsGeometryCollectionHelpers.h"
+#include "FunctionLibraries/PCGUtilsGeometryCollectionHierarchy.h"
 #include "GeometryCollection/GeometryCollection.h"
 #include "Metadata/PCGMetadata.h"
 #include "PCGContext.h"
@@ -346,7 +347,7 @@ bool FPCGGeometryCollectionBonesToPointsElement::ExecuteInternal(FPCGContext* Co
 		}
 		else
 		{
-			PCGUtilsGeometryCollectionHelpers::GatherGeometryBearingBones(Collection, Bones);
+			PCGUtilsGeometryCollectionHierarchy::GatherPieces(Collection, Bones);
 		}
 
 		if (Bones.IsEmpty())
@@ -360,35 +361,16 @@ bool FPCGGeometryCollectionBonesToPointsElement::ExecuteInternal(FPCGContext* Co
 		TArray<FTransform> GlobalTransforms;
 		PCGUtilsGeometryCollectionHelpers::ComputeGlobalTransforms(Collection, GlobalTransforms);
 
-		// The collection's Level attribute is often absent, and the facade's GenerateLevelAttribute() would
-		// have to mutate the (immutable) input collection to add it. Walking Parent is cheap and read-only.
+		// Every collection this module publishes carries a Level attribute, and the hierarchy service reads it
+		// - falling back to a Parent walk only for a collection that somehow arrived without one, so the
+		// fallback lives in one place instead of here.
 		TArray<int32> HierarchyLevels;
 		if (Settings->bOutputHierarchyLevel)
 		{
-			HierarchyLevels.Init(INDEX_NONE, NumTransforms);
-			TFunction<int32(int32)> ResolveLevel = [&](int32 BoneIndex) -> int32
-			{
-				if (!HierarchyLevels.IsValidIndex(BoneIndex))
-				{
-					return INDEX_NONE;
-				}
-				if (HierarchyLevels[BoneIndex] != INDEX_NONE)
-				{
-					return HierarchyLevels[BoneIndex];
-				}
-				// Marked before recursing, so a malformed cycle terminates at 0 instead of overflowing.
-				HierarchyLevels[BoneIndex] = 0;
-				const int32 ParentIndex = Collection.Parent.IsValidIndex(BoneIndex)
-					? Collection.Parent[BoneIndex] : INDEX_NONE;
-				if (ParentIndex != INDEX_NONE)
-				{
-					HierarchyLevels[BoneIndex] = ResolveLevel(ParentIndex) + 1;
-				}
-				return HierarchyLevels[BoneIndex];
-			};
+			HierarchyLevels.Reserve(NumTransforms);
 			for (int32 BoneIndex = 0; BoneIndex < NumTransforms; ++BoneIndex)
 			{
-				ResolveLevel(BoneIndex);
+				HierarchyLevels.Add(PCGUtilsGeometryCollectionHierarchy::GetLevel(Collection, BoneIndex));
 			}
 		}
 

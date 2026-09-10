@@ -3,9 +3,11 @@
 #include "Elements/Fracture/PCGFractureGeometryCollection.h"
 
 #include "Data/PCGGeometryCollectionData.h"
+#include "Data/PCGUtilsGeometryCollectionRevisionPublisher.h"
 #include "Factories/PCGUtilsFractureFactory.h"
 #include "Factories/PCGUtilsGeometryCollectionSelectionFactory.h"
 #include "FunctionLibraries/PCGUtilsGeometryCollectionHelpers.h"
+#include "FunctionLibraries/PCGUtilsGeometryCollectionHierarchy.h"
 #include "GeometryCollection/Facades/CollectionTransformSelectionFacade.h"
 #include "GeometryCollection/GeometryCollection.h"
 #include "PCGContext.h"
@@ -126,7 +128,7 @@ bool FPCGFractureGeometryCollectionElement::ExecuteInternal(FPCGContext* Context
 		FDataflowTransformSelection TargetBones;
 		bool bHasAuthoredSelection = false;
 		{
-			const FPCGUtilsGeometryCollectionSelectionEvaluationContext EvaluationContext(InputData, *Collection);
+			const FPCGUtilsGeometryCollectionSelectionEvaluationContext EvaluationContext(*InputData, *Collection);
 			if (!PCGUtilsGeometryCollectionSelectionFactories::ResolveSelectionFromPin(
 				Context, PCGUtilsGeometryCollectionSelectionFactoryConstants::SelectionInputPin, EvaluationContext,
 				/*bRequired=*/false, TargetBones, bHasAuthoredSelection))
@@ -149,6 +151,7 @@ bool FPCGFractureGeometryCollectionElement::ExecuteInternal(FPCGContext* Context
 		}
 
 		int32 NumApplied = 0;
+		FPCGUtilsGeometryCollectionMutationResult Mutation;
 		for (int32 OperationIndex = 0; OperationIndex < FractureOperations.Num(); ++OperationIndex)
 		{
 			const UPCGUtilsFractureFactoryData* Operation = FractureOperations[OperationIndex];
@@ -169,8 +172,10 @@ bool FPCGFractureGeometryCollectionElement::ExecuteInternal(FPCGContext* Context
 				SelectAllBones(*Collection, TargetBones);
 			}
 
-			if (Operation->Fracture(*Collection, TargetBones, Context))
+			FPCGUtilsGeometryCollectionMutationResult OperationMutation;
+			if (Operation->Fracture(*Collection, TargetBones, Context, OperationMutation))
 			{
+				Mutation.Accumulate(OperationMutation);
 				++NumApplied;
 			}
 		}
@@ -188,15 +193,24 @@ bool FPCGFractureGeometryCollectionElement::ExecuteInternal(FPCGContext* Context
 		{
 			NumRetaggedFaces =
 				PCGUtilsGeometryCollectionHelpers::SetInternalFaceMaterialID(*Collection, Settings->InternalMaterialID);
+			Mutation.bGeometryChanged = true;
 		}
 
 		const int32 BonesAfter = Collection->NumElements(FGeometryCollection::TransformGroup);
 
-		UPCGGeometryCollectionData* OutputData =
-			FPCGContext::NewObject_AnyThread<UPCGGeometryCollectionData>(Context);
 		// A revision, not a new lineage: same CollectionId, Revision + 1, fresh StateId. Any bone selection
-		// authored against the input is now correctly rejected by Select Bones From Points.
-		OutputData->InitializeAsRevisionOf(InputData, Collection);
+		// authored against the input is now correctly rejected by Select Bones From Points. The publisher also
+		// regenerates Level (the cutters leave it stale), assigns ids to the new bones, and - unless the user
+		// asked to keep it - discards the hidden pre-fracture geometry the cutters leave behind.
+		FPCGUtilsGeometryCollectionPublishOptions PublishOptions;
+		PublishOptions.bCompactHiddenGeometry = !Settings->bKeepHiddenSourceGeometry;
+
+		UPCGGeometryCollectionData* OutputData = PCGUtilsGeometryCollectionRevisionPublisher::PublishRevision(
+			Context, InputData, Collection, Mutation, PublishOptions);
+		if (!OutputData)
+		{
+			continue;
+		}
 
 		FPCGTaggedData& Output = Context->OutputData.TaggedData.Emplace_GetRef(Input);
 		Output.Data = OutputData;

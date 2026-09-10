@@ -29,19 +29,26 @@ struct FPCGUtilsGeometryCollectionSelectionFactoryDataTypeInfo : public FPCGUtil
 struct PCGUTILSFRACTURE_API FPCGUtilsGeometryCollectionSelectionEvaluationContext
 {
 	FPCGUtilsGeometryCollectionSelectionEvaluationContext(
-		const UPCGGeometryCollectionData* InCollectionData,
+		const UPCGGeometryCollectionData& InCollectionData,
 		const FGeometryCollection& InCollection)
 		: CollectionData(InCollectionData), Collection(InCollection)
 	{
 	}
 
 	/**
-	 * The data the selection is being evaluated against. May be null when a factory is evaluated against a
-	 * working copy mid-operation; identity-checking factories must handle that by failing loudly.
+	 * The published data the selection is being evaluated against.
+	 *
+	 * Always present. A selection is only meaningful relative to an identified collection state - that is what
+	 * lets Select Bones From Points reject stale indices - and a derived-data cache can only be keyed on a
+	 * data object, so evaluating against an anonymous working copy is not something a caller may ask for.
+	 * An executor mutating a collection mid-chain must publish an intermediate revision instead.
 	 */
-	const UPCGGeometryCollectionData* CollectionData = nullptr;
+	const UPCGGeometryCollectionData& CollectionData;
 
-	/** The live collection - post-copy, and possibly already mutated by an earlier factory in the same node. */
+	/**
+	 * The live collection. Normally the same state CollectionData holds; an executor may pass its private
+	 * working copy so long as it is still structurally identical to the published state.
+	 */
 	const FGeometryCollection& Collection;
 
 	int32 NumTransforms() const;
@@ -80,6 +87,21 @@ namespace PCGUtilsGeometryCollectionSelectionFactories
 {
 	/** The set of PCG data types accepted anywhere a GC Selection is expected. */
 	PCGUTILSFRACTURE_API const TSet<FPCGDataTypeBaseId>& GetSelectionFactoryTypes();
+
+	/**
+	 * Evaluates every factory and unions the results into one selection sized to the collection.
+	 *
+	 * Several selectors reaching one place mean "all of these bones", both on a multi-connection pin and
+	 * inside a decorator holding captured children - so both go through here and cannot drift apart. Use the
+	 * Selection Logic node for any other combination.
+	 *
+	 * @return false if any factory failed (it will have logged) or resolved against a different collection.
+	 */
+	PCGUTILSFRACTURE_API bool EvaluateAndUnion(
+		TConstArrayView<TObjectPtr<const UPCGUtilsGeometryCollectionSelectionFactoryData>> InFactories,
+		const FPCGUtilsGeometryCollectionSelectionEvaluationContext& InEvaluationContext,
+		FPCGContext* InContext,
+		FDataflowTransformSelection& OutSelection);
 
 	/**
 	 * Evaluates every factory connected to InPinLabel and unions the results.

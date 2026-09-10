@@ -17,6 +17,7 @@ void UPCGGeometryCollectionData::Initialize(
 	CollectionId = FGuid::NewGuid();
 	Revision = 0;
 	StateId = FGuid::NewGuid();
+	PieceMeshCache = MakeShared<FPCGUtilsGeometryCollectionPieceMeshCache>();
 }
 
 void UPCGGeometryCollectionData::InitializeAsRevisionOf(
@@ -25,6 +26,7 @@ void UPCGGeometryCollectionData::InitializeAsRevisionOf(
 {
 	Collection = InCollection;
 	StateId = FGuid::NewGuid();
+	PieceMeshCache = MakeShared<FPCGUtilsGeometryCollectionPieceMeshCache>();
 
 	if (InSource)
 	{
@@ -69,6 +71,8 @@ UPCGData* UPCGGeometryCollectionData::DuplicateData(FPCGContext* Context, bool b
 	// The collection is immutable, so a duplicate is the *same state* and shares the pointer rather than
 	// deep-copying. All three identity fields carry over unchanged for exactly that reason.
 	NewData->Collection = Collection;
+	// Same collection state, so the same derived meshes are valid; sharing means a duplicate never reconverts.
+	NewData->PieceMeshCache = PieceMeshCache;
 	NewData->Materials = Materials;
 	NewData->CollectionId = CollectionId;
 	NewData->Revision = Revision;
@@ -101,4 +105,71 @@ int64 PCGUtilsGeometryCollectionIdentity::FoldGuid(const FGuid& InGuid)
 	const uint64 High = (static_cast<uint64>(InGuid.A) << 32) | static_cast<uint64>(InGuid.B);
 	const uint64 Low = (static_cast<uint64>(InGuid.C) << 32) | static_cast<uint64>(InGuid.D);
 	return static_cast<int64>(High ^ (Low * 0x9E3779B97F4A7C15ull));
+}
+
+const FName PCGUtilsGeometryCollectionIdentity::BoneIdAttribute = TEXT("PCGUtils_BoneId");
+
+int32 PCGUtilsGeometryCollectionIdentity::EnsureBoneIds(FGeometryCollection& InOutCollection, int32 InFirstBone)
+{
+	const int32 NumTransforms = InOutCollection.NumElements(FGeometryCollection::TransformGroup);
+	if (NumTransforms == 0)
+	{
+		return 0;
+	}
+
+	if (!InOutCollection.HasAttribute(BoneIdAttribute, FGeometryCollection::TransformGroup))
+	{
+		// Saved = false: nothing in this module serializes a collection, and an unsaved attribute cannot
+		// leak into an asset if one ever is. Matches how FractureEngine adds its own temporary GUID.
+		const FManagedArrayCollection::FConstructionParameters Parameters(NAME_None, /*Saved=*/false);
+		InOutCollection.AddAttribute<FGuid>(BoneIdAttribute, FGeometryCollection::TransformGroup, Parameters);
+		// A freshly added attribute is default-constructed, so every entry is already invalid.
+		InFirstBone = 0;
+	}
+
+	TManagedArray<FGuid>& BoneIds =
+		InOutCollection.ModifyAttribute<FGuid>(BoneIdAttribute, FGeometryCollection::TransformGroup);
+
+	int32 NumMinted = 0;
+	for (int32 Bone = FMath::Max(0, InFirstBone); Bone < NumTransforms; ++Bone)
+	{
+		if (!BoneIds[Bone].IsValid())
+		{
+			BoneIds[Bone] = FGuid::NewGuid();
+			++NumMinted;
+		}
+	}
+	return NumMinted;
+}
+
+FGuid PCGUtilsGeometryCollectionIdentity::GetBoneId(const FGeometryCollection& InCollection, int32 InBone)
+{
+	const TManagedArray<FGuid>* BoneIds =
+		InCollection.FindAttributeTyped<FGuid>(BoneIdAttribute, FGeometryCollection::TransformGroup);
+	return (BoneIds && BoneIds->IsValidIndex(InBone)) ? (*BoneIds)[InBone] : FGuid();
+}
+
+int32 PCGUtilsGeometryCollectionIdentity::FindBoneById(
+	const FGeometryCollection& InCollection, const FGuid& InBoneId)
+{
+	if (!InBoneId.IsValid())
+	{
+		return INDEX_NONE;
+	}
+
+	const TManagedArray<FGuid>* BoneIds =
+		InCollection.FindAttributeTyped<FGuid>(BoneIdAttribute, FGeometryCollection::TransformGroup);
+	if (!BoneIds)
+	{
+		return INDEX_NONE;
+	}
+
+	for (int32 Bone = 0; Bone < BoneIds->Num(); ++Bone)
+	{
+		if ((*BoneIds)[Bone] == InBoneId)
+		{
+			return Bone;
+		}
+	}
+	return INDEX_NONE;
 }

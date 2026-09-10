@@ -7,21 +7,14 @@
 class FGeometryCollection;
 
 /**
- * Small shared helpers for reading Geometry Collection hierarchy/geometry state. Deliberately thin: anything
- * Epic already implements (selection algorithms, prune, fracture) is called directly rather than wrapped.
+ * Small shared helpers for measuring Geometry Collection geometry. Deliberately thin: anything Epic already
+ * implements (selection algorithms, prune, fracture) is called directly rather than wrapped.
+ *
+ * Hierarchy questions - what is a piece, a cluster, a root, what level is a bone at - live in
+ * PCGUtilsGeometryCollectionHierarchy instead.
  */
 namespace PCGUtilsGeometryCollectionHelpers
 {
-	/**
-	 * A bone that actually carries geometry and is simulated as a rigid leaf, i.e. a fracture piece rather
-	 * than a structural cluster. This is what "geometry-bearing leaf bone" means throughout this module.
-	 */
-	PCGUTILSFRACTURE_API bool IsGeometryBearingBone(const FGeometryCollection& InCollection, int32 InBoneIndex);
-
-	/** Every geometry-bearing bone, ascending. */
-	PCGUTILSFRACTURE_API void GatherGeometryBearingBones(
-		const FGeometryCollection& InCollection, TArray<int32>& OutBoneIndices);
-
 	/**
 	 * Bone transforms resolved from parent-relative to collection space. Stored Transform[] is relative to the
 	 * parent, so anything spatial must go through here - the same thing FFractureEngineFracturing does
@@ -44,7 +37,7 @@ namespace PCGUtilsGeometryCollectionHelpers
 	 */
 	PCGUTILSFRACTURE_API int32 SetInternalFaceMaterialID(FGeometryCollection& InOutCollection, int32 InMaterialID);
 
-	/** "bones: 57 (46 geometry), faces: 12480, vertices: 6203" - for one-line summary logging. */
+	/** "bones: 57 (46 piece(s), 11 cluster(s)), faces: 12480, vertices: 6203" - one-line summary logging. */
 	PCGUTILSFRACTURE_API FString DescribeCollection(const FGeometryCollection& InCollection);
 
 	/**
@@ -148,4 +141,32 @@ namespace PCGUtilsGeometryCollectionHelpers
 	 * computes its own: per-bone bounds transformed by the bone's global matrix.
 	 */
 	PCGUTILSFRACTURE_API FBox ComputeCollectionBounds(const FGeometryCollection& InCollection);
+
+	/**
+	 * The bones touching the given ones, at the same depth in the hierarchy.
+	 *
+	 * Mirrors FGeometryCollectionProximityUtility::EnumerateNeighbors, which is what Fracture Mode's Contact
+	 * button and the facade's SelectContact both use: proximity is only ever computed between pieces, so a
+	 * cluster's neighbours are found by looking at the pieces beneath it and then walking each neighbour back
+	 * *up* to the queried bone's level. Selecting a cluster's contacts therefore gives sibling clusters, not
+	 * the pieces inside them.
+	 *
+	 * Implemented here rather than through the facade because the facade deep-copies the whole collection to
+	 * compute proximity, while the module's collections are immutable and can use the const overload.
+	 *
+	 * @param bIncludeNeighborsInParentLevels  Also report a touching bone that sits nearer the root than the
+	 *                                         queried bone, which would otherwise be skipped entirely.
+	 * @param InIterations                     Spread this many steps. Proximity is computed once regardless,
+	 *                                         which is the whole reason iteration lives here rather than in
+	 *                                         the caller.
+	 * @param OutBones                         The bones reached, excluding the queried ones unless they were
+	 *                                         reached back through a neighbour. Sorted.
+	 * @return false if proximity could not be determined; OutBones is then untouched.
+	 */
+	PCGUTILSFRACTURE_API bool GatherContactNeighbors(
+		const FGeometryCollection& InCollection,
+		TConstArrayView<int32> InBones,
+		bool bIncludeNeighborsInParentLevels,
+		int32 InIterations,
+		TArray<int32>& OutBones);
 }

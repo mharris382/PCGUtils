@@ -23,28 +23,21 @@ namespace PCGUtilsGeometryCollectionSelectionFactories
 		return Types;
 	}
 
-	bool ResolveSelectionFromPin(
-		FPCGContext* InContext,
-		FName InPinLabel,
+	bool EvaluateAndUnion(
+		TConstArrayView<TObjectPtr<const UPCGUtilsGeometryCollectionSelectionFactoryData>> InFactories,
 		const FPCGUtilsGeometryCollectionSelectionEvaluationContext& InEvaluationContext,
-		bool bRequired,
-		FDataflowTransformSelection& OutSelection,
-		bool& bOutHasSelection)
+		FPCGContext* InContext,
+		FDataflowTransformSelection& OutSelection)
 	{
-		bOutHasSelection = false;
-
-		TArray<TObjectPtr<const UPCGUtilsGeometryCollectionSelectionFactoryData>> Factories;
-		if (!PCGUtilsGeometryCollectionFactories::GetInputFactories<UPCGUtilsGeometryCollectionSelectionFactoryData>(
-			InContext, InPinLabel, Factories, GetSelectionFactoryTypes(), bRequired))
-		{
-			// GetInputFactories already logged when bRequired. An empty optional pin is a success.
-			return !bRequired;
-		}
-
 		OutSelection.InitializeFromCollection(InEvaluationContext.Collection, false);
 
-		for (const UPCGUtilsGeometryCollectionSelectionFactoryData* Factory : Factories)
+		for (const UPCGUtilsGeometryCollectionSelectionFactoryData* Factory : InFactories)
 		{
+			if (!Factory)
+			{
+				continue;
+			}
+
 			FDataflowTransformSelection FactorySelection;
 			if (!Factory->Evaluate(InEvaluationContext, InContext, FactorySelection))
 			{
@@ -65,6 +58,32 @@ namespace PCGUtilsGeometryCollectionSelectionFactories
 			FDataflowTransformSelection Unioned;
 			OutSelection.OR(FactorySelection, Unioned);
 			OutSelection = Unioned;
+		}
+
+		return true;
+	}
+
+	bool ResolveSelectionFromPin(
+		FPCGContext* InContext,
+		FName InPinLabel,
+		const FPCGUtilsGeometryCollectionSelectionEvaluationContext& InEvaluationContext,
+		bool bRequired,
+		FDataflowTransformSelection& OutSelection,
+		bool& bOutHasSelection)
+	{
+		bOutHasSelection = false;
+
+		TArray<TObjectPtr<const UPCGUtilsGeometryCollectionSelectionFactoryData>> Factories;
+		if (!PCGUtilsGeometryCollectionFactories::GetInputFactories<UPCGUtilsGeometryCollectionSelectionFactoryData>(
+			InContext, InPinLabel, Factories, GetSelectionFactoryTypes(), bRequired))
+		{
+			// GetInputFactories already logged when bRequired. An empty optional pin is a success.
+			return !bRequired;
+		}
+
+		if (!EvaluateAndUnion(Factories, InEvaluationContext, InContext, OutSelection))
+		{
+			return false;
 		}
 
 		bOutHasSelection = true;
