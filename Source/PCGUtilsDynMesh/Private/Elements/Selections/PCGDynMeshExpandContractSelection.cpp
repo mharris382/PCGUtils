@@ -197,8 +197,8 @@ namespace
 FText UPCGDynMeshExpandContractSelectionSettings::GetDefaultNodeTitle() const
 {
 	return bContract
-		? LOCTEXT("ContractTitle", "Select|Contract")
-		: LOCTEXT("ExpandTitle", "Select|Expand");
+		? LOCTEXT("ContractTitle", "Select | Contract")
+		: LOCTEXT("ExpandTitle", "Select | Expand");
 }
 
 FText UPCGDynMeshExpandContractSelectionSettings::GetNodeTooltipText() const
@@ -212,9 +212,9 @@ TArray<FPCGPreConfiguredSettingsInfo>
 UPCGDynMeshExpandContractSelectionSettings::GetPreconfiguredInfo() const
 {
 	TArray<FPCGPreConfiguredSettingsInfo> Presets = MakeRepresentationPresets(
-		LOCTEXT("ExpandDisplayName", "Select|Expand"), 0, 1);
+		LOCTEXT("ExpandDisplayName", "Select | Expand"), 0, 1);
 	Presets.Append(MakeRepresentationPresets(
-		LOCTEXT("ContractDisplayName", "Select|Contract"), 2, 3));
+		LOCTEXT("ContractDisplayName", "Select | Contract"), 2, 3));
 	return Presets;
 }
 

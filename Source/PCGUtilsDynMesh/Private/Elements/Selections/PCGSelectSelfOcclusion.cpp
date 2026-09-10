@@ -133,7 +133,7 @@ namespace
 #if WITH_EDITOR
 FText UPCGSelectSelfOcclusionSettings::GetDefaultNodeTitle() const
 {
-	return LOCTEXT("Title", "Select|By Self Occlusion");
+	return LOCTEXT("Title", "Select | By Self Occlusion");
 }
 
 FText UPCGSelectSelfOcclusionSettings::GetNodeTooltipText() const

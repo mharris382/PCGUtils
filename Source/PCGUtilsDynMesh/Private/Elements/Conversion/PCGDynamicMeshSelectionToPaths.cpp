@@ -69,7 +69,7 @@ namespace
 #if WITH_EDITOR
 FText UPCGDynamicMeshSelectionToPathsSettings::GetDefaultNodeTitle() const
 {
-	return LOCTEXT("Title", "DynMesh|Selection To Paths");
+	return LOCTEXT("Title", "DynMesh | Selection To Paths");
 }
 
 FText UPCGDynamicMeshSelectionToPathsSettings::GetNodeTooltipText() const

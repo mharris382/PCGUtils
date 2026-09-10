@@ -144,7 +144,7 @@ namespace
 #if WITH_EDITOR
 FText UPCGDynMeshExpandToConnectedSelectionSettings::GetDefaultNodeTitle() const
 {
-	return LOCTEXT("ElementTitle", "Select|Connected Region");
+	return LOCTEXT("ElementTitle", "Select | Connected Region");
 }
 
 FText UPCGDynMeshExpandToConnectedSelectionSettings::GetNodeTooltipText() const

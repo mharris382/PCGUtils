@@ -71,7 +71,7 @@ UPCGGetSplineMeshDataSettings::UPCGGetSplineMeshDataSettings()
 #if WITH_EDITOR
 FText UPCGGetSplineMeshDataSettings::GetDefaultNodeTitle() const
 {
-	return LOCTEXT("NodeTitle", "DynMesh|Get Spline Mesh Data");
+	return LOCTEXT("NodeTitle", "DynMesh | Get Spline Mesh Data");
 }
 
 FText UPCGGetSplineMeshDataSettings::GetNodeTooltipText() const

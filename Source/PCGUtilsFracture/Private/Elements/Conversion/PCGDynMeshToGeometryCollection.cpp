@@ -122,7 +122,7 @@ namespace
 #if WITH_EDITOR
 FText UPCGDynMeshToGeometryCollectionSettings::GetDefaultNodeTitle() const
 {
-	return LOCTEXT("Title", "GC|From DynMesh");
+	return LOCTEXT("Title", "GC | From DynMesh");
 }
 
 FText UPCGDynMeshToGeometryCollectionSettings::GetNodeTooltipText() const

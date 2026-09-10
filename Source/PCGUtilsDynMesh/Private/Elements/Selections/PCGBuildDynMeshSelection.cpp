@@ -15,7 +15,7 @@
 #if WITH_EDITOR
 FText UPCGBuildDynMeshSelectionSettings::GetDefaultNodeTitle() const
 {
-	return LOCTEXT("Title", "DynMesh|Build Selection");
+	return LOCTEXT("Title", "DynMesh | Build Selection");
 }
 
 FText UPCGBuildDynMeshSelectionSettings::GetNodeTooltipText() const

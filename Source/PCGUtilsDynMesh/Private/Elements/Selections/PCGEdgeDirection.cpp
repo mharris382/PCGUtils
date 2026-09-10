@@ -83,7 +83,7 @@ namespace
 #if WITH_EDITOR
 FText UPCGEdgeDirectionSettings::GetDefaultNodeTitle() const
 {
-	return LOCTEXT("Title", "Select|Edge Direction");
+	return LOCTEXT("Title", "Select | Edge Direction");
 }
 
 FText UPCGEdgeDirectionSettings::GetNodeTooltipText() const

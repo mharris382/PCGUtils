@@ -44,7 +44,7 @@ namespace
 		case EMode::Or: return LOCTEXT("OrTitle", "OR");
 		case EMode::Xor: return LOCTEXT("XorTitle", "XOR");
 		case EMode::Subtract: return LOCTEXT("SubtractTitle", "Subtract");
-		default: return LOCTEXT("Title", "GC|Select|Logic");
+		default: return LOCTEXT("Title", "GC | Select | Logic");
 		}
 	}
 
@@ -52,11 +52,11 @@ namespace
 	{
 		switch (InMode)
 		{
-		case EMode::And: return LOCTEXT("AndDisplay", "GC|Select|AND");
-		case EMode::Or: return LOCTEXT("OrDisplay", "GC|Select|OR");
-		case EMode::Xor: return LOCTEXT("XorDisplay", "GC|Select|XOR");
-		case EMode::Subtract: return LOCTEXT("SubtractDisplay", "GC|Select|Subtract");
-		default: return LOCTEXT("Title", "GC|Select|Logic");
+		case EMode::And: return LOCTEXT("AndDisplay", "GC | Select | AND");
+		case EMode::Or: return LOCTEXT("OrDisplay", "GC | Select | OR");
+		case EMode::Xor: return LOCTEXT("XorDisplay", "GC | Select | XOR");
+		case EMode::Subtract: return LOCTEXT("SubtractDisplay", "GC | Select | Subtract");
+		default: return LOCTEXT("Title", "GC | Select | Logic");
 		}
 	}
 }

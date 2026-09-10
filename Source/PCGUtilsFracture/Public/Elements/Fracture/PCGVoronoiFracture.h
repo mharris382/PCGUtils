@@ -5,6 +5,7 @@
 #include "CoreMinimal.h"
 #include "Elements/PCGUtilsFractureElementBase.h"
 #include "Factories/PCGUtilsFractureFactory.h"
+#include "Factories/PCGUtilsFractureProvider.h"
 #include "Factories/PCGUtilsFractureNoise.h"
 
 #include "PCGVoronoiFracture.generated.h"
@@ -78,7 +79,7 @@ protected:
  */
 UCLASS(BlueprintType, ClassGroup=(Procedural), Category="PCGUtils|Fracture",
 	meta=(Keywords="Voronoi Sites Points Fracture Shatter Cells Scatter GC Geometry Collection"))
-class PCGUTILSFRACTURE_API UPCGVoronoiFractureSettings : public UPCGUtilsGeometryCollectionFactoryProviderSettings
+class PCGUTILSFRACTURE_API UPCGVoronoiFractureSettings : public UPCGUtilsFractureProviderSettings
 {
 	GENERATED_BODY()
 
@@ -129,14 +130,8 @@ public:
 		meta=(EditCondition="bAddSurfaceNoise"))
 	FPCGFractureNoiseSettings Noise;
 
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Fracture", AdvancedDisplay, meta=(PCG_Overridable))
-	int32 Priority = 0;
-
-	virtual FName GetMainOutputPin() const override;
-	virtual UPCGUtilsGeometryCollectionFactoryData* CreateFactory(
-		FPCGContext* InContext, UPCGUtilsGeometryCollectionFactoryData* InFactory = nullptr) const override;
-
 protected:
-	virtual const FPCGDataTypeBaseId& GetFactoryTypeId() const override;
+	virtual UPCGUtilsFractureFactoryData* CreateFractureFactory(
+		FPCGContext* InContext, UPCGUtilsGeometryCollectionFactoryData* InFactory) const override;
 	virtual TArray<FPCGPinProperties> InputPinProperties() const override;
 };

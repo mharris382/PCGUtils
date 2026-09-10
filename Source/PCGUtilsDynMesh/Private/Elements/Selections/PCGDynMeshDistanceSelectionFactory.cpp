@@ -264,7 +264,7 @@ void UPCGDynMeshDistanceSelectionFactoryData::AddToCrc(FArchiveCrc32& Ar, bool b
 #if WITH_EDITOR
 FText UPCGDynMeshDistanceSelectionFactoryProviderSettings::GetDefaultNodeTitle() const
 {
-	return LOCTEXT("Title", "Select|By Distance");
+	return LOCTEXT("Title", "Select | By Distance");
 }
 
 FText UPCGDynMeshDistanceSelectionFactoryProviderSettings::GetNodeTooltipText() const

@@ -17,7 +17,7 @@
 #if WITH_EDITOR
 FText UPCGDynMeshSetPolygroupSettings::GetDefaultNodeTitle() const
 {
-	return LOCTEXT("Title", "DynMesh|Set PolyGroup");
+	return LOCTEXT("Title", "DynMesh | Set PolyGroup");
 }
 
 FText UPCGDynMeshSetPolygroupSettings::GetNodeTooltipText() const

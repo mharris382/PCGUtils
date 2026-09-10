@@ -175,10 +175,47 @@ Two factory families, both rooted at `UPCGUtilsGCFactoryData`:
   target selection. Owns no selection of its own.
 - `UPCGUtilsGCSelectionFactoryData` - **which** bones an operation affects.
 
+Every fracture authoring node derives from `UPCGUtilsFractureProviderSettings`, which owns two things no
+individual operation should re-implement:
+
+- **`Priority`.** The executor's Fracture pin is multi-connection and runs its operations in priority order, so
+  an operation that cannot state its priority can only be sequenced by wiring order.
+- **The `Result` pin.** A second output carrying a Selection of the bones that operation created, so a graph can
+  fracture and then keep working on the fragments. It is a *deferred* selector, exactly like Extrude's Result
+  Selector: the bones do not exist when the node runs, so the data carries the name of a tag rather than a set
+  of indices. `UPCGUtilsFractureProviderSettings::CreateFactory` is final in spirit - override
+  `CreateFractureFactory` instead, or the shared plumbing is skipped.
+
+How "the bones this operation created" is identified generically, with no cooperation from the operation: bone
+ids are minted by the *publisher*, after fracture, so the executor mints ids for everything that exists
+immediately before each operation (`PCGUtilsFractureResultTagging::PrepareForOperation`) and afterwards any bone
+still lacking one was created by that operation. That survives the reindexing the cutters do, which an index-range
+comparison would not. Minting early is safe because `EnsureBoneIds` never reassigns an existing id.
+
+The tag is a Transform-group `int32` attribute (1 = created by this operation), named per authoring node and
+exposed as a setting like every other attribute this module writes. Tagging happens only when the Result pin is
+enabled - an operation whose result nobody reads must not alter the data it produces.
+
 Executors (`Fracture GC`, `Prune GC`) combine them. A new fracture type is a new factory, never an edit to the
 executor: `Fracture GC` contains no Voronoi-, plane- or cutter-specific code and must stay that way.
-`Uniform Voronoi Fracture` and `Voronoi Fracture From Points` were added this way and required no executor
-change - that is the architecture working as intended, and the bar any future cutter should clear.
+`Uniform Voronoi Fracture`, `Voronoi Fracture From Points` and then `Planar`, `Slice` and `Brick` were all
+added this way and required no executor change - that is the architecture working as intended, and the bar any
+future cutter should clear. The three planar cutters additionally share `FPCGPlanarFractureCommonSettings`,
+since every `FFractureEngineFracturing` plane-based entry point takes the same trailing block of fracture,
+island-split and noise arguments.
+
+Two engine behaviours the planar cutters do *not* share with Voronoi, both found by assertion rather than by
+reading:
+
+- **`PlaneCutter` appends.** It seeds its plane list with the `InCutPlaneTransforms` you supply and *then*
+  generates `InNumPlanes` more, so a node offering both must pass zero for the generated count or it silently
+  adds random cuts to a deliberate pattern.
+- **Plane, Slice and Brick gate noise on `InAmplitude > 0`** and leave `FInternalSurfaceMaterials::NoiseSettings`
+  unset otherwise, so they reach PlanarCut's cheap meshing path on their own. The suppressing point spacing
+  `FPCGFractureNoiseSettings::ApplyTo` returns is belt-and-braces for these three and load-bearing only for the
+  Voronoi path.
+- **Slice counts are cutting planes, not divisions.** `GenerateSliceTransforms` steps the extent by
+  `(Slices + 1)`, so N planes give N+1 divisions per axis and 0 leaves an axis uncut.
 
 ### Mirroring Fracture Mode is a goal
 
@@ -207,8 +244,12 @@ future selectors are ~30-line wrappers over it, not new algorithms.
 Two kinds of selector, and keeping them apart is what stops the selector layer sprawling:
 
 - A **base selector** answers "which bones match", from the collection alone. `GC Select Bones` (All, None,
-  Root, Pieces, Clusters, At Level) and `Select Bones From Points` are the current ones; the future geometric
-  predicates - bounds, sphere, volume, the DynMesh selector adapter - are the same kind and evaluate **pieces**.
+  Root, Pieces, Clusters, At Level), `Select Bones From Points` and `GC | Select | By Mesh Predicate` are the
+  current ones; any future geometric predicate - bounds, sphere, volume - is the same kind and evaluates
+  **pieces**. Note that `By Mesh Predicate` is the general case of all of them: it runs any *DynMesh*
+  selector over each piece's surface, which is why this module ships no bounds, normal, colour or occlusion
+  selector of its own. Before writing a geometric bone selector, check whether an existing DynMesh selector
+  plus that adapter already expresses it.
 - A **decorator** takes a selection and returns another one, derived from
   `UPCGUtilsGeometryCollectionSelectionDecoratorFactoryData`. `GC Selection Hierarchy` (Parent, Children,
   Siblings, Ancestors, Descendants, To Pieces, To Clusters, Same Level, To Level, Invert) and `Select Contact`.
@@ -388,11 +429,11 @@ because the instance methods cache a Proximity attribute onto the collection and
 ## Naming
 
 C++ spells out `GeometryCollection`; user-facing text uses `GC`. So `UPCGGeometryCollectionBonesToPointsSettings`
-in code, "GC|Bones To Points" in the palette, `GC` on pins, `GC_` on attributes. See `AGENTS.md` for why.
+in code, "GC | Bones To Points" in the palette, `GC` on pins, `GC_` on attributes. See `AGENTS.md` for why.
 
-Every palette entry in this module is prefixed `GC|`, and every bone selection `GC|Select|`, with the name
-itself carrying none of `GC`, `select`, `selection` or `selector` - `GC|Select|Contact`, not
-`GC|Select|Select Contact`. The prefix is not decoration: PCG derives the palette category from
+Every palette entry in this module is prefixed `GC | `, and every bone selection `GC | Select | `, with the name
+itself carrying none of `GC`, `select`, `selection` or `selector` - `GC | Select | Contact`, not
+`GC | Select | Select Contact`. The prefix is not decoration: PCG derives the palette category from
 `EPCGSettingsType` alone, so with no `GeometryCollection` value in that enum the title prefix is the only
 thing separating this module from the DynMesh nodes it shares the `Dynamic Mesh` bucket with. `AGENTS.md`
 has the full rule and the search-text mechanics; `PCGUtils.Palette.SearchContract` enforces them.
@@ -407,7 +448,7 @@ has the full rule and the search-text mechanics; `PCGUtils.Palette.SearchContrac
   surface; use `GC` rather than `Geometry Collection` in titles, and put the spelled-out form in `Keywords`
   (not a title alias, which would add a duplicate palette entry).
 - The two DynMesh bridges draw compact with the standard convert icon, so they carry no title text on the
-  canvas at all. Their palette titles are `GC|From DynMesh` and `GC|To DynMesh`, and their keywords include
+  canvas at all. Their palette titles are `GC | From DynMesh` and `GC | To DynMesh`, and their keywords include
   `To`/`From` so that dragging off a pin and typing "to GC" finds them.
 - All three fracture-domain data types share the domain colour `#2F7FA3`
   (`PCGUtilsFracture::DomainColorHex`). Colour identifies the domain; the icon identifies the semantic type. Do

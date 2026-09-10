@@ -147,7 +147,7 @@ void UPCGDynMeshRandomValueByIslandPainterFactoryData::AddToCrc(FArchiveCrc32& A
 #if WITH_EDITOR
 FText UPCGDynMeshRandomValueByIslandPainterProviderSettings::GetDefaultNodeTitle() const
 {
-	return LOCTEXT("Title", "Painter|Random Value By Mesh Island");
+	return LOCTEXT("Title", "Painter | Random Value By Mesh Island");
 }
 
 FText UPCGDynMeshRandomValueByIslandPainterProviderSettings::GetNodeTooltipText() const

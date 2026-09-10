@@ -20,7 +20,7 @@
 #if WITH_EDITOR
 FText UPCGSelectionBoundaryEdgesSettings::GetDefaultNodeTitle() const
 {
-	return LOCTEXT("Title", "Select|Boundary");
+	return LOCTEXT("Title", "Select | Boundary");
 }
 
 FText UPCGSelectionBoundaryEdgesSettings::GetNodeTooltipText() const

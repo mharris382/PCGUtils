@@ -17,3 +17,13 @@ topology-changing node publishes a new state via `InitializeAsRevisionOf`; fract
 are separate factory families consumed by generic executors. Use `GC` in names, never `GeometryCollection`.
 `PCGUtilsDynMesh` must never depend on `PCGUtilsFracture`.
 
+Every palette entry in both modules is named `[CATEGORY] | [ELEMENT_NAME]`, with spaces around the pipe:
+`DynMesh | Extrude Faces`, `Builder | Box`, `Select | In Bounds`, `Painter | Blend`, `GC | Fracture`,
+`GC | Select | Contact`. The element name never repeats its category, and a selection name carries none of
+`select`/`selection`/`selector` (GC selection names also omit `GC`). This prefix *is* the grouping mechanism:
+PCG derives the palette category from `EPCGSettingsType` alone, with no per-class hook, so everything here
+lands under `Dynamic Mesh` regardless. An element deriving straight from `UPCGSettings` must therefore also
+override `GetType()`, or it silently disappears into `Generic`. `AGENTS.md` has the full rule plus the
+context-menu search mechanics, and `PCGUtils.Palette.SearchContract` enforces both - extend that test rather
+than checking the palette by hand.
+

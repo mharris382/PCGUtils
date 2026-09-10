@@ -145,7 +145,7 @@ void UPCGUniformVoronoiFractureFactoryData::AddToCrc(FArchiveCrc32& Ar, bool bFu
 #if WITH_EDITOR
 FText UPCGUniformVoronoiFractureSettings::GetDefaultNodeTitle() const
 {
-	return LOCTEXT("Title", "GC|Uniform Voronoi Fracture");
+	return LOCTEXT("Title", "GC | Uniform Voronoi Fracture");
 }
 
 FText UPCGUniformVoronoiFractureSettings::GetNodeTooltipText() const
@@ -166,17 +166,7 @@ FString UPCGUniformVoronoiFractureSettings::GetAdditionalTitleInformation() cons
 }
 #endif
 
-FName UPCGUniformVoronoiFractureSettings::GetMainOutputPin() const
-{
-	return PCGUtilsFractureFactoryConstants::OutputPin;
-}
-
-const FPCGDataTypeBaseId& UPCGUniformVoronoiFractureSettings::GetFactoryTypeId() const
-{
-	return FPCGUtilsFractureFactoryDataTypeInfo::AsId();
-}
-
-UPCGUtilsGeometryCollectionFactoryData* UPCGUniformVoronoiFractureSettings::CreateFactory(
+UPCGUtilsFractureFactoryData* UPCGUniformVoronoiFractureSettings::CreateFractureFactory(
 	FPCGContext* InContext, UPCGUtilsGeometryCollectionFactoryData* InFactory) const
 {
 	if (MaxVoronoiSites < MinVoronoiSites)
@@ -195,7 +185,6 @@ UPCGUtilsGeometryCollectionFactoryData* UPCGUniformVoronoiFractureSettings::Crea
 		return nullptr;
 	}
 
-	Factory->Priority = Priority;
 	Factory->MinVoronoiSites = FMath::Max(1, MinVoronoiSites);
 	Factory->MaxVoronoiSites = FMath::Max(Factory->MinVoronoiSites, MaxVoronoiSites);
 	Factory->RandomSeed = RandomSeed;
@@ -207,7 +196,7 @@ UPCGUtilsGeometryCollectionFactoryData* UPCGUniformVoronoiFractureSettings::Crea
 	Factory->VertexToSurfaceBridgeDistance = VertexToSurfaceBridgeDistance;
 	Factory->bAddSurfaceNoise = bAddSurfaceNoise;
 	Factory->Noise = Noise;
-	return Super::CreateFactory(InContext, Factory);
+	return Factory;
 }
 
 #undef LOCTEXT_NAMESPACE

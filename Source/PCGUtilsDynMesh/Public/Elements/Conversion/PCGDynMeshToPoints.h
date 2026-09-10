@@ -30,7 +30,7 @@ public:
 	virtual FName GetDefaultNodeName() const override { return FName(TEXT("DynMesh|Point")); }
 	virtual FText GetDefaultNodeTitle() const override
 	{
-		return NSLOCTEXT("PCGUtils", "DynMeshToPoints_Title", "DynMesh|To Points");
+		return NSLOCTEXT("PCGUtils", "DynMeshToPoints_Title", "DynMesh | To Points");
 	}
 	virtual FText GetNodeTooltipText() const override
 	{

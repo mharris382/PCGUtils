@@ -135,7 +135,7 @@ void UPCGDynMeshPolygroupSelectionFactoryData::AddToCrc(FArchiveCrc32& Ar, bool 
 #if WITH_EDITOR
 FText UPCGDynMeshPolygroupSelectionFactoryProviderSettings::GetDefaultNodeTitle() const
 {
-	return LOCTEXT("Title", "Select|By PolyGroup");
+	return LOCTEXT("Title", "Select | By PolyGroup");
 }
 
 FText UPCGDynMeshPolygroupSelectionFactoryProviderSettings::GetNodeTooltipText() const

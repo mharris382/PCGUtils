@@ -80,7 +80,7 @@ namespace
 #if WITH_EDITOR
 FText UPCGSplineToDynamicMeshSettings::GetDefaultNodeTitle() const
 {
-	return LOCTEXT("NodeTitle", "DynMesh|From SplineMesh");
+	return LOCTEXT("NodeTitle", "DynMesh | From SplineMesh");
 }
 
 FText UPCGSplineToDynamicMeshSettings::GetNodeTooltipText() const

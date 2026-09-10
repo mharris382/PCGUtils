@@ -20,7 +20,7 @@ UPCGBevelEdgesSettings::UPCGBevelEdgesSettings()
 #if WITH_EDITOR
 FText UPCGBevelEdgesSettings::GetDefaultNodeTitle() const
 {
-	return LOCTEXT("Title", "DynMesh|Bevel Edges");
+	return LOCTEXT("Title", "DynMesh | Bevel Edges");
 }
 
 FText UPCGBevelEdgesSettings::GetNodeTooltipText() const

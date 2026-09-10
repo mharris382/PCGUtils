@@ -217,7 +217,7 @@ void UPCGVoronoiFractureFactoryData::AddToCrc(FArchiveCrc32& Ar, bool bFullDataC
 #if WITH_EDITOR
 FText UPCGVoronoiFractureSettings::GetDefaultNodeTitle() const
 {
-	return LOCTEXT("Title", "GC|Voronoi Fracture From Points");
+	return LOCTEXT("Title", "GC | Voronoi Fracture From Points");
 }
 
 FText UPCGVoronoiFractureSettings::GetNodeTooltipText() const
@@ -235,16 +235,6 @@ FString UPCGVoronoiFractureSettings::GetAdditionalTitleInformation() const
 }
 #endif
 
-FName UPCGVoronoiFractureSettings::GetMainOutputPin() const
-{
-	return PCGUtilsFractureFactoryConstants::OutputPin;
-}
-
-const FPCGDataTypeBaseId& UPCGVoronoiFractureSettings::GetFactoryTypeId() const
-{
-	return FPCGUtilsFractureFactoryDataTypeInfo::AsId();
-}
-
 TArray<FPCGPinProperties> UPCGVoronoiFractureSettings::InputPinProperties() const
 {
 	TArray<FPCGPinProperties> Pins;
@@ -253,7 +243,7 @@ TArray<FPCGPinProperties> UPCGVoronoiFractureSettings::InputPinProperties() cons
 	return Pins;
 }
 
-UPCGUtilsGeometryCollectionFactoryData* UPCGVoronoiFractureSettings::CreateFactory(
+UPCGUtilsFractureFactoryData* UPCGVoronoiFractureSettings::CreateFractureFactory(
 	FPCGContext* InContext, UPCGUtilsGeometryCollectionFactoryData* InFactory) const
 {
 	// PCG points are world-space by convention while the collection lives in the source DynMesh's local space.
@@ -297,7 +287,6 @@ UPCGUtilsGeometryCollectionFactoryData* UPCGVoronoiFractureSettings::CreateFacto
 		return nullptr;
 	}
 
-	Factory->Priority = Priority;
 	Factory->Sites = MoveTemp(ResolvedSites);
 	Factory->RandomSeed = RandomSeed;
 	Factory->ChanceToFracture = ChanceToFracture;
@@ -307,7 +296,7 @@ UPCGUtilsGeometryCollectionFactoryData* UPCGVoronoiFractureSettings::CreateFacto
 	Factory->Noise = Noise;
 	Factory->SiteSpaceTransform = LocalToWorld;
 	Factory->bSitesWereTreatedAsWorldSpace = bSitesAreWorldSpace;
-	return Super::CreateFactory(InContext, Factory);
+	return Factory;
 }
 
 #undef LOCTEXT_NAMESPACE

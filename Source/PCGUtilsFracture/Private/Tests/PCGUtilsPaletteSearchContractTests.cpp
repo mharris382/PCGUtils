@@ -122,8 +122,8 @@ namespace PCGUtilsPaletteSearchContract
 		return Entries;
 	}
 
-	bool IsDynMeshSelect(const FEntry& Entry) { return Entry.Label.StartsWith(TEXT("Select|")); }
-	bool IsGCSelect(const FEntry& Entry) { return Entry.Label.StartsWith(TEXT("GC|Select|")); }
+	bool IsDynMeshSelect(const FEntry& Entry) { return Entry.Label.StartsWith(TEXT("Select | ")); }
+	bool IsGCSelect(const FEntry& Entry) { return Entry.Label.StartsWith(TEXT("GC | Select | ")); }
 }
 
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(FPCGUtilsPaletteSearchContractTest,
@@ -162,7 +162,7 @@ bool FPCGUtilsPaletteSearchContractTest::RunTest(const FString&)
 		{
 			++FractureCount;
 			TestTrue(*FString::Printf(TEXT("'GC' finds %s"), *Where), Matches(Entry.SearchText, TEXT("GC")));
-			TestTrue(*FString::Printf(TEXT("%s carries the GC| prefix"), *Where), Entry.Label.StartsWith(TEXT("GC|")));
+			TestTrue(*FString::Printf(TEXT("%s carries the GC| prefix"), *Where), Entry.Label.StartsWith(TEXT("GC | ")));
 		}
 
 		if (IsDynMeshSelect(Entry))
@@ -175,7 +175,7 @@ bool FPCGUtilsPaletteSearchContractTest::RunTest(const FString&)
 			TestFalse(*FString::Printf(TEXT("'GC Select' excludes %s"), *Where),
 				Matches(Entry.SearchText, TEXT("GC Select")));
 
-			const FString Name = Entry.Label.RightChop(FString(TEXT("Select|")).Len()).ToLower();
+			const FString Name = Entry.Label.RightChop(FString(TEXT("Select | ")).Len()).ToLower();
 			TestFalse(*FString::Printf(TEXT("%s name omits select/selection/selector"), *Where),
 				Name.Contains(TEXT("select")));
 		}
@@ -190,14 +190,14 @@ bool FPCGUtilsPaletteSearchContractTest::RunTest(const FString&)
 			TestFalse(*FString::Printf(TEXT("'DynMesh Select' excludes %s"), *Where),
 				Matches(Entry.SearchText, TEXT("DynMesh Select")));
 
-			const FString Name = Entry.Label.RightChop(FString(TEXT("GC|Select|")).Len()).ToLower();
+			const FString Name = Entry.Label.RightChop(FString(TEXT("GC | Select | ")).Len()).ToLower();
 			TestFalse(*FString::Printf(TEXT("%s name omits select/selection/selector"), *Where),
 				Name.Contains(TEXT("select")));
 			TestFalse(*FString::Printf(TEXT("%s name omits GC"), *Where), Name.Contains(TEXT("gc")));
 		}
 
 		// "Builder" and "Build" return the basic Builders and the node that realizes them.
-		if (Entry.Label.StartsWith(TEXT("Builder|")))
+		if (Entry.Label.StartsWith(TEXT("Builder | ")))
 		{
 			++BuilderCount;
 			TestTrue(*FString::Printf(TEXT("'Builder' finds %s"), *Where), Matches(Entry.SearchText, TEXT("Builder")));
@@ -209,13 +209,13 @@ bool FPCGUtilsPaletteSearchContractTest::RunTest(const FString&)
 			TestTrue(TEXT("'Builder' finds Realize Builders"), Matches(Entry.SearchText, TEXT("Builder")));
 			TestTrue(TEXT("'Build' finds Realize Builders"), Matches(Entry.SearchText, TEXT("Build")));
 			TestEqual(TEXT("Realize Builders keeps its agreed title"), Entry.Label,
-				FString(TEXT("DynMesh|Realize Builders")));
+				FString(TEXT("DynMesh | Realize Builders")));
 		}
 
 		// A family prefix means nothing if the process name repeats the family.
-		if (Entry.Label.StartsWith(TEXT("DynMesh|")))
+		if (Entry.Label.StartsWith(TEXT("DynMesh | ")))
 		{
-			const FString Name = Entry.Label.RightChop(FString(TEXT("DynMesh|")).Len()).ToLower();
+			const FString Name = Entry.Label.RightChop(FString(TEXT("DynMesh | ")).Len()).ToLower();
 			TestFalse(*FString::Printf(TEXT("%s name omits DynMesh"), *Where), Name.Contains(TEXT("dynmesh")));
 			TestFalse(*FString::Printf(TEXT("%s name omits DynamicMesh"), *Where),
 				Name.Contains(TEXT("dynamicmesh")));

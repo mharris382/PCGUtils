@@ -297,7 +297,7 @@ namespace
 #if WITH_EDITOR
 FText UPCGDynMeshSampleSettings::GetDefaultNodeTitle() const
 {
-	return LOCTEXT("NodeTitle", "DynMesh|Sample");
+	return LOCTEXT("NodeTitle", "DynMesh | Sample");
 }
 
 FText UPCGDynMeshSampleSettings::GetNodeTooltipText() const

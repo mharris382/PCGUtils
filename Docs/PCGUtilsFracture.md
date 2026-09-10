@@ -38,29 +38,33 @@ DynMesh To GC ------------------------+
 ## Nodes
 
 All under the `Dynamic Mesh` palette category (the engine has no Geometry Collection settings type), which is
-why every title is prefixed `GC|` - that prefix, not the category, is what groups this module in the menu.
+why every title is prefixed `GC | ` - that prefix, not the category, is what groups this module in the menu.
 Searching `GC` returns all of it; `GC Select` returns only the bone selections.
 
 | Node | In | Out |
 |---|---|---|
-| **GC\|From DynMesh** (compact) | `DynMesh` | `GC` |
-| **GC\|Fracture** | `GC`, `Fracture`, `Selection` (optional) | `GC` |
-| **GC\|Uniform Voronoi Fracture** | *(none)* | `Fracture` |
-| **GC\|Voronoi Fracture From Points** | `Sites` (points) | `Fracture` |
-| **GC\|Bones To Points** | `GC` | `Points`, `Edges` (cluster mode) |
-| **GC\|Select\|Bones From Points** | `Points` | `Selection` |
-| **GC\|Prune** | `GC`, `Selection` | `GC` |
-| **GC\|To DynMesh** (compact) | `GC` | `DynMesh` (one, or one per piece) |
+| **GC \| From DynMesh** (compact) | `DynMesh` | `GC` |
+| **GC \| Fracture** | `GC`, `Fracture`, `Selection` (optional) | `GC` |
+| **GC \| Uniform Voronoi Fracture** | *(none)* | `Fracture`, `Result` (optional) |
+| **GC \| Voronoi Fracture From Points** | `Sites` (points) | `Fracture`, `Result` (optional) |
+| **GC \| Planar Fracture** | `Planes` (points, optional) | `Fracture`, `Result` (optional) |
+| **GC \| Slice Fracture** | *(none)* | `Fracture`, `Result` (optional) |
+| **GC \| Brick Fracture** | *(none)* | `Fracture`, `Result` (optional) |
+| **GC \| Bones To Points** | `GC` | `Points`, `Edges` (cluster mode) |
+| **GC \| Select \| Bones From Points** | `Points` | `Selection` |
+| **GC \| Prune** | `GC`, `Selection` | `GC` |
+| **GC \| To DynMesh** (compact) | `GC` | `DynMesh` (one, or one per piece) |
 
 Plus the selector family, which builds a `Selection` without ever touching the collection itself:
 
 | Node | In | Out |
 |---|---|---|
-| **GC\|Select\|Pieces / Clusters / All Bones / No Bones / Root Bones / Bones At Level** | *(none)* | `Selection` |
-| **GC\|Select\|Parent / Children / Siblings / Ancestors / Descendants** | `Selection` | `Selection` |
-| **GC\|Select\|To Pieces / To Clusters / To Level / Same Level / Invert** | `Selection` | `Selection` |
-| **GC\|Select\|Contact** | `Selection` | `Selection` |
-| **GC\|Select\|AND / OR / XOR / Subtract** | `A`, `B` | `Selection` |
+| **GC \| Select \| Pieces / Clusters / All Bones / No Bones / Root Bones / Bones At Level** | *(none)* | `Selection` |
+| **GC \| Select \| Parent / Children / Siblings / Ancestors / Descendants** | `Selection` | `Selection` |
+| **GC \| Select \| To Pieces / To Clusters / To Level / Same Level / Invert** | `Selection` | `Selection` |
+| **GC \| Select \| Contact** | `Selection` | `Selection` |
+| **GC \| Select \| AND / OR / XOR / Subtract** | `A`, `B` | `Selection` |
+| **GC \| Select \| By Mesh Predicate (Any / All)** | `Selector` (DynMesh) | `Selection` |
 
 `GC`, `Fracture` and `Selection` pins all use the fracture-domain colour `#2F7FA3`; the icon distinguishes the
 type. A blue selection icon is a Geometry Collection bone selection, a purple one a DynMesh element selection.

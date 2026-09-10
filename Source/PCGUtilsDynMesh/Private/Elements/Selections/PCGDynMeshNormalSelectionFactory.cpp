@@ -138,7 +138,7 @@ void UPCGDynMeshNormalSelectionFactoryData::AddToCrc(FArchiveCrc32& Ar, bool bFu
 #if WITH_EDITOR
 FText UPCGDynMeshNormalSelectionFactoryProviderSettings::GetDefaultNodeTitle() const
 {
-	return LOCTEXT("Title", "Select|By Normal");
+	return LOCTEXT("Title", "Select | By Normal");
 }
 
 FText UPCGDynMeshNormalSelectionFactoryProviderSettings::GetNodeTooltipText() const

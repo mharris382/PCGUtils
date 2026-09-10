@@ -47,8 +47,8 @@ bool FPCGUtilsPainterVertexIDTest::RunTest(const FString&)
 	Sample.VertexID = 2;
 	TestEqual(TEXT("Unmapped scalar is zero"), Operation->Evaluate(Sample).Scalar, 0.0f);
 #if WITH_EDITOR
-	TestEqual(TEXT("ID palette title"), GetDefault<UPCGDynMeshPointsToPainterProviderSettings>()->GetDefaultNodeTitle().ToString(), FString(TEXT("Painter|By Vertex ID")));
-	TestEqual(TEXT("Bounds palette title"), GetDefault<UPCGDynMeshPainterFromPointsProviderSettings>()->GetDefaultNodeTitle().ToString(), FString(TEXT("Painter|Bounds Brush")));
+	TestEqual(TEXT("ID palette title"), GetDefault<UPCGDynMeshPointsToPainterProviderSettings>()->GetDefaultNodeTitle().ToString(), FString(TEXT("Painter | By Vertex ID")));
+	TestEqual(TEXT("Bounds palette title"), GetDefault<UPCGDynMeshPainterFromPointsProviderSettings>()->GetDefaultNodeTitle().ToString(), FString(TEXT("Painter | Bounds Brush")));
 #endif
 	return true;
 }

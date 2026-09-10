@@ -38,8 +38,8 @@ FName UPCGDynMeshActorSpaceTransformSettings::GetDefaultNodeName() const
 FText UPCGDynMeshActorSpaceTransformSettings::GetDefaultNodeTitle() const
 {
 	return Direction == EPCGDynMeshActorSpaceTransformDirection::ToWorld
-		? LOCTEXT("ToWorldTitle", "DynMesh|To World")
-		: LOCTEXT("ToLocalTitle", "DynMesh|To Local");
+		? LOCTEXT("ToWorldTitle", "DynMesh | To World")
+		: LOCTEXT("ToLocalTitle", "DynMesh | To Local");
 }
 
 FText UPCGDynMeshActorSpaceTransformSettings::GetNodeTooltipText() const
@@ -53,8 +53,8 @@ FText UPCGDynMeshActorSpaceTransformSettings::GetNodeTooltipText() const
 TArray<FPCGPreConfiguredSettingsInfo> UPCGDynMeshActorSpaceTransformSettings::GetPreconfiguredInfo() const
 {
 	return {
-		{ToWorldAlias, LOCTEXT("ToWorldAlias", "DynMesh|To World"), LOCTEXT("ToWorldAliasTooltip", "Transforms a Dynamic Mesh from actor-local space to world space.")},
-		{ToLocalAlias, LOCTEXT("ToLocalAlias", "DynMesh|To Local"), LOCTEXT("ToLocalAliasTooltip", "Transforms a Dynamic Mesh from world space to actor-local space.")}
+		{ToWorldAlias, LOCTEXT("ToWorldAlias", "DynMesh | To World"), LOCTEXT("ToWorldAliasTooltip", "Transforms a Dynamic Mesh from actor-local space to world space.")},
+		{ToLocalAlias, LOCTEXT("ToLocalAlias", "DynMesh | To Local"), LOCTEXT("ToLocalAliasTooltip", "Transforms a Dynamic Mesh from world space to actor-local space.")}
 	};
 }
 

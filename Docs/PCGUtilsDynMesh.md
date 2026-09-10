@@ -67,7 +67,7 @@ and separate input meshes can allocate different IDs. The base therefore also re
 layer, with `1` for result faces and `0` for other faces. **Result Polygroup Name** specifies this name; `None`
 generates a name from the authoring node's object path, stable across PCG property overrides and saved-graph
 reloads. A new or renamed/copied node has its own automatic name. Use an explicit name when referencing a region
-from a separate **Select|By PolyGroup** node (set **Group Layer Name** to that name and **Group IDs** to `1`).
+from a separate **Select | By PolyGroup** node (set **Group Layer Name** to that name and **Group IDs** to `1`).
 
 Reusing an explicit name replaces that region. Empty result regions clear the named layer and produce an empty
 Selector result; there is no fallback to the highest group. The emitted Selector also selects nothing on
@@ -83,11 +83,11 @@ named region. Each retained region adds one extended integer PolyGroup layer.
 
 ### Extrude, Inset and Bevel
 
-- **DynMesh|Extrude Faces** uses Geometry Script's underlying linear-extrude operation and options. Its result
+- **DynMesh | Extrude Faces** uses Geometry Script's underlying linear-extrude operation and options. Its result
   defaults to the extruded cap faces. Choose side faces or cap and border faces when needed.
-- **DynMesh|Inset Faces** uses the corresponding inset/outset operation, with inner faces as its default result.
+- **DynMesh | Inset Faces** uses the corresponding inset/outset operation, with inner faces as its default result.
   Border-only and combined results are also available. Negative distance outsets. UV Scale applies to the border.
-- **DynMesh|Bevel Edges** now reports the newly created bevel faces through the same base, replacing invalidated edge IDs.
+- **DynMesh | Bevel Edges** now reports the newly created bevel faces through the same base, replacing invalidated edge IDs.
   Its existing bare-mesh behavior (bevel every edge) is retained. It now supports result Selection data and a
   reusable Selector on its **Result** pin.
 

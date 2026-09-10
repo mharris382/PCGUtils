@@ -132,7 +132,7 @@ namespace
 #if WITH_EDITOR
 FText UPCGRemeshSettings::GetDefaultNodeTitle() const
 {
-	return LOCTEXT("NodeTitle", "DynMesh|Remesh");
+	return LOCTEXT("NodeTitle", "DynMesh | Remesh");
 }
 
 FText UPCGRemeshSettings::GetNodeTooltipText() const

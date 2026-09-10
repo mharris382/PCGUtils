@@ -226,7 +226,7 @@ void UPCGDynMeshPointsToPainterProviderSettings::Serialize(FArchive& Ar)
 #if WITH_EDITOR
 FText UPCGDynMeshPointsToPainterProviderSettings::GetDefaultNodeTitle() const
 {
-	return LOCTEXT("Title", "Painter|By Vertex ID");
+	return LOCTEXT("Title", "Painter | By Vertex ID");
 }
 
 FText UPCGDynMeshPointsToPainterProviderSettings::GetNodeTooltipText() const

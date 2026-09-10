@@ -233,7 +233,7 @@ bool PCGUtilsDynMeshBuilderRealization::Realize(
 #if WITH_EDITOR
 FText UPCGDynMeshRealizeBuildersSettings::GetDefaultNodeTitle() const
 {
-	return LOCTEXT("NodeTitle", "DynMesh|Realize Builders");
+	return LOCTEXT("NodeTitle", "DynMesh | Realize Builders");
 }
 
 FText UPCGDynMeshRealizeBuildersSettings::GetNodeTooltipText() const

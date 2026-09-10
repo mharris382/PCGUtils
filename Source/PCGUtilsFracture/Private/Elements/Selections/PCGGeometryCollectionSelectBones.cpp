@@ -131,13 +131,13 @@ FText UPCGGeometryCollectionSelectBonesSettings::GetDefaultNodeTitle() const
 {
 	switch (Mode)
 	{
-	case EPCGGeometryCollectionBoneSelectionMode::All: return LOCTEXT("AllTitle", "GC|Select|All Bones");
-	case EPCGGeometryCollectionBoneSelectionMode::None: return LOCTEXT("NoneTitle", "GC|Select|No Bones");
-	case EPCGGeometryCollectionBoneSelectionMode::Root: return LOCTEXT("RootTitle", "GC|Select|Root Bones");
-	case EPCGGeometryCollectionBoneSelectionMode::Pieces: return LOCTEXT("PiecesTitle", "GC|Select|Pieces");
-	case EPCGGeometryCollectionBoneSelectionMode::Clusters: return LOCTEXT("ClustersTitle", "GC|Select|Clusters");
-	case EPCGGeometryCollectionBoneSelectionMode::AtLevel: return LOCTEXT("LevelTitle", "GC|Select|Bones At Level");
-	default: return LOCTEXT("Title", "GC|Select|Bones");
+	case EPCGGeometryCollectionBoneSelectionMode::All: return LOCTEXT("AllTitle", "GC | Select | All Bones");
+	case EPCGGeometryCollectionBoneSelectionMode::None: return LOCTEXT("NoneTitle", "GC | Select | No Bones");
+	case EPCGGeometryCollectionBoneSelectionMode::Root: return LOCTEXT("RootTitle", "GC | Select | Root Bones");
+	case EPCGGeometryCollectionBoneSelectionMode::Pieces: return LOCTEXT("PiecesTitle", "GC | Select | Pieces");
+	case EPCGGeometryCollectionBoneSelectionMode::Clusters: return LOCTEXT("ClustersTitle", "GC | Select | Clusters");
+	case EPCGGeometryCollectionBoneSelectionMode::AtLevel: return LOCTEXT("LevelTitle", "GC | Select | Bones At Level");
+	default: return LOCTEXT("Title", "GC | Select | Bones");
 	}
 }
 
@@ -159,12 +159,12 @@ FString UPCGGeometryCollectionSelectBonesSettings::GetAdditionalTitleInformation
 TArray<FPCGPreConfiguredSettingsInfo> UPCGGeometryCollectionSelectBonesSettings::GetPreconfiguredInfo() const
 {
 	return {
-		FPCGPreConfiguredSettingsInfo(PreconfiguredPieces, LOCTEXT("PiecesTitle", "GC|Select|Pieces")),
-		FPCGPreConfiguredSettingsInfo(PreconfiguredClusters, LOCTEXT("ClustersTitle", "GC|Select|Clusters")),
-		FPCGPreConfiguredSettingsInfo(PreconfiguredAll, LOCTEXT("AllTitle", "GC|Select|All Bones")),
-		FPCGPreConfiguredSettingsInfo(PreconfiguredNone, LOCTEXT("NoneTitle", "GC|Select|No Bones")),
-		FPCGPreConfiguredSettingsInfo(PreconfiguredRoot, LOCTEXT("RootTitle", "GC|Select|Root Bones")),
-		FPCGPreConfiguredSettingsInfo(PreconfiguredAtLevel, LOCTEXT("LevelTitle", "GC|Select|Bones At Level")),
+		FPCGPreConfiguredSettingsInfo(PreconfiguredPieces, LOCTEXT("PiecesTitle", "GC | Select | Pieces")),
+		FPCGPreConfiguredSettingsInfo(PreconfiguredClusters, LOCTEXT("ClustersTitle", "GC | Select | Clusters")),
+		FPCGPreConfiguredSettingsInfo(PreconfiguredAll, LOCTEXT("AllTitle", "GC | Select | All Bones")),
+		FPCGPreConfiguredSettingsInfo(PreconfiguredNone, LOCTEXT("NoneTitle", "GC | Select | No Bones")),
+		FPCGPreConfiguredSettingsInfo(PreconfiguredRoot, LOCTEXT("RootTitle", "GC | Select | Root Bones")),
+		FPCGPreConfiguredSettingsInfo(PreconfiguredAtLevel, LOCTEXT("LevelTitle", "GC | Select | Bones At Level")),
 	};
 }
 

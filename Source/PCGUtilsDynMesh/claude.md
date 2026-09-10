@@ -207,8 +207,8 @@ A native C++ PCG element has no free-form category string to set - the "Add Node
 The finer-grained groupings described below (`Utils DynMesh|Selection`, `Utils DynMesh|Topology`, etc.) are this module's own documentation/naming convention for organizing nodes conceptually - they are not literally selectable as a native `EPCGSettingsType` value. Reflect them through the node's display name/tooltip/file organization, not through a `GetType()` override.
 
 Because the category cannot carry the grouping, **the node title does**: every palette entry takes the form
-`Family|Name` - `DynMesh|Extrude Faces`, `Builder|Box`, `Select|In Bounds`, `Painter|Blend` - and the name never
-repeats its family. The full rule, including how the context-menu search text is assembled and why `Select|`
+`Family | Name` - `DynMesh | Extrude Faces`, `Builder | Box`, `Select | In Bounds`, `Painter | Blend` - and the name never
+repeats its family. The full rule, including how the context-menu search text is assembled and why `Select | `
 entries must carry a `DynMesh` keyword, is in `AGENTS.md` under "Context-menu naming". It is enforced by the
 `PCGUtils.Palette.SearchContract` automation test; extend that test rather than verifying by hand in the editor.
 
@@ -388,10 +388,10 @@ Creation nodes may generate geometry:
 
 Examples:
 
-* DynMesh|Realize Builders (the Builder materialization point; supersedes the withdrawn Create Primitive)
-* Builder|Box
-* Builder|Sphere
-* Builder|Cylinder
+* DynMesh | Realize Builders (the Builder materialization point; supersedes the withdrawn Create Primitive)
+* Builder | Box
+* Builder | Sphere
+* Builder | Cylinder
 * Create Mesh from Spline
 * Create Mesh from Points
 * Generate procedural surface

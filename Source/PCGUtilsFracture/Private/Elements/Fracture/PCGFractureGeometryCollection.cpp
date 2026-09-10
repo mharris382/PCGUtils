@@ -5,6 +5,7 @@
 #include "Data/PCGGeometryCollectionData.h"
 #include "Data/PCGUtilsGeometryCollectionRevisionPublisher.h"
 #include "Factories/PCGUtilsFractureFactory.h"
+#include "Factories/PCGUtilsFractureProvider.h"
 #include "Factories/PCGUtilsGeometryCollectionSelectionFactory.h"
 #include "FunctionLibraries/PCGUtilsGeometryCollectionHelpers.h"
 #include "FunctionLibraries/PCGUtilsGeometryCollectionHierarchy.h"
@@ -41,7 +42,7 @@ namespace
 #if WITH_EDITOR
 FText UPCGFractureGeometryCollectionSettings::GetDefaultNodeTitle() const
 {
-	return LOCTEXT("Title", "GC|Fracture");
+	return LOCTEXT("Title", "GC | Fracture");
 }
 
 FText UPCGFractureGeometryCollectionSettings::GetNodeTooltipText() const
@@ -172,11 +173,28 @@ bool FPCGFractureGeometryCollectionElement::ExecuteInternal(FPCGContext* Context
 				SelectAllBones(*Collection, TargetBones);
 			}
 
+			// Bracketing every operation, not just the tagging ones: ids minted here are what make "this bone
+			// has no id yet" mean "this operation created it", and EnsureBoneIds never reassigns an existing id
+			// so the publisher's own call later is unaffected.
+			PCGUtilsFractureResultTagging::PrepareForOperation(*Collection);
+
 			FPCGUtilsGeometryCollectionMutationResult OperationMutation;
 			if (Operation->Fracture(*Collection, TargetBones, Context, OperationMutation))
 			{
 				Mutation.Accumulate(OperationMutation);
 				++NumApplied;
+
+				const int32 NumTagged = PCGUtilsFractureResultTagging::TagBonesCreatedByOperation(
+					*Collection, Operation->ResultTagAttribute);
+				if (NumTagged > 0)
+				{
+					// A new Transform-group attribute is a structural change as far as the publisher and any
+					// derived cache are concerned.
+					Mutation.bStructureChanged = true;
+					UE_LOG(LogPCGUtilsFracture, Verbose,
+						TEXT("Fracture GC: operation %d tagged %d result bone(s) as '%s'"),
+						OperationIndex + 1, NumTagged, *Operation->ResultTagAttribute.ToString());
+				}
 			}
 		}
 

@@ -167,11 +167,11 @@ TArray<FPCGPreConfiguredSettingsInfo>
 UPCGDynMeshSelectionFactoryGroupProviderSettings::GetPreconfiguredInfo() const
 {
 	TArray<FPCGPreConfiguredSettingsInfo> Presets = MakeRepresentationPresets(
-		LOCTEXT("AndDisplayName", "Select|AND"), 0, 1);
+		LOCTEXT("AndDisplayName", "Select | AND"), 0, 1);
 	Presets.Append(MakeRepresentationPresets(
-		LOCTEXT("OrDisplayName", "Select|OR"), 2, 3));
+		LOCTEXT("OrDisplayName", "Select | OR"), 2, 3));
 	Presets.Append(MakeRepresentationPresets(
-		LOCTEXT("NotDisplayName", "Select|NOT"), 4, 5));
+		LOCTEXT("NotDisplayName", "Select | NOT"), 4, 5));
 	return Presets;
 }
 

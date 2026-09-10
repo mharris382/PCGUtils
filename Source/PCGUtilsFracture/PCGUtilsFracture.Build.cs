@@ -37,6 +37,12 @@ public class PCGUtilsFracture : ModuleRules
                 "PCG",
                 "PCGGeometryScriptInterop",
                 "PCGUtils",
+
+                // The shared factory layer. A transitive dependency through PCGUtilsDynMesh is not enough:
+                // GC | Select | By Mesh Predicate instantiates PCGUtilsDynMeshFactories::GetInputFactories<T>
+                // here, and that template calls a PCGUTILSCORE_API symbol, which only links with a direct
+                // dependency.
+                "PCGUtilsCore",
                 "PCGUtilsDynMesh"
             }
         );

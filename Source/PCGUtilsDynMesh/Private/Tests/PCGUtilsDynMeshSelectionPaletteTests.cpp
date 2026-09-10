@@ -71,7 +71,7 @@ bool FPCGDynMeshSelectionPaletteContractTest::RunTest(const FString&)
 		const FString Label = ConnectedPresets[0].Label.ToString();
 		TestFalse(TEXT("No Selector suffix survives"), Label.Contains(TEXT("(Selector)")));
 		TestFalse(TEXT("No Selection alias survives"), Label.Contains(TEXT("(Selection)")));
-		TestTrue(TEXT("Selection queries carry the Select family prefix"), Label.StartsWith(TEXT("Select|")));
+		TestTrue(TEXT("Selection queries carry the Select family prefix"), Label.StartsWith(TEXT("Select | ")));
 
 		Connected->ApplyPreconfiguredSettings(ConnectedPresets[0]);
 		TestEqual(TEXT("The remaining preset selects the deferred representation"), Connected->OperationMode,
