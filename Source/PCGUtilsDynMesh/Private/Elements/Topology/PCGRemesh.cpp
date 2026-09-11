@@ -34,22 +34,13 @@ namespace
 		return INDEX_NONE;
 	}
 
-	/**
-	 * Resolves a valid Adaptive-remesh weight-map handle for Mesh. ApplyAdaptiveRemesh requires a *valid* handle
-	 * even when no density modulation is desired (an invalid handle is treated as an error, not "no weight map"),
-	 * so when Settings->bUseAdaptiveWeightMap is off, or the named layer can't be found, a temporary neutral
-	 * (constant 1.0) layer is synthesized instead - with Relative Density's default of 0, a constant weight map
-	 * has no effect on the result. bOutIsTemporary tells the caller to remove that synthesized layer afterward.
-	 */
 	FGeometryScriptWeightMapHandle ResolveAdaptiveWeightMapHandle(
 		UDynamicMesh* Mesh, const FPCGUtilsDynMeshRemeshOperation* Settings, bool& bOutIsTemporary,
 		FPCGContext* Context)
 	{
 		using namespace UE::Geometry;
-
 		bOutIsTemporary = false;
 		FGeometryScriptWeightMapHandle Handle;
-
 		if (Settings->bUseAdaptiveWeightMap)
 		{
 			Mesh->ProcessMesh([&Handle, Settings](const FDynamicMesh3& M)
@@ -63,7 +54,6 @@ namespace
 					FText::FromName(Settings->AdaptiveWeightMapAttributeName)), Context);
 			}
 		}
-
 		if (!Handle.IsValid())
 		{
 			Mesh->EditMesh([&Handle](FDynamicMesh3& M)
@@ -80,7 +70,6 @@ namespace
 			});
 			bOutIsTemporary = true;
 		}
-
 		return Handle;
 	}
 

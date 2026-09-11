@@ -109,6 +109,21 @@ operation settings and Selector wiring work, while `Out` remains a Builder. The 
 selection internally, so the next operation can use it without an additional Selector wire. A supplied Selector
 still intersects that active selection, following the normal process contract.
 
+### Mirror and Array modifiers
+
+- **DynMesh | Mirror** mirrors across a plane expressed in Actor Local, World, DynMesh Local, or Builder Local
+  space. It exposes Geometry Script's cut-side and seam-weld options. A selected triangle region is extracted,
+  mirrored, and welded back; a Builder defers the same operation per seed.
+- **DynMesh | Array** supports four placement modes. **Count** combines Blender-style Constant and Relative
+  offsets; **Points** places copies at point transforms; **Spline** samples tangent-oriented frames along a PCG
+  spline; and **Fit Bounds** fills one oriented point bound. **Fit Bounds Perfectly** retains the copy count that
+  fits at the requested step, then expands that step so the last copy reaches the opposite usable bound exactly.
+  Point, spline, and bound inputs are snapshotted by value, so deferred Builders do not retain PCG data objects.
+
+Both operations preserve mesh overlays, PolyGroups, material IDs, weight layers, and the DynMesh material list.
+Their topology changes invalidate an incoming active selection. Builder Local falls back to the DynMesh bounds
+center for immediate DynMesh inputs, matching **DynMesh | Transform**.
+
 ## Whole-mesh processes with an operand
 
 `UPCGUtilsDynMeshOperandProcessBaseSettings` extends the process base for two-input whole-mesh operations.
