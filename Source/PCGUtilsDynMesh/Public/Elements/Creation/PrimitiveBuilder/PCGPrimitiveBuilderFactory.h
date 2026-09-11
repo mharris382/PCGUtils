@@ -54,7 +54,7 @@ class PCGUTILSDYNMESH_API UPCGPrimitiveBuilderProviderSettingsBase : public UPCG
 
 public:
 	/** How this primitive fits, aligns, pads, and offsets into each seed's bounds. */
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Fitting", meta = (ShowOnlyInnerProperties))
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Fitting", meta = (ShowOnlyInnerProperties, PCG_Overridable))
 	FPCGUtilsFittingDetails Fitting;
 
 	virtual FName GetMainOutputPin() const override;
