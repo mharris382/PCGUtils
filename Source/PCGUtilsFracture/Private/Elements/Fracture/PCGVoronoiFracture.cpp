@@ -217,7 +217,7 @@ void UPCGVoronoiFractureFactoryData::AddToCrc(FArchiveCrc32& Ar, bool bFullDataC
 #if WITH_EDITOR
 FText UPCGVoronoiFractureSettings::GetDefaultNodeTitle() const
 {
-	return LOCTEXT("Title", "GC | Voronoi Fracture From Points");
+	return LOCTEXT("Title", "Fracture | Voronoi From Points");
 }
 
 FText UPCGVoronoiFractureSettings::GetNodeTooltipText() const

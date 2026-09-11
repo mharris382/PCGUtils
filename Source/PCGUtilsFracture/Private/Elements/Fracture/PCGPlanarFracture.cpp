@@ -228,7 +228,7 @@ void UPCGPlanarFractureFactoryData::AddToCrc(FArchiveCrc32& Ar, bool bFullDataCr
 #if WITH_EDITOR
 FText UPCGPlanarFractureSettings::GetDefaultNodeTitle() const
 {
-	return LOCTEXT("PlanarTitle", "GC | Planar Fracture");
+	return LOCTEXT("PlanarTitle", "Fracture | Planar");
 }
 
 FText UPCGPlanarFractureSettings::GetNodeTooltipText() const
@@ -253,8 +253,13 @@ FString UPCGPlanarFractureSettings::GetAdditionalTitleInformation() const
 TArray<FPCGPinProperties> UPCGPlanarFractureSettings::InputPinProperties() const
 {
 	TArray<FPCGPinProperties> Pins;
-	// Optional: unconnected means "generate the planes", which is the Fracture Mode behaviour.
-	Pins.Emplace(PCGPlanarFractureConstants::PlanesInputPin, EPCGDataType::Point, true, true);
+	// Bounds Relative mode resolves its plane entirely from the target collection's bounds and Bounds Placement,
+	// so it needs no external input at all. Only Explicit mode - where an unconnected pin means "generate the
+	// planes", the Fracture Mode behaviour - exposes Planes.
+	if (TransformMode != EPCGUtilsPlaneTransformMode::BoundsRelative)
+	{
+		Pins.Emplace(PCGPlanarFractureConstants::PlanesInputPin, EPCGDataType::Point, true, true);
+	}
 	return Pins;
 }
 
@@ -386,7 +391,7 @@ void UPCGSliceFractureFactoryData::AddToCrc(FArchiveCrc32& Ar, bool bFullDataCrc
 #if WITH_EDITOR
 FText UPCGSliceFractureSettings::GetDefaultNodeTitle() const
 {
-	return LOCTEXT("SliceTitle", "GC | Slice Fracture");
+	return LOCTEXT("SliceTitle", "Fracture | Slice");
 }
 
 FText UPCGSliceFractureSettings::GetNodeTooltipText() const
@@ -519,7 +524,7 @@ UPCGBrickFractureSettings::UPCGBrickFractureSettings()
 #if WITH_EDITOR
 FText UPCGBrickFractureSettings::GetDefaultNodeTitle() const
 {
-	return LOCTEXT("BrickTitle", "GC | Brick Fracture");
+	return LOCTEXT("BrickTitle", "Fracture | Brick");
 }
 
 FText UPCGBrickFractureSettings::GetNodeTooltipText() const
