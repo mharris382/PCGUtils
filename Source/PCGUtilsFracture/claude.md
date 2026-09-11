@@ -466,6 +466,15 @@ itself carrying none of `GC`, `select`, `selection` or `selector` - `GC | Select
 thing separating this module from the DynMesh nodes it shares the `Dynamic Mesh` bucket with. `AGENTS.md`
 has the full rule and the search-text mechanics; `PCGUtils.Palette.SearchContract` enforces them.
 
+**Fracture factories are the one exception to the `GC | ` prefix.** The operations that plug into `GC | Fracture`'s
+`Fracture` pin - `Fracture | Uniform Voronoi`, `Fracture | Voronoi From Points`, `Fracture | Planar`,
+`Fracture | Slice`, `Fracture | Brick` - use `Fracture | [TYPE]` instead, grouping the whole cutter family
+together since fracture behavior is implicitly GC-related. `GC | Fracture` itself is the executor, not a
+factory, and keeps the `GC | ` prefix. A factory's title carries no `GC`/`Geometry Collection` text, but its
+`UCLASS(meta=(Keywords=...))` still does, which is what keeps a "GC" search returning the whole module -
+`PCGUtils.Palette.SearchContract` checks this explicitly, so add any new factory's Keywords the same way rather
+than putting `GC` back in the title.
+
 ## Node conventions
 
 - Every element derives from `UPCGUtilsFractureElementBaseSettings`, which supplies `GetType()`. Deriving

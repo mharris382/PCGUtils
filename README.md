@@ -515,9 +515,10 @@ Source DynMesh ─▶ DynMesh To GC ─▶ Fracture GC ─▶ GC Bones To Points
   selection to neighbouring pieces. The contract is reproduced, not depended on — there is no link against
   PCGExtendedToolkit.
 
-Known limitations: only Voronoi cutters exist today (no plane, slice, radial, brick or mesh cutter); surface
-noise is expensive because the engine couples displacement to cut-face tessellation; internal-face UVs are
-unscaled; fracture cannot be time-sliced; and there is no Geometry Collection asset output.
+Known limitations: surface noise is expensive because the engine couples displacement to cut-face tessellation;
+internal-face UVs are unscaled; and fracture cannot be time-sliced. `GC | Save Asset` commits a transient result
+through PCG's standard asset-export path and exposes the Geometry Collection render, Nanite, collision, mass,
+clustering and damage settings needed to produce a configured asset.
 
 `[ADD SCREENSHOT/GIF HERE - Procedurally generated column fractured through a compact PCG graph]`
 

@@ -38,6 +38,9 @@ public class PCGUtilsFracture : ModuleRules
                 // holds comes from Chaos below; only the asset wrapper lives here.
                 "GeometryCollectionEngine",
 
+                // EClusterConnectionTypeEnum (Chaos/ChaosSolverActor.h), used by GC | Save Asset's bake settings.
+                "ChaosSolverEngine",
+
                 "PCG",
                 "PCGGeometryScriptInterop",
                 "PCGUtils",

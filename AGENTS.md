@@ -97,11 +97,20 @@ splits the search text on spaces and concatenates the words with no separator, s
 | DynMesh selection | `Select \| [NAME]` | `Select \| In Bounds`, `Select \| By Normal` |
 | Painter | `Painter \| [NAME]` | `Painter \| Bounds Brush`, `Painter \| Blend` |
 | Fracture element | `GC \| [NAME]` | `GC \| Fracture`, `GC \| Prune` |
+| Fracture factory | `Fracture \| [TYPE]` | `Fracture \| Planar`, `Fracture \| Brick` |
 | GC selection | `GC \| Select \| [NAME]` | `GC \| Select \| Contact`, `GC \| Select \| Parent` |
+
+The fracture factories are the one family that splits off the module's usual `GC | ` prefix: they are the
+operations that plug into `GC | Fracture`'s `Fracture` pin (`Fracture | Planar`, `Fracture | Slice`,
+`Fracture | Brick`, `Fracture | Uniform Voronoi`, `Fracture | Voronoi From Points`), grouped together under
+`Fracture | ` since fracture behavior is implicitly GC-related. `GC | Fracture` itself is the executor, not a
+factory, and keeps the `GC | ` prefix. A factory's title carries no `GC`/`Geometry Collection` text, but its
+`Keywords` metadata still does, so a "GC" search continues to return the whole module.
 
 **The name never repeats its family.** `DynMesh | Extrude Faces`, not `DynMesh | Extrude DynMesh Faces`. A
 selection name contains none of `select`, `selection` or `selector`: `Select | In Bounds`, not
-`Select | Select in Bounds`. A GC selection name additionally omits `GC`. A compact node's title - the text drawn
+`Select | Select in Bounds`. A GC selection name additionally omits `GC`; a fracture factory name additionally
+omits `Fracture` (`Fracture | Planar`, not `Fracture | Planar Fracture`). A compact node's title - the text drawn
 on the node when `ShouldShowCompactNodeTitle()` is true and no `GetCompactNodeIcon()` is supplied - follows the
 same exclusions and carries no prefix, because the pins already say what it operates on.
 

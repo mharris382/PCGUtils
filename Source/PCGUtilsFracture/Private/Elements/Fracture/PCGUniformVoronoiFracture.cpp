@@ -145,7 +145,7 @@ void UPCGUniformVoronoiFractureFactoryData::AddToCrc(FArchiveCrc32& Ar, bool bFu
 #if WITH_EDITOR
 FText UPCGUniformVoronoiFractureSettings::GetDefaultNodeTitle() const
 {
-	return LOCTEXT("Title", "GC | Uniform Voronoi Fracture");
+	return LOCTEXT("Title", "Fracture | Uniform Voronoi");
 }
 
 FText UPCGUniformVoronoiFractureSettings::GetNodeTooltipText() const

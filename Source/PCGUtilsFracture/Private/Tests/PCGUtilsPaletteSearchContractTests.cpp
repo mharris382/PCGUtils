@@ -128,6 +128,13 @@ namespace PCGUtilsPaletteSearchContract
 
 	bool IsDynMeshSelect(const FEntry& Entry) { return Entry.Label.StartsWith(TEXT("Select | ")); }
 	bool IsGCSelect(const FEntry& Entry) { return Entry.Label.StartsWith(TEXT("GC | Select | ")); }
+
+	/**
+	 * Fracture factory elements - the ones that plug into GC | Fracture's Fracture pin - use the Fracture | [TYPE]
+	 * prefix instead of the module's usual GC | prefix, so they group together as one family. GC | Fracture
+	 * itself is the executor, not a factory, and keeps the GC | prefix.
+	 */
+	bool IsFractureFactory(const FEntry& Entry) { return Entry.Label.StartsWith(TEXT("Fracture | ")); }
 }
 
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(FPCGUtilsPaletteSearchContractTest,
@@ -147,6 +154,7 @@ bool FPCGUtilsPaletteSearchContractTest::RunTest(const FString&)
 	int32 DynMeshSelectCount = 0;
 	int32 GCSelectCount = 0;
 	int32 FractureCount = 0;
+	int32 FractureFactoryCount = 0;
 	int32 BuilderCount = 0;
 	bool bFoundRealizeBuilders = false;
 
@@ -161,12 +169,25 @@ bool FPCGUtilsPaletteSearchContractTest::RunTest(const FString&)
 			TestTrue(*FString::Printf(TEXT("'DynMesh' finds %s"), *Where), Matches(Entry.SearchText, TEXT("DynMesh")));
 		}
 
-		// "GC" returns every PCGUtilsFracture element.
+		// "GC" returns every PCGUtilsFracture element - fracture factories keep GC/Geometry Collection in their
+		// Keywords rather than their title, so the search invariant holds even though the prefix differs.
 		if (bIsFracture)
 		{
 			++FractureCount;
 			TestTrue(*FString::Printf(TEXT("'GC' finds %s"), *Where), Matches(Entry.SearchText, TEXT("GC")));
-			TestTrue(*FString::Printf(TEXT("%s carries the GC| prefix"), *Where), Entry.Label.StartsWith(TEXT("GC | ")));
+
+			if (IsFractureFactory(Entry))
+			{
+				++FractureFactoryCount;
+				TestTrue(*FString::Printf(TEXT("'Fracture' finds %s"), *Where), Matches(Entry.SearchText, TEXT("Fracture")));
+
+				const FString Name = Entry.Label.RightChop(FString(TEXT("Fracture | ")).Len()).ToLower();
+				TestFalse(*FString::Printf(TEXT("%s name omits Fracture"), *Where), Name.Contains(TEXT("fracture")));
+			}
+			else
+			{
+				TestTrue(*FString::Printf(TEXT("%s carries the GC| prefix"), *Where), Entry.Label.StartsWith(TEXT("GC | ")));
+			}
 		}
 
 		if (IsDynMeshSelect(Entry))
@@ -245,6 +266,7 @@ bool FPCGUtilsPaletteSearchContractTest::RunTest(const FString&)
 	TestTrue(TEXT("DynMesh selections were found"), DynMeshSelectCount > 5);
 	TestTrue(TEXT("GC selections were found"), GCSelectCount > 5);
 	TestTrue(TEXT("Fracture elements were found"), FractureCount > 5);
+	TestEqual(TEXT("Every fracture factory is present"), FractureFactoryCount, 5);
 	return true;
 }
 

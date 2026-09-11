@@ -44,14 +44,15 @@ Searching `GC` returns all of it; `GC Select` returns only the bone selections.
 | Node | In | Out |
 |---|---|---|
 | **GC \| From Asset** | *(none)* - reads a Geometry Collection asset | `GC` |
+| **GC \| Save Asset** | `GC` | `AssetPath` - Attribute Set containing the saved asset reference |
 | **GC \| Get GC Data** | *(none)* - reads placed GC Components | `GC` (one per component) |
 | **GC \| From DynMesh** (compact) | `DynMesh` | `GC` |
 | **GC \| Fracture** | `GC`, `Fracture`, `Selection` (optional) | `GC`, `Result` (opt-in) |
-| **GC \| Uniform Voronoi Fracture** | *(none)* | `Fracture` |
-| **GC \| Voronoi Fracture From Points** | `Sites` (points) | `Fracture` |
-| **GC \| Planar Fracture** | `Planes` (points, optional) | `Fracture` |
-| **GC \| Slice Fracture** | *(none)* | `Fracture` |
-| **GC \| Brick Fracture** | *(none)* | `Fracture` |
+| **Fracture \| Uniform Voronoi** | *(none)* | `Fracture` |
+| **Fracture \| Voronoi From Points** | `Sites` (points) | `Fracture` |
+| **Fracture \| Planar** | `Planes` (points, optional outside Bounds Relative mode) | `Fracture` |
+| **Fracture \| Slice** | *(none)* | `Fracture` |
+| **Fracture \| Brick** | *(none)* | `Fracture` |
 | **GC \| Bones To Points** | `GC` | `Points`, `Edges` (cluster mode) |
 | **GC \| Select \| Bones From Points** | `Points` | `Selection` |
 | **GC \| Separate Selection** | `GC`, `Selection` | `Selected`, `Unselected` |
@@ -69,7 +70,7 @@ Plus the selector family, which builds a `Selection` without ever touching the c
 | **GC \| Select \| AND / OR / XOR / Subtract** | `A`, `B` | `Selection` |
 | **GC \| Select \| By Mesh Predicate (Any / All)** | `Selector` (DynMesh) | `Selection` |
 | **GC \| Select \| With Exterior / With Interior** | *(none)* | `Selection` |
-| **GC \| Select \| Random Bones** | *(none)* | `Selection` |
+| **GC \| Select \| Random** | *(none)* | `Selection` |
 
 `GC`, `Fracture` and `Selection` pins all use the fracture-domain colour `#2F7FA3`; the icon distinguishes the
 type. A blue selection icon is a Geometry Collection bone selection, a purple one a DynMesh element selection.
@@ -97,7 +98,7 @@ geometry, which is what renders, converts and prunes. `Select Clusters` gives th
 Bones` includes clusters and roots, which is rarely what a spatial filter wants.
 
 `With Exterior` and `With Interior` select pieces by face classification. **Match Any Face** keeps a piece when
-at least one face has that surface class; **Match All Faces** requires every face to match. `Random Bones` uses a
+at least one face has that surface class; **Match All Faces** requires every face to match. `Random` uses a
 deterministic seed and selects either a percentage or an exact count from Pieces, Clusters, or All Bones.
 
 **Decorators** take a selection and return another. Parent, Children, Siblings, Ancestors and Descendants walk
@@ -154,7 +155,7 @@ The node always adds a cluster root above the geometry, so the geometry bones ar
 
 Two nodes produce a `Fracture` operation. Both feed the same `Fracture GC` executor.
 
-**`Uniform Voronoi Fracture`** — start here. The direct equivalent of Fracture Mode's Uniform button: set
+**`Fracture | Uniform Voronoi`** — start here. The direct equivalent of Fracture Mode's Uniform button: set
 **Min/Max Voronoi Sites** and it scatters its own sites through the bounds of whatever it is fracturing. No
 point input, no coordinate space to get wrong. Setting Min and Max to the same value asks for an exact piece
 count.
@@ -169,7 +170,7 @@ count.
 | **Split Islands** | On by default; splits a piece the cut left disconnected. |
 | **Add Surface Noise** | Off by default. See the warning below before turning it on. |
 
-**`Voronoi Fracture From Points`** — when you want to *place* the cells rather than have them scattered for
+**`Fracture | Voronoi From Points`** — when you want to *place* the cells rather than have them scattered for
 you: one piece per point, so the fracture pattern follows a PCG/PCGEx scatter, a density field, or any filtered
 point set. This is the Houdini-style primitive, and it is what makes fracture composable with the rest of PCG.
 It takes everything above except Min/Max Sites and Group Fracture, plus:
@@ -432,7 +433,7 @@ message, that is a bug worth reporting.
 
 | Message | Cause | Fix |
 |---|---|---|
-| *needs at least 2 sites to define a cut* | One site. A Voronoi diagram of a single site has no dividing planes at all. | Scatter one point per piece you want, or use Uniform Voronoi Fracture. |
+| *needs at least 2 sites to define a cut* | One site. A Voronoi diagram of a single site has no dividing planes at all. | Scatter one point per piece you want, or use Fracture | Uniform Voronoi. |
 | *the sites are in the wrong coordinate space* | The sites miss the geometry as interpreted, but would hit it under the other interpretation. | Toggle **Sites Are World Space**, as the message says. |
 | *only N of M site(s) inside the geometry* | Sites genuinely miss the mesh in both spaces. Bounds for both are printed. | Scatter sites through the mesh's volume. |
 | *missing the attribute(s) it requires* | A malformed collection reached the node. `DynMesh To GC` validates its own output, so this should be impossible from a normal graph. | Report it — it is a bug, not a setting. |

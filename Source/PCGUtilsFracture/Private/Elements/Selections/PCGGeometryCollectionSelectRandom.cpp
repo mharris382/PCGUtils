@@ -102,7 +102,7 @@ void UPCGGeometryCollectionSelectRandomFactoryData::AddToCrc(
 #if WITH_EDITOR
 FText UPCGGeometryCollectionSelectRandomSettings::GetDefaultNodeTitle() const
 {
-	return LOCTEXT("Title", "GC | Select | Random Bones");
+	return LOCTEXT("Title", "GC | Select | Random");
 }
 
 FText UPCGGeometryCollectionSelectRandomSettings::GetNodeTooltipText() const

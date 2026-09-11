@@ -169,6 +169,12 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Fracture", meta=(PCG_Overridable, ShowOnlyInnerProperties))
 	FPCGPlanarFractureCommonSettings Common;
 
+	/**
+	 * Bounds Relative mode needs no external input at all - the bounds come from the target collection and the
+	 * transform from Bounds Placement's own fitting settings - so the Planes pin is only exposed in Explicit mode.
+	 */
+	virtual bool HasDynamicPins() const override { return true; }
+
 protected:
 	virtual UPCGUtilsFractureFactoryData* CreateFractureFactory(
 		FPCGContext* InContext, UPCGUtilsGeometryCollectionFactoryData* InFactory) const override;
