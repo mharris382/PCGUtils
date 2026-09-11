@@ -266,6 +266,18 @@ bool UPCGGeometryCollectionSelectionFromDynMeshFactoryData::Evaluate(
 	return true;
 }
 
+void UPCGGeometryCollectionSelectionFromDynMeshFactoryData::ApplyInversion(
+	const FPCGUtilsGeometryCollectionSelectionEvaluationContext& InEvaluationContext,
+	FDataflowTransformSelection& InOutSelection) const
+{
+	const TSet<int32> Selected(InOutSelection.AsArrayValidated(InEvaluationContext.Collection));
+	TArray<int32> Pieces;
+	PCGUtilsGeometryCollectionHierarchy::GatherPieces(InEvaluationContext.Collection, Pieces);
+	Pieces.RemoveAll([&Selected](int32 Bone) { return Selected.Contains(Bone); });
+	InOutSelection.InitializeFromCollection(InEvaluationContext.Collection, false);
+	InOutSelection.SetFromArray(Pieces);
+}
+
 void UPCGGeometryCollectionSelectionFromDynMeshFactoryData::AddToCrc(FArchiveCrc32& Ar, bool bFullDataCrc) const
 {
 	Super::AddToCrc(Ar, bFullDataCrc);

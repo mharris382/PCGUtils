@@ -41,6 +41,19 @@ FName UPCGUtilsDynMeshSelectionSourceSettings::GetMainOutputPin() const
 		: PCGUtilsDynMeshSelectionSourceConstants::SelectionPin;
 }
 
+UPCGUtilsDynMeshFactoryData* UPCGUtilsDynMeshSelectionSourceSettings::CreateFactory(
+	FPCGContext* InContext, UPCGUtilsDynMeshFactoryData* InFactory) const
+{
+	UPCGUtilsDynMeshSelectionFactoryData* Selector =
+		Cast<UPCGUtilsDynMeshSelectionFactoryData>(InFactory);
+	if (!Selector)
+	{
+		return nullptr;
+	}
+	Selector->bInvertSelection = bInvertSelection;
+	return Super::CreateFactory(InContext, Selector);
+}
+
 #if WITH_EDITOR
 TArray<FPCGPreConfiguredSettingsInfo> UPCGUtilsDynMeshSelectionSourceSettings::MakeRepresentationPresets(
 	const FText& DisplayName, int32 SelectorIndex, int32 SelectionIndex)

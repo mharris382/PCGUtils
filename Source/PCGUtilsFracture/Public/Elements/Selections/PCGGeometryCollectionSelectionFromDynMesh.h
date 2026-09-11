@@ -62,6 +62,9 @@ public:
 		const FPCGUtilsGeometryCollectionSelectionEvaluationContext& InEvaluationContext,
 		FPCGContext* InContext,
 		FDataflowTransformSelection& OutSelection) const override;
+	virtual void ApplyInversion(
+		const FPCGUtilsGeometryCollectionSelectionEvaluationContext& InEvaluationContext,
+		FDataflowTransformSelection& InOutSelection) const override;
 
 protected:
 	virtual void AddToCrc(FArchiveCrc32& Ar, bool bFullDataCrc) const override;
@@ -77,7 +80,7 @@ protected:
 UCLASS(BlueprintType, ClassGroup=(Procedural), Category="PCGUtils|Fracture|Selections",
 	meta=(Keywords="GC Geometry Collection Bone Piece Pieces Mesh Predicate Surface Adapter Bridge To Convert From Any All Interior Exterior"))
 class PCGUTILSFRACTURE_API UPCGGeometryCollectionSelectionFromDynMeshSettings
-	: public UPCGUtilsGeometryCollectionFactoryProviderSettings
+	: public UPCGUtilsGeometryCollectionSelectionFactoryProviderSettings
 {
 	GENERATED_BODY()
 

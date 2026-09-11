@@ -243,13 +243,19 @@ call. `TraceSurfacePath()` drives `FMeshGeodesicSurfaceTracer` against a const m
 
 ## Selection modifiers
 
+Every reusable DynMesh selector exposes **Invert Selection**. Inversion is applied by the shared selector
+operation, so it works consistently inside Selection Logic and other nested selector graphs. Selectors with a
+native domain are automatically adapted to the consumer's vertex, edge, or face domain. **Select | By Normal**
+still evaluates vertex normals directly for vertex consumers and face normals for face consumers; an edge-only
+consumer such as Realize Builders receives the converted face result without a domain error.
+
 ### PolyGroup Selector
 
 **Select by PolyGroup** emits a reusable `Selector`. Connect it to **Build DynMesh Selection** or any process
 node's optional `Selector` input, including processes in deferred Builder chains.
 
 - **Group IDs** selects the union of one or more IDs (default `0`). Duplicate or unknown IDs have no additional
-  effect; an empty list selects nothing. **Invert Selection** complements the face region before domain conversion.
+  effect; an empty list selects nothing. **Invert Selection** complements the resolved selection.
 - **Group Layer** chooses default triangle groups (including those assigned by **DynMesh Boolean**) or an extended
   PolyGroup layer by index. Missing layers report an error; evaluation never creates or changes mesh groups.
 - **Group Layer Name**, when set, resolves an extended layer by name instead of using the index/default-layer

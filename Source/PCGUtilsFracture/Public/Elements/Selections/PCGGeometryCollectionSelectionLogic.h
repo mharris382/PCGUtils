@@ -70,7 +70,7 @@ protected:
 UCLASS(BlueprintType, ClassGroup=(Procedural), Category="PCGUtils|Fracture|Selections",
 	meta=(Keywords="Geometry Collection GC Selection Logic Boolean And Or Xor Subtract Difference Intersect Union Combine"))
 class PCGUTILSFRACTURE_API UPCGGeometryCollectionSelectionLogicSettings
-	: public UPCGUtilsGeometryCollectionFactoryProviderSettings
+	: public UPCGUtilsGeometryCollectionSelectionFactoryProviderSettings
 {
 	GENERATED_BODY()
 

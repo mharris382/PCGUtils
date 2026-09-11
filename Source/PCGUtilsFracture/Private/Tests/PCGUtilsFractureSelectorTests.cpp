@@ -6,8 +6,11 @@
 
 #include "Elements/Selections/PCGGeometryCollectionSelectBones.h"
 #include "Elements/Selections/PCGGeometryCollectionSelectContact.h"
+#include "Elements/Selections/PCGGeometryCollectionSelectRandom.h"
+#include "Elements/Selections/PCGGeometryCollectionSelectSurface.h"
 #include "Elements/Selections/PCGGeometryCollectionSelectionHierarchy.h"
 #include "Elements/Selections/PCGGeometryCollectionSelectionLogic.h"
+#include "Elements/Edit/PCGSeparateGeometryCollectionSelection.h"
 #include "FunctionLibraries/PCGUtilsGeometryCollectionHelpers.h"
 #include "Tests/PCGUtilsFractureTestHelpers.h"
 
@@ -75,7 +78,9 @@ namespace PCGUtilsFractureSelectorTests
 		const FPCGUtilsGeometryCollectionSelectionEvaluationContext EvaluationContext(
 			*Collection, Collection->GetCollection());
 		FDataflowTransformSelection Selection;
-		bOutSucceeded = Factory->Evaluate(EvaluationContext, nullptr, Selection);
+		const TArray<TObjectPtr<const UPCGUtilsGeometryCollectionSelectionFactoryData>> Factories = {Factory};
+		bOutSucceeded = PCGUtilsGeometryCollectionSelectionFactories::EvaluateAndUnion(
+			Factories, EvaluationContext, nullptr, Selection);
 		if (!bOutSucceeded)
 		{
 			return {};
@@ -126,6 +131,16 @@ bool FPCGUtilsFractureSelectBonesTest::RunTest(const FString&)
 		Resolve(SelectBones(EPCGGeometryCollectionBoneSelectionMode::None), Fractured).Num(), 0);
 	TestEqual(TEXT("Pieces matches the module's own piece count"),
 		Resolve(SelectBones(EPCGGeometryCollectionBoneSelectionMode::Pieces), Fractured).Num(), NumPieces);
+	{
+		UPCGGeometryCollectionSelectBonesSettings* InvertedSettings =
+			NewObject<UPCGGeometryCollectionSelectBonesSettings>();
+		InvertedSettings->Mode = EPCGGeometryCollectionBoneSelectionMode::Pieces;
+		InvertedSettings->bInvertSelection = true;
+		const auto* Inverted = FirstOutput<UPCGUtilsGeometryCollectionSelectionFactoryData>(
+			Run(InvertedSettings, {}));
+		TestEqual(TEXT("The shared GC invert toggle complements a base selector"),
+			Resolve(Inverted, Fractured).Num(), NumTransforms - NumPieces);
+	}
 
 	const TArray<int32> Roots = Resolve(SelectBones(EPCGGeometryCollectionBoneSelectionMode::Root), Fractured);
 	TestEqual(TEXT("A DynMesh-sourced collection has one root"), Roots.Num(), 1);
@@ -160,6 +175,97 @@ bool FPCGUtilsFractureSelectBonesTest::RunTest(const FString&)
 		TestEqual(TEXT("A level 1 bone's parent is the root"), Collection.Parent[Bone], Roots[0]);
 	}
 
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FPCGUtilsFractureSurfaceAndRandomSelectorsTest,
+	"PCGUtils.Fracture.Selectors.SurfaceAndRandom",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::ProductFilter)
+
+bool FPCGUtilsFractureSurfaceAndRandomSelectorsTest::RunTest(const FString&)
+{
+	using namespace PCGUtilsFractureTests;
+	using namespace PCGUtilsFractureSelectorTests;
+
+	const UPCGGeometryCollectionData* Fractured = Fracture(ToCollection(Box()), SiteGrid(3));
+	if (!TestNotNull(TEXT("Fractured"), Fractured)) { return false; }
+	const int32 NumPieces = CountPieces(Fractured);
+
+	auto MakeSurface = [](EPCGGeometryCollectionSurfaceClass SurfaceClass,
+		EPCGGeometryCollectionSurfaceMatch Match)
+	{
+		auto* Settings = NewObject<UPCGGeometryCollectionSelectSurfaceSettings>();
+		Settings->SurfaceClass = SurfaceClass;
+		Settings->Match = Match;
+		return FirstOutput<UPCGUtilsGeometryCollectionSelectionFactoryData>(Run(Settings, {}));
+	};
+	const TArray<int32> WithExterior = Resolve(MakeSurface(
+		EPCGGeometryCollectionSurfaceClass::Exterior,
+		EPCGGeometryCollectionSurfaceMatch::AnyFace), Fractured);
+	const TArray<int32> WithInterior = Resolve(MakeSurface(
+		EPCGGeometryCollectionSurfaceClass::Interior,
+		EPCGGeometryCollectionSurfaceMatch::AnyFace), Fractured);
+	TestTrue(TEXT("At least one fractured piece retains exterior faces"), WithExterior.Num() > 0);
+	TestTrue(TEXT("At least one fractured piece has interior faces"), WithInterior.Num() > 0);
+
+	auto* RandomSettings = NewObject<UPCGGeometryCollectionSelectRandomSettings>();
+	RandomSettings->Mode = EPCGGeometryCollectionRandomSelectionMode::BoneCount;
+	RandomSettings->BoneCount = 2;
+	RandomSettings->RandomSeed = 1234;
+	const auto* Random = FirstOutput<UPCGUtilsGeometryCollectionSelectionFactoryData>(Run(RandomSettings, {}));
+	const TArray<int32> FirstRandom = Resolve(Random, Fractured);
+	const TArray<int32> SecondRandom = Resolve(Random, Fractured);
+	TestEqual(TEXT("Random Bone Count selects the requested number"), FirstRandom.Num(), FMath::Min(2, NumPieces));
+	TestEqual(TEXT("Random selection is deterministic for one seed"), FirstRandom, SecondRandom);
+
+	RandomSettings->bInvertSelection = true;
+	const auto* InvertedRandom = FirstOutput<UPCGUtilsGeometryCollectionSelectionFactoryData>(Run(RandomSettings, {}));
+	TestEqual(TEXT("Random inversion stays within its piece candidate domain"),
+		Resolve(InvertedRandom, Fractured).Num(), NumPieces - FirstRandom.Num());
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FPCGUtilsSeparateGeometryCollectionSelectionTest,
+	"PCGUtils.Fracture.Edit.SeparateSelection",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::ProductFilter)
+
+bool FPCGUtilsSeparateGeometryCollectionSelectionTest::RunTest(const FString&)
+{
+	using namespace PCGUtilsFractureTests;
+	using namespace PCGUtilsFractureSelectorTests;
+
+	const UPCGGeometryCollectionData* Fractured = Fracture(ToCollection(Box()), SiteGrid(3));
+	if (!TestNotNull(TEXT("Fractured"), Fractured)) { return false; }
+	auto* RandomSettings = NewObject<UPCGGeometryCollectionSelectRandomSettings>();
+	RandomSettings->Mode = EPCGGeometryCollectionRandomSelectionMode::BoneCount;
+	RandomSettings->BoneCount = 1;
+	const auto* OnePiece = FirstOutput<UPCGUtilsGeometryCollectionSelectionFactoryData>(Run(RandomSettings, {}));
+
+	auto* Separate = NewObject<UPCGSeparateGeometryCollectionSelectionSettings>();
+	const TArray<FPCGTaggedData> Outputs = Run(Separate, {
+		{PCGSeparateGeometryCollectionSelectionConstants::CollectionInputPin, Fractured},
+		{PCGSeparateGeometryCollectionSelectionConstants::SelectionInputPin, OnePiece}});
+	const UPCGGeometryCollectionData* Selected = nullptr;
+	const UPCGGeometryCollectionData* Unselected = nullptr;
+	for (const FPCGTaggedData& Output : Outputs)
+	{
+		if (Output.Pin == PCGSeparateGeometryCollectionSelectionConstants::SelectedOutputPin)
+		{
+			Selected = Cast<const UPCGGeometryCollectionData>(Output.Data);
+		}
+		else if (Output.Pin == PCGSeparateGeometryCollectionSelectionConstants::UnselectedOutputPin)
+		{
+			Unselected = Cast<const UPCGGeometryCollectionData>(Output.Data);
+		}
+	}
+	if (!TestNotNull(TEXT("Selected GC output"), Selected) ||
+		!TestNotNull(TEXT("Unselected GC output"), Unselected))
+	{
+		return false;
+	}
+	TestEqual(TEXT("Selected output contains one piece"), CountPieces(Selected), 1);
+	TestEqual(TEXT("Unselected output contains the complementary pieces"),
+		CountPieces(Unselected), CountPieces(Fractured) - 1);
 	return true;
 }
 

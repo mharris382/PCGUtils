@@ -29,8 +29,6 @@ public:
 	FVector ReferenceNormal = FVector::UpVector;
 	UPROPERTY()
 	double MinimumDotProduct = 0.0;
-	UPROPERTY()
-	bool bInvertSelection = false;
 
 protected:
 	virtual UE::Geometry::EGeometryElementType GetNativeElementTypeInternal() const override
@@ -80,9 +78,6 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Selection|Face Normal",
 		meta=(PCG_Overridable, ClampMin="-1", ClampMax="1", UIMin="-1", UIMax="1", EditCondition="Mode==EPCGDynamicMeshTriangleSelectionMode::FaceNormal", EditConditionHides))
 	double MinimumDotProduct = 0.0;
-
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Selection", meta=(PCG_Overridable))
-	bool bInvertSelection = false;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Selection", AdvancedDisplay, meta=(PCG_Overridable))
 	int32 Priority = 0;

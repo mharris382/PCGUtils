@@ -68,10 +68,9 @@ namespace
 
 		virtual bool TestElement(int32 TriangleID) const override
 		{
-			bool bSelected = Factory->Mode == EPCGDynamicMeshTriangleSelectionMode::EdgeLength
+			return Factory->Mode == EPCGDynamicMeshTriangleSelectionMode::EdgeLength
 				? MatchesEdgeLength(SelectionContext->Mesh, TriangleID, ThresholdSquared, MinimumEdges)
 				: MatchesFaceNormal(SelectionContext->Mesh, TriangleID, ReferenceNormal, MinimumDot);
-			return bSelected != Factory->bInvertSelection;
 		}
 
 	private:
@@ -112,8 +111,7 @@ void UPCGSelectDynamicMeshTrianglesFactoryData::AddToCrc(
 		int32 EdgeCount = MinimumMatchingEdges;
 		FVector Normal = ReferenceNormal;
 		double Dot = MinimumDotProduct;
-		bool bInvert = bInvertSelection;
-		Ar << ModeValue << Length << EdgeCount << Normal << Dot << bInvert;
+		Ar << ModeValue << Length << EdgeCount << Normal << Dot;
 	}
 }
 
@@ -130,7 +128,6 @@ UPCGUtilsDynMeshFactoryData* UPCGSelectDynamicMeshTrianglesSettings::CreateFacto
 	Factory->MinimumMatchingEdges = MinimumMatchingEdges;
 	Factory->ReferenceNormal = ReferenceNormal;
 	Factory->MinimumDotProduct = MinimumDotProduct;
-	Factory->bInvertSelection = bInvertSelection;
 	return Super::CreateFactory(InContext, Factory);
 }
 

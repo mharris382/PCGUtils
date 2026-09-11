@@ -209,26 +209,20 @@ Two factory families, both rooted at `UPCGUtilsGCFactoryData`:
   target selection. Owns no selection of its own.
 - `UPCGUtilsGCSelectionFactoryData` - **which** bones an operation affects.
 
-Every fracture authoring node derives from `UPCGUtilsFractureProviderSettings`, which owns two things no
-individual operation should re-implement:
+Every fracture authoring node derives from `UPCGUtilsFractureProviderSettings`, which owns one piece of shared
+authoring state no individual operation should re-implement:
 
 - **`Priority`.** The executor's Fracture pin is multi-connection and runs its operations in priority order, so
   an operation that cannot state its priority can only be sequenced by wiring order.
-- **The `Result` pin.** A second output carrying a Selection of the bones that operation created, so a graph can
-  fracture and then keep working on the fragments. It is a *deferred* selector, exactly like Extrude's Result
-  Selector: the bones do not exist when the node runs, so the data carries the name of a tag rather than a set
-  of indices. `UPCGUtilsFractureProviderSettings::CreateFactory` is final in spirit - override
-  `CreateFractureFactory` instead, or the shared plumbing is skipped.
 
-How "the bones this operation created" is identified generically, with no cooperation from the operation: bone
-ids are minted by the *publisher*, after fracture, so the executor mints ids for everything that exists
-immediately before each operation (`PCGUtilsFractureResultTagging::PrepareForOperation`) and afterwards any bone
-still lacking one was created by that operation. That survives the reindexing the cutters do, which an index-range
-comparison would not. Minting early is safe because `EnsureBoneIds` never reassigns an existing id.
+`GC | Fracture` owns the optional **Result** selector output. The pin is absent unless **Output Result Selector**
+is enabled. The executor snapshots stable Bone IDs before the operation sequence, publishes the final GC, then
+emits a selector containing the IDs that are new in that published result. The selector checks the collection
+lineage when evaluated and resolves IDs back to current indices, so later reindexing cannot silently retarget it.
 
-The tag is a Transform-group `int32` attribute (1 = created by this operation), named per authoring node and
-exposed as a setting like every other attribute this module writes. Tagging happens only when the Result pin is
-enabled - an operation whose result nobody reads must not alter the data it produces.
+Result capture is deliberately executor-owned: provider nodes describe fracture behaviour before a target GC
+exists, while only the executor can observe the final bones after all operations. Disabled capture adds no ID
+snapshot work and no selector pin; it never adds a per-bone result-tag attribute to the collection.
 
 Executors (`Fracture GC`, `Prune GC`) combine them. A new fracture type is a new factory, never an edit to the
 executor: `Fracture GC` contains no Voronoi-, plane- or cutter-specific code and must stay that way.

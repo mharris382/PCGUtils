@@ -81,6 +81,12 @@ TArray<FPCGPinProperties> UPCGFractureGeometryCollectionSettings::OutputPinPrope
 	Pins.Add(FPCGPinProperties(
 		PCGFractureGeometryCollectionConstants::CollectionOutputPin,
 		FPCGGeometryCollectionDataTypeInfo::AsId(), true, true));
+	if (bOutputResultSelector)
+	{
+		Pins.Add(FPCGPinProperties(
+			PCGUtilsFractureProviderConstants::ResultOutputPin,
+			FPCGUtilsGeometryCollectionSelectionFactoryDataTypeInfo::AsId(), true, true));
+	}
 	return Pins;
 }
 
@@ -125,6 +131,15 @@ bool FPCGFractureGeometryCollectionElement::ExecuteInternal(FPCGContext* Context
 		// Work on a private copy. The input is never touched, so any other consumer of it is unaffected.
 		TSharedRef<FGeometryCollection> Collection = InputData->CreateMutableCopy();
 		const int32 BonesBefore = Collection->NumElements(FGeometryCollection::TransformGroup);
+		TSet<FGuid> BonesBeforeIds;
+		if (Settings->bOutputResultSelector)
+		{
+			PCGUtilsGeometryCollectionIdentity::EnsureBoneIds(*Collection);
+			for (int32 Bone = 0; Bone < BonesBefore; ++Bone)
+			{
+				BonesBeforeIds.Add(PCGUtilsGeometryCollectionIdentity::GetBoneId(*Collection, Bone));
+			}
+		}
 
 		FDataflowTransformSelection TargetBones;
 		bool bHasAuthoredSelection = false;
@@ -173,28 +188,11 @@ bool FPCGFractureGeometryCollectionElement::ExecuteInternal(FPCGContext* Context
 				SelectAllBones(*Collection, TargetBones);
 			}
 
-			// Bracketing every operation, not just the tagging ones: ids minted here are what make "this bone
-			// has no id yet" mean "this operation created it", and EnsureBoneIds never reassigns an existing id
-			// so the publisher's own call later is unaffected.
-			PCGUtilsFractureResultTagging::PrepareForOperation(*Collection);
-
 			FPCGUtilsGeometryCollectionMutationResult OperationMutation;
 			if (Operation->Fracture(*Collection, TargetBones, Context, OperationMutation))
 			{
 				Mutation.Accumulate(OperationMutation);
 				++NumApplied;
-
-				const int32 NumTagged = PCGUtilsFractureResultTagging::TagBonesCreatedByOperation(
-					*Collection, Operation->ResultTagAttribute);
-				if (NumTagged > 0)
-				{
-					// A new Transform-group attribute is a structural change as far as the publisher and any
-					// derived cache are concerned.
-					Mutation.bStructureChanged = true;
-					UE_LOG(LogPCGUtilsFracture, Verbose,
-						TEXT("Fracture GC: operation %d tagged %d result bone(s) as '%s'"),
-						OperationIndex + 1, NumTagged, *Operation->ResultTagAttribute.ToString());
-				}
 			}
 		}
 
@@ -233,6 +231,26 @@ bool FPCGFractureGeometryCollectionElement::ExecuteInternal(FPCGContext* Context
 		FPCGTaggedData& Output = Context->OutputData.TaggedData.Emplace_GetRef(Input);
 		Output.Data = OutputData;
 		Output.Pin = PCGFractureGeometryCollectionConstants::CollectionOutputPin;
+
+		if (Settings->bOutputResultSelector)
+		{
+			UPCGUtilsFractureResultSelectionFactoryData* ResultSelector =
+				FPCGContext::NewObject_AnyThread<UPCGUtilsFractureResultSelectionFactoryData>(Context);
+			ResultSelector->CollectionId = OutputData->GetCollectionId();
+			const FGeometryCollection& PublishedCollection = OutputData->GetCollection();
+			for (int32 Bone = 0; Bone < OutputData->NumTransforms(); ++Bone)
+			{
+				const FGuid BoneId = PCGUtilsGeometryCollectionIdentity::GetBoneId(PublishedCollection, Bone);
+				if (BoneId.IsValid() && !BonesBeforeIds.Contains(BoneId))
+				{
+					ResultSelector->BoneIds.Add(BoneId);
+				}
+			}
+
+			FPCGTaggedData& ResultOutput = Context->OutputData.TaggedData.Emplace_GetRef(Input);
+			ResultOutput.Data = ResultSelector;
+			ResultOutput.Pin = PCGUtilsFractureProviderConstants::ResultOutputPin;
+		}
 
 		UE_LOG(LogPCGUtilsFracture, Log,
 			TEXT("Fracture GC: %d operation(s), target bones: %d, bones %d -> %d%s. Result %s (revision %d)"),

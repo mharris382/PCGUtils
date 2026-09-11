@@ -46,13 +46,26 @@ public:
 
 	virtual bool SupportsDomain(const FPCGUtilsDynMeshSelectionDomain& Domain) const final;
 
+	/** Canonical native domain used when a caller is not adapting for a particular consumer. */
 	UE::Geometry::EGeometryElementType GetNativeElementType() const { return GetNativeElementTypeInternal(); }
+
+	UE::Geometry::EGeometryElementType GetNativeElementType(
+		const FPCGUtilsDynMeshSelectionDomain& RequestedDomain) const
+	{
+		return GetNativeElementTypeForDomainInternal(RequestedDomain);
+	}
 	TSharedPtr<FPCGUtilsDynMeshSelectionOperation> CreateNativeOperation(FPCGContext* InContext) const;
 
 protected:
 	virtual UE::Geometry::EGeometryElementType GetNativeElementTypeInternal() const PURE_VIRTUAL(
 		UPCGUtilsDynMeshDomainSelectionFactoryData::GetNativeElementTypeInternal,
 		return UE::Geometry::EGeometryElementType::Face;);
+	/** Lets a selector preserve a directly supported consumer domain while adapting all other domains. */
+	virtual UE::Geometry::EGeometryElementType GetNativeElementTypeForDomainInternal(
+		const FPCGUtilsDynMeshSelectionDomain& RequestedDomain) const
+	{
+		return GetNativeElementTypeInternal();
+	}
 	virtual TSharedPtr<FPCGUtilsDynMeshSelectionOperation> CreateNativeOperationInternal() const PURE_VIRTUAL(
 		UPCGUtilsDynMeshDomainSelectionFactoryData::CreateNativeOperationInternal,
 		return nullptr;);
@@ -69,6 +82,10 @@ class PCGUTILSDYNMESH_API UPCGUtilsDynMeshDomainSelectionFactoryProviderSettings
 	GENERATED_BODY()
 
 public:
+	/** Complement the selector after its native result is converted into the consumer's domain. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Selection", meta=(PCG_Overridable))
+	bool bInvertSelection = false;
+
 	/** Include a target element when any incident source element is selected. Disable for full-inclusion conversion. */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Selection", AdvancedDisplay, meta=(PCG_Overridable))
 	bool bAllowPartialInclusion = true;

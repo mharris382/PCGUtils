@@ -62,6 +62,12 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Geometry", AdvancedDisplay, meta=(PCG_Overridable))
 	bool bKeepHiddenSourceGeometry = false;
 
+	/** Emit a reusable Selector containing every bone created by this fracture execution. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Result", meta=(PCG_Overridable))
+	bool bOutputResultSelector = false;
+
+	virtual bool HasDynamicPins() const override { return true; }
+
 protected:
 	virtual TArray<FPCGPinProperties> InputPinProperties() const override;
 	virtual TArray<FPCGPinProperties> OutputPinProperties() const override;

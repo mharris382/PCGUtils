@@ -45,14 +45,6 @@ public:
 	PCG_ASSIGN_TYPE_INFO(FPCGUtilsFractureFactoryDataTypeInfo)
 
 	/**
-	 * Transform-group attribute the executor stamps on the bones this operation creates, or None to skip
-	 * tagging entirely. Set by UPCGUtilsFractureProviderSettings when its Result pin is enabled - an operation
-	 * does not tag, or read, anything itself.
-	 */
-	UPROPERTY()
-	FName ResultTagAttribute;
-
-	/**
 	 * Performs one fracture operation in place.
 	 *
 	 * @param InOutCollection  A private deep copy owned by the executor. Mutate freely.

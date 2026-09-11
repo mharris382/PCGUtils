@@ -9,6 +9,7 @@
 #include "DynamicMesh/DynamicMesh3.h"
 #include "DynamicMesh/DynamicMeshAttributeSet.h"
 #include "Elements/PCGUtilsDynMeshProcessBase.h"
+#include "Elements/Selections/PCGDynMeshNormalSelectionFactory.h"
 #include "Elements/Selections/PCGDynMeshPolygroupSelectionFactory.h"
 #include "Elements/Topology/PCGDynMeshBoolean.h"
 #include "GeometryScript/GeometryScriptSelectionTypes.h"
@@ -33,7 +34,7 @@ namespace PCGUtilsDynMeshPolygroupSelectionTests
 		return Data;
 	}
 
-	bool Evaluate(const UPCGDynMeshPolygroupSelectionFactoryData* Selector, const UPCGDynamicMeshData* Data,
+	bool Evaluate(const UPCGUtilsDynMeshSelectionFactoryData* Selector, const UPCGDynamicMeshData* Data,
 		UE::Geometry::EGeometryElementType Domain, TArray<int32>& OutIDs)
 	{
 		FPCGUtilsDynMeshSelectionDomain SelectionDomain;
@@ -49,6 +50,28 @@ namespace PCGUtilsDynMeshPolygroupSelectionTests
 			(Domain == UE::Geometry::EGeometryElementType::Vertex ? EGeometryScriptIndexType::Vertex : EGeometryScriptIndexType::Edge);
 		return ScriptSelection.ConvertToMeshIndexArray(Mesh, OutIDs, IndexType) == IndexType;
 	}
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FPCGDynMeshNormalSelectorDomainConversionTest,
+	"PCGUtils.DynMesh.Selectors.NormalDomainConversionAndInversion",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::ProductFilter)
+
+bool FPCGDynMeshNormalSelectorDomainConversionTest::RunTest(const FString&)
+{
+	using namespace PCGUtilsDynMeshPolygroupSelectionTests;
+	using namespace UE::Geometry;
+	auto* Data = MakeQuad();
+	auto* Selector = NewObject<UPCGDynMeshNormalSelectionFactoryData>();
+	Selector->ReferenceDirection = FVector(Data->GetDynamicMesh()->GetMeshPtr()->GetTriNormal(0));
+	TArray<int32> IDs;
+	TestTrue(TEXT("Face-native normal selector converts to an edge consumer"),
+		Evaluate(Selector, Data, EGeometryElementType::Edge, IDs));
+	TestEqual(TEXT("Both upward quad triangles convert to all five edges"), IDs.Num(), 5);
+	Selector->bInvertSelection = true;
+	TestTrue(TEXT("Shared DynMesh inversion evaluates after domain conversion"),
+		Evaluate(Selector, Data, EGeometryElementType::Face, IDs));
+	TestEqual(TEXT("Inverting an all-upward face selection is empty"), IDs.Num(), 0);
+	return true;
 }
 
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(FPCGDynMeshPolygroupIDsTest,

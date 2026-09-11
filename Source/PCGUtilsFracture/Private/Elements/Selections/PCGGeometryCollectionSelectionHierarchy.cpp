@@ -290,7 +290,9 @@ void UPCGGeometryCollectionSelectionHierarchyFactoryData::AddToCrc(FArchiveCrc32
 #if WITH_EDITOR
 FText UPCGGeometryCollectionSelectionHierarchySettings::GetDefaultNodeTitle() const
 {
-	return OperationTitle(Operation);
+	return Operation == EOperation::Invert
+		? LOCTEXT("InvertCompactTitle", "Invert")
+		: OperationTitle(Operation);
 }
 
 FText UPCGGeometryCollectionSelectionHierarchySettings::GetNodeTooltipText() const

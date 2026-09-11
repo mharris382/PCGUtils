@@ -30,6 +30,10 @@ class PCGUTILSDYNMESH_API UPCGUtilsDynMeshSelectionSourceSettings
 	friend class FPCGUtilsDynMeshSelectionSourceElement;
 
 public:
+	/** Complement the selector in whichever vertex, edge, or face domain consumes it. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Selection", meta=(PCG_Overridable))
+	bool bInvertSelection = false;
+
 	/** Deferred selectors compose without a mesh; materialized selections evaluate immediately against Candidates. */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Selection",
 		meta=(PCG_Overridable, DisplayName="Representation"))
@@ -48,6 +52,8 @@ public:
 	EPCGUtilsDynMeshSelectionElementType SelectionElementType = EPCGUtilsDynMeshSelectionElementType::Triangle;
 
 	virtual FName GetMainOutputPin() const override;
+	virtual UPCGUtilsDynMeshFactoryData* CreateFactory(
+		FPCGContext* InContext, UPCGUtilsDynMeshFactoryData* InFactory = nullptr) const override;
 
 #if WITH_EDITOR
 	virtual TArray<FPCGPreConfiguredSettingsInfo> GetPreconfiguredInfo() const override;

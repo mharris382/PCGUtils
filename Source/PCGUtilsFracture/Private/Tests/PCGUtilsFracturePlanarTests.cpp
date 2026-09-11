@@ -14,11 +14,10 @@ namespace PCGUtilsFracturePlanarTests
 {
 	using namespace PCGUtilsFractureTests;
 
-	/** Runs a fracture authoring node and returns both of its outputs. */
+	/** Runs a fracture authoring node and returns its operation. */
 	struct FAuthored
 	{
 		const UPCGUtilsFractureFactoryData* Operation = nullptr;
-		const UPCGUtilsGeometryCollectionSelectionFactoryData* Result = nullptr;
 	};
 
 	FAuthored Author(UPCGUtilsFractureProviderSettings* Settings, TArray<TPair<FName, const UPCGData*>> Inputs)
@@ -27,17 +26,41 @@ namespace PCGUtilsFracturePlanarTests
 		FAuthored Authored;
 		for (const FPCGTaggedData& Tagged : Outputs)
 		{
-			if (Tagged.Pin == PCGUtilsFractureProviderConstants::ResultOutputPin)
-			{
-				Authored.Result = Cast<const UPCGUtilsGeometryCollectionSelectionFactoryData>(Tagged.Data);
-			}
-			else if (const UPCGUtilsFractureFactoryData* Operation =
+			if (const UPCGUtilsFractureFactoryData* Operation =
 				Cast<const UPCGUtilsFractureFactoryData>(Tagged.Data))
 			{
 				Authored.Operation = Operation;
 			}
 		}
 		return Authored;
+	}
+
+	struct FApplied
+	{
+		const UPCGGeometryCollectionData* Collection = nullptr;
+		const UPCGUtilsGeometryCollectionSelectionFactoryData* Result = nullptr;
+	};
+
+	FApplied ApplyWithResult(
+		const UPCGGeometryCollectionData* Collection, const UPCGUtilsFractureFactoryData* Operation)
+	{
+		UPCGFractureGeometryCollectionSettings* Settings = NewObject<UPCGFractureGeometryCollectionSettings>();
+		Settings->bOutputResultSelector = true;
+		FApplied Applied;
+		for (const FPCGTaggedData& Tagged : Run(Settings, {
+			{PCGFractureGeometryCollectionConstants::CollectionInputPin, Collection},
+			{PCGUtilsFractureFactoryConstants::FracturesInputPin, Operation}}))
+		{
+			if (Tagged.Pin == PCGFractureGeometryCollectionConstants::CollectionOutputPin)
+			{
+				Applied.Collection = Cast<const UPCGGeometryCollectionData>(Tagged.Data);
+			}
+			else if (Tagged.Pin == PCGUtilsFractureProviderConstants::ResultOutputPin)
+			{
+				Applied.Result = Cast<const UPCGUtilsGeometryCollectionSelectionFactoryData>(Tagged.Data);
+			}
+		}
+		return Applied;
 	}
 
 	/** Applies an authored operation to a collection through the real executor. */
@@ -122,7 +145,8 @@ bool FPCGUtilsFracturePlanarOperationsTest::RunTest(const FString&)
 		{
 			TestEqual(TEXT("One plane per axis gives eight pieces"), CountPiecesIn(Eight), 8);
 		}
-		TestNull(TEXT("Slice emits no Result selection when the flag is off"), Authored.Result);
+		TestEqual(TEXT("Fracture operation provider emits only its Fracture output"),
+			Run(Settings, {}).Num(), 1);
 	}
 
 	// No planes at all describes no cut, which the backend would report as an unexplained INDEX_NONE.
@@ -236,28 +260,22 @@ bool FPCGUtilsFractureResultSelectionTest::RunTest(const FString&)
 	Settings->SlicesX = 1;
 	Settings->SlicesY = 0;
 	Settings->SlicesZ = 0;
-	Settings->bOutputResultSelection = true;
-
 	const FAuthored Authored = Author(Settings, {});
-	if (!TestNotNull(TEXT("The operation was authored"), Authored.Operation) ||
-		!TestNotNull(TEXT("The Result pin emitted a selection"), Authored.Result))
+	if (!TestNotNull(TEXT("The operation was authored"), Authored.Operation))
 	{
 		return false;
 	}
 
-	// The operation carries the tag the selection will look for; that shared name is the whole mechanism.
-	TestFalse(TEXT("The operation carries a result tag"), Authored.Operation->ResultTagAttribute.IsNone());
-	TestEqual(TEXT("Operation and selection agree on the tag"),
-		Authored.Operation->ResultTagAttribute, Settings->GetResultTagAttribute());
-
-	const UPCGGeometryCollectionData* Sliced = Apply(ToCollection(Box()), Authored.Operation);
-	if (!TestNotNull(TEXT("The fracture produced a collection"), Sliced))
+	const FApplied FirstApplied = ApplyWithResult(ToCollection(Box()), Authored.Operation);
+	const UPCGGeometryCollectionData* Sliced = FirstApplied.Collection;
+	if (!TestNotNull(TEXT("The fracture produced a collection"), Sliced) ||
+		!TestNotNull(TEXT("GC Fracture emitted the Result selector"), FirstApplied.Result))
 	{
 		return false;
 	}
 
 	bool bSucceeded = false;
-	const TArray<int32> ResultBones = Resolve(Authored.Result, Sliced, bSucceeded);
+	const TArray<int32> ResultBones = Resolve(FirstApplied.Result, Sliced, bSucceeded);
 	TestTrue(TEXT("The Result selection resolved"), bSucceeded);
 
 	TArray<int32> Pieces;
@@ -278,13 +296,11 @@ bool FPCGUtilsFractureResultSelectionTest::RunTest(const FString&)
 			ResultBones.Contains(Cluster));
 	}
 
-	// Resolving against a collection the operation never touched is empty-with-a-warning, not a hard failure:
-	// the same contract the DynMesh Result Selector has on a mesh lacking its named layer.
+	// Stable BoneIds survive revisions, while the collection lineage prevents accidental cross-GC use.
 	const UPCGGeometryCollectionData* Untouched = ToCollection(Box());
-	AddExpectedMessagePlain(TEXT("so the fracture Result selection is empty"), ELogVerbosity::Warning);
-	const TArray<int32> NoneOnUntouched = Resolve(Authored.Result, Untouched, bSucceeded);
-	TestTrue(TEXT("An untouched collection still resolves"), bSucceeded);
-	TestEqual(TEXT("An untouched collection selects nothing"), NoneOnUntouched.Num(), 0);
+	AddExpectedMessagePlain(TEXT("different GC lineage"), ELogVerbosity::Error);
+	Resolve(FirstApplied.Result, Untouched, bSucceeded);
+	TestFalse(TEXT("A Result selector rejects another collection lineage"), bSucceeded);
 
 	// A second operation over the same collection must not inherit the first one's result: the tag is per
 	// authoring node, and ids minted before each operation are what keep the two apart.
@@ -292,16 +308,13 @@ bool FPCGUtilsFractureResultSelectionTest::RunTest(const FString&)
 	Second->SlicesX = 0;
 	Second->SlicesY = 1;
 	Second->SlicesZ = 0;
-	Second->bOutputResultSelection = true;
 	const FAuthored SecondAuthored = Author(Second, {});
-	TestNotEqual(TEXT("Two nodes generate different result tags"),
-		Authored.Operation->ResultTagAttribute, SecondAuthored.Operation->ResultTagAttribute);
-
-	const UPCGGeometryCollectionData* Twice = Apply(Sliced, SecondAuthored.Operation);
+	const FApplied SecondApplied = ApplyWithResult(Sliced, SecondAuthored.Operation);
+	const UPCGGeometryCollectionData* Twice = SecondApplied.Collection;
 	if (TestNotNull(TEXT("The second fracture produced a collection"), Twice))
 	{
-		const TArray<int32> FirstResult = Resolve(Authored.Result, Twice, bSucceeded);
-		const TArray<int32> SecondResult = Resolve(SecondAuthored.Result, Twice, bSucceeded);
+		const TArray<int32> FirstResult = Resolve(FirstApplied.Result, Twice, bSucceeded);
+		const TArray<int32> SecondResult = Resolve(SecondApplied.Result, Twice, bSucceeded);
 		TestTrue(TEXT("The second operation produced its own result"), SecondResult.Num() > 0);
 		for (const int32 Bone : SecondResult)
 		{

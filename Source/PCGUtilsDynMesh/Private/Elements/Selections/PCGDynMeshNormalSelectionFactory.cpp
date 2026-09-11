@@ -13,7 +13,7 @@
 namespace
 {
 	template<typename OverlayType, typename ValueType>
-	ValueType GetFirstVertexOverlayElement(const UE::Geometry::FDynamicMesh3& Mesh,
+	ValueType GetFirstNormalOverlayElement(const UE::Geometry::FDynamicMesh3& Mesh,
 		const OverlayType* Overlay, int32 VertexID, const ValueType& DefaultValue)
 	{
 		if (!Overlay)
@@ -89,7 +89,7 @@ namespace
 				Mesh.IsVertex(ElementID))
 			{
 				FVector3f VertexNormal = Normals
-					? GetFirstVertexOverlayElement<UE::Geometry::FDynamicMeshNormalOverlay, FVector3f>(
+					? GetFirstNormalOverlayElement<UE::Geometry::FDynamicMeshNormalOverlay, FVector3f>(
 						Mesh, Normals, ElementID, FVector3f::UnitZ())
 					: (Mesh.HasVertexNormals() ? Mesh.GetVertexNormal(ElementID) : FVector3f::UnitZ());
 				if (!VertexNormal.Normalize())
@@ -109,16 +109,8 @@ namespace
 	};
 }
 
-bool UPCGDynMeshNormalSelectionFactoryData::SupportsDomain(
-	const FPCGUtilsDynMeshSelectionDomain& Domain) const
-{
-	return Domain.TopologyType == UE::Geometry::EGeometryTopologyType::Triangle &&
-		(Domain.ElementType == UE::Geometry::EGeometryElementType::Vertex ||
-		 Domain.ElementType == UE::Geometry::EGeometryElementType::Face);
-}
-
 TSharedPtr<FPCGUtilsDynMeshSelectionOperation>
-UPCGDynMeshNormalSelectionFactoryData::CreateOperationInternal() const
+UPCGDynMeshNormalSelectionFactoryData::CreateNativeOperationInternal() const
 {
 	return MakeShared<FNormalSelectionOperation>(ReferenceDirection, DotThreshold);
 }
@@ -143,7 +135,7 @@ FText UPCGDynMeshNormalSelectionFactoryProviderSettings::GetDefaultNodeTitle() c
 
 FText UPCGDynMeshNormalSelectionFactoryProviderSettings::GetNodeTooltipText() const
 {
-	return LOCTEXT("Tooltip", "Creates a reusable normal predicate. The Build DynMesh Selection node determines whether vertex or triangle normals are tested.");
+	return LOCTEXT("Tooltip", "Creates a reusable normal predicate. Vertex and face consumers test their native normals; edge consumers automatically convert the face result.");
 }
 #endif
 

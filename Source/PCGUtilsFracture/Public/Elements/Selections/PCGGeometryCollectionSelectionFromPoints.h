@@ -48,7 +48,7 @@ protected:
  */
 UCLASS(BlueprintType, ClassGroup=(Procedural), Category="PCGUtils|Fracture|Selections",
 	meta=(Keywords="Geometry Collection GC Selection Bone Indices From Points"))
-class PCGUTILSFRACTURE_API UPCGGeometryCollectionSelectionFromPointsSettings : public UPCGUtilsGeometryCollectionFactoryProviderSettings
+class PCGUTILSFRACTURE_API UPCGGeometryCollectionSelectionFromPointsSettings : public UPCGUtilsGeometryCollectionSelectionFactoryProviderSettings
 {
 	GENERATED_BODY()
 

@@ -4,6 +4,7 @@
 
 #include "CoreMinimal.h"
 #include "Dataflow/DataflowSelection.h"
+#include "Elements/PCGUtilsFractureElementBase.h"
 #include "Factories/PCGUtilsGeometryCollectionFactoryData.h"
 
 #include "PCGUtilsGeometryCollectionSelectionFactory.generated.h"
@@ -75,12 +76,40 @@ class PCGUTILSFRACTURE_API UPCGUtilsGeometryCollectionSelectionFactoryData : pub
 public:
 	PCG_ASSIGN_TYPE_INFO(FPCGUtilsGeometryCollectionSelectionFactoryDataTypeInfo)
 
+	/** Complement this selector across every transform in the evaluated collection. */
+	UPROPERTY()
+	bool bInvertSelection = false;
+
 	/** Returns false (already logged) if the selection could not be resolved against this collection state. */
 	virtual bool Evaluate(
 		const FPCGUtilsGeometryCollectionSelectionEvaluationContext& InEvaluationContext,
 		FPCGContext* InContext,
 		FDataflowTransformSelection& OutSelection) const
 		PURE_VIRTUAL(UPCGUtilsGeometryCollectionSelectionFactoryData::Evaluate, return false;);
+
+	/** Applies this selector's logical complement in its meaningful candidate domain. */
+	virtual void ApplyInversion(
+		const FPCGUtilsGeometryCollectionSelectionEvaluationContext& InEvaluationContext,
+		FDataflowTransformSelection& InOutSelection) const;
+
+protected:
+	virtual void AddToCrc(FArchiveCrc32& Ar, bool bFullDataCrc) const override;
+};
+
+/** Shared settings base for every node that authors a reusable GC Selector. */
+UCLASS(Abstract, BlueprintType, ClassGroup=(Procedural), Category="PCGUtils|Fracture|Selections")
+class PCGUTILSFRACTURE_API UPCGUtilsGeometryCollectionSelectionFactoryProviderSettings
+	: public UPCGUtilsGeometryCollectionFactoryProviderSettings
+{
+	GENERATED_BODY()
+
+public:
+	/** Select the complement of this selector, avoiding a separate NOT node for the common inside/outside choice. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Selection", meta=(PCG_Overridable))
+	bool bInvertSelection = false;
+
+	virtual UPCGUtilsGeometryCollectionFactoryData* CreateFactory(
+		FPCGContext* InContext, UPCGUtilsGeometryCollectionFactoryData* InFactory = nullptr) const override;
 };
 
 namespace PCGUtilsGeometryCollectionSelectionFactories

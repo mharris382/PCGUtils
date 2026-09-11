@@ -67,7 +67,7 @@ protected:
 UCLASS(BlueprintType, ClassGroup=(Procedural), Category="PCGUtils|Fracture|Selections",
 	meta=(Keywords="Geometry Collection GC Select Bones All None Root Leaf Pieces Clusters Level"))
 class PCGUTILSFRACTURE_API UPCGGeometryCollectionSelectBonesSettings
-	: public UPCGUtilsGeometryCollectionFactoryProviderSettings
+	: public UPCGUtilsGeometryCollectionSelectionFactoryProviderSettings
 {
 	GENERATED_BODY()
 

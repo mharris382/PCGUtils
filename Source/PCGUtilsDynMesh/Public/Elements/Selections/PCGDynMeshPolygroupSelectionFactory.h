@@ -38,9 +38,6 @@ public:
 	UPROPERTY()
 	TArray<int32> GroupIDs = { 0 };
 
-	UPROPERTY()
-	bool bInvertSelection = false;
-
 protected:
 	virtual UE::Geometry::EGeometryElementType GetNativeElementTypeInternal() const override
 	{
@@ -81,10 +78,6 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Selection", meta=(PCG_Overridable, ClampMin="0",
 		EditCondition="SelectionMode == EPCGUtilsDynMeshPolygroupSelectionMode::GroupIDs", EditConditionHides))
 	TArray<int32> GroupIDs = { 0 };
-
-	/** Invert the triangle region before converting it to the consumer's requested domain. */
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Selection", meta=(PCG_Overridable))
-	bool bInvertSelection = false;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Selection", AdvancedDisplay, meta=(PCG_Overridable))
 	int32 Priority = 0;

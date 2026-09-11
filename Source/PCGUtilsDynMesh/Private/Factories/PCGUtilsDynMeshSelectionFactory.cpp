@@ -12,6 +12,29 @@
 
 namespace
 {
+	class FInvertedSelectionOperation final : public FPCGUtilsDynMeshSelectionOperation
+	{
+	public:
+		explicit FInvertedSelectionOperation(TSharedPtr<FPCGUtilsDynMeshSelectionOperation> InInner)
+			: Inner(MoveTemp(InInner))
+		{
+		}
+
+		virtual bool Initialize(const FPCGUtilsDynMeshSelectionEvaluationContext& InSelectionContext) override
+		{
+			return FPCGUtilsDynMeshSelectionOperation::Initialize(InSelectionContext)
+				&& Inner && Inner->Initialize(InSelectionContext);
+		}
+
+		virtual bool TestElement(int32 ElementID) const override
+		{
+			return Inner && !Inner->TestElement(ElementID);
+		}
+
+	private:
+		TSharedPtr<FPCGUtilsDynMeshSelectionOperation> Inner;
+	};
+
 	class FLiteralSelectionOperation final : public FPCGUtilsDynMeshSelectionOperation
 	{
 	public:
@@ -76,6 +99,13 @@ TSharedPtr<FPCGUtilsDynMeshSelectionOperation> UPCGUtilsDynMeshSelectionFactoryD
 	FPCGContext* InContext) const
 {
 	TSharedPtr<FPCGUtilsDynMeshSelectionOperation> Operation = CreateOperationInternal();
+	if (Operation && bInvertSelection)
+	{
+		// Child selectors are often evaluated directly by composite operations, so inversion belongs in the
+		// operation wrapper rather than only in the top-level materializer.
+		Operation->BindContext(InContext);
+		Operation = MakeShared<FInvertedSelectionOperation>(MoveTemp(Operation));
+	}
 	if (Operation)
 	{
 		Operation->BindContext(InContext);
@@ -86,6 +116,16 @@ TSharedPtr<FPCGUtilsDynMeshSelectionOperation> UPCGUtilsDynMeshSelectionFactoryD
 TSharedPtr<FPCGUtilsDynMeshSelectionOperation> UPCGUtilsDynMeshSelectionFactoryData::CreateOperationInternal() const
 {
 	return nullptr;
+}
+
+void UPCGUtilsDynMeshSelectionFactoryData::AddToCrc(FArchiveCrc32& Ar, bool bFullDataCrc) const
+{
+	Super::AddToCrc(Ar, bFullDataCrc);
+	if (bFullDataCrc)
+	{
+		bool bInvert = bInvertSelection;
+		Ar << bInvert;
+	}
 }
 
 bool UPCGUtilsDynMeshLiteralSelectionFactoryData::SupportsDomain(

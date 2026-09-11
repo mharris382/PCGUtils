@@ -65,7 +65,7 @@ protected:
  */
 UCLASS(Abstract, BlueprintType, ClassGroup=(Procedural), Category="PCGUtils|Fracture|Selections")
 class PCGUTILSFRACTURE_API UPCGUtilsGeometryCollectionSelectionDecoratorSettings
-	: public UPCGUtilsGeometryCollectionFactoryProviderSettings
+	: public UPCGUtilsGeometryCollectionSelectionFactoryProviderSettings
 {
 	GENERATED_BODY()
 

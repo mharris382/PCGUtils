@@ -117,6 +117,14 @@ public:
 	virtual FText GetDefaultNodeTitle() const override;
 	virtual FText GetNodeTooltipText() const override;
 	virtual FString GetAdditionalTitleInformation() const override;
+	virtual bool ShouldDrawNodeCompact() const override
+	{
+		return Operation == EPCGGeometryCollectionHierarchyOperation::Invert;
+	}
+	virtual bool ShouldShowCompactNodeTitle() const override
+	{
+		return Operation == EPCGGeometryCollectionHierarchyOperation::Invert;
+	}
 	virtual TArray<FPCGPreConfiguredSettingsInfo> GetPreconfiguredInfo() const override;
 	virtual bool OnlyExposePreconfiguredSettings() const override { return true; }
 	virtual bool GroupPreconfiguredSettings() const override { return false; }

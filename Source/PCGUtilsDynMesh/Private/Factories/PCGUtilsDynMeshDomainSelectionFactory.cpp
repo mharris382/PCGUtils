@@ -139,7 +139,8 @@ namespace
 				return false;
 			}
 
-			const UE::Geometry::EGeometryElementType NativeElementType = Factory->GetNativeElementType();
+			const UE::Geometry::EGeometryElementType NativeElementType =
+				Factory->GetNativeElementType(InSelectionContext.Domain);
 			FPCGUtilsDynMeshSelectionDomain NativeDomain;
 			NativeDomain.ElementType = NativeElementType;
 			NativeDomain.TopologyType = UE::Geometry::EGeometryTopologyType::Triangle;
@@ -314,6 +315,7 @@ UPCGUtilsDynMeshDomainSelectionFactoryProviderSettings::CreateFactory(
 		return nullptr;
 	}
 	DomainFactory->bAllowPartialInclusion = bAllowPartialInclusion;
+	DomainFactory->bInvertSelection = bInvertSelection;
 	return Super::CreateFactory(InContext, DomainFactory);
 }
 

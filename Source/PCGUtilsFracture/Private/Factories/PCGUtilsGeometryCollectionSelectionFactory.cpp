@@ -4,6 +4,7 @@
 
 #include "GeometryCollection/GeometryCollection.h"
 #include "PCGContext.h"
+#include "Serialization/ArchiveCrc32.h"
 #include "Utils/PCGLogErrors.h"
 
 #define LOCTEXT_NAMESPACE "PCGUtilsGCSelectionFactory"
@@ -13,6 +14,38 @@ PCG_DEFINE_TYPE_INFO(FPCGUtilsGeometryCollectionSelectionFactoryDataTypeInfo, UP
 int32 FPCGUtilsGeometryCollectionSelectionEvaluationContext::NumTransforms() const
 {
 	return Collection.NumElements(FGeometryCollection::TransformGroup);
+}
+
+void UPCGUtilsGeometryCollectionSelectionFactoryData::AddToCrc(
+	FArchiveCrc32& Ar, bool bFullDataCrc) const
+{
+	Super::AddToCrc(Ar, bFullDataCrc);
+	if (bFullDataCrc)
+	{
+		bool bInvert = bInvertSelection;
+		Ar << bInvert;
+	}
+}
+
+void UPCGUtilsGeometryCollectionSelectionFactoryData::ApplyInversion(
+	const FPCGUtilsGeometryCollectionSelectionEvaluationContext&,
+	FDataflowTransformSelection& InOutSelection) const
+{
+	InOutSelection.Invert();
+}
+
+UPCGUtilsGeometryCollectionFactoryData*
+UPCGUtilsGeometryCollectionSelectionFactoryProviderSettings::CreateFactory(
+	FPCGContext* InContext, UPCGUtilsGeometryCollectionFactoryData* InFactory) const
+{
+	UPCGUtilsGeometryCollectionSelectionFactoryData* Selector =
+		Cast<UPCGUtilsGeometryCollectionSelectionFactoryData>(InFactory);
+	if (!Selector)
+	{
+		return nullptr;
+	}
+	Selector->bInvertSelection = bInvertSelection;
+	return Super::CreateFactory(InContext, Selector);
 }
 
 namespace PCGUtilsGeometryCollectionSelectionFactories
@@ -52,6 +85,11 @@ namespace PCGUtilsGeometryCollectionSelectionFactories
 						"authored against a different collection state."),
 					FText::AsNumber(FactorySelection.Num()), FText::AsNumber(OutSelection.Num())), InContext);
 				return false;
+			}
+
+			if (Factory->bInvertSelection)
+			{
+				Factory->ApplyInversion(InEvaluationContext, FactorySelection);
 			}
 
 			// FDataflowSelection has no in-place union; OR writes into a separate result.

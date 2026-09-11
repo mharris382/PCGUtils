@@ -46,14 +46,15 @@ Searching `GC` returns all of it; `GC Select` returns only the bone selections.
 | **GC \| From Asset** | *(none)* - reads a Geometry Collection asset | `GC` |
 | **GC \| Get GC Data** | *(none)* - reads placed GC Components | `GC` (one per component) |
 | **GC \| From DynMesh** (compact) | `DynMesh` | `GC` |
-| **GC \| Fracture** | `GC`, `Fracture`, `Selection` (optional) | `GC` |
-| **GC \| Uniform Voronoi Fracture** | *(none)* | `Fracture`, `Result` (optional) |
-| **GC \| Voronoi Fracture From Points** | `Sites` (points) | `Fracture`, `Result` (optional) |
-| **GC \| Planar Fracture** | `Planes` (points, optional) | `Fracture`, `Result` (optional) |
-| **GC \| Slice Fracture** | *(none)* | `Fracture`, `Result` (optional) |
-| **GC \| Brick Fracture** | *(none)* | `Fracture`, `Result` (optional) |
+| **GC \| Fracture** | `GC`, `Fracture`, `Selection` (optional) | `GC`, `Result` (opt-in) |
+| **GC \| Uniform Voronoi Fracture** | *(none)* | `Fracture` |
+| **GC \| Voronoi Fracture From Points** | `Sites` (points) | `Fracture` |
+| **GC \| Planar Fracture** | `Planes` (points, optional) | `Fracture` |
+| **GC \| Slice Fracture** | *(none)* | `Fracture` |
+| **GC \| Brick Fracture** | *(none)* | `Fracture` |
 | **GC \| Bones To Points** | `GC` | `Points`, `Edges` (cluster mode) |
 | **GC \| Select \| Bones From Points** | `Points` | `Selection` |
+| **GC \| Separate Selection** | `GC`, `Selection` | `Selected`, `Unselected` |
 | **GC \| Prune** | `GC`, `Selection` | `GC` |
 | **GC \| To DynMesh** (compact) | `GC` | `DynMesh` (one, or one per piece) |
 
@@ -67,6 +68,8 @@ Plus the selector family, which builds a `Selection` without ever touching the c
 | **GC \| Select \| Contact** | `Selection` | `Selection` |
 | **GC \| Select \| AND / OR / XOR / Subtract** | `A`, `B` | `Selection` |
 | **GC \| Select \| By Mesh Predicate (Any / All)** | `Selector` (DynMesh) | `Selection` |
+| **GC \| Select \| With Exterior / With Interior** | *(none)* | `Selection` |
+| **GC \| Select \| Random Bones** | *(none)* | `Selection` |
 
 `GC`, `Fracture` and `Selection` pins all use the fracture-domain colour `#2F7FA3`; the icon distinguishes the
 type. A blue selection icon is a Geometry Collection bone selection, a purple one a DynMesh element selection.
@@ -86,10 +89,16 @@ Select Pieces  ──>  Select Parent (All Children)  ──>  Select Children
     the pieces         the clusters they fill completely      back down again
 ```
 
-**Base selectors** take no input. `Select Pieces` is the one to reach for: a *piece* is a rigid bone that owns
+**Base selectors** take no input. Every GC selector also has **Invert Selection**; inversion happens in the
+selector's meaningful candidate domain, so a piece-only predicate does not unexpectedly select structural
+clusters. `Select Pieces` is the one to reach for: a *piece* is a rigid bone that owns
 geometry, which is what renders, converts and prunes. `Select Clusters` gives the structural bones instead,
 `Select Root Bones` the top of the tree, and `Select Bones At Level` everything at one depth. `Select All
 Bones` includes clusters and roots, which is rarely what a spatial filter wants.
+
+`With Exterior` and `With Interior` select pieces by face classification. **Match Any Face** keeps a piece when
+at least one face has that surface class; **Match All Faces** requires every face to match. `Random Bones` uses a
+deterministic seed and selects either a percentage or an exact count from Pieces, Clusters, or All Bones.
 
 **Decorators** take a selection and return another. Parent, Children, Siblings, Ancestors and Descendants walk
 the tree; `Selection To Pieces` resolves anything down to the pieces that make up its shape; `Selection To
@@ -113,6 +122,14 @@ exposed pieces, except the ones I already damaged".
 > Selections carry no collection of their own, so the same selector graph can be reused against any collection
 > state. `Select Bones From Points` is the exception: it carries recorded bone indices and checks them against
 > the collection's identity, which is what makes a stale selection an error rather than silent damage.
+
+`GC | Separate Selection` resolves one selector once, expands selected clusters to their pieces, and outputs two
+independent collections: the selected piece branches and their complement. Use it when both halves must continue
+through the graph; use `GC | Prune` when only one side is needed.
+
+`GC | Fracture` can expose an opt-in **Result** selector containing every bone created by its operation sequence.
+The pin is hidden while disabled. Result membership is stored by stable Bone ID and tied to the output GC lineage,
+so it survives later bone reindexing without matching an unrelated collection.
 
 ---
 

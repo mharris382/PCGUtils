@@ -3,15 +3,14 @@
 #pragma once
 
 #include "CoreMinimal.h"
-#include "Elements/Selections/PCGUtilsDynMeshSelectionSource.h"
-#include "Factories/PCGUtilsDynMeshSelectionFactory.h"
+#include "Factories/PCGUtilsDynMeshDomainSelectionFactory.h"
 
 #include "PCGDynMeshNormalSelectionFactory.generated.h"
 
-/** Selection factory that tests triangle or vertex normals, according to the final Build node's domain. */
+/** Tests face or vertex normals directly and adapts face results for edge consumers. */
 UCLASS(BlueprintType, ClassGroup=(Procedural), Category="PCGUtils|DynMesh|Selections")
 class PCGUTILSDYNMESH_API UPCGDynMeshNormalSelectionFactoryData
-	: public UPCGUtilsDynMeshSelectionFactoryData
+	: public UPCGUtilsDynMeshDomainSelectionFactoryData
 {
 	GENERATED_BODY()
 
@@ -22,17 +21,26 @@ public:
 	UPROPERTY()
 	float DotThreshold = 0.9f;
 
-	virtual bool SupportsDomain(const FPCGUtilsDynMeshSelectionDomain& Domain) const override;
-
 protected:
-	virtual TSharedPtr<FPCGUtilsDynMeshSelectionOperation> CreateOperationInternal() const override;
+	virtual UE::Geometry::EGeometryElementType GetNativeElementTypeInternal() const override
+	{
+		return UE::Geometry::EGeometryElementType::Face;
+	}
+	virtual UE::Geometry::EGeometryElementType GetNativeElementTypeForDomainInternal(
+		const FPCGUtilsDynMeshSelectionDomain& RequestedDomain) const override
+	{
+		return RequestedDomain.ElementType == UE::Geometry::EGeometryElementType::Vertex
+			? UE::Geometry::EGeometryElementType::Vertex
+			: UE::Geometry::EGeometryElementType::Face;
+	}
+	virtual TSharedPtr<FPCGUtilsDynMeshSelectionOperation> CreateNativeOperationInternal() const override;
 	virtual void AddToCrc(FArchiveCrc32& Ar, bool bFullDataCrc) const override;
 };
 
 UCLASS(BlueprintType, ClassGroup=(Procedural), Category="PCGUtils|DynMesh|Selections",
 	meta=(Keywords="Normal Direction Selection Selector DynMesh Select"))
 class PCGUTILSDYNMESH_API UPCGDynMeshNormalSelectionFactoryProviderSettings
-	: public UPCGUtilsDynMeshSelectionSourceSettings
+	: public UPCGUtilsDynMeshDomainSelectionSourceSettings
 {
 	GENERATED_BODY()
 

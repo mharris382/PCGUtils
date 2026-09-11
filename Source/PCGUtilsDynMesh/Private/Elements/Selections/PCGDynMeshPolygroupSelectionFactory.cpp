@@ -18,7 +18,7 @@ namespace
 		explicit FPolygroupSelectionOperation(const UPCGDynMeshPolygroupSelectionFactoryData& Data)
 			: GroupLayer(Data.GroupLayer), GroupLayerName(Data.GroupLayerName),
 			  bAllowMissingNamedLayer(Data.bAllowMissingNamedLayer),
-			  SelectionMode(Data.SelectionMode), bInvertSelection(Data.bInvertSelection)
+			  SelectionMode(Data.SelectionMode)
 		{
 			for (int32 ID : Data.GroupIDs)
 			{
@@ -88,9 +88,8 @@ namespace
 		{
 			if (bMissingNamedLayer || !SelectionContext->Mesh.IsTriangle(ElementID)) { return false; }
 			const int32 GroupID = GetGroupID(ElementID);
-			const bool bMatches = SelectionMode == EPCGUtilsDynMeshPolygroupSelectionMode::HighestGroupID
+			return SelectionMode == EPCGUtilsDynMeshPolygroupSelectionMode::HighestGroupID
 				? HighestGroupID >= 0 && GroupID == HighestGroupID : GroupIDs.Contains(GroupID);
-			return bInvertSelection ? !bMatches : bMatches;
 		}
 
 	private:
@@ -104,7 +103,6 @@ namespace
 		bool bAllowMissingNamedLayer;
 		bool bMissingNamedLayer = false;
 		EPCGUtilsDynMeshPolygroupSelectionMode SelectionMode;
-		bool bInvertSelection;
 		TSet<int32> GroupIDs;
 		const UE::Geometry::FDynamicMeshPolygroupAttribute* GroupAttribute = nullptr;
 		int32 HighestGroupID = INDEX_NONE;
@@ -125,10 +123,9 @@ void UPCGDynMeshPolygroupSelectionFactoryData::AddToCrc(FArchiveCrc32& Ar, bool 
 		int32 LayerIndex = GroupLayer.ExtendedLayerIndex;
 		uint8 Mode = static_cast<uint8>(SelectionMode);
 		TArray<int32> IDs = GroupIDs;
-		bool bInvert = bInvertSelection;
 		FName LayerName = GroupLayerName;
 		bool bAllowMissing = bAllowMissingNamedLayer;
-		Ar << bDefaultLayer << LayerIndex << Mode << IDs << bInvert << LayerName << bAllowMissing;
+		Ar << bDefaultLayer << LayerIndex << Mode << IDs << LayerName << bAllowMissing;
 	}
 }
 
@@ -160,7 +157,6 @@ UPCGUtilsDynMeshFactoryData* UPCGDynMeshPolygroupSelectionFactoryProviderSetting
 	Factory->GroupLayerName = GroupLayerName;
 	Factory->SelectionMode = SelectionMode;
 	Factory->GroupIDs = GroupIDs;
-	Factory->bInvertSelection = bInvertSelection;
 	return Super::CreateFactory(InContext, Factory);
 }
 

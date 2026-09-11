@@ -66,6 +66,10 @@ class PCGUTILSDYNMESH_API UPCGUtilsDynMeshSelectionFactoryData : public UPCGUtil
 public:
 	PCG_ASSIGN_TYPE_INFO(FPCGUtilsDynMeshSelectionFactoryDataTypeInfo)
 
+	/** Complement this selector after evaluating it in the consumer's requested domain. */
+	UPROPERTY()
+	bool bInvertSelection = false;
+
 	virtual bool SupportsDomain(const FPCGUtilsDynMeshSelectionDomain& Domain) const;
 
 	/** Creates and context-binds a runtime operation. Common initialization cannot be bypassed by subclasses. */
@@ -73,6 +77,7 @@ public:
 
 protected:
 	virtual TSharedPtr<FPCGUtilsDynMeshSelectionOperation> CreateOperationInternal() const;
+	virtual void AddToCrc(FArchiveCrc32& Ar, bool bFullDataCrc) const override;
 };
 
 /**
