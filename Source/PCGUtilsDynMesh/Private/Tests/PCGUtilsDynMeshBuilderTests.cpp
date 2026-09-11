@@ -1,6 +1,10 @@
 // Copyright Max Harris
 
 #include "Misc/AutomationTest.h"
+#include "Elements/Creation/PCGDynMeshRefitBuilder.h"
+#include "Elements/Topology/PCGDynMeshBoolean.h"
+#include "Factories/PCGUtilsDynMeshOperandProcessBuilderFactory.h"
+#include "PCGPin.h"
 
 #if WITH_AUTOMATION_TESTS
 
@@ -540,39 +544,197 @@ bool FPCGUtilsDynMeshBuilderFrameFollowsTest::RunTest(const FString&)
 		Bounds.GetCenter().Equals(BaselineCentre + FVector(0.0, 0.0, 200.0), 0.01));
 	TestTrue(TEXT("The scale still resized the shape"),
 		Bounds.GetSize().Equals(FVector(200.0), 0.01));
-	TestTrue(TEXT("The recorded frame tracked the translation"),
-		Result.BuilderFrame.GetLocation().Equals(
-			Baseline.BuilderFrame.GetLocation() + FVector(0.0, 0.0, 200.0), 0.01));
+	TestTrue(
+	    TEXT("The recorded frame tracked the translation"),
+	    Result.BuilderFrame.GetLocation().Equals(Baseline.BuilderFrame.GetLocation() + FVector(0.0, 0.0, 200.0), 0.01));
 	TestTrue(TEXT("The recorded frame stays rigid despite the scale"),
-		Result.BuilderFrame.GetScale3D().Equals(FVector::OneVector, 0.001));
+	         Result.BuilderFrame.GetScale3D().Equals(FVector::OneVector, 0.001));
 
 	return true;
 }
 
-IMPLEMENT_SIMPLE_AUTOMATION_TEST(
-	FPCGUtilsBoundsRelativeTransformTest,
-	"PCGUtils.DynMesh.BoundsRelativeTransform.AlignmentPaddingAndLocalTransform",
-	EAutomationTestFlags::EditorContext | EAutomationTestFlags::ProductFilter)
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FPCGUtilsBoundsRelativeTransformTest,
+                                 "PCGUtils.DynMesh.BoundsRelativeTransform.AlignmentPaddingAndLocalTransform",
+                                 EAutomationTestFlags::EditorContext | EAutomationTestFlags::ProductFilter)
 
-bool FPCGUtilsBoundsRelativeTransformTest::RunTest(const FString&)
+bool FPCGUtilsBoundsRelativeTransformTest::RunTest(const FString &)
 {
 	FPCGUtilsBoundsRelativeTransformDetails Placement;
 	Placement.Alignment.JustifyZ.To = EPCGUtilsJustifyTo::Min;
 	Placement.PaddingMin = FVector(0.0, 0.0, 20.0);
 	Placement.PaddingMax = FVector(20.0, 0.0, 0.0);
-	Placement.LocalTransform = FTransform(
-		FRotator(0.0, 90.0, 0.0), FVector(0.0, 0.0, 15.0), FVector::OneVector);
+	Placement.LocalTransform = FTransform(FRotator(0.0, 90.0, 0.0), FVector(0.0, 0.0, 15.0), FVector::OneVector);
 
-	const FTransform Result = Placement.ComputeTransform(
-		FBox(FVector(-100.0, -50.0, 10.0), FVector(100.0, 50.0, 210.0)));
+	const FTransform Result =
+	    Placement.ComputeTransform(FBox(FVector(-100.0, -50.0, 10.0), FVector(100.0, 50.0, 210.0)));
 
 	TestTrue(TEXT("Asymmetric max padding moves the aligned X centre"),
-		FMath::IsNearlyEqual(Result.GetLocation().X, -10.0, 0.001));
+	         FMath::IsNearlyEqual(Result.GetLocation().X, -10.0, 0.001));
 	TestTrue(TEXT("Minimum alignment uses the padded bottom plus local plane-normal offset"),
-		FMath::IsNearlyEqual(Result.GetLocation().Z, 45.0, 0.001));
+	         FMath::IsNearlyEqual(Result.GetLocation().Z, 45.0, 0.001));
 	TestTrue(TEXT("Local rotation becomes the resolved frame orientation"),
-		Result.GetRotation().Equals(Placement.LocalTransform.GetRotation(), 0.001));
+	         Result.GetRotation().Equals(Placement.LocalTransform.GetRotation(), 0.001));
 	return true;
 }
 
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FPCGUtilsOrientationVolumeTest, "PCGUtils.DynMesh.Builder.OrientationVolume",
+                                 EAutomationTestFlags::EditorContext | EAutomationTestFlags::ProductFilter)
+bool FPCGUtilsOrientationVolumeTest::RunTest(const FString &)
+{
+	const FBox Bounds(FVector(-20, -40, 10), FVector(90, 60, 180));
+	const FTransform Frame(FRotator(17, 32, 11), FVector(120, -45, 70), FVector(2, 3, 0.5));
+	for (int32 Order = 0; Order < 6; ++Order)
+		for (int32 Construction = 0; Construction < 9; ++Construction)
+		{
+			FPCGUtilsFittingOrientation Orientation;
+			Orientation.AxisOrder = static_cast<EPCGUtilsAxisOrder>(Order);
+			Orientation.RotationConstruction = static_cast<EPCGUtilsMakeRotAxis>(Construction);
+			FPCGUtilsFittingDetails Fitting;
+			Fitting.Orientation = Orientation;
+			Fitting.ScaleToFit.ScaleToFitMode = EPCGUtilsFitMode::Individual;
+			Fitting.ScaleToFit.ScaleToFitX = Fitting.ScaleToFit.ScaleToFitY = Fitting.ScaleToFit.ScaleToFitZ =
+			    EPCGUtilsScaleToFit::Fill;
+			Fitting.LocalTransform.SetScale3D(FVector(2, 3, 4));
+			const FBox Candidate(FVector(-1, -2, -3), FVector(1, 2, 3));
+			FTransform Placement;
+			Fitting.ComputeLocalTransform(Frame, Bounds, Candidate, Placement);
+			TestTrue(TEXT("Leaf fitting adopts swizzled frame"),
+			         Placement.GetRotation().Equals(Frame.GetRotation() * Orientation.GetRotation(), 0.001));
+			const FBox Expected = Bounds.TransformBy(Frame);
+			const FBox Actual = Candidate.TransformBy(Placement);
+			TestTrue(TEXT("Swizzled full fill and local scale occupy physical seed bounds"),
+			         Expected.Min.Equals(Actual.Min, 0.01) && Expected.Max.Equals(Actual.Max, 0.01));
+			FBox Remapped = Bounds;
+			FTransform RemappedFrame = Frame;
+			Orientation.RemapTarget(RemappedFrame, Remapped);
+			for (int32 Corner = 0; Corner < 8; ++Corner)
+			{
+				const FVector P((Corner & 1) ? Bounds.Max.X : Bounds.Min.X, (Corner & 2) ? Bounds.Max.Y : Bounds.Min.Y,
+				                (Corner & 4) ? Bounds.Max.Z : Bounds.Min.Z);
+				const FVector R = RemappedFrame.InverseTransformPosition(Frame.TransformPosition(P));
+				TestTrue(TEXT("Physical corner remains a remapped bounds corner"),
+				         (FMath::IsNearlyEqual(R.X, Remapped.Min.X, 0.001) ||
+				          FMath::IsNearlyEqual(R.X, Remapped.Max.X, 0.001)) &&
+				             (FMath::IsNearlyEqual(R.Y, Remapped.Min.Y, 0.001) ||
+				              FMath::IsNearlyEqual(R.Y, Remapped.Max.Y, 0.001)) &&
+				             (FMath::IsNearlyEqual(R.Z, Remapped.Min.Z, 0.001) ||
+				              FMath::IsNearlyEqual(R.Z, Remapped.Max.Z, 0.001)));
+			}
+		}
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FPCGUtilsRefitRetargetTest, "PCGUtils.DynMesh.Builder.RefitAndRetarget",
+                                 EAutomationTestFlags::EditorContext | EAutomationTestFlags::ProductFilter)
+bool FPCGUtilsRefitRetargetTest::RunTest(const FString &)
+{
+	using namespace PCGUtilsDynMeshBuilderTests;
+	FPCGUtilsDynMeshBuildContext Context;
+	Context.SeedTransform = FTransform(FVector(300, 200, 100));
+	Context.SeedLocalBounds = FBox(FVector(-100), FVector(100));
+	auto *Leg = MakeBoxBuilder(FVector(10, 20, 60));
+	auto *Refit = NewObject<UPCGDynMeshRefitBuilderData>();
+	Refit->Source = Leg;
+	Refit->Fitting.ScaleToFit.ScaleToFitMode = EPCGUtilsFitMode::None;
+	Refit->Fitting.Justification.JustifyX.From = EPCGUtilsJustifyFrom::Min;
+	Refit->Fitting.Justification.JustifyX.To = EPCGUtilsJustifyTo::Min;
+	FPCGUtilsDynMeshBuildResult Left, Right;
+	TestTrue(TEXT("First reused placement builds"), Refit->CreateOperation(nullptr)->Build(Context, Left));
+	auto *Other = NewObject<UPCGDynMeshRefitBuilderData>();
+	Other->Source = Leg;
+	Other->Fitting = Refit->Fitting;
+	Other->Fitting.Justification.JustifyX.From = EPCGUtilsJustifyFrom::Max;
+	Other->Fitting.Justification.JustifyX.To = EPCGUtilsJustifyTo::Max;
+	TestTrue(TEXT("Second reused placement builds"), Other->CreateOperation(nullptr)->Build(Context, Right));
+	if (!Left.IsValid() || !Right.IsValid())
+		return false;
+	const auto LB = Left.MeshData->GetDynamicMesh()->GetMeshPtr()->GetBounds();
+	const auto RB = Right.MeshData->GetDynamicMesh()->GetMeshPtr()->GetBounds();
+	TestTrue(TEXT("Left minimum aligns"), FMath::IsNearlyEqual(LB.Min.X, 200.0, 0.01));
+	TestTrue(TEXT("Right maximum aligns"), FMath::IsNearlyEqual(RB.Max.X, 400.0, 0.01));
+	TestTrue(TEXT("Reusing recipe preserves dimensions"), FVector(LB.Diagonal()).Equals(FVector(10, 20, 60), 0.01));
+	auto *Door = MakeBoxBuilder(FVector(40, 80, 120));
+	Door->Fitting.LocalTransform.SetTranslation(FVector(25, 0, -30));
+	auto *Cap = MakeBoxBuilder(FVector(1));
+	Cap->Fitting.ScaleToFit.ScaleToFitMode = EPCGUtilsFitMode::Individual;
+	Cap->Fitting.ScaleToFit.ScaleToFitX = Cap->Fitting.ScaleToFit.ScaleToFitY = Cap->Fitting.ScaleToFit.ScaleToFitZ =
+	    EPCGUtilsScaleToFit::Fill;
+	auto *Retarget = NewObject<UPCGDynMeshRefitBuilderData>();
+	Retarget->Source = Cap;
+	Retarget->Target = Door;
+	Retarget->bRetarget = true;
+	Retarget->Fitting.Orientation.AxisOrder = EPCGUtilsAxisOrder::ZYX;
+	FPCGUtilsDynMeshBuildResult Result, Reference;
+	TestTrue(TEXT("Reference builds"), Door->CreateOperation(nullptr)->Build(Context, Reference));
+	TestTrue(TEXT("Retarget builds"), Retarget->CreateOperation(nullptr)->Build(Context, Result));
+	if (!Result.IsValid() || !Reference.IsValid())
+		return false;
+	const auto A = Result.MeshData->GetDynamicMesh()->GetMeshPtr()->GetBounds();
+	const auto B = Reference.MeshData->GetDynamicMesh()->GetMeshPtr()->GetBounds();
+	TestTrue(TEXT("Swizzled fill occupies reference volume"),
+	         FVector(A.Min).Equals(FVector(B.Min), 0.01) && FVector(A.Max).Equals(FVector(B.Max), 0.01));
+	TestTrue(TEXT("Swizzle places primitive Z along reference X"),
+	         FMath::Abs(Result.BuilderFrame.GetRotation().GetAxisZ().X) > 0.999);
+	return true;
+}
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FPCGUtilsCompoundRefitTest,
+                                 "PCGUtils.DynMesh.Builder.CompoundRefitPreservesSelectionAndScale",
+                                 EAutomationTestFlags::EditorContext | EAutomationTestFlags::ProductFilter)
+bool FPCGUtilsCompoundRefitTest::RunTest(const FString &)
+{
+	using namespace PCGUtilsDynMeshBuilderTests;
+	auto *Shaft = MakeBoxBuilder(FVector(20, 20, 100));
+	auto *Foot = MakeBoxBuilder(FVector(40, 40, 20));
+	Foot->Fitting.LocalTransform.SetTranslation(FVector(0, 0, -40));
+	auto *Union = NewObject<UPCGUtilsDynMeshOperandProcessBuilderFactoryData>();
+	Union->PrimaryBuilder = Shaft;
+	Union->OperandBuilder = Foot;
+	auto *Boolean = NewObject<UPCGDynMeshBooleanSettings>();
+	Boolean->BooleanOperation = EGeometryScriptBooleanOperation::Union;
+	Union->Operation = Boolean->CreateProcessOperation(nullptr);
+	auto *Selected = MakeDecorator(Union, MakeShared<FSelectAllTrianglesOperation>(), TEXT("SelectCompound"));
+	auto *Refit = NewObject<UPCGDynMeshRefitBuilderData>();
+	Refit->Source = Selected;
+	Refit->Fitting.ScaleToFit.ScaleToFitMode = EPCGUtilsFitMode::None;
+	Refit->Fitting.Justification.JustifyX.From = EPCGUtilsJustifyFrom::Max;
+	Refit->Fitting.Justification.JustifyX.To = EPCGUtilsJustifyTo::Max;
+	const auto Context = MakeSeed(FTransform(FRotator(0, 35, 0), FVector(300, 100, 70), FVector(2, 3, 0.5)),
+	                              FBox(FVector(-100), FVector(100)));
+	FPCGUtilsDynMeshBuildResult Before, After;
+	TestTrue(TEXT("Compound source builds"), BuildOnce(Selected, Context, Before));
+	TestTrue(TEXT("Compound refit builds"), BuildOnce(Refit, Context, After));
+	if (!Before.IsValid() || !After.IsValid())
+		return false;
+	const auto *A = Before.MeshData->GetDynamicMesh()->GetMeshPtr();
+	const auto *B = After.MeshData->GetDynamicMesh()->GetMeshPtr();
+	TestEqual(TEXT("Compound topology preserved"), B->TriangleCount(), A->TriangleCount());
+	TestTrue(TEXT("Selection preserved"), After.HasSelection());
+	if (After.HasSelection())
+	{
+		TestTrue(TEXT("Selection references transformed result"),
+		         After.SelectionData->GetSourceMeshData() == After.MeshData);
+		TestEqual(TEXT("Selection membership count preserved"), After.SelectionData->GetSelection().Selection.Num(),
+		          Before.SelectionData->GetSelection().Selection.Num());
+	}
+	FBox BeforeLocal(ForceInit), AfterLocal(ForceInit);
+	for (int32 ID : A->VertexIndicesItr())
+		BeforeLocal += Before.BuilderFrame.InverseTransformPosition(FVector(A->GetVertex(ID)));
+	for (int32 ID : B->VertexIndicesItr())
+		AfterLocal += After.BuilderFrame.InverseTransformPosition(FVector(B->GetVertex(ID)));
+	TestTrue(TEXT("None preserves already scaled compound size"),
+	         BeforeLocal.GetSize().Equals(AfterLocal.GetSize(), 0.01));
+	const FVector Delta = FVector(B->GetVertex(0)) - FVector(A->GetVertex(0));
+	for (int32 ID : A->VertexIndicesItr())
+		TestTrue(TEXT("Every compound vertex receives the same translation"),
+		         (FVector(B->GetVertex(ID)) - FVector(A->GetVertex(ID))).Equals(Delta, 0.01));
+	const auto *Settings = GetDefault<UPCGDynMeshRefitBuilderSettings>();
+	const TArray<FPCGPinProperties> Pins = Settings->AllInputPinProperties();
+	TestTrue(TEXT("Source before reference"),
+	         Pins.Num() >= 2 && Pins[0].Label == TEXT("Builder") && Pins[1].Label == TEXT("Target"));
+	TestFalse(TEXT("Whole-object placement has no Selector pin"),
+	          Pins.ContainsByPredicate([](const FPCGPinProperties &Pin) { return Pin.Label == TEXT("Selector"); }));
+	TestTrue(TEXT("Retarget palette entry selects retarget semantics"),
+	         GetDefault<UPCGDynMeshRetargetBuilderSettings>()->bRetarget);
+	return true;
+}
 #endif // WITH_AUTOMATION_TESTS

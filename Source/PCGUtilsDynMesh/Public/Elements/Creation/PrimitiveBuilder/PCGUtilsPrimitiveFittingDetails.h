@@ -8,6 +8,47 @@
 
 #include "PCGUtilsPrimitiveFittingDetails.generated.h"
 
+UENUM(BlueprintType)
+enum class EPCGUtilsAxisOrder : uint8
+{
+	XYZ = 0 UMETA(DisplayName = "X > Y > Z", ToolTip="(0) X > Y > Z", ActionIcon="AxisOrder_XYZ"),
+	YZX = 1 UMETA(DisplayName = "Y > Z > X", ToolTip="(1) Y > Z > X", ActionIcon="AxisOrder_YZX"),
+	ZXY = 2 UMETA(DisplayName = "Z > X > Y", ToolTip="(2) Z > X > Y", ActionIcon="AxisOrder_ZXY"),
+	YXZ = 3 UMETA(DisplayName = "Y > X > Z", ToolTip="(3) Y > X > Z", ActionIcon="AxisOrder_YXZ"),
+	ZYX = 4 UMETA(DisplayName = "Z > Y > X", ToolTip="(4) Z > Y > X", ActionIcon="AxisOrder_ZYX"),
+	XZY = 5 UMETA(DisplayName = "X > Z > Y", ToolTip="(5) X > Z > Y", ActionIcon="AxisOrder_XZY")
+};
+
+UENUM(BlueprintType)
+enum class EPCGUtilsMakeRotAxis : uint8
+{
+	X  = 0 UMETA(DisplayName = "X", ToolTip="(0) Main direction used for X (Forward)", ActionIcon="RotOrder_X"),
+	XY = 1 UMETA(DisplayName = "X > Y", ToolTip="(1) Main direction used for X (Forward), second axis for Y (Right)", ActionIcon="RotOrder_XY"),
+	XZ = 2 UMETA(DisplayName = "X > Z", ToolTip="(2) Main direction used for X (Forward), second axis for Z (Up)", ActionIcon="RotOrder_XZ"),
+	Y  = 3 UMETA(DisplayName = "Y", ToolTip="(3) Main direction used for Y (Right)", ActionIcon="RotOrder_Y"),
+	YX = 4 UMETA(DisplayName = "Y > X", ToolTip="(4) Main direction used for Y (Right), second axis for X (Forward)", ActionIcon="RotOrder_YX"),
+	YZ = 5 UMETA(DisplayName = "Y > Z", ToolTip="(5) Main direction used for Y (Right), second axis for Z (Up)", ActionIcon="RotOrder_YZ"),
+	Z  = 6 UMETA(DisplayName = "Z", ToolTip="(6) Main direction used for Z (Up)", ActionIcon="RotOrder_Z"),
+	ZX = 7 UMETA(DisplayName = "Z > X", ToolTip="(7) Main direction used for Z (Up), second axis for X (Forward)", ActionIcon="RotOrder_ZX"),
+	ZY = 8 UMETA(DisplayName = "Z > Y", ToolTip="(8) Main direction used for Z (Up), second axis for Y (Right)", ActionIcon="RotOrder_ZY")
+};
+
+/** Axis controls ported from PCGEx. The resolved rotation and inverse-remapped bounds describe the same volume. */
+USTRUCT(BlueprintType)
+struct PCGUTILSDYNMESH_API FPCGUtilsFittingOrientation
+{
+	GENERATED_BODY()
+	/** Primitive X/Y/Z take these target axes in order. Odd permutations correct the unused axis sign. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Orientation", meta=(PCG_Overridable, InlineEnum))
+	EPCGUtilsAxisOrder AxisOrder = EPCGUtilsAxisOrder::XYZ;
+	/** Axes to preserve when constructing rotation after permutation. Two axes keep roll deterministic. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Orientation", meta=(PCG_Overridable, InlineEnum))
+	EPCGUtilsMakeRotAxis RotationConstruction = EPCGUtilsMakeRotAxis::XY;
+	FQuat GetRotation() const;
+	bool Validate(FString& Error) const;
+	/** Remaps rotation, signed scale and asymmetric bounds without changing the physical target volume. */
+	void RemapTarget(FTransform& Frame, FBox& Bounds) const;
+};
 /** Whether a plane uses an authored transform or resolves a frame from its target geometry bounds. */
 UENUM(BlueprintType)
 enum class EPCGUtilsPlaneTransformMode : uint8
@@ -209,6 +250,10 @@ USTRUCT(BlueprintType)
 struct PCGUTILSDYNMESH_API FPCGUtilsFittingDetails
 {
 	GENERATED_BODY()
+
+	/** Reorients fitting axes while preserving the target volume. Padding uses target axes; fitting uses remapped axes. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Fitting", meta=(PCG_Overridable))
+	FPCGUtilsFittingOrientation Orientation;
 
 	/** How to scale the primitive to fit within the seed's bounds. */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Fitting", meta = (PCG_Overridable, ShowOnlyInnerProperties))

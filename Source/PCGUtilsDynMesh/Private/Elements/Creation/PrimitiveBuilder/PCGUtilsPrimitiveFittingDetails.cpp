@@ -5,19 +5,77 @@
 
 #include "Serialization/ArchiveCrc32.h"
 
+bool FPCGUtilsFittingOrientation::Validate(FString &Error) const
+{
+	if (static_cast<uint8>(AxisOrder) > 5)
+	{
+		Error = FString::Printf(TEXT("Orientation.AxisOrder is %d; expected an enum value in [0, 5]."),
+		                        static_cast<uint8>(AxisOrder));
+		return false;
+	}
+	if (static_cast<uint8>(RotationConstruction) > 8)
+	{
+		Error = FString::Printf(TEXT("Orientation.RotationConstruction is %d; expected an enum value in [0, 8]."),
+		                        static_cast<uint8>(RotationConstruction));
+		return false;
+	}
+	return true;
+}
+FQuat FPCGUtilsFittingOrientation::GetRotation() const
+{
+	// Axis permutation and MakeFrom dispatch adapted from PCGExMathAxis (MIT).
+	static const int32 Orders[6][3] = {{0, 1, 2}, {1, 2, 0}, {2, 0, 1}, {1, 0, 2}, {2, 1, 0}, {0, 2, 1}};
+	const FVector Axes[3] = {FVector::ForwardVector, FVector::RightVector, FVector::UpVector};
+	const int32 Order = FMath::Clamp(static_cast<int32>(AxisOrder), 0, 5);
+	const FVector X = Axes[Orders[Order][0]], Y = Axes[Orders[Order][1]], Z = Axes[Orders[Order][2]];
+	switch (RotationConstruction)
+	{
+	case EPCGUtilsMakeRotAxis::X:
+		return FRotationMatrix::MakeFromX(X).ToQuat();
+	case EPCGUtilsMakeRotAxis::XZ:
+		return FRotationMatrix::MakeFromXZ(X, Z).ToQuat();
+	case EPCGUtilsMakeRotAxis::Y:
+		return FRotationMatrix::MakeFromY(Y).ToQuat();
+	case EPCGUtilsMakeRotAxis::YX:
+		return FRotationMatrix::MakeFromYX(Y, X).ToQuat();
+	case EPCGUtilsMakeRotAxis::YZ:
+		return FRotationMatrix::MakeFromYZ(Y, Z).ToQuat();
+	case EPCGUtilsMakeRotAxis::Z:
+		return FRotationMatrix::MakeFromZ(Z).ToQuat();
+	case EPCGUtilsMakeRotAxis::ZX:
+		return FRotationMatrix::MakeFromZX(Z, X).ToQuat();
+	case EPCGUtilsMakeRotAxis::ZY:
+		return FRotationMatrix::MakeFromZY(Z, Y).ToQuat();
+	default:
+		return FRotationMatrix::MakeFromXY(X, Y).ToQuat();
+	}
+}
+
+void FPCGUtilsFittingOrientation::RemapTarget(FTransform &Frame, FBox &Bounds) const
+{
+	const FQuat Rotation = GetRotation();
+	const FVector OldScale = Frame.GetScale3D();
+	const FVector Axes[3] = {Rotation.GetAxisX(), Rotation.GetAxisY(), Rotation.GetAxisZ()};
+	FVector Scale;
+	for (int32 Axis = 0; Axis < 3; ++Axis)
+		Scale[Axis] = FVector::DotProduct(Axes[Axis].GetAbs(), OldScale);
+	Bounds = Bounds.TransformBy(FTransform(Rotation.Inverse()));
+	Frame.SetRotation(Frame.GetRotation() * Rotation);
+	Frame.SetScale3D(Scale);
+}
 namespace PCGUtilsFitting
 {
-	void ApplyPadding(FBox& InOutBounds, const FVector& PaddingMin, const FVector& PaddingMax)
+void ApplyPadding(FBox &InOutBounds, const FVector &PaddingMin, const FVector &PaddingMax)
+{
+	for (int32 Axis = 0; Axis < 3; ++Axis)
 	{
-		for (int32 Axis = 0; Axis < 3; ++Axis)
-		{
-			const double Center = (InOutBounds.Min[Axis] + InOutBounds.Max[Axis]) * 0.5;
-			InOutBounds.Min[Axis] = FMath::Min(InOutBounds.Min[Axis] + PaddingMin[Axis], Center);
-			InOutBounds.Max[Axis] = FMath::Max(InOutBounds.Max[Axis] - PaddingMax[Axis], Center);
-		}
+		const double Center = (InOutBounds.Min[Axis] + InOutBounds.Max[Axis]) * 0.5;
+		InOutBounds.Min[Axis] = FMath::Min(InOutBounds.Min[Axis] + PaddingMin[Axis], Center);
+		InOutBounds.Max[Axis] = FMath::Max(InOutBounds.Max[Axis] - PaddingMax[Axis], Center);
 	}
+}
 
-	void ScaleToFitAxis(
+    void ScaleToFitAxis(
 		const EPCGUtilsScaleToFit Fit, const int32 Axis, const FVector& TargetScale, const FVector& TargetSize,
 		const FVector& CandidateSize, const FVector& MinMaxFit, FVector& OutScale)
 	{
@@ -156,7 +214,7 @@ namespace PCGUtilsFitting
 
 		OutTranslation[Axis] = End - Start;
 	}
-}
+    } // namespace PCGUtilsFitting
 
 void FPCGUtilsScaleToFitDetails::Process(const FVector& TargetSize, const FVector& TargetScale, const FBox& InBounds, FVector& OutScale) const
 {
@@ -194,6 +252,19 @@ void FPCGUtilsJustificationDetails::Process(const FBox& TargetBounds, const FBox
 void FPCGUtilsFittingDetails::ComputeLocalTransform(
 	const FTransform& SeedTransform, const FBox& SeedLocalBounds, const FBox& CandidateBounds, FTransform& OutTransform) const
 {
+	if (!Orientation.GetRotation().IsIdentity())
+	{
+		FTransform TargetFrame = SeedTransform;
+		FBox TargetBounds = SeedLocalBounds;
+		PCGUtilsFitting::ApplyPadding(TargetBounds, PaddingMin, PaddingMax);
+		Orientation.RemapTarget(TargetFrame, TargetBounds);
+		FPCGUtilsFittingDetails Remapped = *this;
+		Remapped.Orientation = FPCGUtilsFittingOrientation();
+		Remapped.PaddingMin = Remapped.PaddingMax = FVector::ZeroVector;
+		Remapped.ComputeLocalTransform(TargetFrame, TargetBounds, CandidateBounds, OutTransform);
+		return;
+	}
+
 	// Padding insets (or, if negative, outsets) the seed bounds used as the fitting target, independently of
 	// the primitive's own geometry. Each side of each axis moves on its own: PaddingMin pushes the min corner
 	// inwards, PaddingMax pushes the max corner inwards. Clamp per axis so over-large padding collapses to the
@@ -207,24 +278,25 @@ void FPCGUtilsFittingDetails::ComputeLocalTransform(
 
 	// Scale the candidate's own bounds by the local pre-transform's scale before computing fit factors, so
 	// LocalTransform's scale composes with (rather than fights) the fitting result.
-	const FBox ScaledCandidateBounds(CandidateBounds.Min * LocalScale, CandidateBounds.Max * LocalScale);
+	const FBox ScaledCandidateBounds = CandidateBounds.TransformBy(FTransform(FQuat::Identity, FVector::ZeroVector, LocalScale));
 
 	FVector OutScale = SeedTransform.GetScale3D();
 	const FVector PaddedSize = PaddedBounds.GetSize();
 	ScaleToFit.Process(PaddedSize, SeedTransform.GetScale3D(), ScaledCandidateBounds, OutScale);
 
-	FBox FittedBounds(ScaledCandidateBounds.Min * OutScale, ScaledCandidateBounds.Max * OutScale);
+	FBox FittedBounds = ScaledCandidateBounds.TransformBy(FTransform(FQuat::Identity, FVector::ZeroVector, OutScale));
 	if (!LocalRotation.IsIdentity())
 	{
 		FittedBounds = FittedBounds.TransformBy(FTransform(LocalRotation));
 	}
 
 	FVector OutTranslation = FVector::ZeroVector;
-	Justification.Process(PaddedBounds, FittedBounds, OutTranslation);
+	const FBox PhysicalTargetBounds = PaddedBounds.TransformBy(FTransform(FQuat::Identity, FVector::ZeroVector, SeedTransform.GetScale3D()));
+	Justification.Process(PhysicalTargetBounds, FittedBounds, OutTranslation);
 
 	OutTransform = SeedTransform;
 	OutTransform.AddToTranslation(SeedTransform.GetRotation().RotateVector(OutTranslation));
-	OutTransform.SetScale3D(OutScale);
+	OutTransform.SetScale3D(OutScale * LocalScale);
 	OutTransform.SetRotation(SeedTransform.GetRotation() * LocalRotation);
 
 	if (!LocalTranslation.IsNearlyZero())
