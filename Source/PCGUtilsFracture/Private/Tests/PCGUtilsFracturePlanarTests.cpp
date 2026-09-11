@@ -175,6 +175,24 @@ bool FPCGUtilsFracturePlanarOperationsTest::RunTest(const FString&)
 		}
 	}
 
+	// --- Planar: one frame resolved from the collection bounds at execution time.
+	{
+		UPCGPlanarFractureSettings* Settings = NewObject<UPCGPlanarFractureSettings>();
+		Settings->TransformMode = EPCGUtilsPlaneTransformMode::BoundsRelative;
+		const FAuthored Authored = Author(Settings, {});
+		const auto* PlanarFactory = Cast<const UPCGPlanarFractureFactoryData>(Authored.Operation);
+		if (TestNotNull(TEXT("Bounds-relative planar authored an operation"), PlanarFactory))
+		{
+			TestEqual(TEXT("Bounds-relative plane is deferred until target bounds exist"),
+				PlanarFactory->CutPlaneTransforms.Num(), 0);
+			const UPCGGeometryCollectionData* Cut = Apply(ToCollection(Box()), Authored.Operation);
+			if (TestNotNull(TEXT("Bounds-relative planar produced a collection"), Cut))
+			{
+				TestEqual(TEXT("Default bounds-relative plane bisects the box"), CountPiecesIn(Cut), 2);
+			}
+		}
+	}
+
 	// --- Brick: the one operation that cannot work at a zero grout, so it must say so rather than fail blankly.
 	{
 		UPCGBrickFractureSettings* Settings = NewObject<UPCGBrickFractureSettings>();

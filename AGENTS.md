@@ -59,6 +59,23 @@ point attributes identifying vertices. Do not call this pattern merely `From Poi
 different operation: `Bounds Brush Painter` uses point bounds and falloff, not vertex correspondence. Keep
 `point`/`points` as search keywords for both patterns; do not add duplicate palette aliases for synonyms.
 
+### Node titles and subtitles are a space budget
+
+A PCG node is as wide as its widest line of text, so every character in a title or subtitle costs graph area and
+buys fewer nodes on screen. Treat brevity as a feature of the node, not a nicety: **say what the title does not
+already say, and stop.**
+
+- Never put a fully-qualified enum value in a subtitle. `UEnum::GetValueAsString` returns
+  `EGeometryScriptBooleanOperation::Union`, which under a title already reading `DynMesh | Boolean` roughly
+  doubles the node's width to tell you nothing. Use `UEnum::GetDisplayValueAsText(Value).ToString()`, which
+  gives `Union` and matches the label in the details panel.
+- A subtitle earns its place by showing the one setting someone reads the graph to check - the slice grid, the
+  site count, the blend mode. `GetAdditionalTitleInformation()` returning an empty `FString` for the default
+  case is the right answer, not a fallback: see `GC | To DynMesh`, which labels only `Per Piece`.
+- Do not repeat the family prefix, the data type, or the word the title already carries. `Union`, not
+  `Boolean Union`; `2x2x2`, not `Slices 2x2x2`.
+- The same applies to the title itself, which is why the element name never repeats its category.
+
 ### Context-menu naming
 
 The palette is the only map users have of this library, and PCG gives a native element no free-form category

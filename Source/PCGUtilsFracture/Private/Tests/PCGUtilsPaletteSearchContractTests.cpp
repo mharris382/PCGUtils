@@ -35,6 +35,7 @@ namespace PCGUtilsPaletteSearchContract
 		FString SearchText;
 		FString ClassName;
 		FString Package;
+		FString Subtitle;
 	};
 
 	FString MakeSearchText(const FString& Label, const FString& Keywords, const FString& Category)
@@ -106,17 +107,20 @@ namespace PCGUtilsPaletteSearchContract
 			const FString Category = StaticEnum<EPCGSettingsType>()
 				->GetDisplayNameTextByValue(static_cast<int64>(Settings->GetType())).ToString();
 
+			// Drawn under the title on the node itself, so it costs graph width the same way the title does.
+			const FString Subtitle = Settings->GetAdditionalTitleInformation();
+
 			const TArray<FPCGPreConfiguredSettingsInfo> Presets = Settings->GetPreconfiguredInfo();
 			if (Presets.IsEmpty() || !Settings->OnlyExposePreconfiguredSettings())
 			{
 				const FString Label = Settings->GetDefaultNodeTitle().ToString();
-				Entries.Add({Label, MakeSearchText(Label, Keywords, Category), Class->GetName(), Package});
+				Entries.Add({Label, MakeSearchText(Label, Keywords, Category), Class->GetName(), Package, Subtitle});
 			}
 			for (const FPCGPreConfiguredSettingsInfo& Preset : Presets)
 			{
 				const FString Label = Preset.Label.ToString();
 				const FString PresetKeywords = Keywords + TEXT(" ") + Preset.SearchHints.ToString();
-				Entries.Add({Label, MakeSearchText(Label, PresetKeywords, Category), Class->GetName(), Package});
+				Entries.Add({Label, MakeSearchText(Label, PresetKeywords, Category), Class->GetName(), Package, Subtitle});
 			}
 		}
 		return Entries;
@@ -211,6 +215,13 @@ bool FPCGUtilsPaletteSearchContractTest::RunTest(const FString&)
 			TestEqual(TEXT("Realize Builders keeps its agreed title"), Entry.Label,
 				FString(TEXT("DynMesh | Realize Builders")));
 		}
+
+		// A node is as wide as its widest line of text, and a fully-qualified enum value in the subtitle is the
+		// usual way that gets out of hand - UEnum::GetValueAsString yields
+		// "EGeometryScriptBooleanOperation::Union" under a title that already says Boolean. The display name is
+		// always the right call, so the scope operator has no business in a subtitle.
+		TestFalse(*FString::Printf(TEXT("%s subtitle is not a qualified enum value"), *Where),
+			Entry.Subtitle.Contains(TEXT("::")));
 
 		// A family prefix means nothing if the process name repeats the family.
 		if (Entry.Label.StartsWith(TEXT("DynMesh | ")))

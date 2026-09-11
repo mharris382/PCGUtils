@@ -215,6 +215,10 @@ entries must carry a `DynMesh` keyword, is in `AGENTS.md` under "Context-menu na
 The finer-grained groupings described below are still the right way to think about *where a node belongs* and
 how to name it; they are just expressed through the title prefix and file layout.
 
+Keep both the title and the subtitle short. A node is as wide as its widest line of text, so a verbose
+`GetAdditionalTitleInformation()` costs graph area and fits fewer nodes on screen - and a fully-qualified enum
+value is the usual culprit. `AGENTS.md`, "Node titles and subtitles are a space budget", has the rule.
+
 ## `Utils DynMesh`
 
 Use the root category directly only for operations that are genuinely fundamental or do not naturally belong to a more specific group.

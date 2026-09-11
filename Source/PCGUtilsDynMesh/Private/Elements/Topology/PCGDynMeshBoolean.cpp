@@ -291,7 +291,11 @@ TArray<FPCGPinProperties> UPCGDynMeshBooleanSettings::OutputPinProperties() cons
 
 FString UPCGDynMeshBooleanSettings::GetAdditionalTitleInformation() const
 {
-	FString Info = UEnum::GetValueAsString(BooleanOperation);
+	// The display name, not GetValueAsString: the latter returns the fully-qualified
+	// "EGeometryScriptBooleanOperation::Union", which sits under a title that already says Boolean and roughly
+	// doubles the node's width for no information. A subtitle pays for itself in pixels, so keep it to the part
+	// the title does not already tell you.
+	FString Info = UEnum::GetDisplayValueAsText(BooleanOperation).ToString();
 	if (bSeparateOperandContributions)
 	{
 		Info += TEXT(" (Separated)");

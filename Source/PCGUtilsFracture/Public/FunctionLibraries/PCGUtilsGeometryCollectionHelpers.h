@@ -23,6 +23,22 @@ namespace PCGUtilsGeometryCollectionHelpers
 	PCGUTILSFRACTURE_API void ComputeGlobalTransforms(
 		const FGeometryCollection& InCollection, TArray<FTransform>& OutGlobalTransforms);
 
+	/**
+	 * Places a whole collection under an additional transform, by composing it onto each root bone's *local*
+	 * transform.
+	 *
+	 * Geometry is deliberately untouched. A bone transform belongs to the collection state rather than to its
+	 * geometry, so placing a collection this way leaves every cached piece mesh valid, while rewriting vertices
+	 * would invalidate the lot and fold the placement's scale irreversibly into the shape. Every spatial
+	 * consumer here already resolves bone transforms through ComputeGlobalTransforms - ComputeCollectionBounds
+	 * and GC | To DynMesh both do - so a non-identity root is honoured throughout.
+	 *
+	 * GlobalMatrices composes `Global = Local * ParentGlobal`, which is why the placement multiplies on the
+	 * right: it has to act as the root's new parent.
+	 */
+	PCGUTILSFRACTURE_API void PlaceCollection(
+		FGeometryCollection& InOutCollection, const FTransform& InPlacement);
+
 	/** The bone's geometry bounds, in that bone's own local space. Invalid box when the bone has no geometry. */
 	PCGUTILSFRACTURE_API FBox GetBoneLocalBounds(const FGeometryCollection& InCollection, int32 InBoneIndex);
 

@@ -3,6 +3,7 @@
 #pragma once
 
 #include "CoreMinimal.h"
+#include "Elements/Creation/PrimitiveBuilder/PCGUtilsPrimitiveFittingDetails.h"
 #include "Elements/PCGUtilsFractureElementBase.h"
 #include "Factories/PCGUtilsFractureFactory.h"
 #include "Factories/PCGUtilsFractureNoise.h"
@@ -99,6 +100,12 @@ public:
 	TArray<FTransform> CutPlaneTransforms;
 
 	UPROPERTY()
+	EPCGUtilsPlaneTransformMode TransformMode = EPCGUtilsPlaneTransformMode::Explicit;
+
+	UPROPERTY()
+	FPCGUtilsBoundsRelativeTransformDetails BoundsPlacement;
+
+	UPROPERTY()
 	FPCGPlanarFractureCommonSettings Common;
 
 	virtual bool Fracture(
@@ -135,8 +142,18 @@ public:
 	 * are added to it.
 	 */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Planar",
-		meta=(PCG_Overridable, ClampMin="1", UIMax="100"))
+		meta=(PCG_Overridable, ClampMin="1", UIMax="100",
+			EditCondition="TransformMode == EPCGUtilsPlaneTransformMode::Explicit", EditConditionHides))
 	int32 NumPlanes = 1;
+
+	/** Preserve point/random plane placement, or resolve one plane against the target collection bounds. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Planar", meta=(PCG_Overridable))
+	EPCGUtilsPlaneTransformMode TransformMode = EPCGUtilsPlaneTransformMode::Explicit;
+
+	/** Builder-style placement of one plane against the target collection's local bounds. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Planar",
+		meta=(PCG_Overridable, EditCondition="TransformMode == EPCGUtilsPlaneTransformMode::BoundsRelative", EditConditionHides, ShowOnlyInnerProperties))
+	FPCGUtilsBoundsRelativeTransformDetails BoundsPlacement;
 
 	/**
 	 * Convert the Planes points from world space into the collection's space before cutting.
@@ -145,7 +162,8 @@ public:
 	 * DynMesh's local space, so without the conversion every plane lands somewhere else entirely. Disable only
 	 * when the points were already authored in the collection's space.
 	 */
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Planar", meta=(PCG_Overridable))
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Planar", meta=(PCG_Overridable,
+		EditCondition="TransformMode == EPCGUtilsPlaneTransformMode::Explicit", EditConditionHides))
 	bool bConvertPlanesToLocalSpace = true;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Fracture", meta=(PCG_Overridable, ShowOnlyInnerProperties))

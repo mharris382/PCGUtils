@@ -35,8 +35,10 @@ DynMesh -> GC -> fracture -> bones as points -> ordinary PCG/PCGEx filtering
 Nothing here creates an asset, actor, component, package or transaction. Every collection lives and dies inside
 one graph execution.
 
-There are two ways into the domain, and both copy rather than reference. `GC | From DynMesh` builds a collection
-from mesh data; `GC | From Asset` imports an existing Geometry Collection asset, deep-copying its
+There are three ways into the domain, and all copy rather than reference. `GC | From DynMesh` builds a collection
+from mesh data; `GC | Get GC Data` reads `UGeometryCollectionComponent`s out of the level through the standard
+`UPCGDataFromActorSettings` machinery, one GC data per component; `GC | From Asset` imports an existing Geometry
+Collection asset, deep-copying its
 `FGeometryCollection` through `CopyTo` exactly as `CreateMutableCopy` does - the asset is immutable and is never
 written to, which is the same relationship the engine's Mesh To Dynamic Mesh node has with a static mesh. An
 imported collection is published as a *new lineage*, so it arrives with the Level attribute, bone ids and
@@ -185,6 +187,14 @@ verifies it too.
 The only thing that converts is **incoming PCG spatial data**, which is world-space by PCG convention. Use
 `PCGUtilsDynMeshSpaceHelpers::ResolveMeshActorTransform` for that - do not scatter bespoke target-actor code.
 This is what makes the module correct at non-identity source transforms rather than only at identity.
+
+**"Entered at identity" is about authoring, not a guarantee every collection satisfies.** A collection read from
+a placed component carries that placement, and one imported from an asset carries whatever the asset had. Both
+arrive through `PCGUtilsGeometryCollectionHelpers::PlaceCollection`, which composes the placement onto the *root
+bones* rather than rewriting vertices - geometry stays bone-local, so cached piece meshes stay valid and the
+placement remains a separable fact. Every spatial consumer here resolves bone transforms through
+`ComputeGlobalTransforms` (`ComputeCollectionBounds` and `GC | To DynMesh` both do), which is what makes a
+non-identity root correct rather than merely tolerated. Do not add code that assumes identity bone transforms.
 
 Stored bone transforms are **parent-relative**. Anything spatial must go through
 `PCGUtilsGCHelpers::ComputeGlobalTransforms` (`GeometryCollectionAlgo::GlobalMatrices`).
@@ -468,6 +478,9 @@ has the full rule and the search-text mechanics; `PCGUtils.Palette.SearchContrac
   straight from `UPCGSettings` silently lands the node in the `Generic` palette bucket and nothing fails to
   compile.
 - Settings are `PCG_Overridable` by default, matching the DynMesh module.
+- Keep titles and subtitles short - a node is as wide as its widest line of text. A subtitle shows the one
+  setting someone reads the graph to check (`2x2x2`, `64 sites`, `Per Piece`) and is empty otherwise; never a
+  fully-qualified enum value. See `AGENTS.md`, "Node titles and subtitles are a space budget".
 - Pin labels are `GC`, `Fracture`, `Selection`, `Points`, `DynMesh`, `Sites`. `Factory` never appears on a graph
   surface; use `GC` rather than `Geometry Collection` in titles, and put the spelled-out form in `Keywords`
   (not a title alias, which would add a duplicate palette entry).

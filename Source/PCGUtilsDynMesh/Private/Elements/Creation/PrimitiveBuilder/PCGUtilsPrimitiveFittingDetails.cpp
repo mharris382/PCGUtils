@@ -3,8 +3,20 @@
 
 #include "Elements/Creation/PrimitiveBuilder/PCGUtilsPrimitiveFittingDetails.h"
 
+#include "Serialization/ArchiveCrc32.h"
+
 namespace PCGUtilsFitting
 {
+	void ApplyPadding(FBox& InOutBounds, const FVector& PaddingMin, const FVector& PaddingMax)
+	{
+		for (int32 Axis = 0; Axis < 3; ++Axis)
+		{
+			const double Center = (InOutBounds.Min[Axis] + InOutBounds.Max[Axis]) * 0.5;
+			InOutBounds.Min[Axis] = FMath::Min(InOutBounds.Min[Axis] + PaddingMin[Axis], Center);
+			InOutBounds.Max[Axis] = FMath::Max(InOutBounds.Max[Axis] - PaddingMax[Axis], Center);
+		}
+	}
+
 	void ScaleToFitAxis(
 		const EPCGUtilsScaleToFit Fit, const int32 Axis, const FVector& TargetScale, const FVector& TargetSize,
 		const FVector& CandidateSize, const FVector& MinMaxFit, FVector& OutScale)
@@ -187,12 +199,7 @@ void FPCGUtilsFittingDetails::ComputeLocalTransform(
 	// inwards, PaddingMax pushes the max corner inwards. Clamp per axis so over-large padding collapses to the
 	// bounds center instead of inverting.
 	FBox PaddedBounds = SeedLocalBounds;
-	for (int32 Axis = 0; Axis < 3; ++Axis)
-	{
-		const double Center = (PaddedBounds.Min[Axis] + PaddedBounds.Max[Axis]) * 0.5;
-		PaddedBounds.Min[Axis] = FMath::Min(PaddedBounds.Min[Axis] + PaddingMin[Axis], Center);
-		PaddedBounds.Max[Axis] = FMath::Max(PaddedBounds.Max[Axis] - PaddingMax[Axis], Center);
-	}
+	PCGUtilsFitting::ApplyPadding(PaddedBounds, PaddingMin, PaddingMax);
 
 	const FVector LocalScale = LocalTransform.GetScale3D();
 	const FQuat LocalRotation = LocalTransform.GetRotation();
@@ -224,4 +231,49 @@ void FPCGUtilsFittingDetails::ComputeLocalTransform(
 	{
 		OutTransform.AddToTranslation(OutTransform.GetRotation().RotateVector(LocalTranslation));
 	}
+}
+
+FTransform FPCGUtilsBoundsRelativeTransformDetails::ComputeTransform(const FBox& TargetBounds) const
+{
+	if (!TargetBounds.IsValid)
+	{
+		return LocalTransform;
+	}
+
+	FBox PaddedBounds = TargetBounds;
+	PCGUtilsFitting::ApplyPadding(PaddedBounds, PaddingMin, PaddingMax);
+
+	// A plane frame is an origin, not a finite candidate. A zero-size box makes Builder's From choices all
+	// converge on that origin while retaining the familiar per-axis To choices against the target bounds.
+	const FBox OriginBounds(FVector::ZeroVector, FVector::ZeroVector);
+	FVector AlignedLocation = FVector::ZeroVector;
+	Alignment.Process(PaddedBounds, OriginBounds, AlignedLocation);
+
+	FTransform Result = LocalTransform;
+	Result.SetLocation(AlignedLocation);
+	Result.AddToTranslation(Result.GetRotation().RotateVector(LocalTransform.GetLocation()));
+	return Result;
+}
+
+void FPCGUtilsBoundsRelativeTransformDetails::AddToCrc(FArchiveCrc32& Ar) const
+{
+	FPCGUtilsBoundsRelativeTransformDetails Local = *this;
+	uint8 JustifyXFrom = static_cast<uint8>(Local.Alignment.JustifyX.From);
+	uint8 JustifyXTo = static_cast<uint8>(Local.Alignment.JustifyX.To);
+	uint8 JustifyYFrom = static_cast<uint8>(Local.Alignment.JustifyY.From);
+	uint8 JustifyYTo = static_cast<uint8>(Local.Alignment.JustifyY.To);
+	uint8 JustifyZFrom = static_cast<uint8>(Local.Alignment.JustifyZ.From);
+	uint8 JustifyZTo = static_cast<uint8>(Local.Alignment.JustifyZ.To);
+	Ar << Local.Alignment.bDoJustifyX << JustifyXFrom << JustifyXTo
+		<< Local.Alignment.JustifyX.FromValue << Local.Alignment.JustifyX.ToValue;
+	Ar << Local.Alignment.bDoJustifyY << JustifyYFrom << JustifyYTo
+		<< Local.Alignment.JustifyY.FromValue << Local.Alignment.JustifyY.ToValue;
+	Ar << Local.Alignment.bDoJustifyZ << JustifyZFrom << JustifyZTo
+		<< Local.Alignment.JustifyZ.FromValue << Local.Alignment.JustifyZ.ToValue;
+	FVector LocalPaddingMin = Local.PaddingMin;
+	FVector LocalPaddingMax = Local.PaddingMax;
+	FVector Location = Local.LocalTransform.GetLocation();
+	FQuat Rotation = Local.LocalTransform.GetRotation();
+	FVector Scale = Local.LocalTransform.GetScale3D();
+	Ar << LocalPaddingMin << LocalPaddingMax << Location << Rotation << Scale;
 }

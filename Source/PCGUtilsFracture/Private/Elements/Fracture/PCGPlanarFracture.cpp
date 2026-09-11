@@ -144,7 +144,12 @@ bool UPCGPlanarFractureFactoryData::Fracture(
 	// PlaneCutter seeds its list with InCutPlaneTransforms and then *appends* InNumPlanes generated ones, so
 	// asking for any generated planes alongside supplied ones would quietly add random cuts to a deliberate
 	// pattern. Zero is what makes the points the whole cut pattern.
-	const int32 NumGeneratedPlanes = CutPlaneTransforms.IsEmpty() ? FMath::Max(1, NumPlanes) : 0;
+	TArray<FTransform> ResolvedCutPlanes = CutPlaneTransforms;
+	if (TransformMode == EPCGUtilsPlaneTransformMode::BoundsRelative)
+	{
+		ResolvedCutPlanes = { BoundsPlacement.ComputeTransform(Resolved.Bounds) };
+	}
+	const int32 NumGeneratedPlanes = ResolvedCutPlanes.IsEmpty() ? FMath::Max(1, NumPlanes) : 0;
 
 	const int32 ResultGeometryIndex = FFractureEngineFracturing::PlaneCutter(
 		InOutCollection,
@@ -165,7 +170,7 @@ bool UPCGPlanarFractureFactoryData::Fracture(
 		Resolved.Noise.PointSpacing,
 		/*InAddSamplesForCollision=*/false,
 		/*InCollisionSampleSpacing=*/0.0f,
-		CutPlaneTransforms);
+		ResolvedCutPlanes);
 
 	if (ResultGeometryIndex == INDEX_NONE)
 	{
@@ -175,14 +180,19 @@ bool UPCGPlanarFractureFactoryData::Fracture(
 
 	OutMutation = MakeMutation(InOutCollection, Resolved.BonesBefore);
 	UE_LOG(LogPCGUtilsFracture, Verbose, TEXT("Planar Fracture: %d plane(s)%s, bones %d -> %d"),
-		CutPlaneTransforms.IsEmpty() ? NumGeneratedPlanes : CutPlaneTransforms.Num(),
-		CutPlaneTransforms.IsEmpty() ? TEXT(" (generated)") : TEXT(" (from points)"),
+		ResolvedCutPlanes.IsEmpty() ? NumGeneratedPlanes : ResolvedCutPlanes.Num(),
+		ResolvedCutPlanes.IsEmpty() ? TEXT(" (generated)")
+			: TransformMode == EPCGUtilsPlaneTransformMode::BoundsRelative ? TEXT(" (bounds relative)") : TEXT(" (from points)"),
 		Resolved.BonesBefore, InOutCollection.NumElements(FGeometryCollection::TransformGroup));
 	return true;
 }
 
 FString UPCGPlanarFractureFactoryData::GetOperationDescription() const
 {
+	if (TransformMode == EPCGUtilsPlaneTransformMode::BoundsRelative)
+	{
+		return TEXT("Planar (bounds relative)");
+	}
 	return CutPlaneTransforms.IsEmpty()
 		? FString::Printf(TEXT("Planar (%d planes)"), NumPlanes)
 		: FString::Printf(TEXT("Planar (%d planes from points)"), CutPlaneTransforms.Num());
@@ -198,10 +208,19 @@ void UPCGPlanarFractureFactoryData::AddToCrc(FArchiveCrc32& Ar, bool bFullDataCr
 
 	int32 LocalNumPlanes = NumPlanes;
 	Ar << LocalNumPlanes;
-	for (const FTransform& Plane : CutPlaneTransforms)
+	uint8 LocalTransformMode = static_cast<uint8>(TransformMode);
+	Ar << LocalTransformMode;
+	if (TransformMode == EPCGUtilsPlaneTransformMode::BoundsRelative)
 	{
-		FTransform LocalPlane = Plane;
-		Ar << LocalPlane;
+		BoundsPlacement.AddToCrc(Ar);
+	}
+	if (TransformMode == EPCGUtilsPlaneTransformMode::Explicit)
+	{
+		for (const FTransform& Plane : CutPlaneTransforms)
+		{
+			FTransform LocalPlane = Plane;
+			Ar << LocalPlane;
+		}
 	}
 	Common.AddToCrc(Ar);
 }
@@ -215,16 +234,19 @@ FText UPCGPlanarFractureSettings::GetDefaultNodeTitle() const
 FText UPCGPlanarFractureSettings::GetNodeTooltipText() const
 {
 	return LOCTEXT("PlanarTooltip",
-		"Cuts the targeted bones with flat planes. With nothing on the Planes pin the planes are scattered "
+		"Cuts the targeted bones with flat planes. Explicit Transform mode preserves point-driven or random "
+		"placement: with nothing on the Planes pin the planes are scattered "
 		"randomly through the target's bounds, matching Fracture Mode's Planar tool. Connect points to Planes "
 		"to place them instead: each point's transform becomes one cutting plane, oriented by the point's Z "
-		"axis, which is how a spline, a trace result or any PCG scatter becomes a cut pattern. Emits a Fracture "
+		"axis. Bounds Relative mode instead places one plane against the target collection with Builder-style "
+		"alignment, asymmetric padding, and a local offset/rotation. Emits a Fracture "
 		"operation - connect it to GC | Fracture, which decides which bones it applies to.");
 }
 
 FString UPCGPlanarFractureSettings::GetAdditionalTitleInformation() const
 {
-	return FString::Printf(TEXT("%d planes"), NumPlanes);
+	return TransformMode == EPCGUtilsPlaneTransformMode::BoundsRelative
+		? TEXT("Bounds Relative") : FString::Printf(TEXT("%d planes"), NumPlanes);
 }
 #endif
 
@@ -247,31 +269,31 @@ UPCGUtilsFractureFactoryData* UPCGPlanarFractureSettings::CreateFractureFactory(
 		return nullptr;
 	}
 
-	// PCG points are world-space by convention while the collection lives in the source DynMesh's local space.
-	// Resolving it here, once, is what makes the node correct at non-identity source transforms.
-	const FTransform LocalToWorld = PCGUtilsDynMeshSpaceHelpers::ResolveMeshActorTransform(
-		InContext, /*MeshData=*/nullptr, /*bConvertToLocalSpace=*/true);
-
 	TArray<FTransform> Planes;
-	for (const FPCGTaggedData& Input :
-		InContext->InputData.GetInputsByPin(PCGPlanarFractureConstants::PlanesInputPin))
+	if (TransformMode == EPCGUtilsPlaneTransformMode::Explicit)
 	{
-		const UPCGBasePointData* Points = Cast<const UPCGBasePointData>(Input.Data);
-		if (!Points)
+		// PCG points are world-space by convention while the collection lives in the source DynMesh's local space.
+		const FTransform LocalToWorld = PCGUtilsDynMeshSpaceHelpers::ResolveMeshActorTransform(
+			InContext, /*MeshData=*/nullptr, /*bConvertToLocalSpace=*/true);
+		for (const FPCGTaggedData& Input :
+			InContext->InputData.GetInputsByPin(PCGPlanarFractureConstants::PlanesInputPin))
 		{
-			continue;
-		}
-		const auto Transforms = Points->GetConstTransformValueRange();
-		Planes.Reserve(Planes.Num() + Transforms.Num());
-		for (const FTransform& PointTransform : Transforms)
-		{
-			Planes.Add(bConvertPlanesToLocalSpace
-				? PointTransform.GetRelativeTransform(LocalToWorld) : PointTransform);
+			const UPCGBasePointData* Points = Cast<const UPCGBasePointData>(Input.Data);
+			if (!Points) { continue; }
+			const auto Transforms = Points->GetConstTransformValueRange();
+			Planes.Reserve(Planes.Num() + Transforms.Num());
+			for (const FTransform& PointTransform : Transforms)
+			{
+				Planes.Add(bConvertPlanesToLocalSpace
+					? PointTransform.GetRelativeTransform(LocalToWorld) : PointTransform);
+			}
 		}
 	}
 
 	Factory->NumPlanes = FMath::Max(1, NumPlanes);
 	Factory->CutPlaneTransforms = MoveTemp(Planes);
+	Factory->TransformMode = TransformMode;
+	Factory->BoundsPlacement = BoundsPlacement;
 	Factory->Common = Common;
 	return Factory;
 }

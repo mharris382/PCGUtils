@@ -549,4 +549,30 @@ bool FPCGUtilsDynMeshBuilderFrameFollowsTest::RunTest(const FString&)
 	return true;
 }
 
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FPCGUtilsBoundsRelativeTransformTest,
+	"PCGUtils.DynMesh.BoundsRelativeTransform.AlignmentPaddingAndLocalTransform",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::ProductFilter)
+
+bool FPCGUtilsBoundsRelativeTransformTest::RunTest(const FString&)
+{
+	FPCGUtilsBoundsRelativeTransformDetails Placement;
+	Placement.Alignment.JustifyZ.To = EPCGUtilsJustifyTo::Min;
+	Placement.PaddingMin = FVector(0.0, 0.0, 20.0);
+	Placement.PaddingMax = FVector(20.0, 0.0, 0.0);
+	Placement.LocalTransform = FTransform(
+		FRotator(0.0, 90.0, 0.0), FVector(0.0, 0.0, 15.0), FVector::OneVector);
+
+	const FTransform Result = Placement.ComputeTransform(
+		FBox(FVector(-100.0, -50.0, 10.0), FVector(100.0, 50.0, 210.0)));
+
+	TestTrue(TEXT("Asymmetric max padding moves the aligned X centre"),
+		FMath::IsNearlyEqual(Result.GetLocation().X, -10.0, 0.001));
+	TestTrue(TEXT("Minimum alignment uses the padded bottom plus local plane-normal offset"),
+		FMath::IsNearlyEqual(Result.GetLocation().Z, 45.0, 0.001));
+	TestTrue(TEXT("Local rotation becomes the resolved frame orientation"),
+		Result.GetRotation().Equals(Placement.LocalTransform.GetRotation(), 0.001));
+	return true;
+}
+
 #endif // WITH_AUTOMATION_TESTS

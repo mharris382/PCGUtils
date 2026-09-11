@@ -17,6 +17,26 @@ namespace PCGUtilsGeometryCollectionHelpers
 		GeometryCollectionAlgo::GlobalMatrices(InCollection.Transform, InCollection.Parent, OutGlobalTransforms);
 	}
 
+	void PlaceCollection(FGeometryCollection& InOutCollection, const FTransform& InPlacement)
+	{
+		if (InPlacement.Equals(FTransform::Identity))
+		{
+			return;
+		}
+
+		TArray<int32> Roots;
+		PCGUtilsGeometryCollectionHierarchy::GatherRoots(InOutCollection, Roots);
+		for (const int32 Root : Roots)
+		{
+			if (InOutCollection.Transform.IsValidIndex(Root))
+			{
+				// The collection stores float transforms; compose in double precision and narrow once.
+				const FTransform Placed = FTransform(InOutCollection.Transform[Root]) * InPlacement;
+				InOutCollection.Transform[Root] = FTransform3f(Placed);
+			}
+		}
+	}
+
 	FBox GetBoneLocalBounds(const FGeometryCollection& InCollection, int32 InBoneIndex)
 	{
 		if (!InCollection.TransformToGeometryIndex.IsValidIndex(InBoneIndex))

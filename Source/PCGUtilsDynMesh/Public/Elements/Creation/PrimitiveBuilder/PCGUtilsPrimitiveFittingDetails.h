@@ -4,8 +4,17 @@
 #pragma once
 
 #include "CoreMinimal.h"
+#include "Serialization/ArchiveCrc32.h"
 
 #include "PCGUtilsPrimitiveFittingDetails.generated.h"
+
+/** Whether a plane uses an authored transform or resolves a frame from its target geometry bounds. */
+UENUM(BlueprintType)
+enum class EPCGUtilsPlaneTransformMode : uint8
+{
+	Explicit UMETA(DisplayName="Explicit Transform"),
+	BoundsRelative UMETA(DisplayName="Bounds Relative")
+};
 
 // The ActionIcon UMETA on each enumerator drives the inline icon-button row rendered by
 // FPCGUtilsInlineEnumCustomization (PCGUtilsEditor). Icon set ported, with the enums, from
@@ -71,6 +80,9 @@ enum class EPCGUtilsJustifyTo : uint8
 
 namespace PCGUtilsFitting
 {
+	/** Applies Builder's independent min/max inset semantics and clamps each axis before the bounds invert. */
+	void ApplyPadding(FBox& InOutBounds, const FVector& PaddingMin, const FVector& PaddingMax);
+
 	/**
 	 * Per-axis scale-to-fit factor resolution, shared by the uniform and per-axis-individual modes so the
 	 * math has a single source of truth. MinMaxFit packs the three uniform options: X = Min, Y = Max, Z = Avg.
@@ -231,4 +243,36 @@ struct PCGUTILSDYNMESH_API FPCGUtilsFittingDetails
 	 * CandidateBounds, being placed at a seed with the given local-space transform and bounds.
 	 */
 	void ComputeLocalTransform(const FTransform& SeedTransform, const FBox& SeedLocalBounds, const FBox& CandidateBounds, FTransform& OutTransform) const;
+};
+
+/**
+ * Places an origin-sized frame relative to geometry bounds with the same justification, asymmetric padding,
+ * and local-transform vocabulary used by Builder fitting. This is useful for infinite/implicit geometry such
+ * as cutting planes, where scale-to-fit and candidate bounds have no meaning.
+ */
+USTRUCT(BlueprintType)
+struct PCGUTILSDYNMESH_API FPCGUtilsBoundsRelativeTransformDetails
+{
+	GENERATED_BODY()
+
+	/** Which point of the padded target bounds receives the frame origin, independently on each axis. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Placement", meta=(PCG_Overridable, ShowOnlyInnerProperties))
+	FPCGUtilsJustificationDetails Alignment;
+
+	/** Moves the target bounds minimum corner inward (positive) or outward (negative) before alignment. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Placement", meta=(PCG_Overridable))
+	FVector PaddingMin = FVector::ZeroVector;
+
+	/** Moves the target bounds maximum corner inward (positive) or outward (negative) before alignment. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Placement", meta=(PCG_Overridable))
+	FVector PaddingMax = FVector::ZeroVector;
+
+	/** Offset and rotation applied after alignment. For a plane, local Z is its normal. Scale is preserved. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Placement", meta=(PCG_Overridable))
+	FTransform LocalTransform = FTransform::Identity;
+
+	/** Resolves a frame in the same local coordinate space as TargetBounds. */
+	FTransform ComputeTransform(const FBox& TargetBounds) const;
+
+	void AddToCrc(FArchiveCrc32& Ar) const;
 };
