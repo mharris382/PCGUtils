@@ -73,6 +73,12 @@ bool FPCGUtilsDynMeshFactoryProviderElement::ExecuteInternal(FPCGContext* Contex
 	}
 
 	FPCGTaggedData& Output = Context->OutputData.TaggedData.Emplace_GetRef();
+	const FName SourcePin = Settings->GetOutputSourcePin();
+	if (!SourcePin.IsNone())
+	{
+		const TArray<FPCGTaggedData> Sources = Context->InputData.GetInputsByPin(SourcePin);
+		if (Sources.Num() == 1) Output = Sources[0];
+	}
 	Output.Data = Factory;
 	Output.Pin = Settings->GetMainOutputPin();
 	return true;

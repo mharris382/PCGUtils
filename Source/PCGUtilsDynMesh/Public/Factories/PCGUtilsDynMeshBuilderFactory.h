@@ -53,6 +53,13 @@ struct PCGUTILSDYNMESH_API FPCGUtilsDynMeshBuildContext
 	/** Source point data and index for the seed being realized, for future attribute-driven Builders. */
 	const UPCGBasePointData* SeedData = nullptr;
 	int32 SeedIndex = INDEX_NONE;
+
+	/** Scoped placement target. Original seed identity remains available for attribute evaluation. */
+	bool bHasFittingTarget = false;
+	FTransform FittingTransform = FTransform::Identity;
+	FBox FittingBounds = FBox(ForceInit);
+	const FTransform& GetFittingTransform() const { return bHasFittingTarget ? FittingTransform : SeedTransform; }
+	const FBox& GetFittingBounds() const { return bHasFittingTarget ? FittingBounds : SeedLocalBounds; }
 };
 
 /**

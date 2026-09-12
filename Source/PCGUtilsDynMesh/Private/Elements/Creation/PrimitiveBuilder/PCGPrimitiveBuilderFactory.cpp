@@ -16,6 +16,9 @@ namespace
 {
 	void AddFittingToCrc(FArchiveCrc32& Ar, const FPCGUtilsFittingDetails& Fitting)
 	{
+		uint8 AxisOrder = static_cast<uint8>(Fitting.Orientation.AxisOrder);
+		uint8 Construction = static_cast<uint8>(Fitting.Orientation.RotationConstruction);
+		Ar << AxisOrder << Construction;
 		uint8 FitMode = static_cast<uint8>(Fitting.ScaleToFit.ScaleToFitMode);
 		uint8 FitUniform = static_cast<uint8>(Fitting.ScaleToFit.ScaleToFit);
 		uint8 FitX = static_cast<uint8>(Fitting.ScaleToFit.ScaleToFitX);
@@ -66,9 +69,15 @@ namespace
 			const UE::Geometry::FAxisAlignedBox3d NativeBounds = GetNativeBounds(EvaluationContext);
 			const FBox CandidateBounds(FVector(NativeBounds.Min), FVector(NativeBounds.Max));
 
+			FString OrientationError;
+			if (!Factory->Fitting.Orientation.Validate(OrientationError))
+			{
+				PCGLog::LogErrorOnGraph(FText::FromString(FString::Printf(TEXT("Seed %d: %s"), BuildContext.SeedIndex, *OrientationError)), EvaluationContext);
+				return false;
+			}
 			FTransform PlacementTransform;
 			Factory->Fitting.ComputeLocalTransform(
-				BuildContext.SeedTransform, BuildContext.SeedLocalBounds, CandidateBounds, PlacementTransform);
+				BuildContext.GetFittingTransform(), BuildContext.GetFittingBounds(), CandidateBounds, PlacementTransform);
 
 			Factory->Primitive->AppendPrimitive(LeafMesh, PlacementTransform);
 

@@ -24,6 +24,9 @@ public:
 #endif
 
 	virtual FName GetMainOutputPin() const;
+
+	/** Decorators may preserve the primary input's tagged-data envelope while replacing its immutable recipe. */
+	virtual FName GetOutputSourcePin() const { return NAME_None; }
 	virtual UPCGUtilsDynMeshFactoryData* CreateFactory(
 		FPCGContext* InContext, UPCGUtilsDynMeshFactoryData* InFactory = nullptr) const;
 

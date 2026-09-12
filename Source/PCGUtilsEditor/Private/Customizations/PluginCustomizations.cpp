@@ -1,4 +1,4 @@
-﻿#include "Customizations/PluginCustomizations.h"
+#include "Customizations/PluginCustomizations.h"
 #include "Customizations/PCGOverrideGraphCustomization.h"
 #include "Customizations/PCGUtilsGraphBatchDetails.h"
 #include "Customizations/Enums/PCGUtilsInlineEnumCustomization.h"
@@ -46,6 +46,8 @@ namespace PluginCustomizations
 	// Fitting/alignment enums rendered as inline icon-button rows, ported from PCGExtendedToolkit.
 	// The customization is registered by enum type name; UHT-reflected enum names are the string keys.
 #define PCGUTILS_FOREACH_INLINE_FITTING_ENUM(MACRO) \
+	MACRO(EPCGUtilsAxisOrder) \
+	MACRO(EPCGUtilsMakeRotAxis) \
 	MACRO(EPCGUtilsFitMode) \
 	MACRO(EPCGUtilsScaleToFit) \
 	MACRO(EPCGUtilsJustifyFrom) \
