@@ -10,6 +10,8 @@
 #include "Factories/PCGUtilsDynMeshFactories.h"
 #include "GameFramework/Actor.h"
 #include "GeometryScript/MeshBasicEditFunctions.h"
+#include "Metadata/PCGMetadata.h"
+#include "Metadata/PCGMetadataDomain.h"
 #include "PCGContext.h"
 #include "PCGPin.h"
 #include "UDynamicMesh.h"
@@ -43,6 +45,24 @@ namespace
 				MaterialIDs->SetValue(TriangleID, MaterialID + Offset);
 			}
 		});
+	}
+
+	/** A realized mesh represents geometry, not seed points, so only the dataset-wide @Data domain transfers. */
+	void InheritSeedDataDomain(UPCGDynamicMeshData* OutputData, const UPCGSpatialData* SeedData)
+	{
+		if (!OutputData || !SeedData || !OutputData->MutableMetadata() || !SeedData->ConstMetadata())
+		{
+			return;
+		}
+
+		const FPCGMetadataDomain* SourceDomain =
+			SeedData->ConstMetadata()->GetConstMetadataDomain(PCGMetadataDomainID::Data);
+		FPCGMetadataDomain* OutputDomain =
+			OutputData->MutableMetadata()->GetMetadataDomain(PCGMetadataDomainID::Data);
+		if (SourceDomain && OutputDomain)
+		{
+			OutputDomain->Initialize(FPCGMetadataDomainInitializeParams(SourceDomain));
+		}
 	}
 }
 
@@ -96,10 +116,11 @@ bool PCGUtilsDynMeshBuilderRealization::Realize(
 	}
 
 	auto EmitMesh = [Context](UDynamicMesh* Mesh, const TArray<UMaterialInterface*>& Materials,
-		const FPCGTaggedData* SourceSeedInput)
+		const FPCGTaggedData* SourceSeedInput, const UPCGSpatialData* SeedMetadataSource)
 	{
 		UPCGDynamicMeshData* OutputData = FPCGContext::NewObject_AnyThread<UPCGDynamicMeshData>(Context);
 		OutputData->Initialize(Mesh, /*bCanTakeOwnership=*/true, Materials);
+		InheritSeedDataDomain(OutputData, SeedMetadataSource);
 		FPCGTaggedData& Output = SourceSeedInput
 			? Context->OutputData.TaggedData.Emplace_GetRef(*SourceSeedInput)
 			: Context->OutputData.TaggedData.Emplace_GetRef();
@@ -131,6 +152,8 @@ bool PCGUtilsDynMeshBuilderRealization::Realize(
 	}
 
 	int32 SeedCount = 0;
+	const UPCGSpatialData* AggregateSeedMetadataSource = nullptr;
+	bool bAggregateSeedMetadataIsAmbiguous = false;
 
 	for (const FPCGTaggedData& SeedInput :
 		Context->InputData.GetInputsByPin(PCGDynMeshRealizeBuildersConstants::SeedsPin))
@@ -141,6 +164,15 @@ bool PCGUtilsDynMeshBuilderRealization::Realize(
 			PCGLog::LogWarningOnGraph(FText::Format(LOCTEXT("InvalidSeedInput",
 				"{0} skipped a Seeds input that was not Point Data."), NodeNameForMessages), Context);
 			continue;
+		}
+
+		if (!AggregateSeedMetadataSource)
+		{
+			AggregateSeedMetadataSource = SeedPointData;
+		}
+		else if (AggregateSeedMetadataSource != SeedPointData)
+		{
+			bAggregateSeedMetadataIsAmbiguous = true;
 		}
 
 		const int32 NumPoints = SeedPointData->GetNumPoints();
@@ -187,7 +219,7 @@ bool PCGUtilsDynMeshBuilderRealization::Realize(
 				if (OutputMode == EPCGUtilsDynMeshBuilderOutputMode::PerBuilderPerSeed)
 				{
 					// The Builder's result already *is* this output; no append or ID rebasing needed.
-					EmitMesh(SeedMesh, PerBuilderMaterials[OperationIndex], &SeedInput);
+					EmitMesh(SeedMesh, PerBuilderMaterials[OperationIndex], &SeedInput, SeedPointData);
 					continue;
 				}
 
@@ -206,7 +238,7 @@ bool PCGUtilsDynMeshBuilderRealization::Realize(
 
 			if (SeedTarget)
 			{
-				EmitMesh(SeedTarget, ComposedMaterials, &SeedInput);
+				EmitMesh(SeedTarget, ComposedMaterials, &SeedInput, SeedPointData);
 			}
 		}
 	}
@@ -219,12 +251,14 @@ bool PCGUtilsDynMeshBuilderRealization::Realize(
 
 	if (SingleTarget)
 	{
-		EmitMesh(SingleTarget, ComposedMaterials, /*SourceSeedInput=*/nullptr);
+		EmitMesh(SingleTarget, ComposedMaterials, /*SourceSeedInput=*/nullptr,
+			bAggregateSeedMetadataIsAmbiguous ? nullptr : AggregateSeedMetadataSource);
 	}
 	for (int32 Index = 0; Index < PerBuilderTargets.Num(); ++Index)
 	{
 		// Spans every seed, so no single seed input's tags apply.
-		EmitMesh(PerBuilderTargets[Index], PerBuilderMaterials[Index], /*SourceSeedInput=*/nullptr);
+		EmitMesh(PerBuilderTargets[Index], PerBuilderMaterials[Index], /*SourceSeedInput=*/nullptr,
+			bAggregateSeedMetadataIsAmbiguous ? nullptr : AggregateSeedMetadataSource);
 	}
 
 	return true;

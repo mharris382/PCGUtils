@@ -30,7 +30,8 @@ public:
 	void OnUpdatedSpline_Implementation() { }
 
 	/** Standardized path data used by PCG path getter elements. */
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "PCG", meta = (DisplayPriority = 0, ShowOnlyInnerProperties))
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "PCG",
+		meta = (DisplayPriority = 0, ShowOnlyInnerProperties, SkipUCSModifiedProperties))
 	FPathComponentData PathData;
 
 	/** Extra interior samples added to curved spline segments when producing path points. */

@@ -29,6 +29,11 @@ and intersected with that selection.
 `FPCGUtilsDynMeshProcessFunctions::ResolveInput()` is the common resolver for specialized/query executors.
 `FPCGUtilsDynMeshProcessBaseElement` provides the default deep-copy-and-`ProcessMesh()` mutation executor.
 
+**DynMesh | Realize Builders** preserves the Seeds input's dataset-wide `@Data` metadata on every per-seed
+output. `Single` and `Per Builder` outputs preserve it when all realized seeds come from one Seeds dataset; when
+several datasets are combined there is no unambiguous `@Data` value to inherit. Seed element-domain attributes
+are not copied onto DynMesh data because they describe source points rather than the realized mesh.
+
 ### Required selections and domains
 
 The process base exposes **Require Selection**. A derived operation can also enforce the requirement by

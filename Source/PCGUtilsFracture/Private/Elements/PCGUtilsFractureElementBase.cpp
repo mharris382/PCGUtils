@@ -83,6 +83,13 @@ bool FPCGUtilsGeometryCollectionFactoryProviderElement::ExecuteInternal(FPCGCont
 	return true;
 }
 
+bool FPCGUtilsGeometryCollectionFactoryProviderElement::CanExecuteOnlyOnMainThread(FPCGContext* Context) const
+{
+	const UPCGUtilsGeometryCollectionFactoryProviderSettings* Settings =
+		Context ? Context->GetInputSettings<UPCGUtilsGeometryCollectionFactoryProviderSettings>() : nullptr;
+	return Settings && Settings->RequiresMainThread(Context);
+}
+
 void FPCGUtilsGeometryCollectionFactoryProviderElement::DisabledPassThroughData(FPCGContext* Context) const
 {
 	Context->OutputData.TaggedData.Reset();

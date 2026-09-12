@@ -45,6 +45,7 @@ Searching `GC` returns all of it; `GC Select` returns only the bone selections.
 |---|---|---|
 | **GC \| From Asset** | *(none)* - reads a Geometry Collection asset | `GC` |
 | **GC \| Save Asset** | `GC` | `AssetPath` - Attribute Set containing the saved asset reference |
+| **GC \| Spawn Component** *(PCGUtilsSimulation)* | `Asset` (points or `AssetPath` attribute set), `Init Fields` and `Solver` (each opt-in) | `Out` - the input plus a `ComponentReference` per spawned PCG-managed GC Component |
 | **GC \| Get GC Data** | *(none)* - reads placed GC Components | `GC` (one per component) |
 | **GC \| From DynMesh** (compact) | `DynMesh` | `GC` |
 | **GC \| Fracture** | `GC`, `Fracture`, `Selection` (optional) | `GC`, `Result` (opt-in) |
@@ -53,6 +54,7 @@ Searching `GC` returns all of it; `GC Select` returns only the bone selections.
 | **Fracture \| Planar** | `Planes` (points, optional outside Bounds Relative mode) | `Fracture` |
 | **Fracture \| Slice** | *(none)* | `Fracture` |
 | **Fracture \| Brick** | *(none)* | `Fracture` |
+| **Fracture \| Mesh** | `DynMesh`, `Points` (Static Mesh attribute) - either or both | `Fracture` |
 | **GC \| Bones To Points** | `GC` | `Points`, `Edges` (cluster mode) |
 | **GC \| Select \| Bones From Points** | `Points` | `Selection` |
 | **GC \| Separate Selection** | `GC`, `Selection` | `Selected`, `Unselected` |
@@ -182,6 +184,23 @@ It takes everything above except Min/Max Sites and Group Fracture, plus:
 Scatter **30–100 points** through the volume of the mesh; `Create Points Grid` clipped to the mesh bounds, or
 any PCG/PCGEx scatter, works. Sites outside the geometry contribute no cell, and the node says so if too few
 land on the mesh.
+
+**`Fracture | Mesh`** — cut with an arbitrary closed mesh, Fracture Mode's Mesh tool. Connect the cutter as
+DynMesh data, as points carrying a Static Mesh attribute (one instance per point, at the point's transform — the
+output of a Static Mesh Spawner works), or both. Everything connected is combined into one cutter and, with
+**Self Union Input** on (the default), self-unioned so that overlapping inputs act as one volume instead of
+leaving slivers along their internal faces.
+
+| Setting | Notes |
+|---|---|
+| **Self Union Input** | On by default. Turn off only for inputs you know are disjoint, or open surfaces self-union would discard. |
+| **Mesh Attribute** | The soft object path attribute on `Points` naming each point's Static Mesh. Defaults to `Mesh`. |
+| **Convert Points To Local Space** | On by default. DynMesh cutters are never converted — they already share the collection's space. |
+| **Cut Distribution** | Single Cut uses the cutter where it is. Uniform Random and Grid scatter copies of it through the target's bounds, positioning the cutter's own origin, as Fracture Mode positions a static mesh's pivot. |
+
+There is no Grout or noise: the engine's mesh cutter supports neither, and Fracture Mode hides both for this
+tool. Static meshes are read from their source mesh description in the editor; at runtime they are read from
+render data, which needs **Allow CPU Access** on the asset.
 
 ### 4. Wire it up
 
@@ -468,7 +487,7 @@ The minimum input that fractures anything is **two sites inside the geometry**.
 
 ## Not in V1
 
-Plane / Slice / Radial / Brick fracture, Mesh Cutter, clustering tools, hierarchy editing beyond prune cleanup,
+Plane / Slice / Radial / Brick fracture, clustering tools, hierarchy editing beyond prune cleanup,
 GC-specific distance/bounds/volume selectors, runtime Chaos simulation, Geometry Collection
 assets/actors/components, and the cross-domain `PCGUtilsSelections` bridge.
 

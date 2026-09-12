@@ -245,6 +245,19 @@ reading:
 - **Slice counts are cutting planes, not divisions.** `GenerateSliceTransforms` steps the extent by
   `(Slices + 1)`, so N planes give N+1 divisions per axis and 0 leaves an axis uncut.
 
+`Fracture | Mesh` wraps `FFractureEngineFracturing::MeshCutter`. It resolves its cutter once, at authoring time:
+every DynMesh input plus one Static Mesh instance per point, converted into collection space, appended into one
+`FDynamicMesh3` and self-unioned (`FMeshSelfUnion`, on by default via `bSelfUnionInput`). Three things to keep:
+
+- **Pass the cutter raw.** `FCellMeshes` augments an unaugmented cutter itself, exactly as it does for the
+  MeshCutter Dataflow node's `UDynamicMesh` inputs, so no `ConvertMeshDescriptionToCuttingDynamicMesh` round
+  trip is needed. It does read the primary normal overlay as the cut faces' normals, which is why the node
+  repairs unset or zero normals first.
+- **Cutter faces carry material -1**, PlanarCut's internal-material convention, matching Fracture Mode's own
+  cutter conversion.
+- **Loading a Static Mesh needs the game thread**, so the node opts into
+  `UPCGUtilsGeometryCollectionFactoryProviderSettings::RequiresMainThread` when its Points pin has data.
+
 ### Mirroring Fracture Mode is a goal
 
 A stated aim of this module is to make Fracture Mode's functionality available inside PCG. When adding an
@@ -468,7 +481,7 @@ has the full rule and the search-text mechanics; `PCGUtils.Palette.SearchContrac
 
 **Fracture factories are the one exception to the `GC | ` prefix.** The operations that plug into `GC | Fracture`'s
 `Fracture` pin - `Fracture | Uniform Voronoi`, `Fracture | Voronoi From Points`, `Fracture | Planar`,
-`Fracture | Slice`, `Fracture | Brick` - use `Fracture | [TYPE]` instead, grouping the whole cutter family
+`Fracture | Slice`, `Fracture | Brick`, `Fracture | Mesh` - use `Fracture | [TYPE]` instead, grouping the whole cutter family
 together since fracture behavior is implicitly GC-related. `GC | Fracture` itself is the executor, not a
 factory, and keeps the `GC | ` prefix. A factory's title carries no `GC`/`Geometry Collection` text, but its
 `UCLASS(meta=(Keywords=...))` still does, which is what keeps a "GC" search returning the whole module -

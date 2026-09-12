@@ -46,6 +46,9 @@ public:
 	virtual UPCGUtilsGeometryCollectionFactoryData* CreateFactory(
 		FPCGContext* InContext, UPCGUtilsGeometryCollectionFactoryData* InFactory = nullptr) const;
 
+	/** Whether CreateFactory must run on the game thread - e.g. because it loads assets. Off by default. */
+	virtual bool RequiresMainThread(FPCGContext* InContext) const { return false; }
+
 protected:
 	virtual const FPCGDataTypeBaseId& GetFactoryTypeId() const;
 	virtual TArray<FPCGPinProperties> InputPinProperties() const override;
@@ -59,5 +62,6 @@ protected:
 	virtual bool ExecuteInternal(FPCGContext* Context) const override;
 
 public:
+	virtual bool CanExecuteOnlyOnMainThread(FPCGContext* Context) const override;
 	virtual void DisabledPassThroughData(FPCGContext* Context) const override;
 };

@@ -6,14 +6,18 @@
 
 #include "Data/PCGDynamicMeshData.h"
 #include "Data/PCGDynamicMeshSelectionData.h"
+#include "Data/PCGPointArrayData.h"
 #include "DynamicMesh/DynamicMesh3.h"
 #include "Elements/Creation/CreatePrimitive/PCGCreatePrimitiveSettingsBase.h"
+#include "Elements/Creation/PCGDynMeshRealizeBuilders.h"
 #include "Elements/Creation/PrimitiveBuilder/PCGPrimitiveBuilderFactory.h"
 #include "Elements/Creation/PrimitiveBuilder/PCGPrimitiveBuilders.h"
 #include "Elements/Deform/PCGTransformDynMesh.h"
 #include "Elements/PCGUtilsDynMeshProcessBase.h"
 #include "Factories/PCGUtilsDynMeshProcessBuilderFactory.h"
+#include "Metadata/PCGMetadata.h"
 #include "PCGContext.h"
+#include "PCGPin.h"
 #include "UDynamicMesh.h"
 
 namespace PCGUtilsDynMeshBuilderTests
@@ -140,6 +144,67 @@ namespace PCGUtilsDynMeshBuilderTests
 		const UE::Geometry::FAxisAlignedBox3d Bounds = Mesh->GetBounds();
 		return FBox(FVector(Bounds.Min), FVector(Bounds.Max));
 	}
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FPCGUtilsDynMeshRealizeBuildersDataDomainTest,
+	"PCGUtils.DynMesh.Builder.RealizePreservesSeedDataDomain",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::ProductFilter)
+
+bool FPCGUtilsDynMeshRealizeBuildersDataDomainTest::RunTest(const FString&)
+{
+	using namespace PCGUtilsDynMeshBuilderTests;
+
+	UPCGPointArrayData* Seeds = NewObject<UPCGPointArrayData>();
+	Seeds->SetNumPoints(1, /*bInitializeValues=*/false);
+	Seeds->AllocateProperties(EPCGPointNativeProperties::All);
+	FPCGPoint SeedPoint{};
+	SeedPoint.SetLocalBounds(FBox(FVector(-50.0), FVector(50.0)));
+	FPCGPointValueRanges(Seeds, false).SetFromPoint(0, SeedPoint);
+
+	constexpr int32 ExpectedValue = 731;
+	const FName DataAttributeName = TEXT("BuilderDataDomainValue");
+	FPCGMetadataAttribute<int32>* DataAttribute = Seeds->MutableMetadata()->CreateAttribute<int32>(
+		FPCGAttributeIdentifier(DataAttributeName, PCGMetadataDomainID::Data), INDEX_NONE, false, true);
+	TestNotNull(TEXT("Seed @Data attribute was created"), DataAttribute);
+	if (!DataAttribute)
+	{
+		return false;
+	}
+	DataAttribute->SetValue(PCGFirstEntryKey, ExpectedValue);
+
+	FPCGContext Context;
+	FPCGTaggedData& SeedInput = Context.InputData.TaggedData.Emplace_GetRef();
+	SeedInput.Pin = PCGDynMeshRealizeBuildersConstants::SeedsPin;
+	SeedInput.Data = Seeds;
+	FPCGTaggedData& BuilderInput = Context.InputData.TaggedData.Emplace_GetRef();
+	BuilderInput.Pin = PCGUtilsDynMeshBuilderFactoryConstants::BuildersInputPin;
+	BuilderInput.Data = MakeBoxBuilder(FVector(100.0));
+
+	TestTrue(TEXT("Realize Builders executes"), PCGUtilsDynMeshBuilderRealization::Realize(
+		&Context, /*bConvertSeedsToLocalSpace=*/false, EPCGUtilsDynMeshBuilderOutputMode::PerSeed,
+		FText::FromString(TEXT("Realize Builders test"))));
+	TestEqual(TEXT("One seed produces one DynMesh"), Context.OutputData.TaggedData.Num(), 1);
+	if (Context.OutputData.TaggedData.Num() != 1)
+	{
+		return false;
+	}
+
+	const UPCGDynamicMeshData* OutputData =
+		Cast<UPCGDynamicMeshData>(Context.OutputData.TaggedData[0].Data);
+	TestNotNull(TEXT("Realized output is DynMesh data"), OutputData);
+	const FPCGMetadataAttribute<int32>* OutputAttribute = OutputData && OutputData->ConstMetadata()
+		? OutputData->ConstMetadata()->GetConstTypedAttribute<int32>(
+			FPCGAttributeIdentifier(DataAttributeName, PCGMetadataDomainID::Data))
+		: nullptr;
+	TestNotNull(TEXT("Realized DynMesh preserves the seed @Data attribute"), OutputAttribute);
+	if (OutputAttribute)
+	{
+		TestEqual(TEXT("Realized DynMesh preserves the seed @Data value"),
+			OutputAttribute->GetValueFromItemKey(PCGFirstEntryKey), ExpectedValue);
+	}
+
+	return true;
 }
 
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(

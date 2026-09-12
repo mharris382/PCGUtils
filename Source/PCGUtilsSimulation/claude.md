@@ -39,8 +39,11 @@ Engine dependencies: `ChaosCaching` (an Experimental plugin, `EnabledByDefault: 
 declared in `PCGUtils.uplugin` and enabled in the `.uproject`), `ChaosSolverEngine`, `PhysicsCore`,
 and Chaos itself via `SetupModulePhysicsSupport`.
 
-**Phase 0 has no PCG dependency at all**, deliberately: the spike answers engine questions and must
-not need a graph to run. That changes in Phase 1.
+**The Phase 0 spike (`Chaos/`, `Components/`, `Spike/`) has no PCG dependency**, deliberately: it
+answers engine questions and must not need a graph to run. The module itself now depends on `PCG`,
+`PCGUtilsFracture`, `GeometryCollectionEngine` and `FieldSystemEngine`, but only for
+`GC | Spawn Component` (below), which is independent of the recording pipeline. Keep the spike free of
+those includes.
 
 ---
 
@@ -95,6 +98,34 @@ runtime component owned by the manager is just the component's name.
 **Build the runtime representation before `Super::BeginPlay()`.** `AChaosCacheManager::BeginPlay`
 calls `Start()` -> `BeginEvaluate()`, which resolves observed components and opens their caches.
 Components created after that are invisible to the recording.
+
+---
+
+## `GC | Spawn Component`
+
+The module's first PCG element, and the first thing in PCGUtils that spawns components. Design and
+engine citations: `PCGSpawnGeometryCollectionComponent_Investigation.md` at the repo root. It turns
+Geometry Collection asset references (typically `GC | Save Asset`'s `AssetPath`) into PCG-managed
+`UGeometryCollectionComponent`s and wires Initialization Fields and a Chaos solver into them from pins.
+
+It is a *live* start state for PIE/Simulate, not a recording participant, so none of the cache rules
+above apply to it. Keep it that way; if it is ever meant to be observed by a cache manager, its
+components first need deterministic names (see the investigation, §6).
+
+Rules that are load-bearing:
+
+- **Everything the physics proxy reads is set before `RegisterComponent()`** - rest collection,
+  `InitializationFields`, `ChaosSolverActor`, overrides, attachment and world transform. In a game world
+  registration creates the proxy and reads the fields exactly once. `ConfigureComponent` owns this and
+  `check`s the component is unregistered.
+- **Lifetime is PCG's.** One `UPCGManagedComponentList` per execution, components tagged like Add
+  Component's. No reuse: a GC component carries simulation state.
+- **The template is copied, never used as an archetype.** An archetype inside a graph asset would make
+  every generated level component depend on that package.
+- **Fields and solver are pins because a graph asset cannot reference level actors.** Do not add
+  actor-reference settings for them.
+- It derives from `UPCGUtilsFractureElementBaseSettings` for the palette bucket and GC domain colour,
+  and is in the `GC | ` family, so `PCGUtils.Palette.SearchContract` covers this package.
 
 ---
 

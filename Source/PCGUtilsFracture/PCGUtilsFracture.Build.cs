@@ -24,6 +24,11 @@ public class PCGUtilsFracture : ModuleRules
                 // not a plugin.
                 "MeshConversionEngineTypes",
 
+                // FMeshDescriptionToDynamicMesh, which Fracture | Mesh uses to read a Static Mesh cutter's source
+                // mesh description in the editor - the same conversion Fracture Mode's Mesh tool performs.
+                "MeshConversion",
+                "MeshDescription",
+
                 // FDataflowTransformSelection, the native bone-selection currency every FractureEngine entry
                 // point takes. Also an engine Runtime module, not the Dataflow editor plugin.
                 "DataflowCore",

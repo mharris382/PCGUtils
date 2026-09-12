@@ -19,6 +19,15 @@ public class PCGUtilsSimulation : ModuleRules
                 // An Experimental engine plugin, declared in PCGUtils.uplugin and enabled in the
                 // .uproject - it is NOT EnabledByDefault.
                 "ChaosCaching",
+
+                // GC | Spawn Component. The settings derive from UPCGUtilsFractureElementBaseSettings (palette
+                // bucket and GC domain colour) and read the AssetPath attribute GC | Save Asset writes. The
+                // direction is the allowed one: PCGUtilsFracture must never depend on this module.
+                "PCG",
+                "PCGUtilsFracture",
+
+                // UGeometryCollectionComponent / UGeometryCollection, referenced by the spawn settings' template.
+                "GeometryCollectionEngine",
             }
         );
 
@@ -28,17 +37,28 @@ public class PCGUtilsSimulation : ModuleRules
                 // FBodyInstance, UBodySetup.
                 "PhysicsCore",
 
-                // AChaosSolverActor - the per-capture solver, and the free floor (bHasFloor).
+                // AChaosSolverActor - the per-capture solver, the free floor (bHasFloor), and the Solver pin
+                // of GC | Spawn Component.
                 "ChaosSolverEngine",
+
+                // AFieldSystemActor / UFieldSystemComponent - the Initialization Fields of GC | Spawn Component.
+                "FieldSystemEngine",
             }
         );
+
+        // FScopedTransaction, so GC | Spawn Component's spawns undo as one step in the editor. Editor-only, the
+        // same way PCG's own Add Component pulls it in.
+        if (Target.bBuildEditor)
+        {
+            PrivateDependencyModuleNames.Add("UnrealEd");
+        }
 
         // Chaos itself: FPBDRigidParticleHandle, FSingleParticlePhysicsProxy, the solver types the
         // cache adapter touches from the physics thread. Matches how PCGUtilsFracture pulls Chaos in.
         SetupModulePhysicsSupport(Target);
 
-        // PHASE 0 NOTE: this module deliberately has NO dependency on PCG or any other PCGUtils
-        // module. The Phase 0 spike answers engine questions only; nothing here may need a PCG
-        // graph to run. The PCG-facing data types and elements arrive in Phase 1.
+        // The Phase 0 cache spike (Chaos/, Components/, Spike/) still has no PCG dependency and must stay
+        // runnable without a graph. The PCG dependency above exists for GC | Spawn Component, which is
+        // independent of the recording pipeline; see claude.md.
     }
 }

@@ -79,7 +79,8 @@ namespace PCGUtilsPaletteSearchContract
 	TArray<FEntry> CollectEntries()
 	{
 		static const TSet<FString> Packages = {
-			TEXT("/Script/PCGUtilsDynMesh"), TEXT("/Script/PCGUtilsFracture"), TEXT("/Script/PCGUtilsPainter")};
+			TEXT("/Script/PCGUtilsDynMesh"), TEXT("/Script/PCGUtilsFracture"), TEXT("/Script/PCGUtilsPainter"),
+			TEXT("/Script/PCGUtilsSimulation")};
 
 		TArray<FEntry> Entries;
 		for (TObjectIterator<UClass> It; It; ++It)
@@ -157,14 +158,24 @@ bool FPCGUtilsPaletteSearchContractTest::RunTest(const FString&)
 	int32 FractureFactoryCount = 0;
 	int32 BuilderCount = 0;
 	bool bFoundRealizeBuilders = false;
+	bool bFoundSpawnComponent = false;
 
 	for (const FEntry& Entry : Entries)
 	{
 		const FString Where = FString::Printf(TEXT("%s (%s)"), *Entry.Label, *Entry.ClassName);
-		const bool bIsFracture = Entry.Package == TEXT("/Script/PCGUtilsFracture");
+
+		// PCGUtilsSimulation's GC nodes (GC | Spawn Component) belong to the GC family and obey every GC rule; its
+		// other nodes are neither GC nor DynMesh.
+		const bool bIsSimulation = Entry.Package == TEXT("/Script/PCGUtilsSimulation");
+		const bool bIsFracture = Entry.Package == TEXT("/Script/PCGUtilsFracture") ||
+			(bIsSimulation && Entry.Label.StartsWith(TEXT("GC | ")));
+		if (Entry.ClassName == TEXT("PCGSpawnGeometryCollectionComponentSettings"))
+		{
+			bFoundSpawnComponent = true;
+		}
 
 		// "DynMesh" returns every DynMesh element.
-		if (!bIsFracture && !IsDynMeshFamilyExempt(Entry.ClassName))
+		if (!bIsFracture && !bIsSimulation && !IsDynMeshFamilyExempt(Entry.ClassName))
 		{
 			TestTrue(*FString::Printf(TEXT("'DynMesh' finds %s"), *Where), Matches(Entry.SearchText, TEXT("DynMesh")));
 		}
@@ -262,11 +273,12 @@ bool FPCGUtilsPaletteSearchContractTest::RunTest(const FString&)
 		}));
 
 	TestTrue(TEXT("Realize Builders is exposed"), bFoundRealizeBuilders);
+	TestTrue(TEXT("GC | Spawn Component is checked"), bFoundSpawnComponent);
 	TestEqual(TEXT("Every basic Builder is present"), BuilderCount, 11);
 	TestTrue(TEXT("DynMesh selections were found"), DynMeshSelectCount > 5);
 	TestTrue(TEXT("GC selections were found"), GCSelectCount > 5);
 	TestTrue(TEXT("Fracture elements were found"), FractureCount > 5);
-	TestEqual(TEXT("Every fracture factory is present"), FractureFactoryCount, 5);
+	TestEqual(TEXT("Every fracture factory is present"), FractureFactoryCount, 6);
 	return true;
 }
 
