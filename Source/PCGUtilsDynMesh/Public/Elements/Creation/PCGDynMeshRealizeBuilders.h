@@ -5,8 +5,12 @@
 #include "CoreMinimal.h"
 #include "PCGSettings.h"
 #include "PCGUtilsSettingsCategories.h"
+#include "Templates/Function.h"
 
 #include "PCGDynMeshRealizeBuilders.generated.h"
+
+class UPCGUtilsDynMeshBuilderFactoryData;
+struct FPCGUtilsDynMeshBuildContext;
 
 namespace PCGDynMeshRealizeBuildersConstants
 {
@@ -105,9 +109,27 @@ protected:
  */
 namespace PCGUtilsDynMeshBuilderRealization
 {
+	/**
+	 * Decides whether one Builder applies to one seed. Returning false skips that pairing entirely: the
+	 * Builder is never evaluated for that seed and contributes no geometry to any output it would have
+	 * shared. Seeds that select no Builder at all, and Builders that no seed selects, produce no output
+	 * data rather than an empty mesh.
+	 *
+	 * The default - no filter - is every Builder on every seed, which is what makes several Builders on
+	 * the pin compose one compound shape. A filter is what lets a caller pair specific Builders with
+	 * specific seeds instead; see `DynMeshEx | Realize Builders` in PCGUtilsPCGExDynMeshInterop, which
+	 * implements this with PCGEx match rules.
+	 *
+	 * Called synchronously from inside the seed loop, once per Builder per seed, in Builder pin order.
+	 */
+	using FSeedBuilderFilter =
+		TFunction<bool(const FPCGUtilsDynMeshBuildContext& /*SeedContext*/,
+			const UPCGUtilsDynMeshBuilderFactoryData& /*Builder*/)>;
+
 	PCGUTILSDYNMESH_API bool Realize(
 		FPCGContext* Context,
 		bool bConvertSeedsToLocalSpace,
 		EPCGUtilsDynMeshBuilderOutputMode OutputMode,
-		const FText& NodeNameForMessages);
+		const FText& NodeNameForMessages,
+		const FSeedBuilderFilter& SeedBuilderFilter = nullptr);
 }

@@ -70,7 +70,8 @@ bool PCGUtilsDynMeshBuilderRealization::Realize(
 	FPCGContext* Context,
 	bool bConvertSeedsToLocalSpace,
 	EPCGUtilsDynMeshBuilderOutputMode OutputMode,
-	const FText& NodeNameForMessages)
+	const FText& NodeNameForMessages,
+	const FSeedBuilderFilter& SeedBuilderFilter)
 {
 	TArray<TObjectPtr<const UPCGUtilsDynMeshBuilderFactoryData>> Factories;
 	if (!PCGUtilsDynMeshFactories::GetInputFactories(
@@ -136,7 +137,15 @@ bool PCGUtilsDynMeshBuilderRealization::Realize(
 	ComposedMaterialOffsets.Init(0, Operations.Num());
 	TArray<TArray<UMaterialInterface*>> PerBuilderMaterials;
 	PerBuilderMaterials.SetNum(Operations.Num());
-	bool bMaterialLayoutResolved = false;
+
+	// Resolved the first time each Builder actually builds, not once after the first seed: with a filter in
+	// play the first seed need not have evaluated every Builder, and a Builder that has not built yet has
+	// contributed no triangles, so claiming its slice of the composed array later is still correct.
+	TBitArray<> bBuilderMaterialsResolved(false, Operations.Num());
+
+	// Only meaningful under a filter, and only to suppress outputs a filter emptied.
+	TBitArray<> bBuilderWasSelected(false, Operations.Num());
+	int32 UnselectedSeedCount = 0;
 
 	// Accumulators for the modes that span seeds.
 	UDynamicMesh* SingleTarget = (OutputMode == EPCGUtilsDynMeshBuilderOutputMode::Single)
@@ -196,16 +205,26 @@ bool PCGUtilsDynMeshBuilderRealization::Realize(
 			UDynamicMesh* SeedTarget = (OutputMode == EPCGUtilsDynMeshBuilderOutputMode::PerSeed)
 				? FPCGContext::NewObject_AnyThread<UDynamicMesh>(Context) : nullptr;
 
+			bool bAnyBuilderSelected = false;
+
 			for (int32 OperationIndex = 0; OperationIndex < Operations.Num(); ++OperationIndex)
 			{
+				if (SeedBuilderFilter && !SeedBuilderFilter(BuildContext, *Factories[OperationIndex]))
+				{
+					continue;
+				}
+				bAnyBuilderSelected = true;
+				bBuilderWasSelected[OperationIndex] = true;
+
 				FPCGUtilsDynMeshBuildResult BuildResult;
 				if (!Operations[OperationIndex]->Build(BuildContext, BuildResult) || !BuildResult.IsValid())
 				{
 					continue;
 				}
 
-				if (!bMaterialLayoutResolved)
+				if (!bBuilderMaterialsResolved[OperationIndex])
 				{
+					bBuilderMaterialsResolved[OperationIndex] = true;
 					ComposedMaterialOffsets[OperationIndex] = ComposedMaterials.Num();
 					for (UMaterialInterface* Material : BuildResult.MeshData->GetMaterials())
 					{
@@ -234,7 +253,12 @@ bool PCGUtilsDynMeshBuilderRealization::Realize(
 					Target, SeedMesh, TArray<FTransform>{FTransform::Identity}, FTransform::Identity);
 			}
 
-			bMaterialLayoutResolved = true;
+			if (!bAnyBuilderSelected)
+			{
+				// A seed the filter matched to nothing is not a seed that produced an empty shape.
+				++UnselectedSeedCount;
+				continue;
+			}
 
 			if (SeedTarget)
 			{
@@ -248,6 +272,12 @@ bool PCGUtilsDynMeshBuilderRealization::Realize(
 		PCGLog::LogWarningOnGraph(FText::Format(LOCTEXT("NoSeeds",
 			"{0} received no seed points."), NodeNameForMessages), Context);
 	}
+	else if (UnselectedSeedCount > 0)
+	{
+		PCGLog::LogWarningOnGraph(FText::Format(LOCTEXT("UnselectedSeeds",
+			"{0} matched no Builder to {1} of its {2} seed points, which produced no output."),
+			NodeNameForMessages, FText::AsNumber(UnselectedSeedCount), FText::AsNumber(SeedCount)), Context);
+	}
 
 	if (SingleTarget)
 	{
@@ -256,6 +286,11 @@ bool PCGUtilsDynMeshBuilderRealization::Realize(
 	}
 	for (int32 Index = 0; Index < PerBuilderTargets.Num(); ++Index)
 	{
+		if (SeedBuilderFilter && !bBuilderWasSelected[Index])
+		{
+			// Same reasoning as the unselected seed above, on the other axis.
+			continue;
+		}
 		// Spans every seed, so no single seed input's tags apply.
 		EmitMesh(PerBuilderTargets[Index], PerBuilderMaterials[Index], /*SourceSeedInput=*/nullptr,
 			bAggregateSeedMetadataIsAmbiguous ? nullptr : AggregateSeedMetadataSource);

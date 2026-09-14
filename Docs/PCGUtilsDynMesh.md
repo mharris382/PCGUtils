@@ -34,6 +34,13 @@ output. `Single` and `Per Builder` outputs preserve it when all realized seeds c
 several datasets are combined there is no unambiguous `@Data` value to inherit. Seed element-domain attributes
 are not copied onto DynMesh data because they describe source points rather than the realized mesh.
 
+Which Builders apply to which seeds is a caller decision, not a setting. `Realize` takes an optional
+`FSeedBuilderFilter`; with no filter every Builder is evaluated for every seed, which is what makes several
+Builders on the pin compose one compound shape. A filter narrows that pairing, and outputs it empties - a seed
+that selected no Builder, a Builder no seed selected - are dropped rather than emitted as empty meshes. The
+sibling `PCGUtilsPCGExInterop` plugin uses this for `DynMeshEx | Realize Builders`, which drives the filter from
+PCGEx match rules. PCGUtilsDynMesh does not depend on PCGEx.
+
 ### Required selections and domains
 
 The process base exposes **Require Selection**. A derived operation can also enforce the requirement by
