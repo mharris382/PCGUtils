@@ -67,6 +67,7 @@ void UPCGUtilsDynMeshSelectionOperationSettings::ApplyPreconfiguredSettings(
 }
 #endif
 
+#if WITH_EDITOR
 void UPCGUtilsDynMeshSelectionOperationSettings::ApplyDeprecationBeforeUpdatePins(
 	UPCGNode* InOutNode, TArray<TObjectPtr<UPCGPin>>& InputPins,
 	TArray<TObjectPtr<UPCGPin>>& OutputPins)
@@ -80,6 +81,7 @@ void UPCGUtilsDynMeshSelectionOperationSettings::ApplyDeprecationBeforeUpdatePin
 		InOutNode->RenameOutputPin(TEXT("Boundary"), PCGUtilsDynMeshSelectionOperationConstants::SelectionPin);
 	}
 }
+#endif
 
 FName UPCGUtilsDynMeshSelectionOperationSettings::GetMainOutputPin() const
 {

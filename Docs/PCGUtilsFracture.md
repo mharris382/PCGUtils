@@ -37,9 +37,9 @@ DynMesh To GC ------------------------+
 
 ## Nodes
 
-All under the `Dynamic Mesh` palette category (the engine has no Geometry Collection settings type), which is
-why every title is prefixed `GC | ` - that prefix, not the category, is what groups this module in the menu.
-Searching `GC` returns all of it; `GC Select` returns only the bone selections.
+The palette is split under `PCGUtils | GC` into `Selection`, `Fracture`, `Edit`, `Conversion`, and `Dataflow`
+subcategories. Titles retain the `GC | ` search prefix, so searching `GC` returns the whole module and
+`GC Select` returns only bone-selection elements.
 
 | Node | In | Out |
 |---|---|---|
@@ -118,9 +118,10 @@ as the cluster output. It is the expensive one: proximity is recomputed from the
 Raise **Iterations** to spread further rather than chaining several of these, since proximity is then computed
 once for the whole walk.
 
-Connecting several selectors to the **same** `Selection` pin means their union. For anything else use **GC
-Selection Logic**: AND keeps bones in both, XOR bones in exactly one, and Subtract removes B from A - "the
-exposed pieces, except the ones I already damaged".
+**OR** has one multi-connection `Selection` pin and unions every selector attached to it. The other **GC
+Selection Logic** modes keep two sides: AND keeps bones in both, XOR bones in exactly one, and Subtract removes
+B from A - "the exposed pieces, except the ones I already damaged". Compact nodes show only `OR`, `AND`, `XOR`,
+or `Subtract`; the longer `GC | Select | ...` labels exist only in the palette.
 
 > Selections carry no collection of their own, so the same selector graph can be reused against any collection
 > state. `Select Bones From Points` is the exception: it carries recorded bone indices and checks them against
@@ -308,6 +309,9 @@ than silently selecting the wrong pieces. Re-run `GC Bones To Points` on the col
 select on.
 
 ### 9. `Prune GC`
+
+If its Selection resolves successfully but contains no bones, Prune is a silent no-op and passes the original
+GC state through unchanged. This keeps optional/conditional pruning chains composable.
 
 Fractured `GC` plus the `Selection`. The selected bones and their children are genuinely removed —
 this is not a visibility flag or a conversion-time filter.

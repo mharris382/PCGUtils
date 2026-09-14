@@ -78,11 +78,13 @@ already say, and stop.**
 
 ### Context-menu naming
 
-The palette is the only map users have of this library, and PCG gives a native element no free-form category
-string: `UPCGEditorGraphSchema::GetNativeElementActions` derives the category solely from
-`StaticEnum<EPCGSettingsType>()->GetDisplayNameTextByValue(GetType())`. There is no per-class hook and no
-extension point, so every element here lands under `Dynamic Mesh` and **the family prefix in the node title is
-the grouping mechanism.** Treat the prefix as structural, not decorative.
+PCG derives a native element's menu category from
+`StaticEnum<EPCGSettingsType>()->GetDisplayNameTextByValue(GetType())`. PCGUtilsCore extends that reflected enum
+at startup with stable `PCGUtils | DynMesh | ...` and `PCGUtils | GC | ...` values; the shared settings bases map
+concrete classes from their module-relative source folders. Every new direct `UPCGSettings`,
+`UPCGDynamicMeshBaseSettings`, or `UPCGDataFromActorSettings` subclass must explicitly return its matching
+PCGUtils category. The family prefix in the palette label remains structural search vocabulary, but the compact
+node title never carries it.
 
 Every user-visible palette entry - a node title *and* every `FPCGPreConfiguredSettingsInfo::Label` - takes the
 form `[CATEGORY] | [ELEMENT_NAME]`, with a space on **both** sides of every pipe. The spaces are part of the
@@ -124,14 +126,15 @@ one lowercased string, splitting each on spaces and concatenating the words with
 - a term can straddle two adjacent words, so check a new keyword list for accidental substrings. In
   particular nothing in a `Select | ` entry may contain `gc`, and nothing in a `GC | Select | ` entry may contain
   `dynmesh`, or the two families stop being separable by search;
-- the `Dynamic Mesh` category contributes `dynamicmesh`, which deliberately does not contain `dynmesh`.
+- the PCGUtils category contributes the family term too, but labels and keywords must still obey this contract
+  so saved preconfigured actions and any use outside the native PCG palette remain searchable.
 
 `PCGUtils.Palette.SearchContract` (in `PCGUtilsFracture/Private/Tests`) reimplements that search model and
 asserts the whole contract. Extend it when you add a family; do not hand-verify in the editor instead.
 
-One more consequence of the category rule: an element deriving straight from `UPCGSettings` must override
-`GetType()`. Forgetting it is silent and drops the node into `Generic`, where nobody will find it - this is
-exactly how the Builder materializer went missing until it was rebuilt as `DynMesh | Realize Builders`.
+One more consequence of the category rule: an element that does not derive from a PCGUtils category-aware base
+must override `GetType()`. Forgetting it is silent and drops the node into `Generic` or an engine bucket, where
+nobody will find it. Use `PCGUtilsSettingsCategories` rather than returning `DynamicMesh` directly.
 
 ## Attributes written to PCG data
 

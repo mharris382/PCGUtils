@@ -5,6 +5,7 @@
 #include "CoreMinimal.h"
 #include "Elements/Selections/PCGUtilsDynMeshSelectionTypes.h"
 #include "Factories/PCGUtilsDynMeshFactoryProvider.h"
+#include "PCGUtilsSettingsCategories.h"
 #include "Selections/GeometrySelection.h"
 
 #include "PCGUtilsDynMeshSelectionSource.generated.h"
@@ -30,6 +31,13 @@ class PCGUTILSDYNMESH_API UPCGUtilsDynMeshSelectionSourceSettings
 	friend class FPCGUtilsDynMeshSelectionSourceElement;
 
 public:
+#if WITH_EDITOR
+	virtual EPCGSettingsType GetType() const override
+	{
+		return PCGUtilsSettingsCategories::AsSettingsType(PCGUtilsSettingsCategories::EValue::DynMeshSelection);
+	}
+#endif
+
 	/** Complement the selector in whichever vertex, edge, or face domain consumes it. */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Selection", meta=(PCG_Overridable))
 	bool bInvertSelection = false;
@@ -72,9 +80,11 @@ protected:
 #endif
 
 	virtual const FPCGDataTypeBaseId& GetFactoryTypeId() const override;
+#if WITH_EDITOR
 	virtual void ApplyDeprecationBeforeUpdatePins(
 		UPCGNode* InOutNode, TArray<TObjectPtr<UPCGPin>>& InputPins,
 		TArray<TObjectPtr<UPCGPin>>& OutputPins) override;
+#endif
 	virtual TArray<FPCGPinProperties> InputPinProperties() const final;
 	virtual TArray<FPCGPinProperties> OutputPinProperties() const override;
 	virtual FPCGElementPtr CreateElement() const override;

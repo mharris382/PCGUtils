@@ -3,6 +3,7 @@
 #include "CoreMinimal.h"
 #include "Elements/Creation/PCGDynMeshRealizeBuilders.h"
 #include "PCGSettings.h"
+#include "PCGUtilsSettingsCategories.h"
 
 #include "PCGCreatePrimitive.generated.h"
 
@@ -39,6 +40,10 @@ public:
 	UPCGCreatePrimitiveSettings(const FObjectInitializer& ObjectInitializer);
 
 #if WITH_EDITOR
+	virtual EPCGSettingsType GetType() const override
+	{
+		return PCGUtilsSettingsCategories::AsSettingsType(PCGUtilsSettingsCategories::EValue::DynMeshCreation);
+	}
 	virtual FName GetDefaultNodeName() const override { return TEXT("CreatePrimitive"); }
 	virtual FText GetDefaultNodeTitle() const override;
 	virtual FText GetNodeTooltipText() const override;
@@ -92,9 +97,11 @@ public:
 	bool bUseLegacyMode = true;
 
 protected:
+#if WITH_EDITOR
 	virtual void ApplyDeprecationBeforeUpdatePins(
 		UPCGNode* InOutNode, TArray<TObjectPtr<UPCGPin>>& InputPins,
 		TArray<TObjectPtr<UPCGPin>>& OutputPins) override;
+#endif
 	virtual TArray<FPCGPinProperties> InputPinProperties() const override;
 	virtual TArray<FPCGPinProperties> OutputPinProperties() const override;
 	virtual FPCGElementPtr CreateElement() const override;

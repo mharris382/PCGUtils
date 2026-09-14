@@ -32,7 +32,6 @@ public:
 
 	// Native "Add Node" categorization only offers the fixed EPCGSettingsType buckets (no free-form category
 	// string is available to a native C++ element) - DynamicMesh is the closest match to "Utils DynMesh|Sampling".
-	virtual EPCGSettingsType GetType() const override { return EPCGSettingsType::DynamicMesh; }
 #endif
 
 	virtual bool UseSeed() const override { return true; }

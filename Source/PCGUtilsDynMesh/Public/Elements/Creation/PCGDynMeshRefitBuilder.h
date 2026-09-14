@@ -3,6 +3,7 @@
 #include "CoreMinimal.h"
 #include "Factories/PCGUtilsDynMeshBuilderFactory.h"
 #include "Factories/PCGUtilsDynMeshFactoryProvider.h"
+#include "PCGUtilsSettingsCategories.h"
 #include "Elements/Creation/PrimitiveBuilder/PCGUtilsPrimitiveFittingDetails.h"
 #include "PCGDynMeshRefitBuilder.generated.h"
 
@@ -30,6 +31,10 @@ class PCGUTILSDYNMESH_API UPCGDynMeshRefitBuilderSettings : public UPCGUtilsDynM
   public:
 	UPCGDynMeshRefitBuilderSettings();
 #if WITH_EDITOR
+	virtual EPCGSettingsType GetType() const override
+	{
+		return PCGUtilsSettingsCategories::AsSettingsType(PCGUtilsSettingsCategories::EValue::DynMeshCreation);
+	}
 	virtual FName GetDefaultNodeName() const override
 	{
 		return TEXT("RefitBuilder");

@@ -103,7 +103,9 @@ UPCGCreatePrimitiveSettings::UPCGCreatePrimitiveSettings(const FObjectInitialize
 {
 	Primitive = CreateDefaultSubobject<UPCGCreatePrimitiveBoxSettings>(TEXT("DefaultPrimitive"));
 	// Superseded by DynMesh|Realize Builders (Builder mode) and kept only so existing graphs keep working.
+#if WITH_EDITORONLY_DATA
 	bExposeToLibrary = false;
+#endif
 }
 
 #if WITH_EDITOR
@@ -135,6 +137,7 @@ EPCGChangeType UPCGCreatePrimitiveSettings::GetChangeTypeForProperty(FPropertyCh
 }
 #endif
 
+#if WITH_EDITOR
 void UPCGCreatePrimitiveSettings::ApplyDeprecationBeforeUpdatePins(
 	UPCGNode* InOutNode, TArray<TObjectPtr<UPCGPin>>& InputPins,
 	TArray<TObjectPtr<UPCGPin>>& OutputPins)
@@ -148,6 +151,7 @@ void UPCGCreatePrimitiveSettings::ApplyDeprecationBeforeUpdatePins(
 			PCGUtilsDynMeshBuilderFactoryConstants::BuildersInputPin);
 	}
 }
+#endif
 
 TArray<FPCGPinProperties> UPCGCreatePrimitiveSettings::InputPinProperties() const
 {

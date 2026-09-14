@@ -3,6 +3,8 @@
 #include "CoreMinimal.h"
 #include "Elements/PCGDynamicMeshBaseElement.h"
 #include "Elements/PCGUtilsDynMeshProcessOperation.h"
+#include "PCGUtilsSettingsCategories.h"
+#include "PCGUtilsSettingsCategories.h"
 #include "Selections/GeometrySelection.h"
 
 #include "PCGUtilsDynMeshProcessBase.generated.h"
@@ -33,6 +35,13 @@ class PCGUTILSDYNMESH_API UPCGUtilsDynMeshProcessBaseSettings : public UPCGDynam
 	GENERATED_BODY()
 
 public:
+#if WITH_EDITOR
+	virtual EPCGSettingsType GetType() const override
+	{
+		return PCGUtilsSettingsCategories::DynMeshCategoryForClass(GetClass());
+	}
+#endif
+
 	/**
 	 * Override when ProcessMesh requires selection inputs in one element domain.
 	 * Return true and set OutElementType to Vertex, Edge, or Face. The base converts selection-data inputs before
@@ -127,9 +136,11 @@ protected:
 	 */
 	FPCGDataTypeIdentifier GetProcessDataTypes() const;
 
+#if WITH_EDITOR
 	virtual void ApplyDeprecationBeforeUpdatePins(
 		UPCGNode* InOutNode, TArray<TObjectPtr<UPCGPin>>& InputPins,
 		TArray<TObjectPtr<UPCGPin>>& OutputPins) override;
+#endif
 	virtual TArray<FPCGPinProperties> InputPinProperties() const override;
 	virtual TArray<FPCGPinProperties> OutputPinProperties() const override;
 

@@ -14,21 +14,21 @@ using namespace UE::Geometry;
 // Settings
 // ─────────────────────────────────────────────────────────────────────────────
 
-TArray<FPCGPinProperties> UPCGMergeByDistanceSettings::InputPinProperties() const
+TArray<FPCGPinProperties> UDEPRECATED_PCGMergeByDistanceSettings::InputPinProperties() const
 {
 	TArray<FPCGPinProperties> Props;
 	Props.Emplace_GetRef(PCGPinConstants::DefaultInputLabel, EPCGDataType::DynamicMesh, false, false).SetRequiredPin();
 	return Props;
 }
 
-TArray<FPCGPinProperties> UPCGMergeByDistanceSettings::OutputPinProperties() const
+TArray<FPCGPinProperties> UDEPRECATED_PCGMergeByDistanceSettings::OutputPinProperties() const
 {
 	TArray<FPCGPinProperties> Props;
 	Props.Emplace(PCGPinConstants::DefaultOutputLabel, EPCGDataType::DynamicMesh, false, false);
 	return Props;
 }
 
-FPCGElementPtr UPCGMergeByDistanceSettings::CreateElement() const
+FPCGElementPtr UDEPRECATED_PCGMergeByDistanceSettings::CreateElement() const
 {
 	return MakeShared<FPCGMergeByDistanceElement>();
 }
@@ -74,7 +74,8 @@ int32 GeomUtil_MergeByDistance(
 	FDynamicMesh3& Mesh,
 	float          MergeDistance,
 	bool           bAveragePos,
-	bool           bAverageColors)
+	bool           bAverageColors,
+	const TSet<int32>* CandidateVertexIDs)
 {
 	if (Mesh.VertexCount() < 2) { return 0; }
 
@@ -92,8 +93,15 @@ int32 GeomUtil_MergeByDistance(
 
 	TArray<int32> VIDs;
 	VIDs.Reserve(Mesh.VertexCount());
-	for (int32 VID : Mesh.VertexIndicesItr()) { VIDs.Add(VID); }
+	for (int32 VID : Mesh.VertexIndicesItr())
+	{
+		if (!CandidateVertexIDs || CandidateVertexIDs->Contains(VID))
+		{
+			VIDs.Add(VID);
+		}
+	}
 	const int32 N = VIDs.Num();
+	if (N < 2) { return 0; }
 
 	TMap<int32, int32> VIDtoDense;
 	VIDtoDense.Reserve(N);
@@ -283,11 +291,10 @@ int32 GeomUtil_MergeByDistance(
 	// Re-append — all previously conflicting edges are now gone
 	for (auto& KV : ToRemap)
 	{
-		int32 NewTID = Mesh.AppendTriangle(KV.Value.NewTri, KV.Value.GroupID);
-		if (NewTID < 0)
-		{
-			UE_LOG(LogTemp, Warning, TEXT("MergeByDistance: AppendTriangle failed (result=%d) — duplicate tri, skipping."), NewTID);
-		}
+		// Collapsing a cluster can turn distinct source triangles into the same triangle. That is a normal
+		// consequence of welding, so discard the duplicate quietly rather than reporting a successful weld as
+		// a graph/compiler warning.
+		Mesh.AppendTriangle(KV.Value.NewTri, KV.Value.GroupID);
 	}
 
 	// ── 7. Update color overlay ───────────────────────────────────────────────
@@ -396,7 +403,8 @@ bool FPCGMergeByDistanceElement::ExecuteInternal(FPCGContext* InContext) const
 	FPCGMergeByDistanceContext* Context = static_cast<FPCGMergeByDistanceContext*>(InContext);
 	check(Context);
 
-	const UPCGMergeByDistanceSettings* Settings = InContext->GetInputSettings<UPCGMergeByDistanceSettings>();
+	const UDEPRECATED_PCGMergeByDistanceSettings* Settings =
+		InContext->GetInputSettings<UDEPRECATED_PCGMergeByDistanceSettings>();
 	check(Settings);
 
 	TArray<FPCGTaggedData> Inputs = InContext->InputData.GetInputsByPin(PCGPinConstants::DefaultInputLabel);

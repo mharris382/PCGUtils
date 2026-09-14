@@ -6,6 +6,7 @@
 #include "Elements/Creation/PrimitiveBuilder/PCGUtilsPrimitiveFittingDetails.h"
 #include "Factories/PCGUtilsDynMeshBuilderFactory.h"
 #include "Factories/PCGUtilsDynMeshFactoryProvider.h"
+#include "PCGUtilsSettingsCategories.h"
 
 #include "PCGPrimitiveBuilderFactory.generated.h"
 
@@ -51,6 +52,14 @@ UCLASS(Abstract, BlueprintType, ClassGroup=(Procedural), Category="PCGUtils|DynM
 class PCGUTILSDYNMESH_API UPCGPrimitiveBuilderProviderSettingsBase : public UPCGUtilsDynMeshFactoryProviderSettings
 {
 	GENERATED_BODY()
+
+public:
+#if WITH_EDITOR
+	virtual EPCGSettingsType GetType() const override
+	{
+		return PCGUtilsSettingsCategories::AsSettingsType(PCGUtilsSettingsCategories::EValue::DynMeshCreation);
+	}
+#endif
 
 public:
 	/** How this primitive fits, aligns, pads, and offsets into each seed's bounds. */

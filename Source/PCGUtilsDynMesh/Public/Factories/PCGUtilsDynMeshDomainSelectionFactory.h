@@ -82,6 +82,13 @@ class PCGUTILSDYNMESH_API UPCGUtilsDynMeshDomainSelectionFactoryProviderSettings
 	GENERATED_BODY()
 
 public:
+#if WITH_EDITOR
+	virtual EPCGSettingsType GetType() const override
+	{
+		return PCGUtilsSettingsCategories::AsSettingsType(PCGUtilsSettingsCategories::EValue::DynMeshSelection);
+	}
+#endif
+
 	/** Complement the selector after its native result is converted into the consumer's domain. */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Selection", meta=(PCG_Overridable))
 	bool bInvertSelection = false;
@@ -94,9 +101,11 @@ public:
 		FPCGContext* InContext, UPCGUtilsDynMeshFactoryData* InFactory = nullptr) const override;
 
 protected:
+#if WITH_EDITOR
 	virtual void ApplyDeprecationBeforeUpdatePins(
 		UPCGNode* InOutNode, TArray<TObjectPtr<UPCGPin>>& InputPins,
 		TArray<TObjectPtr<UPCGPin>>& OutputPins) override;
+#endif
 };
 
 /** Unified query counterpart that adds inline Selection materialization to a native-domain Selector. */

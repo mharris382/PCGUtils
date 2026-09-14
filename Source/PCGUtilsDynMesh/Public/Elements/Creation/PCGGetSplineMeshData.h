@@ -3,6 +3,7 @@
 #include "CoreMinimal.h"
 #include "Elements/PCGDataFromActor.h"
 #include "GeometryScript/MeshBooleanFunctions.h"
+#include "PCGUtilsSettingsCategories.h"
 
 #include "PCGGetSplineMeshData.generated.h"
 
@@ -26,6 +27,10 @@ public:
 	UPCGGetSplineMeshDataSettings();
 
 #if WITH_EDITOR
+	virtual EPCGSettingsType GetType() const override
+	{
+		return PCGUtilsSettingsCategories::AsSettingsType(PCGUtilsSettingsCategories::EValue::DynMeshCreation);
+	}
 	virtual FName GetDefaultNodeName() const override { return TEXT("GetSplineMeshData"); }
 	virtual FText GetDefaultNodeTitle() const override;
 	virtual FText GetNodeTooltipText() const override;

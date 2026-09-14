@@ -2,6 +2,7 @@
 
 #include "CoreMinimal.h"
 #include "Elements/PCGDynamicMeshBaseElement.h"
+#include "PCGUtilsSettingsCategories.h"
 
 #include "PCGDynMeshActorSpaceTransform.generated.h"
 
@@ -31,6 +32,10 @@ public:
 	EPCGDynMeshActorSpaceTransformDirection GetDirection() const { return Direction; }
 
 #if WITH_EDITOR
+	virtual EPCGSettingsType GetType() const override
+	{
+		return PCGUtilsSettingsCategories::AsSettingsType(PCGUtilsSettingsCategories::EValue::DynMeshDeform);
+	}
 	virtual FName GetDefaultNodeName() const override;
 	virtual FText GetDefaultNodeTitle() const override;
 	virtual FText GetNodeTooltipText() const override;

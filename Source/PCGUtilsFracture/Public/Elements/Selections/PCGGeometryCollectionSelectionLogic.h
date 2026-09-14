@@ -90,6 +90,8 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Selection", meta=(PCG_Overridable))
 	EPCGGeometryCollectionSelectionLogicMode Mode = EPCGGeometryCollectionSelectionLogicMode::And;
 
+	virtual bool HasDynamicPins() const override { return true; }
+
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Selection", AdvancedDisplay, meta=(PCG_Overridable))
 	int32 Priority = 0;
 

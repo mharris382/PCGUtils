@@ -4,6 +4,7 @@
 #include "Components/SplineMeshComponent.h"
 #include "GeometryScript/MeshBooleanFunctions.h"
 #include "PCGSettings.h"
+#include "PCGUtilsSettingsCategories.h"
 
 #include "PCGSplineToDynamicMesh.generated.h"
 
@@ -17,6 +18,10 @@ class PCGUTILSDYNMESH_API UPCGSplineToDynamicMeshSettings : public UPCGSettings
 
 public:
 #if WITH_EDITOR
+	virtual EPCGSettingsType GetType() const override
+	{
+		return PCGUtilsSettingsCategories::AsSettingsType(PCGUtilsSettingsCategories::EValue::DynMeshCreation);
+	}
 	virtual FName GetDefaultNodeName() const override { return TEXT("SplineMeshToDynMesh"); }
 	virtual FText GetDefaultNodeTitle() const override;
 	virtual FText GetNodeTooltipText() const override;

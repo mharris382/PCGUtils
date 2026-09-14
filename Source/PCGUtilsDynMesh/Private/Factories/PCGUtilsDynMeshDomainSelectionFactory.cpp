@@ -11,6 +11,7 @@
 #include "Serialization/ArchiveCrc32.h"
 #include "UDynamicMesh.h"
 
+#if WITH_EDITOR
 void UPCGUtilsDynMeshDomainSelectionFactoryProviderSettings::ApplyDeprecationBeforeUpdatePins(
 	UPCGNode* InOutNode, TArray<TObjectPtr<UPCGPin>>& InputPins,
 	TArray<TObjectPtr<UPCGPin>>& OutputPins)
@@ -22,6 +23,7 @@ void UPCGUtilsDynMeshDomainSelectionFactoryProviderSettings::ApplyDeprecationBef
 		InOutNode->RenameOutputPin(TEXT("Selection Factory"), TEXT("Selector"));
 	}
 }
+#endif
 
 namespace
 {

@@ -11,6 +11,7 @@
 #include "Elements/PCGUtilsDynMeshProcessBase.h"
 #include "Elements/Selections/PCGDynMeshNormalSelectionFactory.h"
 #include "Elements/Selections/PCGDynMeshPolygroupSelectionFactory.h"
+#include "Elements/Selections/PCGSelectInteriorFaces.h"
 #include "Elements/Topology/PCGDynMeshBoolean.h"
 #include "GeometryScript/GeometryScriptSelectionTypes.h"
 #include "GeometryScript/MeshPrimitiveFunctions.h"
@@ -50,6 +51,36 @@ namespace PCGUtilsDynMeshPolygroupSelectionTests
 			(Domain == UE::Geometry::EGeometryElementType::Vertex ? EGeometryScriptIndexType::Vertex : EGeometryScriptIndexType::Edge);
 		return ScriptSelection.ConvertToMeshIndexArray(Mesh, OutIDs, IndexType) == IndexType;
 	}
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FPCGDynMeshInteriorFacesTest,
+	"PCGUtils.DynMesh.Selectors.InteriorFaces",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::ProductFilter)
+
+bool FPCGDynMeshInteriorFacesTest::RunTest(const FString&)
+{
+	using namespace PCGUtilsDynMeshPolygroupSelectionTests;
+	using namespace UE::Geometry;
+
+	FDynamicMesh3 Mesh;
+	// DynMesh cannot attach more than two triangles to one topological edge. Four coincident triangle shells
+	// reproduce the split-vertex representation used when importing Blender-style non-manifold geometry.
+	for (int32 Copy = 0; Copy < 4; ++Copy)
+	{
+		const int32 A = Mesh.AppendVertex(FVector3d(0, 0, 0));
+		const int32 B = Mesh.AppendVertex(FVector3d(100, 0, 0));
+		const int32 C = Mesh.AppendVertex(FVector3d(0, 100, 0));
+		Mesh.AppendTriangle(A, B, C);
+	}
+	auto* Data = NewObject<UPCGDynamicMeshData>();
+	Data->Initialize(MoveTemp(Mesh));
+	auto* Selector = NewObject<UPCGSelectInteriorFacesFactoryData>();
+	Selector->CoincidentVertexTolerance = 0.001;
+	TArray<int32> IDs;
+	TestTrue(TEXT("Interior Faces selector evaluates"),
+		Evaluate(Selector, Data, EGeometryElementType::Face, IDs));
+	TestEqual(TEXT("Every face with three greater-than-two-user edges is interior"), IDs.Num(), 4);
+	return true;
 }
 
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(FPCGDynMeshNormalSelectorDomainConversionTest,

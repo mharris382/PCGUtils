@@ -66,6 +66,19 @@ bool UPCGGeometryCollectionSelectionLogicFactoryData::Evaluate(
 	FPCGContext* InContext,
 	FDataflowTransformSelection& OutSelection) const
 {
+	if (Mode == EMode::Or)
+	{
+		if (!PCGUtilsGeometryCollectionSelectionFactories::EvaluateAndUnion(
+				FactoriesA, InEvaluationContext, InContext, OutSelection))
+		{
+			return false;
+		}
+
+		UE_LOG(LogPCGUtilsFracture, Verbose, TEXT("GC Selection Logic: OR -> %d bone(s)"),
+			OutSelection.NumSelected());
+		return true;
+	}
+
 	// Each side is the union of whatever was connected to it, matching every other Selection pin.
 	FDataflowTransformSelection SelectionA;
 	FDataflowTransformSelection SelectionB;
@@ -124,15 +137,15 @@ void UPCGGeometryCollectionSelectionLogicFactoryData::AddToCrc(FArchiveCrc32& Ar
 #if WITH_EDITOR
 FText UPCGGeometryCollectionSelectionLogicSettings::GetDefaultNodeTitle() const
 {
-	return ModeDisplayName(Mode);
+	return ModeTitle(Mode);
 }
 
 FText UPCGGeometryCollectionSelectionLogicSettings::GetNodeTooltipText() const
 {
 	return LOCTEXT("Tooltip",
-		"Combines two Geometry Collection bone selections: AND keeps the bones in both, OR the bones in "
-		"either, XOR the bones in exactly one, and Subtract removes B's bones from A. Several selectors on one "
-		"input are unioned first. Plain union needs no node at all - connect them to the same Selection pin.");
+		"Combines Geometry Collection bone selections. OR unions every selector connected to its single Selection "
+		"pin. AND keeps bones in A and B, XOR keeps bones in exactly one side, and Subtract removes B from A. "
+		"Several selectors connected to A or B are unioned before the two sides are combined.");
 }
 
 TArray<FPCGPreConfiguredSettingsInfo>
@@ -176,6 +189,14 @@ const FPCGDataTypeBaseId& UPCGGeometryCollectionSelectionLogicSettings::GetFacto
 TArray<FPCGPinProperties> UPCGGeometryCollectionSelectionLogicSettings::InputPinProperties() const
 {
 	TArray<FPCGPinProperties> Pins;
+	if (Mode == EMode::Or)
+	{
+		Pins.Emplace_GetRef(
+			PCGUtilsGeometryCollectionSelectionFactoryConstants::SelectionInputPin,
+			FPCGUtilsGeometryCollectionSelectionFactoryDataTypeInfo::AsId(), true, true).SetRequiredPin();
+		return Pins;
+	}
+
 	Pins.Emplace_GetRef(
 		PCGGeometryCollectionSelectionLogicConstants::SelectionAInputPin,
 		FPCGUtilsGeometryCollectionSelectionFactoryDataTypeInfo::AsId(), true, true).SetRequiredPin();
@@ -190,6 +211,17 @@ UPCGUtilsGeometryCollectionFactoryData* UPCGGeometryCollectionSelectionLogicSett
 {
 	TArray<TObjectPtr<const UPCGUtilsGeometryCollectionSelectionFactoryData>> ChildrenA;
 	TArray<TObjectPtr<const UPCGUtilsGeometryCollectionSelectionFactoryData>> ChildrenB;
+	if (Mode == EMode::Or)
+	{
+		if (!PCGUtilsGeometryCollectionFactories::GetInputFactories<UPCGUtilsGeometryCollectionSelectionFactoryData>(
+				InContext, PCGUtilsGeometryCollectionSelectionFactoryConstants::SelectionInputPin, ChildrenA,
+				PCGUtilsGeometryCollectionSelectionFactories::GetSelectionFactoryTypes(), /*bRequired=*/true))
+		{
+			return nullptr;
+		}
+	}
+	else
+	{
 	if (!PCGUtilsGeometryCollectionFactories::GetInputFactories<UPCGUtilsGeometryCollectionSelectionFactoryData>(
 			InContext, PCGGeometryCollectionSelectionLogicConstants::SelectionAInputPin, ChildrenA,
 			PCGUtilsGeometryCollectionSelectionFactories::GetSelectionFactoryTypes(), /*bRequired=*/true)
@@ -198,6 +230,7 @@ UPCGUtilsGeometryCollectionFactoryData* UPCGGeometryCollectionSelectionLogicSett
 			PCGUtilsGeometryCollectionSelectionFactories::GetSelectionFactoryTypes(), /*bRequired=*/true))
 	{
 		return nullptr;
+	}
 	}
 
 	UPCGGeometryCollectionSelectionLogicFactoryData* Factory = InFactory

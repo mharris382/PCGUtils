@@ -3,6 +3,7 @@
 #include "CoreMinimal.h"
 #include "PCGCommon.h"
 #include "Elements/PCGDynamicMeshBaseElement.h"
+#include "PCGUtilsSettingsCategories.h"
 
 #include "PCGDynamicMeshSelectionToPoints.generated.h"
 
@@ -22,6 +23,10 @@ class PCGUTILSDYNMESH_API UPCGDynamicMeshSelectionToPointsSettings : public UPCG
 
 public:
 #if WITH_EDITOR
+	virtual EPCGSettingsType GetType() const override
+	{
+		return PCGUtilsSettingsCategories::AsSettingsType(PCGUtilsSettingsCategories::EValue::DynMeshConversion);
+	}
 	virtual FName GetDefaultNodeName() const override { return TEXT("DynMeshSelectionToPoints"); }
 	virtual FText GetDefaultNodeTitle() const override;
 	virtual FText GetNodeTooltipText() const override;

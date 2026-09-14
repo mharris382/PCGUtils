@@ -84,9 +84,11 @@ public:
 protected:
 	virtual TSharedPtr<FPCGUtilsDynMeshTopologyOperation> CreateTopologyOperation(FPCGContext* Context) const PURE_VIRTUAL(
 		UPCGUtilsDynMeshTopologyProcessBaseSettings::CreateTopologyOperation, return nullptr;);
+#if WITH_EDITOR
 	virtual void ApplyDeprecationBeforeUpdatePins(
 		UPCGNode* InOutNode, TArray<TObjectPtr<UPCGPin>>& InputPins,
 		TArray<TObjectPtr<UPCGPin>>& OutputPins) override;
+#endif
 	virtual void AddProcessOperationToCrc(FArchiveCrc32& Ar) const override;
 	virtual void EmitAdditionalOutputs(FPCGContext* Context) const override;
 	virtual TArray<FPCGPinProperties> OutputPinProperties() const override;

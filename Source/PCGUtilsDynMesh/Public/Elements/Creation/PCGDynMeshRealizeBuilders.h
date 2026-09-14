@@ -4,6 +4,7 @@
 
 #include "CoreMinimal.h"
 #include "PCGSettings.h"
+#include "PCGUtilsSettingsCategories.h"
 
 #include "PCGDynMeshRealizeBuilders.generated.h"
 
@@ -58,8 +59,10 @@ public:
 	virtual FText GetDefaultNodeTitle() const override;
 	virtual FText GetNodeTooltipText() const override;
 	virtual FLinearColor GetNodeTitleColor() const override { return FLinearColor(0.413f, 0.25f, 1.0f, 1.0f); }
-	/** Deriving from UPCGSettings means this has to be declared by hand, or the node lands in Generic. */
-	virtual EPCGSettingsType GetType() const override { return EPCGSettingsType::DynamicMesh; }
+	virtual EPCGSettingsType GetType() const override
+	{
+		return PCGUtilsSettingsCategories::AsSettingsType(PCGUtilsSettingsCategories::EValue::DynMeshCreation);
+	}
 #endif
 
 	/**

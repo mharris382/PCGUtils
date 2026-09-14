@@ -261,7 +261,23 @@ helper with no PCG dependency, like `PCGUtilsDynMeshSurfaceCorrespondence.h`, wh
 by poking every anchor into that copy up front; the Geometry Script wrapper deep-copies the whole mesh on every
 call. `TraceSurfacePath()` drives `FMeshGeodesicSurfaceTracer` against a const mesh and copies nothing.
 
+## Simplification
+
+**DynMesh | Simplify Planar** defaults to Geometry Script's planar simplifier and also exposes Polygroup
+Topology, Triangle Count, Vertex Count, Geometric Tolerance, Edge Length, and Cluster Edge Length modes. It uses
+the standard unified DynMesh/Selection input plus optional Selector, and the same immutable operation supports
+deferred Builder chains. Selection regions are restored before optional ID compaction.
+
+**DynMesh | Merge by Distance** replaces the deprecated legacy PCGUtils element. It can weld the whole mesh or
+only vertices resolved by a DynMesh Selection/Selector, and quietly discards duplicate triangles created as a
+normal consequence of welding rather than turning successful execution into a warning.
+
 ## Selection modifiers
+
+**Select | Interior Faces** exposes the first Blender Select by Trait predicate. It selects faces whose three
+geometric edges each have more than two face users. Because `FDynamicMesh3` cannot store a topological edge with
+three incident triangles, coincident split vertices are clustered by the configured tolerance before face users
+are counted.
 
 Every reusable DynMesh selector exposes **Invert Selection**. Inversion is applied by the shared selector
 operation, so it works consistently inside Selection Logic and other nested selector graphs. Selectors with a

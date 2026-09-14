@@ -4,6 +4,7 @@
 
 #include "CoreMinimal.h"
 #include "Elements/PCGDynamicMeshBaseElement.h"
+#include "PCGUtilsSettingsCategories.h"
 #include "UObject/SoftObjectPtr.h"
 
 #include "PCGWriteDynMeshLODs.generated.h"
@@ -51,6 +52,10 @@ class PCGUTILSDYNMESH_API UPCGWriteDynMeshLODsSettings : public UPCGDynamicMeshB
 
 public:
 #if WITH_EDITOR
+	virtual EPCGSettingsType GetType() const override
+	{
+		return PCGUtilsSettingsCategories::AsSettingsType(PCGUtilsSettingsCategories::EValue::DynMeshConversion);
+	}
 	virtual FName GetDefaultNodeName() const override { return FName(TEXT("WriteDynMeshLODs")); }
 	virtual FText GetDefaultNodeTitle() const override;
 	virtual FText GetNodeTooltipText() const override;

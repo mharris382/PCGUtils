@@ -23,8 +23,9 @@
  *
  * The missing separator is the subtle part: it means a term may straddle two adjacent words, which is why
  * these assertions check real concatenated text instead of a word set. The category comes from
- * UPCGSettings::GetType() through the EPCGSettingsType enum - PCG offers no per-class category hook, so
- * "Dynamic Mesh" is the root bucket for this library and the family prefix in the title is what groups it.
+ * UPCGSettings::GetType() through the EPCGSettingsType enum. PCGUtils extends that reflected enum with stable
+ * library categories at startup, so the category text is both part of search and the actual menu hierarchy.
+ * Family prefixes remain useful search vocabulary and distinguish preconfigured entries at a glance.
  */
 namespace PCGUtilsPaletteSearchContract
 {
@@ -35,6 +36,7 @@ namespace PCGUtilsPaletteSearchContract
 		FString SearchText;
 		FString ClassName;
 		FString Package;
+		FString Category;
 		FString Subtitle;
 	};
 
@@ -115,13 +117,13 @@ namespace PCGUtilsPaletteSearchContract
 			if (Presets.IsEmpty() || !Settings->OnlyExposePreconfiguredSettings())
 			{
 				const FString Label = Settings->GetDefaultNodeTitle().ToString();
-				Entries.Add({Label, MakeSearchText(Label, Keywords, Category), Class->GetName(), Package, Subtitle});
+				Entries.Add({Label, MakeSearchText(Label, Keywords, Category), Class->GetName(), Package, Category, Subtitle});
 			}
 			for (const FPCGPreConfiguredSettingsInfo& Preset : Presets)
 			{
 				const FString Label = Preset.Label.ToString();
 				const FString PresetKeywords = Keywords + TEXT(" ") + Preset.SearchHints.ToString();
-				Entries.Add({Label, MakeSearchText(Label, PresetKeywords, Category), Class->GetName(), Package, Subtitle});
+				Entries.Add({Label, MakeSearchText(Label, PresetKeywords, Category), Class->GetName(), Package, Category, Subtitle});
 			}
 		}
 		return Entries;
@@ -172,6 +174,17 @@ bool FPCGUtilsPaletteSearchContractTest::RunTest(const FString&)
 		if (Entry.ClassName == TEXT("PCGSpawnGeometryCollectionComponentSettings"))
 		{
 			bFoundSpawnComponent = true;
+		}
+
+		if (Entry.Package == TEXT("/Script/PCGUtilsDynMesh") && !IsDynMeshFamilyExempt(Entry.ClassName))
+		{
+			TestTrue(*FString::Printf(TEXT("%s has a PCGUtils DynMesh menu category"), *Where),
+				Entry.Category.StartsWith(TEXT("PCGUtils|DynMesh")));
+		}
+		if (Entry.Package == TEXT("/Script/PCGUtilsFracture"))
+		{
+			TestTrue(*FString::Printf(TEXT("%s has a PCGUtils GC menu category"), *Where),
+				Entry.Category.StartsWith(TEXT("PCGUtils|GC")));
 		}
 
 		// "DynMesh" returns every DynMesh element.

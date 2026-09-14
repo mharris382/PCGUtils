@@ -4,6 +4,7 @@
 
 #include "CoreMinimal.h"
 #include "Elements/PCGDataFromActor.h"
+#include "PCGUtilsSettingsCategories.h"
 
 #include "PCGGetGeometryCollectionData.generated.h"
 
@@ -34,7 +35,11 @@ public:
 	virtual FName GetDefaultNodeName() const override { return TEXT("GetGCData"); }
 	virtual FText GetDefaultNodeTitle() const override;
 	virtual FText GetNodeTooltipText() const override;
-	virtual EPCGSettingsType GetType() const override { return EPCGSettingsType::DynamicMesh; }
+	virtual EPCGSettingsType GetType() const override
+	{
+		return PCGUtilsSettingsCategories::AsSettingsType(
+			PCGUtilsSettingsCategories::EValue::GeometryCollectionConversion);
+	}
 	virtual FLinearColor GetNodeTitleColor() const override;
 #endif
 

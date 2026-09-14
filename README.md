@@ -197,7 +197,7 @@ Builder support is opt-in per operation, and currently covers the families where
 
 | Supports Builders | Does not |
 |---|---|
-| Topology — Extrude, Inset, Bevel, Boolean, Delete Selection, Remesh | Painter consumers (Builder integration is deferred by design) |
+| Topology — Extrude, Inset, Bevel, Boolean, Delete Selection, Remesh, Simplify, Merge by Distance | Painter consumers (Builder integration is deferred by design) |
 | Deform — Smooth, Warp, Transform, Deform Along Spline | Conversion and query nodes |
 | Attributes — Set Material, Set Vertex Colors, Set/Clear PolyGroup, Project UVs | Write DynMesh LODs |
 
@@ -229,7 +229,8 @@ Component geometry from actors in the level).
 **Topology** — `DynMesh Boolean` (full Geometry Script boolean set, N:N / N:1 / 1:N broadcasting, sequential
 operands, optional per-operand PolyGroup tagging, and a mode that splits the result into separate A-derived and
 B-derived outputs), `Extrude DynMesh Faces`, `Inset DynMesh Faces`, `Bevel DynMesh Edges`, `Delete DynMesh
-Selection`, `Separate DynMesh Selection`, `Remesh DynMesh` (uniform and adaptive).
+Selection`, `Separate DynMesh Selection`, `Remesh DynMesh` (uniform and adaptive), `Simplify DynMesh` (the full
+Geometry Script simplification library, including Planar), and `Merge by Distance`.
 
 **Deform** — `Smooth DynMesh`, `Warp DynMesh` (bend, twist, flare/squish), `Transform DynMesh`, `Deform DynMesh
 Along Spline`, `ToWorld` / `ToLocal`.
@@ -547,8 +548,9 @@ instance per element. A request with no overrides resolves to the parent asset d
    so this normally happens automatically.
 3. Regenerate project files and build. PCGUtils contains C++ modules, so the project must be a C++ project —
    a Blueprint-only project needs to be converted first.
-4. Restart the editor. PCGUtils nodes appear in the PCG graph palette under the Dynamic Mesh category and
-   PCGUtils' own categories.
+4. Restart the editor. DynMesh and GC nodes appear under `PCGUtils | DynMesh` and `PCGUtils | GC`, split into
+   functional subcategories such as Selection, Topology, Deform, Attributes, Creation, Fracture, Edit, and
+   Conversion.
 
 ---
 

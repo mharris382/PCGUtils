@@ -5,6 +5,7 @@
 #include "PCGContext.h"
 #include "PCGSettings.h"
 #include "Elements/PCGDynamicMeshBaseElement.h"
+#include "PCGUtilsSettingsCategories.h"
 
 #include "PCGDynMeshToPoints.generated.h"
 
@@ -20,6 +21,10 @@ class PCGUTILSDYNMESH_API UPCGDynMeshToPointsSettings : public UPCGDynamicMeshBa
 
 public:
 #if WITH_EDITOR
+	virtual EPCGSettingsType GetType() const override
+	{
+		return PCGUtilsSettingsCategories::AsSettingsType(PCGUtilsSettingsCategories::EValue::DynMeshConversion);
+	}
 	virtual FLinearColor GetNodeTitleColor() const override { return FLinearColor(0.413f, 0.25f ,1.0f, 1.0f);	}
 	virtual bool ShouldDrawNodeCompact() const override { return true; }
 	virtual bool GetCompactNodeIcon(FName& OutCompactNodeIcon) const override

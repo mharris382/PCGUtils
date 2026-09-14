@@ -13,8 +13,9 @@
 // Settings
 // ─────────────────────────────────────────────────────────────────────────────
 
-UCLASS(BlueprintType, ClassGroup = (Procedural), Category="PCGUtils|Dynamic Mesh")
-class PCGUTILS_API UPCGMergeByDistanceSettings : public UPCGDynamicMeshBaseSettings
+UCLASS(BlueprintType, ClassGroup = (Procedural), Category="PCGUtils|Dynamic Mesh", Deprecated,
+	meta=(DeprecationMessage="Use DynMesh | Merge by Distance from PCGUtilsDynMesh."))
+class PCGUTILS_API UDEPRECATED_PCGMergeByDistanceSettings : public UPCGDynamicMeshBaseSettings
 {
 	GENERATED_BODY()
 
@@ -78,11 +79,12 @@ struct FVertexUnionFind
 	void  Union(int32 A, int32 B);
 };
 
-int32 GeomUtil_MergeByDistance(
+PCGUTILS_API int32 GeomUtil_MergeByDistance(
 	UE::Geometry::FDynamicMesh3& Mesh,
 	float MergeDistance,
 	bool  bAveragePos,
-	bool  bAverageColors);
+	bool  bAverageColors,
+	const TSet<int32>* CandidateVertexIDs = nullptr);
 
 
 // ─────────────────────────────────────────────────────────────────────────────

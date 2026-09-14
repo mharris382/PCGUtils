@@ -31,6 +31,14 @@ class PCGUTILSDYNMESH_API UPCGDynamicMeshSelectionFilterBaseSettings : public UP
 {
 	GENERATED_BODY()
 
+public:
+#if WITH_EDITOR
+	virtual EPCGSettingsType GetType() const override
+	{
+		return PCGUtilsSettingsCategories::AsSettingsType(PCGUtilsSettingsCategories::EValue::DynMeshSelection);
+	}
+#endif
+
 protected:
 	virtual TArray<FPCGPinProperties> InputPinProperties() const override;
 	virtual TArray<FPCGPinProperties> OutputPinProperties() const override;

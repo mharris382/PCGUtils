@@ -4,6 +4,7 @@
 
 #include "CoreMinimal.h"
 #include "PCGSettings.h"
+#include "PCGUtilsSettingsCategories.h"
 
 #include "PCGUtilsFractureElementBase.generated.h"
 
@@ -12,10 +13,9 @@ class UPCGUtilsGeometryCollectionFactoryData;
 /**
  * Shared settings base for every PCGUtilsFracture node.
  *
- * Its whole job is `GetType()`. A UPCGSettings subclass that forgets to override it silently lands in the
- * `Generic` palette bucket - nothing fails to compile, so the mistake is easy to miss. Deriving every element in
- * this module from here makes that impossible. `EPCGSettingsType::DynamicMesh` is the closest available bucket;
- * there is no GeometryCollection value in the engine enum.
+ * Its main job is `GetType()`. PCGUtilsCore registers real GC categories in EPCGSettingsType at startup, and
+ * this base maps each concrete class from its module-relative source folder. Deriving every element in this
+ * module from here prevents nodes from silently falling into Generic or the engine's Dynamic Mesh bucket.
  */
 UCLASS(Abstract, BlueprintType, ClassGroup=(Procedural), Category="PCGUtils|Fracture")
 class PCGUTILSFRACTURE_API UPCGUtilsFractureElementBaseSettings : public UPCGSettings
@@ -24,7 +24,10 @@ class PCGUTILSFRACTURE_API UPCGUtilsFractureElementBaseSettings : public UPCGSet
 
 public:
 #if WITH_EDITOR
-	virtual EPCGSettingsType GetType() const override { return EPCGSettingsType::DynamicMesh; }
+	virtual EPCGSettingsType GetType() const override
+	{
+		return PCGUtilsSettingsCategories::GeometryCollectionCategoryForClass(GetClass());
+	}
 	virtual FLinearColor GetNodeTitleColor() const override;
 #endif
 };

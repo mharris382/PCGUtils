@@ -18,6 +18,7 @@
 
 #define LOCTEXT_NAMESPACE "PCGUtilsDynMeshProcessBase"
 
+#if WITH_EDITOR
 void UPCGUtilsDynMeshProcessBaseSettings::ApplyDeprecationBeforeUpdatePins(
 	UPCGNode* InOutNode, TArray<TObjectPtr<UPCGPin>>& InputPins,
 	TArray<TObjectPtr<UPCGPin>>& OutputPins)
@@ -28,6 +29,7 @@ void UPCGUtilsDynMeshProcessBaseSettings::ApplyDeprecationBeforeUpdatePins(
 		InOutNode->RenameInputPin(TEXT("Selection Factory"), PCGUtilsDynMeshProcessConstants::SelectionFactoryInputPin);
 	}
 }
+#endif
 
 namespace
 {

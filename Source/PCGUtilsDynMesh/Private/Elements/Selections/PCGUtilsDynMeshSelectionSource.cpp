@@ -110,6 +110,7 @@ const FPCGDataTypeBaseId& UPCGUtilsDynMeshSelectionSourceSettings::GetFactoryTyp
 	return FPCGUtilsDynMeshSelectionFactoryDataTypeInfo::AsId();
 }
 
+#if WITH_EDITOR
 void UPCGUtilsDynMeshSelectionSourceSettings::ApplyDeprecationBeforeUpdatePins(
 	UPCGNode* InOutNode, TArray<TObjectPtr<UPCGPin>>& InputPins,
 	TArray<TObjectPtr<UPCGPin>>& OutputPins)
@@ -123,6 +124,7 @@ void UPCGUtilsDynMeshSelectionSourceSettings::ApplyDeprecationBeforeUpdatePins(
 		InOutNode->RenameOutputPin(TEXT("Selection Factory"), PCGUtilsDynMeshSelectionFactoryConstants::OutputPin);
 	}
 }
+#endif
 
 TArray<FPCGPinProperties> UPCGUtilsDynMeshSelectionSourceSettings::InputPinProperties() const
 {

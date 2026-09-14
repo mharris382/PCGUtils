@@ -113,6 +113,7 @@ void UPCGUtilsDynMeshTopologyProcessBaseSettings::AddProcessOperationToCrc(FArch
 	}
 }
 
+#if WITH_EDITOR
 void UPCGUtilsDynMeshTopologyProcessBaseSettings::ApplyDeprecationBeforeUpdatePins(
 	UPCGNode* InOutNode, TArray<TObjectPtr<UPCGPin>>& InputPins,
 	TArray<TObjectPtr<UPCGPin>>& OutputPins)
@@ -125,6 +126,7 @@ void UPCGUtilsDynMeshTopologyProcessBaseSettings::ApplyDeprecationBeforeUpdatePi
 			PCGUtilsDynMeshTopologyProcessConstants::ResultSelectorPin);
 	}
 }
+#endif
 
 TArray<FPCGPinProperties> UPCGUtilsDynMeshTopologyProcessBaseSettings::OutputPinProperties() const
 {

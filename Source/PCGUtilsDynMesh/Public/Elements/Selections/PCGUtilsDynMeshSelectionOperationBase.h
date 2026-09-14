@@ -61,9 +61,11 @@ protected:
 		int32 SelectionIndex, EPCGUtilsDynMeshSelectionOperationMode& OutMode);
 #endif
 
+#if WITH_EDITOR
 	virtual void ApplyDeprecationBeforeUpdatePins(
 		UPCGNode* InOutNode, TArray<TObjectPtr<UPCGPin>>& InputPins,
 		TArray<TObjectPtr<UPCGPin>>& OutputPins) override;
+#endif
 	virtual const FPCGDataTypeBaseId& GetFactoryTypeId() const override;
 	virtual TArray<FPCGPinProperties> InputPinProperties() const override;
 	virtual TArray<FPCGPinProperties> OutputPinProperties() const override;

@@ -58,6 +58,12 @@ namespace PCGUtilsFractureSelectorTests
 		UPCGGeometryCollectionSelectionLogicSettings* Settings =
 			NewObject<UPCGGeometryCollectionSelectionLogicSettings>();
 		Settings->Mode = Mode;
+		if (Mode == EPCGGeometryCollectionSelectionLogicMode::Or)
+		{
+			return FirstOutput<UPCGUtilsGeometryCollectionSelectionFactoryData>(Run(Settings, {
+				{PCGUtilsGeometryCollectionSelectionFactoryConstants::SelectionInputPin, A},
+				{PCGUtilsGeometryCollectionSelectionFactoryConstants::SelectionInputPin, B}}));
+		}
 		return FirstOutput<UPCGUtilsGeometryCollectionSelectionFactoryData>(Run(Settings, {
 			{PCGGeometryCollectionSelectionLogicConstants::SelectionAInputPin, A},
 			{PCGGeometryCollectionSelectionLogicConstants::SelectionBInputPin, B}}));
@@ -129,6 +135,9 @@ bool FPCGUtilsFractureSelectBonesTest::RunTest(const FString&)
 		Resolve(SelectBones(EPCGGeometryCollectionBoneSelectionMode::All), Fractured).Num(), NumTransforms);
 	TestEqual(TEXT("None selects nothing"),
 		Resolve(SelectBones(EPCGGeometryCollectionBoneSelectionMode::None), Fractured).Num(), 0);
+	const UPCGGeometryCollectionData* EmptyPrune =
+		Prune(Fractured, SelectBones(EPCGGeometryCollectionBoneSelectionMode::None));
+	TestTrue(TEXT("Prune with no selected bones passes the original GC through"), EmptyPrune == Fractured);
 	TestEqual(TEXT("Pieces matches the module's own piece count"),
 		Resolve(SelectBones(EPCGGeometryCollectionBoneSelectionMode::Pieces), Fractured).Num(), NumPieces);
 	{
@@ -494,6 +503,23 @@ bool FPCGUtilsFractureSelectionLogicTest::RunTest(const FString&)
 	const TArray<int32> ClusterBones = Resolve(Clusters, Fractured);
 
 	using EMode = EPCGGeometryCollectionSelectionLogicMode;
+	{
+		auto* OrSettings = NewObject<UPCGGeometryCollectionSelectionLogicSettings>();
+		OrSettings->Mode = EMode::Or;
+#if WITH_EDITOR
+		TestEqual(TEXT("OR compact title is only the operation"),
+			OrSettings->GetDefaultNodeTitle().ToString(), FString(TEXT("OR")));
+#endif
+		const TArray<FPCGPinProperties> OrPins =
+			static_cast<UPCGSettings*>(OrSettings)->InputPinProperties();
+		TestEqual(TEXT("OR exposes one multi-input pin"), OrPins.Num(), 1);
+		if (OrPins.Num() == 1)
+		{
+			TestEqual(TEXT("OR pin is named Selection"), OrPins[0].Label,
+				PCGUtilsGeometryCollectionSelectionFactoryConstants::SelectionInputPin);
+			TestTrue(TEXT("OR accepts multiple connections"), OrPins[0].AllowsMultipleConnections());
+		}
+	}
 
 	TestEqual(TEXT("Pieces AND All is the pieces"),
 		Resolve(Logic(Pieces, All, EMode::And), Fractured), PieceBones);

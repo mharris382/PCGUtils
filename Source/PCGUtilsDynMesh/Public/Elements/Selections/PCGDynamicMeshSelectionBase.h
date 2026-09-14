@@ -3,6 +3,7 @@
 #include "CoreMinimal.h"
 #include "GeometryScript/GeometryScriptSelectionTypes.h"
 #include "Elements/PCGDynamicMeshBaseElement.h"
+#include "PCGUtilsSettingsCategories.h"
 #include "Selections/GeometrySelection.h"
 
 #include "PCGDynamicMeshSelectionBase.generated.h"
@@ -48,6 +49,14 @@ UCLASS(Abstract, BlueprintType, ClassGroup=(Procedural), Category="PCGUtils|DynM
 class PCGUTILSDYNMESH_API UPCGDynamicMeshSelectionBaseSettings : public UPCGDynamicMeshBaseSettings
 {
 	GENERATED_BODY()
+
+public:
+#if WITH_EDITOR
+	virtual EPCGSettingsType GetType() const override
+	{
+		return PCGUtilsSettingsCategories::AsSettingsType(PCGUtilsSettingsCategories::EValue::DynMeshSelection);
+	}
+#endif
 
 protected:
 	virtual TArray<FPCGPinProperties> InputPinProperties() const override;

@@ -105,9 +105,10 @@ bool FPCGPruneGeometryCollectionElement::ExecuteInternal(FPCGContext* Context) c
 
 		if (!Selection.AnySelected())
 		{
-			PCGLog::LogWarningOnGraph(
-				LOCTEXT("EmptySelection", "Prune GC's Selection resolved to zero bones; nothing was removed."),
-				Context);
+			// An empty, valid selection is a successful no-op. Preserve object identity and revision so downstream
+			// selection data remains tied to exactly the state it was authored against.
+			FPCGTaggedData& Output = Context->OutputData.TaggedData.Emplace_GetRef(Input);
+			Output.Pin = PCGPruneGeometryCollectionConstants::CollectionOutputPin;
 			continue;
 		}
 

@@ -6,6 +6,7 @@
 #include "Elements/Attributes/PCGSetVertexColor.h"
 #include "Factories/PCGUtilsDynMeshFactoryData.h"
 #include "Factories/PCGUtilsDynMeshFactoryProvider.h"
+#include "PCGUtilsSettingsCategories.h"
 
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(FPCGUtilsCoreModuleContractTest,
 	"PCGUtils.DynMesh.Core.ModuleContract",
@@ -25,7 +26,8 @@ bool FPCGUtilsCoreModuleContractTest::RunTest(const FString&)
 	TestEqual(TEXT("Vertex color title is explicit"), Color->GetDefaultNodeTitle().ToString(), FString(TEXT("DynMesh | Set Vertex Colors")));
 	for (const UPCGSettings* Settings : { static_cast<const UPCGSettings*>(Material), static_cast<const UPCGSettings*>(Color) })
 	{
-		TestEqual(TEXT("Processor stays in the mesh palette"), Settings->GetType(), EPCGSettingsType::DynamicMesh);
+		TestEqual(TEXT("Processor uses the DynMesh Attributes subcategory"), Settings->GetType(),
+			PCGUtilsSettingsCategories::AsSettingsType(PCGUtilsSettingsCategories::EValue::DynMeshAttributes));
 		TestTrue(TEXT("Selection search finds the processor"), Settings->GetClass()->GetMetaData(TEXT("Keywords")).Contains(TEXT("selection")));
 	}
 	return true;
