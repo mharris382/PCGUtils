@@ -58,6 +58,12 @@ public:
 	virtual FText GetDefaultNodeTitle() const override;
 	virtual FText GetNodeTooltipText() const override;
 	virtual FString GetAdditionalTitleInformation() const override;
+	virtual bool ShouldDrawNodeCompact() const override { return true; }
+	virtual bool GetCompactNodeIcon(FName& OutCompactNodeIcon) const override
+	{
+		OutCompactNodeIcon = PCGNodeConstants::Icons::CompactNodeConvert;
+		return true;
+	}
 #endif
 
 	/** Integer point attribute holding Geometry Collection bone indices, as written by GC Bones To Points. */
