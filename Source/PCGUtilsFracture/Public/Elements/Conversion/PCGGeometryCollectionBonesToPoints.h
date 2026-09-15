@@ -34,6 +34,12 @@ public:
 	virtual FName GetDefaultNodeName() const override { return TEXT("GCBonesToPoints"); }
 	virtual FText GetDefaultNodeTitle() const override;
 	virtual FText GetNodeTooltipText() const override;
+	virtual bool ShouldDrawNodeCompact() const override { return true; }
+	virtual bool GetCompactNodeIcon(FName& OutCompactNodeIcon) const override
+	{
+		OutCompactNodeIcon = PCGNodeConstants::Icons::CompactNodeConvert;
+		return true;
+	}
 #endif
 
 	/**
@@ -70,6 +76,22 @@ public:
 	/** Identifies the exact collection state; this is what makes a stale selection detectable. */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Attributes|Identity", meta=(PCG_Overridable))
 	FName SourceStateIdAttributeName = PCGUtilsGeometryCollectionIdentity::SourceStateIdAttribute;
+
+	/**
+	 * A per-bone id that survives reindexing, so a point can still name its bone after the collection has been
+	 * fractured or pruned again.
+	 *
+	 * Bone Index answers "which bone in this exact state" and is rejected the moment the state changes, which
+	 * is the right behaviour for a selection. This answers the different question "is this the same bone as
+	 * before". Off by default: only enable it if something downstream follows bones across revisions.
+	 */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Attributes|Identity", AdvancedDisplay,
+		meta=(PCG_Overridable))
+	bool bOutputBoneId = false;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Attributes|Identity", AdvancedDisplay,
+		meta=(PCG_Overridable, EditCondition="bOutputBoneId", EditConditionHides))
+	FName BoneIdAttributeName = PCGUtilsGeometryCollectionIdentity::BoneIdPointAttribute;
 
 	// --- Hierarchy ------------------------------------------------------------------------------------
 

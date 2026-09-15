@@ -196,6 +196,32 @@ placement remains a separable fact. Every spatial consumer here resolves bone tr
 `ComputeGlobalTransforms` (`ComputeCollectionBounds` and `GC | To DynMesh` both do), which is what makes a
 non-identity root correct rather than merely tolerated. Do not add code that assumes identity bone transforms.
 
+### Writing bone transforms goes through `PCGUtilsGeometryCollectionTransforms`
+
+Reading a bone's position is `ComputeGlobalTransforms`; *writing* one is that library, and nothing else should
+touch `Collection.Transform[]` directly. Three reasons, all found by assertion:
+
+- **The parent has to be divided out.** `Local' = DesiredGlobal * Global(Parent)^-1`. Epic's
+  `FCollectionTransformFacade::Transform` does `Transforms[Idx] = Transforms[Idx] * T` instead, which composes
+  in *parent* space - correct only where the parent is at identity, which is exactly why it looks right on a
+  freshly authored collection and goes wrong under a second fracture level or a `PlaceCollection`-ed root. It
+  also applies one shared transform, not one per bone. Do not reach for it.
+- **Storage is `FTransform3f`.** Compose in double, narrow once at the write, as `PlaceCollection` does.
+- **Nested targets are ambiguous.** Writing a bone moves its whole subtree, so a request naming both a cluster
+  and a piece inside it means two different things. `EPCGGeometryCollectionNestedBoneHandling` makes the caller
+  say which; `ReduceToAntichain` is the shared implementation of the default.
+
+**The point pivot is one shared function.** `GC | Bones To Points` places a point at the piece's *bounds
+centre*, not the bone origin, so `GC | Transform Bones` cannot read an incoming transform as a bone transform -
+it reconstructs the same reference through `ComputeBonePointTransform` and applies only the difference. Both
+nodes call that one function precisely so the convention cannot drift; changing the pivot in one place would
+otherwise offset every piece by its own bounds centre, and still look plausible.
+`PCGUtils.Fracture.TransformBones.IdentityRoundTrip` is what catches it.
+
+A transform-only mutation reports `bTransformsChanged` alone. Geometry, bounds, hulls and the piece mesh cache
+are all bone-local and survive untouched; `Proximity` is the one derived thing that does not, because which
+pieces touch is a fact about their placement.
+
 Stored bone transforms are **parent-relative**. Anything spatial must go through
 `PCGUtilsGCHelpers::ComputeGlobalTransforms` (`GeometryCollectionAlgo::GlobalMatrices`).
 

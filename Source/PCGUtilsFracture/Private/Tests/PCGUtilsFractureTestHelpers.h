@@ -10,6 +10,7 @@
 #include "Data/PCGDynamicMeshData.h"
 #include "Data/PCGUtilsClusterInterop.h"
 #include "Data/PCGGeometryCollectionData.h"
+#include "Data/PCGUtilsGeometryCollectionRevisionPublisher.h"
 #include "Data/PCGPointArrayData.h"
 #include "DynamicMesh/DynamicMesh3.h"
 #include "DynamicMesh/DynamicMeshAttributeSet.h"
@@ -17,6 +18,7 @@
 #include "Elements/Conversion/PCGGeometryCollectionBonesToPoints.h"
 #include "Elements/Conversion/PCGGeometryCollectionToDynMesh.h"
 #include "Elements/Edit/PCGPruneGeometryCollection.h"
+#include "Elements/Edit/PCGGeometryCollectionTransformBones.h"
 #include "Elements/Fracture/PCGFractureGeometryCollection.h"
 #include "Elements/Fracture/PCGUniformVoronoiFracture.h"
 #include "Elements/Fracture/PCGVoronoiFracture.h"
@@ -271,6 +273,83 @@ namespace PCGUtilsFractureTests
 		return FirstOutput<UPCGGeometryCollectionData>(Run(Settings, {
 			{PCGPruneGeometryCollectionConstants::CollectionInputPin, Collection},
 			{PCGUtilsGeometryCollectionSelectionFactoryConstants::SelectionInputPin, Selection}}));
+	}
+
+	/**
+	 * Applies bone points back onto a collection.
+	 *
+	 * Local space by default, matching BonesToPoints above: an automation context has no PCG target actor, so
+	 * both sides must agree to skip the world-space conversion or the round trip is not testing what it claims.
+	 */
+	inline const UPCGGeometryCollectionData* TransformBones(
+		const UPCGGeometryCollectionData* Collection,
+		const UPCGBasePointData* Points,
+		TFunctionRef<void(UPCGGeometryCollectionTransformBonesSettings&)> Configure)
+	{
+		UPCGGeometryCollectionTransformBonesSettings* Settings =
+			NewObject<UPCGGeometryCollectionTransformBonesSettings>();
+		Settings->bPointsAreWorldSpace = false;
+		Configure(*Settings);
+		return FirstOutput<UPCGGeometryCollectionData>(Run(Settings, {
+			{PCGGeometryCollectionTransformBonesConstants::CollectionInputPin, Collection},
+			{PCGGeometryCollectionTransformBonesConstants::PointsInputPin, Points}}));
+	}
+
+	inline const UPCGGeometryCollectionData* TransformBones(
+		const UPCGGeometryCollectionData* Collection, const UPCGBasePointData* Points)
+	{
+		return TransformBones(Collection, Points, [](UPCGGeometryCollectionTransformBonesSettings&) {});
+	}
+
+	/** Offsets every point's translation, standing in for whatever point processing a real graph would do. */
+	inline UPCGPointArrayData* OffsetPoints(const UPCGBasePointData* Points, const FVector& Offset)
+	{
+		UPCGPointArrayData* Moved = NewObject<UPCGPointArrayData>();
+		FPCGInitializeFromDataParams InitializeParams(Points);
+		InitializeParams.bInheritSpatialData = false;
+		Moved->InitializeFromDataWithParams(InitializeParams);
+
+		TArray<int32> AllIndices;
+		AllIndices.Reserve(Points->GetNumPoints());
+		for (int32 Index = 0; Index < Points->GetNumPoints(); ++Index)
+		{
+			AllIndices.Add(Index);
+		}
+		Moved->SetPointsFrom(Points, AllIndices);
+
+		auto Transforms = Moved->GetTransformValueRange();
+		for (int32 Index = 0; Index < Transforms.Num(); ++Index)
+		{
+			Transforms[Index].AddToTranslation(Offset);
+		}
+		return Moved;
+	}
+
+	/**
+	 * Republishes a collection with an extra placement composed onto its root bones.
+	 *
+	 * This is how a collection read from a placed component or imported from an asset arrives, and it is the
+	 * case a parent-space transform implementation gets wrong - so anything claiming to handle non-identity
+	 * roots has to be tested against one.
+	 */
+	inline const UPCGGeometryCollectionData* PlacedCollection(
+		const UPCGGeometryCollectionData* Collection, const FTransform& Placement)
+	{
+		TSharedRef<FGeometryCollection> Copy = Collection->CreateMutableCopy();
+		PCGUtilsGeometryCollectionHelpers::PlaceCollection(*Copy, Placement);
+
+		FPCGUtilsGeometryCollectionMutationResult Mutation;
+		Mutation.bTransformsChanged = true;
+		return PCGUtilsGeometryCollectionRevisionPublisher::PublishRevision(
+			/*Context=*/nullptr, Collection, Copy, Mutation);
+	}
+
+	/** The collection-space global transforms of a published collection. */
+	inline TArray<FTransform> GlobalTransforms(const UPCGGeometryCollectionData* Collection)
+	{
+		TArray<FTransform> Out;
+		PCGUtilsGeometryCollectionHelpers::ComputeGlobalTransforms(Collection->GetCollection(), Out);
+		return Out;
 	}
 
 	inline const UPCGDynamicMeshData* ToDynMesh(const UPCGGeometryCollectionData* Collection)

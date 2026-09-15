@@ -139,19 +139,27 @@ namespace PCGUtilsGeometryCollectionRevisionPublisher
 		if (bGeometryOrStructure || NumGeometryRemoved > 0)
 		{
 			// Bounds are per-geometry and derived from the vertices, so they go stale whenever geometry does.
+			// Note they are measured in the bone's own local space, from the untransformed Vertex array, so a
+			// mutation that only moved bones leaves them correct and is deliberately not in this branch.
 			InOutCollection.UpdateBoundingBox();
 
 			// Sections are derived from face MaterialIDs and index into the face range; leaving them stale
 			// misrenders on any later conversion.
 			InOutCollection.ReindexMaterials();
+		}
 
-			// Proximity is geometry-indexed and expensive to keep honest. The engine's own mutators
-			// (DeleteBranch, Merge) drop it rather than repair it, and this module always recomputes through
-			// the const ComputePreciseProximity overload, so nothing reads a cached one.
-			if (InOutCollection.HasAttribute(TEXT("Proximity"), FGeometryCollection::GeometryGroup))
-			{
-				InOutCollection.RemoveAttribute(TEXT("Proximity"), FGeometryCollection::GeometryGroup);
-			}
+		// Proximity is geometry-indexed and expensive to keep honest. The engine's own mutators (DeleteBranch,
+		// Merge) drop it rather than repair it, and this module always recomputes through the const
+		// ComputePreciseProximity overload, so nothing reads a cached one.
+		//
+		// Moving a bone counts. Proximity is which pieces *touch*, which is a fact about their geometry in
+		// collection space - so it goes stale when a bone's transform changes even though no vertex moved. This
+		// is the one normalisation step a transform-only mutation needs, and leaving it out of the branch above
+		// is the whole reason bTransformsChanged is read here at all.
+		if ((bGeometryOrStructure || NumGeometryRemoved > 0 || InMutation.bTransformsChanged)
+			&& InOutCollection.HasAttribute(TEXT("Proximity"), FGeometryCollection::GeometryGroup))
+		{
+			InOutCollection.RemoveAttribute(TEXT("Proximity"), FGeometryCollection::GeometryGroup);
 		}
 
 		// Bones that already carry an id keep it, which is what lets derived data follow a bone across

@@ -288,7 +288,8 @@ bool FPCGUtilsPaletteSearchContractTest::RunTest(const FString&)
 	TestTrue(TEXT("Realize Builders is exposed"), bFoundRealizeBuilders);
 	TestTrue(TEXT("GC | Spawn Component is checked"), bFoundSpawnComponent);
 	TestEqual(TEXT("Primitive Builders and both placement decorators are present"), BuilderCount, 13);
-	for (const FString& Title : {FString(TEXT("Builder | Refit")), FString(TEXT("Builder | Retarget"))})
+	for (const FString& Title : {FString(TEXT("Builder | Refit")), FString(TEXT("Builder | Retarget")),
+		FString(TEXT("GC | Transform Bones"))})
 	{
 		TestTrue(*FString::Printf(TEXT("%s is exposed"), *Title), Entries.ContainsByPredicate([&Title](const FEntry& Entry) { return Entry.Label == Title; }));
 	}

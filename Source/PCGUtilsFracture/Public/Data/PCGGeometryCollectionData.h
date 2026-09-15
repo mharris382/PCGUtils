@@ -177,6 +177,14 @@ namespace PCGUtilsGeometryCollectionIdentity
 	inline const FName GeometryIndexAttribute = TEXT("GC_GeometryIndex");
 	inline const FName BoundsVolumeAttribute = TEXT("GC_BoundsVolume");
 
+	/**
+	 * The point-side name for BoneIdAttribute, folded to int64 the same way the source ids are.
+	 *
+	 * Deliberately a different name from the collection-side attribute: this one is user-facing and follows the
+	 * GC_ convention, while PCGUtils_BoneId is internal to the collection.
+	 */
+	inline const FName BoneIdPointAttribute = TEXT("GC_BoneId");
+
 	// Surface breakdown. The collection tracks an Internal flag per face, so a bone's surface can be split
 	// into what it inherited from the source mesh and what a fracture cut created.
 	inline const FName IsExteriorAttribute = TEXT("GC_IsExterior");
