@@ -275,6 +275,26 @@ only becomes interesting after the first cut.
 > `GC_BoundsVolume` is bounding-box volume, not true mesh volume. The collection's real `Volume` attribute
 > requires convex-hull generation, which is far too heavy for a points node.
 
+The conversion itself lives in `PCGUtilsGeometryCollectionBonePoints`, not in this node: the placement rules
+and the attribute set are shared so that anything reasoning about bones as points produces *the same* points.
+That is what lets a filter written against this node's output mean the same thing when a bone is tested
+without ever being emitted - see `GC | Select | By Filter` below.
+
+### 6c. `GC | Select | By Filter` (sibling plugin)
+
+`PCGUtilsPCGExInterop` ships one node that collapses the whole round trip below into a single wire:
+`GC | Select | By Filter` takes PCGEx point filters in and hands back a `Selection`. It runs the same
+bone-to-points conversion internally, tests each bone against the filter stack, and discards the points - the
+collection is never converted and no bone index ever leaves the node.
+
+Use it when the filtering is all this module needs from PCG. Keep the explicit three-node flow when the points
+themselves are wanted downstream - to spawn something at each piece, to feed PCGEx cluster nodes, or to pass
+through anything that is not a filter.
+
+Enable on that node whichever `GC_` attributes the filters read; point properties (`$Position`, `$Bounds`,
+`$Rotation`, `$Scale`, `$Density`, `$Color`) are always available. It lives in the sibling plugin because it
+needs a PCGEx dependency, and `PCGUtilsFracture` must not have one.
+
 ### 6b. Random damage, safely
 
 The surface attributes exist to make this workflow correct. Pruning a *buried* piece is doubly wrong: nothing

@@ -5,6 +5,7 @@
 #include "CoreMinimal.h"
 #include "Data/PCGGeometryCollectionData.h"
 #include "Elements/PCGUtilsFractureElementBase.h"
+#include "FunctionLibraries/PCGUtilsGeometryCollectionBonePoints.h"
 
 #include "PCGGeometryCollectionBonesToPoints.generated.h"
 
@@ -231,6 +232,16 @@ public:
 		return bOutputIsExterior || bOutputExposureRatio || bOutputExteriorArea
 			|| bOutputInteriorArea || bOutputExteriorFaceCount || bOutputInteriorFaceCount;
 	}
+
+	/**
+	 * This node's flat properties as the shared conversion's options.
+	 *
+	 * The properties stay flat here because they are what existing graphs and property overrides address;
+	 * the struct is the shape the conversion itself takes, so nodes that convert bones to points internally
+	 * (such as the PCGEx filter interop selector) can expose exactly the same set without this node's
+	 * pin/space/cluster concerns.
+	 */
+	FPCGUtilsGeometryCollectionBonePointAttributes GetBonePointAttributes() const;
 
 protected:
 	virtual TArray<FPCGPinProperties> InputPinProperties() const override;
