@@ -5,6 +5,7 @@
 #include "Data/PCGPointArrayData.h"
 #include "FunctionLibraries/PCGUtilsGeometryCollectionHelpers.h"
 #include "FunctionLibraries/PCGUtilsGeometryCollectionHierarchy.h"
+#include "FunctionLibraries/PCGUtilsGeometryCollectionTransforms.h"
 #include "GeometryCollection/GeometryCollection.h"
 #include "Metadata/PCGMetadata.h"
 #include "PCGContext.h"
@@ -27,6 +28,7 @@ namespace
 		FPCGMetadataAttribute<int64>* SourceId = nullptr;
 		FPCGMetadataAttribute<int32>* SourceRevision = nullptr;
 		FPCGMetadataAttribute<int64>* SourceStateId = nullptr;
+		FPCGMetadataAttribute<int64>* BoneId = nullptr;
 
 		FPCGMetadataAttribute<int32>* ParentIndex = nullptr;
 		FPCGMetadataAttribute<int32>* HierarchyLevel = nullptr;
@@ -75,6 +77,7 @@ namespace
 			Make(SourceRevision, true, Options.SourceRevisionAttributeName, int32(INDEX_NONE),
 				TEXT("Source Revision"));
 			Make(SourceStateId, true, Options.SourceStateIdAttributeName, int64(0), TEXT("Source State Id"));
+			Make(BoneId, Options.bOutputBoneId, Options.BoneIdAttributeName, int64(0), TEXT("Bone Id"));
 
 			Make(ParentIndex, Options.bOutputParentIndex, Options.ParentIndexAttributeName,
 				int32(INDEX_NONE), TEXT("Parent Index"));
@@ -163,19 +166,14 @@ UPCGPointArrayData* PCGUtilsGeometryCollectionBonePoints::Build(
 	for (int32 Index = 0; Index < InBones.Num(); ++Index)
 	{
 		const int32 BoneIndex = InBones[Index];
-		const FTransform BoneToCollection = GlobalTransforms.IsValidIndex(BoneIndex)
-			? GlobalTransforms[BoneIndex] : FTransform::Identity;
 		const FBox LocalBounds = PCGUtilsGeometryCollectionHelpers::GetBoneLocalBounds(Collection, BoneIndex);
-
 		const FVector LocalCenter = LocalBounds.IsValid ? LocalBounds.GetCenter() : FVector::ZeroVector;
-		const FTransform BoneToOutput = BoneToCollection * InLocalToWorld;
 
-		// Keep the bone's orientation and scale: the point should represent the piece, not just mark
-		// where it is. Only the translation moves to the piece's centre.
-		Transforms[Index] = FTransform(
-			BoneToOutput.GetRotation(),
-			BoneToOutput.TransformPosition(LocalCenter),
-			BoneToOutput.GetScale3D());
+		// The pivot convention - piece centre, bone orientation and scale - lives in the transforms library
+		// rather than here, because GC | Transform Bones has to reconstruct exactly this transform to recover
+		// what the user changed about a point. Two implementations of it would be a silent per-piece offset.
+		Transforms[Index] = PCGUtilsGeometryCollectionTransforms::ComputeBonePointTransform(
+			Collection, BoneIndex, GlobalTransforms, InLocalToWorld);
 
 		// PCG point bounds are point-local, so they are the piece's own extents about that centre. This is
 		// what makes ordinary PCG bounds-overlap filtering meaningful against a fracture piece.
@@ -232,6 +230,15 @@ UPCGPointArrayData* PCGUtilsGeometryCollectionBonePoints::Build(
 		Writers.SourceId->SetValue(Entry, SourceId);
 		Writers.SourceRevision->SetValue(Entry, SourceRevision);
 		Writers.SourceStateId->SetValue(Entry, SourceStateId);
+
+		if (Writers.BoneId)
+		{
+			// Folded to int64 the same way the source ids are, because PCG metadata has no FGuid type. A bone
+			// with no id folds to 0, which is also the attribute default, so "no id" and "absent" agree.
+			const FGuid BoneGuid = PCGUtilsGeometryCollectionIdentity::GetBoneId(Collection, BoneIndex);
+			Writers.BoneId->SetValue(Entry, BoneGuid.IsValid()
+				? PCGUtilsGeometryCollectionIdentity::FoldGuid(BoneGuid) : int64(0));
+		}
 
 		if (Writers.ParentIndex)
 		{

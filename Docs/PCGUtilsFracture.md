@@ -56,6 +56,7 @@ subcategories. Titles retain the `GC | ` search prefix, so searching `GC` return
 | **Fracture \| Brick** | *(none)* | `Fracture` |
 | **Fracture \| Mesh** | `DynMesh`, `Points` (Static Mesh attribute) - either or both | `Fracture` |
 | **GC \| Bones To Points** | `GC` | `Points`, `Edges` (cluster mode) |
+| **GC \| Transform Bones** | `GC`, `Points`, `Selection` (optional) | `GC` |
 | **GC \| Select \| Bones From Points** | `Points` | `Selection` |
 | **GC \| Separate Selection** | `GC`, `Selection` | `Selected`, `Unselected` |
 | **GC \| Prune** | `GC`, `Selection` | `GC` |
@@ -386,6 +387,43 @@ The two PolyGroup layers from step 10 are the payoff, and both are readable by t
 
 So "assign a different material to the walls of the cavity I just carved" is a `Select by PolyGroup` +
 `Set Material` away, with no fracture-specific node involved.
+
+---
+
+## Moving bones: the points round trip
+
+`GC | Bones To Points` and `GC | Transform Bones` are the two halves of one round trip. Everything in between is
+ordinary PCG:
+
+```
+GC -> GC | Bones To Points -> [ move / rotate / randomise / filter the points ] -> GC | Transform Bones -> GC
+```
+
+Four things are worth knowing before using it.
+
+**Only the difference is applied.** A point does not sit at its bone's origin - it sits at the centre of the
+piece's bounds, carrying the bone's rotation and scale. So the node never treats the incoming transform as the
+bone's transform. It recomputes the transform that bone *would* emit right now and applies only the difference,
+which is why a round trip that changes nothing moves nothing.
+
+**Moving a cluster moves everything under it.** Bone transforms are stored relative to their parent, so writing
+a cluster's transform carries its whole subtree rigidly, with every internal relationship preserved exactly. If
+points name both a cluster and pieces inside it, **Nested Bone Handling** decides what that means: `Topmost`
+(the default) lets the cluster's move carry the pieces, `Independent` gives every bone exactly the transform its
+own point asked for, and `Error` refuses.
+
+**Bones with no point are not touched.** Filtering the points *is* the selection mechanism. The optional
+`Selection` pin narrows it further, for when it is easier to say which bones may move than to filter the points.
+
+**Scale is off by default.** A non-uniform scale on a bone with rotated children produces shear, which a
+transform cannot represent, so the result would quietly differ from what the points asked for. Safe on leaf
+pieces; think before enabling it on a cluster.
+
+Two points naming the same bone is a graph error by default, because the alternatives all silently discard one
+of the two transforms; **Duplicate Bone Handling** offers `First`, `Last` and `Average` for when the duplicate
+was deliberate.
+
+The operation changes no geometry, so the output keeps the converted piece meshes the input had already built.
 
 ---
 

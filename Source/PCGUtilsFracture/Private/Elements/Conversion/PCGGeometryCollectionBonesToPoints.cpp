@@ -232,6 +232,8 @@ UPCGGeometryCollectionBonesToPointsSettings::GetBonePointAttributes() const
 	Attributes.SourceIdAttributeName = SourceIdAttributeName;
 	Attributes.SourceRevisionAttributeName = SourceRevisionAttributeName;
 	Attributes.SourceStateIdAttributeName = SourceStateIdAttributeName;
+	Attributes.bOutputBoneId = bOutputBoneId;
+	Attributes.BoneIdAttributeName = BoneIdAttributeName;
 
 	Attributes.bOutputParentIndex = bOutputParentIndex;
 	Attributes.ParentIndexAttributeName = ParentIndexAttributeName;
