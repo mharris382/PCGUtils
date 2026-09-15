@@ -48,7 +48,7 @@ protected:
  * This base owns everything that is not primitive-specific: the Fitting block, the Builder output pin, and
  * assembling the leaf factory.
  */
-UCLASS(Abstract, BlueprintType, ClassGroup=(Procedural), Category="PCGUtils|DynMesh|Creation")
+UCLASS(Abstract, BlueprintType, ClassGroup=(Procedural), Category="PCGUtils|DynMesh|Creation", meta=(PCGExProxyInterface))
 class PCGUTILSDYNMESH_API UPCGPrimitiveBuilderProviderSettingsBase : public UPCGUtilsDynMeshFactoryProviderSettings
 {
 	GENERATED_BODY()
