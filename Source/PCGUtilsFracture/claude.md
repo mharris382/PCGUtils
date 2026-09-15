@@ -218,6 +218,27 @@ nodes call that one function precisely so the convention cannot drift; changing 
 otherwise offset every piece by its own bounds centre, and still look plausible.
 `PCGUtils.Fracture.TransformBones.IdentityRoundTrip` is what catches it.
 
+### Projection is three layers, and only the middle one knows about collections
+
+`GC | Project Bones` is deliberately not one algorithm. Keep the split:
+
+- **`PCGUtilsProjectionSolver`** (in `PCGUtilsDynMesh`) takes traced samples and returns a transform. No
+  collection, no PCG, no world. Its one rule is that a body rests at the **minimum** travel over its samples -
+  first contact stops it - which also handles a buried body, where the minimum is the deepest penetration and
+  lifting by it is what brings the body clear. Taking the maximum instead is the one sign error here that still
+  looks plausible in review; `PCGUtils.Projection.Solver.RestsOnFirstContact` exists to catch it.
+- **`IPCGUtilsProjectionEnvironment`** (in `PCGUtilsDynMesh`) is what gets traced: world collision, a Dynamic
+  Mesh, or an analytic plane. The plane is not only a test double - it is what lets settling behaviour be
+  asserted exactly, with no map and no physics scene, and it is why the whole feature is testable at all. Do not
+  inline a `UWorld::LineTrace` into the algorithm and lose that.
+- **`PCGUtilsGeometryCollectionSupportSampling`** is the only collection-aware layer, and produces the points to
+  trace. A bone's samples come from the **pieces beneath it**, each under its own global transform - never from
+  the bone's own geometry, which for a cluster is the hidden pre-fracture shape the publisher normally removes.
+
+Accuracy tiers differ *only* in which points get sampled; the solve is identical. That is what lets a new tier
+be added without touching the solver, and what would let a future coarse-to-fine pass re-run one bone at a finer
+tier. `FSolveResult::SupportSpread` is already populated as the fit-quality signal such a pass would branch on.
+
 A transform-only mutation reports `bTransformsChanged` alone. Geometry, bounds, hulls and the piece mesh cache
 are all bone-local and survive untouched; `Proximity` is the one derived thing that does not, because which
 pieces touch is a fact about their placement.

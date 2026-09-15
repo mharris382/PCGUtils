@@ -18,6 +18,7 @@
 #include "Elements/Conversion/PCGGeometryCollectionBonesToPoints.h"
 #include "Elements/Conversion/PCGGeometryCollectionToDynMesh.h"
 #include "Elements/Edit/PCGPruneGeometryCollection.h"
+#include "Elements/Edit/PCGGeometryCollectionProjectBones.h"
 #include "Elements/Edit/PCGGeometryCollectionTransformBones.h"
 #include "Elements/Fracture/PCGFractureGeometryCollection.h"
 #include "Elements/Fracture/PCGUniformVoronoiFracture.h"
@@ -95,6 +96,33 @@ namespace PCGUtilsFractureTests
 			}
 		}
 		return Points;
+	}
+
+	/**
+	 * A box tilted about Y, for testing projection against something that is not flat.
+	 *
+	 * Vertices are rotated in place rather than the mesh being given a transform, because the projection node
+	 * treats a Target mesh as already sharing the collection's space and applies no transform of its own.
+	 */
+	inline UPCGDynamicMeshData* TiltedBox(double Size, const FVector& Center, double PitchDegrees)
+	{
+		UE::Geometry::FGridBoxMeshGenerator Generator;
+		Generator.Box = UE::Geometry::FOrientedBox3d(FVector3d::Zero(), FVector3d(Size * 0.5));
+		Generator.EdgeVertices = UE::Geometry::FIndex3i(1, 1, 1);
+		Generator.Generate();
+
+		UE::Geometry::FDynamicMesh3 GeneratedMesh(&Generator);
+		const FQuat Rotation(FRotator(PitchDegrees, 0.0, 0.0));
+		for (const int32 VertexID : GeneratedMesh.VertexIndicesItr())
+		{
+			GeneratedMesh.SetVertex(VertexID, Rotation.RotateVector(GeneratedMesh.GetVertex(VertexID)) + Center);
+		}
+		GeneratedMesh.EnableAttributes();
+		GeneratedMesh.Attributes()->EnableMaterialID();
+
+		UPCGDynamicMeshData* Data = NewObject<UPCGDynamicMeshData>();
+		Data->Initialize(MoveTemp(GeneratedMesh));
+		return Data;
 	}
 
 	/** Runs one element to completion and returns its outputs. */
@@ -342,6 +370,70 @@ namespace PCGUtilsFractureTests
 		Mutation.bTransformsChanged = true;
 		return PCGUtilsGeometryCollectionRevisionPublisher::PublishRevision(
 			/*Context=*/nullptr, Collection, Copy, Mutation);
+	}
+
+	/** Projects a collection against a Target mesh, so no world or physics scene is needed. */
+	inline const UPCGGeometryCollectionData* ProjectBones(
+		const UPCGGeometryCollectionData* Collection,
+		const UPCGDynamicMeshData* Target,
+		TFunctionRef<void(UPCGGeometryCollectionProjectBonesSettings&)> Configure)
+	{
+		UPCGGeometryCollectionProjectBonesSettings* Settings =
+			NewObject<UPCGGeometryCollectionProjectBonesSettings>();
+		Configure(*Settings);
+		return FirstOutput<UPCGGeometryCollectionData>(Run(Settings, {
+			{PCGGeometryCollectionProjectBonesConstants::CollectionInputPin, Collection},
+			{PCGGeometryCollectionProjectBonesConstants::TargetInputPin, Target}}));
+	}
+
+	inline const UPCGGeometryCollectionData* ProjectBones(
+		const UPCGGeometryCollectionData* Collection, const UPCGDynamicMeshData* Target)
+	{
+		return ProjectBones(Collection, Target, [](UPCGGeometryCollectionProjectBonesSettings&) {});
+	}
+
+	/** A piece's world-space bounds: its local bounds under its global transform, corner by corner. */
+	inline FBox PieceWorldBounds(
+		const FGeometryCollection& Collection, int32 Bone, TConstArrayView<FTransform> Globals)
+	{
+		FBox Bounds(ForceInit);
+		const FBox Local = PCGUtilsGeometryCollectionHelpers::GetBoneLocalBounds(Collection, Bone);
+		if (!Local.IsValid)
+		{
+			return Bounds;
+		}
+
+		const FTransform ToWorld = Globals.IsValidIndex(Bone) ? Globals[Bone] : FTransform::Identity;
+		for (int32 Corner = 0; Corner < 8; ++Corner)
+		{
+			Bounds += ToWorld.TransformPosition(FVector(
+				(Corner & 1) ? Local.Max.X : Local.Min.X,
+				(Corner & 2) ? Local.Max.Y : Local.Min.Y,
+				(Corner & 4) ? Local.Max.Z : Local.Min.Z));
+		}
+		return Bounds;
+	}
+
+	/** The lowest point of any piece's bounds, i.e. how far down the whole collection reaches. */
+	inline double LowestPieceBoundsZ(const UPCGGeometryCollectionData* Data)
+	{
+		const FGeometryCollection& Collection = Data->GetCollection();
+		TArray<FTransform> Globals;
+		PCGUtilsGeometryCollectionHelpers::ComputeGlobalTransforms(Collection, Globals);
+
+		TArray<int32> Pieces;
+		PCGUtilsGeometryCollectionHierarchy::GatherPieces(Collection, Pieces);
+
+		double Lowest = TNumericLimits<double>::Max();
+		for (const int32 Piece : Pieces)
+		{
+			const FBox Bounds = PieceWorldBounds(Collection, Piece, Globals);
+			if (Bounds.IsValid)
+			{
+				Lowest = FMath::Min(Lowest, Bounds.Min.Z);
+			}
+		}
+		return Lowest;
 	}
 
 	/** The collection-space global transforms of a published collection. */

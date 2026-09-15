@@ -57,6 +57,7 @@ subcategories. Titles retain the `GC | ` search prefix, so searching `GC` return
 | **Fracture \| Mesh** | `DynMesh`, `Points` (Static Mesh attribute) - either or both | `Fracture` |
 | **GC \| Bones To Points** | `GC` | `Points`, `Edges` (cluster mode) |
 | **GC \| Transform Bones** | `GC`, `Points`, `Selection` (optional) | `GC` |
+| **GC \| Project Bones** | `GC`, `Target` (DynMesh, optional), `Selection` (optional) | `GC` |
 | **GC \| Select \| Bones From Points** | `Points` | `Selection` |
 | **GC \| Separate Selection** | `GC`, `Selection` | `Selected`, `Unselected` |
 | **GC \| Prune** | `GC`, `Selection` | `GC` |
@@ -424,6 +425,51 @@ of the two transforms; **Duplicate Bone Handling** offers `First`, `Last` and `A
 was deliberate.
 
 The operation changes no geometry, so the output keeps the converted piece meshes the input had already built.
+
+---
+
+## Settling fragments without simulation
+
+`GC | Project Bones` is the reason the transform layer exists. Fracture a wall, prune part of it, and the
+remaining fragments keep the positions they held inside the intact solid - so they hang above the sand and grass
+they should be lying on. Simulating that is slow, non-deterministic and awkward to author against; tracing each
+fragment down onto whatever is below it gets most of the visual result for a fraction of the cost.
+
+```
+GC | Fracture -> GC | Prune -> GC | Project Bones -> GC | To DynMesh
+```
+
+**A unit rests on its first contact.** Each sample reports how far it could travel; the unit stops as soon as one
+of them lands. That is what makes a slab rest on its leading corner instead of sinking until its trailing corner
+touches. Travel is signed, so a fragment that starts *inside* the surface is pushed back out by its deepest
+penetration rather than ignored - which is what **Start Offset** is for, since the trace has to begin behind the
+sample for the contact to be found at all.
+
+**Resolution is the performance dial.** It decides what counts as one rigid unit:
+
+| Resolution | Traces | Result |
+|---|---|---|
+| `Selection` with a cluster selected | one set for the whole group | the group settles together, keeping its internal arrangement |
+| `Selection` with nothing connected | one set per piece | every piece settles on its own |
+| `Pieces` | one set per piece | descends through any selected cluster to its fragments |
+
+Selecting a cluster is the cheap, visually-grouped answer for a wall section that should stay a wall section;
+`Pieces` is the right answer for rubble, where fragments have no real dependence on one another.
+
+**Accuracy decides how much of each shape is considered.** `Pivot` traces one point per unit and is right for
+small rubble at high counts; `Bounds` traces the leading corners of each piece's oriented bounds and is the
+default. `Bounds` is conservative by construction - a piece can float slightly where its bounds are much larger
+than its geometry, but it never sinks into the surface. On flat ground the two agree; on a slope they do not,
+which is exactly where it matters.
+
+**What it traces against.** Connect a `Target` DynMesh and it is traced directly, with no physics scene involved
+at all - which is also how the automated tests exercise the whole feature with no world. Leave `Target` empty and
+it traces level collision instead, with the usual channel and complex-trace controls. The two differ in space:
+a Target mesh shares the collection's own space (both are target-actor-local by PCG convention), while world
+collision only exists in world space, so **Direction** is read in whichever of the two is being traced.
+
+Nothing here resolves overlaps between fragments. Overlapping pieces are legal in a collection and harmless to
+render; correcting them is a separate problem and would make the cheap paths not cheap.
 
 ---
 
