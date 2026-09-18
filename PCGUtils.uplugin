@@ -60,6 +60,11 @@
             "Name": "PCGUtilsSimulation",
             "Type": "Runtime",
             "LoadingPhase": "PreDefault"
+        },
+        {
+            "Name": "PCGUtilsChaosCache",
+            "Type": "Runtime",
+            "LoadingPhase": "PreDefault"
         }
     ],
     "Plugins": [

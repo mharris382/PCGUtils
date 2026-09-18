@@ -82,7 +82,7 @@ namespace PCGUtilsPaletteSearchContract
 	{
 		static const TSet<FString> Packages = {
 			TEXT("/Script/PCGUtilsDynMesh"), TEXT("/Script/PCGUtilsFracture"), TEXT("/Script/PCGUtilsPainter"),
-			TEXT("/Script/PCGUtilsSimulation")};
+			TEXT("/Script/PCGUtilsSimulation"), TEXT("/Script/PCGUtilsChaosCache")};
 
 		TArray<FEntry> Entries;
 		for (TObjectIterator<UClass> It; It; ++It)
@@ -167,9 +167,10 @@ bool FPCGUtilsPaletteSearchContractTest::RunTest(const FString&)
 		const FString Where = FString::Printf(TEXT("%s (%s)"), *Entry.Label, *Entry.ClassName);
 
 		// PCGUtilsSimulation's GC nodes (GC | Spawn Component) belong to the GC family and obey every GC rule; its
-		// other nodes are neither GC nor DynMesh.
+		// other nodes are neither GC nor DynMesh. PCGUtilsChaosCache is wholly GC family (GC | Load Chaos Cache).
 		const bool bIsSimulation = Entry.Package == TEXT("/Script/PCGUtilsSimulation");
-		const bool bIsFracture = Entry.Package == TEXT("/Script/PCGUtilsFracture") ||
+		const bool bIsChaosCache = Entry.Package == TEXT("/Script/PCGUtilsChaosCache");
+		const bool bIsFracture = Entry.Package == TEXT("/Script/PCGUtilsFracture") || bIsChaosCache ||
 			(bIsSimulation && Entry.Label.StartsWith(TEXT("GC | ")));
 		if (Entry.ClassName == TEXT("PCGSpawnGeometryCollectionComponentSettings"))
 		{
@@ -181,7 +182,7 @@ bool FPCGUtilsPaletteSearchContractTest::RunTest(const FString&)
 			TestTrue(*FString::Printf(TEXT("%s has a PCGUtils DynMesh menu category"), *Where),
 				Entry.Category.StartsWith(TEXT("PCGUtils|DynMesh")));
 		}
-		if (Entry.Package == TEXT("/Script/PCGUtilsFracture"))
+		if (Entry.Package == TEXT("/Script/PCGUtilsFracture") || bIsChaosCache)
 		{
 			TestTrue(*FString::Printf(TEXT("%s has a PCGUtils GC menu category"), *Where),
 				Entry.Category.StartsWith(TEXT("PCGUtils|GC")));

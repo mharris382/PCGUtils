@@ -2,7 +2,8 @@
 
 Repository-wide instructions are in `AGENTS.md`. For work in `PCGUtilsDynMesh`, also read
 `Source/PCGUtilsDynMesh/claude.md` and `Docs/PCGUtilsDynMesh.md` in full. For work in `PCGUtilsFracture`, read
-`Source/PCGUtilsFracture/claude.md`.
+`Source/PCGUtilsFracture/claude.md`. For work in `PCGUtilsChaosCache` (Chaos Cache readback, isolated so the
+ChaosCaching dependency stays removable), read `Source/PCGUtilsChaosCache/claude.md`.
 
 The critical DynMesh rule is that selection support is part of the process contract, not a per-node optional
 feature. Use `UPCGUtilsDynMeshProcessBaseSettings` plus the shared resolver/target-handle infrastructure so a node
