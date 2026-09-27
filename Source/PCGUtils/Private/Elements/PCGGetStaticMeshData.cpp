@@ -1,14 +1,50 @@
 #include "Elements/PCGGetStaticMeshData.h"
 
 #include "Algo/Transform.h"
+#include "Components/InstancedStaticMeshComponent.h"
 #include "Components/StaticMeshComponent.h"
 #include "Data/PCGPointData.h"
 #include "Engine/StaticMesh.h"
 #include "GameFramework/Actor.h"
+#include "Helpers/PCGHelpers.h"
 #include "Materials/MaterialInterface.h"
 #include "Metadata/PCGMetadata.h"
 
 #define LOCTEXT_NAMESPACE "PCGGetStaticMeshDataElement"
+
+namespace
+{
+	bool MatchesStaticMeshCollisionFilter(const UStaticMeshComponent* Component, const UPCGGetStaticMeshDataSettings* Settings)
+	{
+		if (!Settings->bFilterByCollision)
+		{
+			return true;
+		}
+
+		const bool bCollisionMatches = [Component, Settings]()
+		{
+			switch (Settings->CollisionRequirement)
+			{
+			case EPCGUtilsMeshCollisionRequirement::AnyEnabled:
+				return Component->IsCollisionEnabled();
+			case EPCGUtilsMeshCollisionRequirement::Query:
+				return Component->IsQueryCollisionEnabled();
+			case EPCGUtilsMeshCollisionRequirement::Physics:
+				return Component->IsPhysicsCollisionEnabled();
+			case EPCGUtilsMeshCollisionRequirement::QueryAndPhysics:
+				return Component->IsQueryCollisionEnabled() && Component->IsPhysicsCollisionEnabled();
+			default:
+				return false;
+			}
+		}();
+
+		return bCollisionMatches
+			&& (!Settings->bMatchCollisionProfile || Component->GetCollisionProfileName() == Settings->CollisionProfileName)
+			&& (!Settings->bMatchObjectType || Component->GetCollisionObjectType() == Settings->ObjectType)
+			&& (!Settings->bMatchTraceResponse || (Component->IsQueryCollisionEnabled()
+				&& Component->GetCollisionResponseToChannel(Settings->TraceChannel) == Settings->TraceResponse));
+	}
+}
 
 UPCGGetStaticMeshDataSettings::UPCGGetStaticMeshDataSettings()
 {
@@ -17,6 +53,8 @@ UPCGGetStaticMeshDataSettings::UPCGGetStaticMeshDataSettings()
 	// Emit the standard "ComponentReference" soft-object-path by default so Paint Static Mesh Vertex Colors
 	// (and any component-targeting node) works straight off this node with no attribute setup.
 	ComponentSettings.bOutputComponentReference = true;
+	// PCG-generated instances are useful source data; the debug tag has its own narrower filter.
+	bIgnorePCGGeneratedComponents = false;
 	bAlwaysRequeryActors = true;
 }
 
@@ -28,7 +66,7 @@ FText UPCGGetStaticMeshDataSettings::GetDefaultNodeTitle() const
 
 FText UPCGGetStaticMeshDataSettings::GetNodeTooltipText() const
 {
-	return LOCTEXT("NodeTooltip", "Collects static mesh components from actors and outputs one point data collection per component.");
+	return LOCTEXT("NodeTooltip", "Collects static mesh components and/or instanced static mesh components from actors. Outputs one point per static mesh component or one point per ISM instance, in a separate point data collection per component.");
 }
 #endif
 
@@ -56,6 +94,7 @@ void FPCGGetStaticMeshDataElement::ProcessActor(
 	}
 
 	const UPCGGetStaticMeshDataSettings* GetSettings = CastChecked<UPCGGetStaticMeshDataSettings>(Settings);
+	const FPCGDataFromActorContext* ActorContext = static_cast<const FPCGDataFromActorContext*>(Context);
 	const auto NameToString = [](const FName& Name) { return Name.ToString(); };
 	TSet<FString> ActorTags;
 	Algo::Transform(FoundActor->Tags, ActorTags, NameToString);
@@ -65,27 +104,63 @@ void FPCGGetStaticMeshDataElement::ProcessActor(
 
 	for (UStaticMeshComponent* MeshComponent : MeshComponents)
 	{
-		if (!IsValid(MeshComponent))
+		if (!IsValid(MeshComponent) || !ActorContext->ComponentSelector.FilterComponent(MeshComponent))
+		{
+			continue;
+		}
+
+		const UInstancedStaticMeshComponent* InstancedComponent = Cast<UInstancedStaticMeshComponent>(MeshComponent);
+		if ((InstancedComponent && GetSettings->MeshSource == EPCGUtilsStaticMeshSource::StaticMeshComponents)
+			|| (!InstancedComponent && GetSettings->MeshSource == EPCGUtilsStaticMeshSource::InstancedStaticMeshComponents)
+			|| (GetSettings->bFilterPCGDebugComponents && MeshComponent->ComponentHasTag(PCGHelpers::DefaultPCGDebugTag))
+			|| (GetSettings->bIgnorePCGGeneratedComponents && MeshComponent->ComponentHasTag(PCGHelpers::DefaultPCGTag))
+			|| (GetSettings->bFilterHiddenComponents && (!MeshComponent->IsVisible() || MeshComponent->bHiddenInGame))
+			|| !MatchesStaticMeshCollisionFilter(MeshComponent, GetSettings))
 		{
 			continue;
 		}
 
 		UStaticMesh* StaticMesh = MeshComponent->GetStaticMesh();
-		UPCGPointData* PointData = FPCGContext::NewObject_AnyThread<UPCGPointData>(Context);
-		FPCGPoint& Point = PointData->GetMutablePoints().Emplace_GetRef();
-		Point.Transform = MeshComponent->GetComponentTransform();
-		Point.Density = 1.0f;
-
-		if (StaticMesh)
+		if (!IsValid(StaticMesh))
 		{
-			const FBox MeshBounds = StaticMesh->GetBoundingBox();
+			continue;
+		}
+		const int32 InstanceCount = InstancedComponent ? InstancedComponent->GetInstanceCount() : 0;
+		if (InstancedComponent && InstanceCount == 0)
+		{
+			continue;
+		}
+
+		UPCGPointData* PointData = FPCGContext::NewObject_AnyThread<UPCGPointData>(Context);
+		const FBox MeshBounds = StaticMesh->GetBoundingBox();
+		auto AddPoint = [PointData, &MeshBounds](const FTransform& Transform)
+		{
+			FPCGPoint& Point = PointData->GetMutablePoints().Emplace_GetRef();
+			Point.Transform = Transform;
+			Point.Density = 1.0f;
 			Point.BoundsMin = MeshBounds.Min;
 			Point.BoundsMax = MeshBounds.Max;
+		};
+
+		if (InstancedComponent)
+		{
+			for (int32 InstanceIndex = 0; InstanceIndex < InstanceCount; ++InstanceIndex)
+			{
+				FTransform InstanceTransform;
+				if (InstancedComponent->GetInstanceTransform(InstanceIndex, InstanceTransform, true))
+				{
+					AddPoint(InstanceTransform);
+				}
+			}
 		}
 		else
 		{
-			Point.BoundsMin = FVector::ZeroVector;
-			Point.BoundsMax = FVector::ZeroVector;
+			AddPoint(MeshComponent->GetComponentTransform());
+		}
+
+		if (PointData->GetPoints().IsEmpty())
+		{
+			continue;
 		}
 
 		if (UPCGMetadata* Metadata = PointData->MutableMetadata())

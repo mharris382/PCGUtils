@@ -403,8 +403,15 @@ nodes pick it up.
 - **Get Marker Data** — retrieves marker components and their point metadata.
 - **Get PCG Spline Data**, **Get Shape Path Data**, **Get Spline Data With Overrides** — the specialized path
   component workflows.
-- **Get Static Mesh Data** — one point-data collection per matching static-mesh component, emitting a
-  `ComponentReference` soft object path by default (this is what the Static Mesh Painter consumes).
+- **Get Static Mesh Data** — choose Static Mesh Components (the default), Instanced Static Mesh Components,
+  or All Meshes. Static components emit one point; ISMs and HISMs emit one point per instance, using each
+  instance's world transform and mesh-local bounds. Each component produces its own point-data collection
+  with its mesh, optional material, actor, and `ComponentReference` attributes and component/actor tags.
+  The debug-component filter defaults on and matches the PCG `PCG Generated Debug Component` tag.
+  Optional filters require visibility (including not hidden in game), enabled query/physics collision,
+  collision profile, object type, and a trace-channel response. Collision criteria combine with AND.
+  The inherited **Ignore PCG Generated Components** option defaults off here so non-debug generated ISMs
+  remain available; enable it to exclude all PCG-generated components.
 - **Get Override Graph Sets** — routes data according to serialized override-graph metadata.
 - **Capture / Restore** aliases for Density, Position Z and Bounds — stash a point property, do something to
   the points, put it back.

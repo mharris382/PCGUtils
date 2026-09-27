@@ -1,12 +1,30 @@
 #pragma once
 
 #include "CoreMinimal.h"
+#include "Engine/EngineTypes.h"
 #include "Data/PCGUtilsComponentData.h"
 #include "Elements/PCGDataFromActor.h"
 
 #include "PCGGetStaticMeshData.generated.h"
 
-/** Collects static mesh components from actors as individual point data. */
+UENUM(BlueprintType)
+enum class EPCGUtilsStaticMeshSource : uint8
+{
+	StaticMeshComponents UMETA(DisplayName="Static Mesh Components"),
+	InstancedStaticMeshComponents UMETA(DisplayName="Instanced Static Mesh Components"),
+	All UMETA(DisplayName="All Meshes")
+};
+
+UENUM(BlueprintType)
+enum class EPCGUtilsMeshCollisionRequirement : uint8
+{
+	AnyEnabled UMETA(DisplayName="Any Collision"),
+	Query UMETA(DisplayName="Query Collision"),
+	Physics UMETA(DisplayName="Physics Collision"),
+	QueryAndPhysics UMETA(DisplayName="Query and Physics Collision")
+};
+
+/** Collects static mesh components or individual instanced mesh instances as point data. */
 UCLASS(BlueprintType, ClassGroup=(Procedural), Category="PCGUtils|Actor Data")
 class PCGUTILS_API UPCGGetStaticMeshDataSettings : public UPCGDataFromActorSettings
 {
@@ -22,6 +40,46 @@ public:
 #endif
 
 	virtual EPCGDataType GetDataFilter() const override { return EPCGDataType::Point; }
+
+	/** Static mesh mode excludes ISMs; instanced mode emits one point per instance. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Settings", meta=(PCG_Overridable))
+	EPCGUtilsStaticMeshSource MeshSource = EPCGUtilsStaticMeshSource::StaticMeshComponents;
+
+	/** Excludes components tagged "PCG Generated Debug Component". */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Filters", meta=(PCG_Overridable))
+	bool bFilterPCGDebugComponents = true;
+
+	/** Requires the component to be visible and not hidden in game. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Filters", meta=(PCG_Overridable))
+	bool bFilterHiddenComponents = false;
+
+	/** Enables collision matching for both static and instanced mesh components. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Filters|Collision", meta=(PCG_Overridable))
+	bool bFilterByCollision = false;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Filters|Collision", meta=(PCG_Overridable, EditCondition="bFilterByCollision", EditConditionHides))
+	EPCGUtilsMeshCollisionRequirement CollisionRequirement = EPCGUtilsMeshCollisionRequirement::AnyEnabled;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Filters|Collision", meta=(PCG_Overridable, EditCondition="bFilterByCollision", EditConditionHides))
+	bool bMatchCollisionProfile = false;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Filters|Collision", meta=(PCG_Overridable, EditCondition="bFilterByCollision && bMatchCollisionProfile", EditConditionHides))
+	FName CollisionProfileName = NAME_None;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Filters|Collision", meta=(PCG_Overridable, EditCondition="bFilterByCollision", EditConditionHides))
+	bool bMatchObjectType = false;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Filters|Collision", meta=(PCG_Overridable, EditCondition="bFilterByCollision && bMatchObjectType", EditConditionHides))
+	TEnumAsByte<ECollisionChannel> ObjectType = ECC_WorldStatic;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Filters|Collision", meta=(PCG_Overridable, EditCondition="bFilterByCollision", EditConditionHides))
+	bool bMatchTraceResponse = false;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Filters|Collision", meta=(PCG_Overridable, EditCondition="bFilterByCollision && bMatchTraceResponse", EditConditionHides))
+	TEnumAsByte<ECollisionChannel> TraceChannel = ECC_Visibility;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Filters|Collision", meta=(PCG_Overridable, EditCondition="bFilterByCollision && bMatchTraceResponse", EditConditionHides))
+	TEnumAsByte<ECollisionResponse> TraceResponse = ECR_Block;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Settings")
 	FName MeshOutputAttributeName = FName(TEXT("Mesh"));
