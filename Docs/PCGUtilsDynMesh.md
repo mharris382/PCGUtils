@@ -268,6 +268,28 @@ helper with no PCG dependency, like `PCGUtilsDynMeshSurfaceCorrespondence.h`, wh
 by poking every anchor into that copy up front; the Geometry Script wrapper deep-copies the whole mesh on every
 call. `TraceSurfacePath()` drives `FMeshGeodesicSurfaceTracer` against a const mesh and copies nothing.
 
+## Structured surface generation
+
+`DynMesh | Loft Paths` builds a quad grid between two paths: one column per path point and a set number of rows
+across, with each row's height following a profile (`Linear`, `Smooth`, `Level at A`, `Level at B`, or a custom
+curve). The second rail is either an offset of Path A or a path supplied on the `Path B` pin.
+
+It exists because Remesh is the wrong tool for a slope. Remesh is isotropic, so its edges point in arbitrary
+directions; on a curved or creased surface that shows up as faceting. A loft's edges follow the rails and the
+profile by construction.
+
+Path points are used exactly as given. That is the seam contract: a loft whose path was read off a mesh boundary
+(`DynMesh | Selection To Paths`) lands its edge vertices on that boundary's vertices, so the two meshes can be
+appended and welded with no boolean. Only `Path B` under `Arc Length` correspondence is resampled; use `Index`
+correspondence when both edges must weld.
+
+The geometry lives in `Geometry/PCGUtilsDynMeshLoft.h` with no PCG dependency (`BuildLoft`, `OffsetRail`,
+`AlignRail`, `ResampleByArcLength`) and is covered by `PCGUtils.DynMesh.Loft.*`. The node is a creation node with
+no DynMesh input, so it derives from `UPCGSettings` directly and has no Selector pin.
+
+Known limits: an offset rail miters corners one point for one point, so an Offset Distance larger than a concave
+corner can absorb folds the loft over itself. The node warns with the path index, segment count and first point.
+
 ## Simplification
 
 **DynMesh | Simplify Planar** defaults to Geometry Script's planar simplifier and also exposes Polygroup
