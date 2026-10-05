@@ -114,6 +114,39 @@ bool FPCGUtilsDynMeshLoftClosedTest::RunTest(const FString&)
 }
 
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FPCGUtilsDynMeshLoftCapTest,
+	"PCGUtils.DynMesh.Loft.CapSharesRailBWithTheLoft",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::ProductFilter)
+
+bool FPCGUtilsDynMeshLoftCapTest::RunTest(const FString&)
+{
+	// A plateau: the loft rises inward from the foot to the crest, and the cap closes the top.
+	for (const bool bReversed : {false, true})
+	{
+		const TArray<FVector3d> Foot = MakeLoftSquare(80.0, 0.0, bReversed);
+		const TArray<FVector3d> Crest = MakeLoftSquare(50.0, 30.0, bReversed);
+
+		Loft::FLoftOptions Options;
+		Options.NumRows = 3;
+		Options.bClosed = true;
+		Options.bCapRailB = true;
+
+		UE::Geometry::FDynamicMesh3 Mesh;
+		Loft::FLoftResult Result;
+		FString Error;
+		UTEST_TRUE("A capped loft builds", Loft::BuildLoft(Foot, Crest, Options, Mesh, Result, Error));
+		UTEST_EQUAL("The cap adds no vertices", Mesh.VertexCount(), 4 * 4);
+		UTEST_EQUAL("A four-sided cap is two triangles", Result.NumCapTriangles, 2);
+		UTEST_EQUAL("Only the foot is left as boundary", CountLoftBoundaryEdges(Mesh), 4);
+		for (const int32 TriangleID : Mesh.TriangleIndicesItr())
+		{
+			UTEST_TRUE("Loft and cap both face up", Mesh.GetTriNormal(TriangleID).Z > 0.0);
+		}
+	}
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
 	FPCGUtilsDynMeshLoftProfileTest,
 	"PCGUtils.DynMesh.Loft.ProfileShapesHeightOnly",
 	EAutomationTestFlags::EditorContext | EAutomationTestFlags::ProductFilter)
@@ -180,6 +213,46 @@ bool FPCGUtilsDynMeshLoftOffsetTest::RunTest(const FString&)
 	const Loft::FOffsetResult FoldedResult = Loft::OffsetRail(MakeLoftSquare(50.0, 0.0, false), Inward, Folded);
 	UTEST_EQUAL("An offset larger than the shape reports every segment as inverted", FoldedResult.NumInvertedSegments, 4);
 	UTEST_EQUAL("And names the first one", FoldedResult.FirstInvertedSegment, 0);
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FPCGUtilsDynMeshLoftSmoothedOffsetTest,
+	"PCGUtils.DynMesh.Loft.SmoothedOffsetKeepsADenseRailFromFolding",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::ProductFilter)
+
+bool FPCGUtilsDynMeshLoftSmoothedOffsetTest::RunTest(const FString&)
+{
+	// A square sampled every 5 units, like a remeshed mesh boundary: corners are turned by segments far
+	// shorter than the offset.
+	TArray<FVector3d> Dense;
+	const TArray<FVector3d> Corners = MakeLoftSquare(100.0, 0.0, false);
+	for (int32 Corner = 0; Corner < 4; ++Corner)
+	{
+		for (int32 Step = 0; Step < 40; ++Step)
+		{
+			Dense.Add(FMath::Lerp(Corners[Corner], Corners[(Corner + 1) % 4], Step / 40.0));
+		}
+	}
+
+	Loft::FOffsetOptions Options;
+	Options.bClosed = true;
+	Options.Distance = -40.0;
+
+	TArray<FVector3d> Mitered;
+	UTEST_TRUE("A mitered inward offset folds a dense rail at its corners",
+		Loft::OffsetRail(Dense, Options, Mitered).NumInvertedSegments > 0);
+
+	Options.SmoothingDistance = 40.0;
+	TArray<FVector3d> Smoothed;
+	UTEST_EQUAL("The same offset with smoothing does not fold",
+		Loft::OffsetRail(Dense, Options, Smoothed).NumInvertedSegments, 0);
+	UTEST_EQUAL("Smoothing still keeps one point per point", Smoothed.Num(), Dense.Num());
+
+	// Mid-side, well away from any corner, the offset is exactly the requested distance inward.
+	const FVector3d MidSide = Dense[20];
+	UTEST_EQUAL_TOLERANCE("A straight stretch is offset by the plain distance", FVector3d::Distance(MidSide, Smoothed[20]), 40.0, 1e-9);
+	UTEST_TRUE("And inward", Smoothed[20].Y > MidSide.Y);
 	return true;
 }
 

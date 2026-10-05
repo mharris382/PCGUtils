@@ -42,6 +42,42 @@ namespace
 		return Attribute && Attribute->GetValueFromItemKey(PCGInvalidEntryKey);
 	}
 
+	/** Reads a @Data-domain numeric attribute of any common numeric type. Returns false when it is absent. */
+	bool ReadLoftPathNumericAttribute(const UPCGBasePointData* PointData, FName AttributeName, double& OutValue)
+	{
+		if (AttributeName.IsNone())
+		{
+			return false;
+		}
+		const UPCGMetadata* Metadata = PointData->ConstMetadata();
+		if (!Metadata)
+		{
+			return false;
+		}
+		const FPCGAttributeIdentifier Identifier(AttributeName, PCGMetadataDomainID::Data);
+		if (const FPCGMetadataAttribute<double>* Attribute = Metadata->GetConstTypedAttribute<double>(Identifier))
+		{
+			OutValue = Attribute->GetValueFromItemKey(PCGInvalidEntryKey);
+			return true;
+		}
+		if (const FPCGMetadataAttribute<float>* Attribute = Metadata->GetConstTypedAttribute<float>(Identifier))
+		{
+			OutValue = Attribute->GetValueFromItemKey(PCGInvalidEntryKey);
+			return true;
+		}
+		if (const FPCGMetadataAttribute<int32>* Attribute = Metadata->GetConstTypedAttribute<int32>(Identifier))
+		{
+			OutValue = Attribute->GetValueFromItemKey(PCGInvalidEntryKey);
+			return true;
+		}
+		if (const FPCGMetadataAttribute<int64>* Attribute = Metadata->GetConstTypedAttribute<int64>(Identifier))
+		{
+			OutValue = static_cast<double>(Attribute->GetValueFromItemKey(PCGInvalidEntryKey));
+			return true;
+		}
+		return false;
+	}
+
 	TFunction<double(double)> MakeLoftHeightProfile(const UPCGDynMeshLoftPathsSettings& Settings)
 	{
 		switch (Settings.Profile)
@@ -137,6 +173,25 @@ bool FPCGDynMeshLoftPathsElement::ExecuteInternal(FPCGContext* Context) const
 		}
 	}
 
+	if (Settings->bOffsetDistanceFromAttribute && Settings->OffsetDistanceAttributeName.IsNone())
+	{
+		PCGLog::LogWarningOnGraph(
+			LOCTEXT("EmptyOffsetDistanceName", "Loft Paths: Offset Distance From Attribute is on but Offset Distance Attribute Name is None; using Offset Distance."),
+			Context);
+	}
+	if (Settings->bOffsetHeightFromAttribute && Settings->OffsetHeightAttributeName.IsNone())
+	{
+		PCGLog::LogWarningOnGraph(
+			LOCTEXT("EmptyOffsetHeightName", "Loft Paths: Offset Height From Attribute is on but Offset Height Attribute Name is None; using Offset Height."),
+			Context);
+	}
+	if (Settings->bRowsFromAttribute && Settings->RowsAttributeName.IsNone())
+	{
+		PCGLog::LogWarningOnGraph(
+			LOCTEXT("EmptyRowsName", "Loft Paths: Rows From Attribute is on but Rows Attribute Name is None; using Rows."),
+			Context);
+	}
+
 	const bool bUsePathB = Settings->SecondRail == EPCGUtilsLoftSecondRail::PathB;
 	const TArray<FPCGTaggedData> PathAInputs = Context->InputData.GetInputsByPin(PCGDynMeshLoftPathsConstants::PathAInputPin);
 	const TArray<FPCGTaggedData> PathBInputs = Context->InputData.GetInputsByPin(PCGDynMeshLoftPathsConstants::PathBInputPin);
@@ -224,7 +279,17 @@ bool FPCGDynMeshLoftPathsElement::ExecuteInternal(FPCGContext* Context) const
 			OffsetOptions.Distance = Settings->OffsetDistance;
 			OffsetOptions.bPositiveIsOutward = Settings->bPositiveOffsetIsOutward;
 			OffsetOptions.Height = Settings->OffsetHeight;
+			if (Settings->bOffsetDistanceFromAttribute)
+			{
+				ReadLoftPathNumericAttribute(PathAData, Settings->OffsetDistanceAttributeName, OffsetOptions.Distance);
+			}
+			if (Settings->bOffsetHeightFromAttribute)
+			{
+				ReadLoftPathNumericAttribute(PathAData, Settings->OffsetHeightAttributeName, OffsetOptions.Height);
+			}
 			OffsetOptions.MiterLimit = Settings->MiterLimit;
+
+			OffsetOptions.SmoothingDistance = Settings->OffsetSmoothing * FMath::Abs(OffsetOptions.Distance);
 
 			const PCGUtilsDynMeshLoft::FOffsetResult OffsetResult =
 				PCGUtilsDynMeshLoft::OffsetRail(RailA, OffsetOptions, RailB);
@@ -234,14 +299,29 @@ bool FPCGDynMeshLoftPathsElement::ExecuteInternal(FPCGContext* Context) const
 					LOCTEXT("InvertedOffset",
 						"Loft Paths: path {0} has {1} segments where Offset Distance ({2}) is larger than the corner "
 						"can absorb, so the loft folds over itself; the first starts at point {3}. Reduce Offset "
-						"Distance or round the corner."),
+						"Distance, raise Offset Smoothing, or round the corner."),
 					FText::AsNumber(PathIndex), FText::AsNumber(OffsetResult.NumInvertedSegments),
-					FText::AsNumber(Settings->OffsetDistance), FText::AsNumber(OffsetResult.FirstInvertedSegment)), Context);
+					FText::AsNumber(OffsetOptions.Distance), FText::AsNumber(OffsetResult.FirstInvertedSegment)), Context);
 			}
 		}
 
 		PCGUtilsDynMeshLoft::FLoftOptions LoftOptions;
 		LoftOptions.NumRows = Settings->Rows;
+		if (Settings->bRowsFromAttribute)
+		{
+			double RowsValue = 0.0;
+			if (ReadLoftPathNumericAttribute(PathAData, Settings->RowsAttributeName, RowsValue) && RowsValue >= 1.0)
+			{
+				LoftOptions.NumRows = FMath::RoundToInt32(RowsValue);
+			}
+		}
+		LoftOptions.bCapRailB = Settings->bCapRailB;
+		if (Settings->bCapRailB && !bClosed)
+		{
+			PCGLog::LogWarningOnGraph(FText::Format(
+				LOCTEXT("CapNeedsClosed", "Loft Paths: Cap Rail B is on but path {0} is open; only a closed loft can be capped, so this one is left open."),
+				FText::AsNumber(PathIndex)), Context);
+		}
 		LoftOptions.bClosed = bClosed;
 		LoftOptions.UpAxis = Settings->UpAxis;
 		LoftOptions.HeightProfile = HeightProfile;

@@ -3,6 +3,8 @@
 #include "Geometry/PCGUtilsDynMeshLoft.h"
 
 #include "Algo/Reverse.h"
+#include "CompGeom/Delaunay2.h"
+#include "CompGeom/PolygonTriangulation.h"
 #include "DynamicMesh/DynamicMeshAttributeSet.h"
 #include "DynamicMesh/MeshNormals.h"
 
@@ -143,6 +145,11 @@ namespace PCGUtilsDynMeshLoft
 			VertexIDs[Index] = OutMesh.AppendVertex(Positions[Index]);
 		}
 
+		const auto OutResultRailB = [&VertexIDs, NumRows, NumColumns](int32 Column)
+		{
+			return VertexIDs[NumRows * NumColumns + Column];
+		};
+
 		if (!OutMesh.HasAttributes())
 		{
 			OutMesh.EnableAttributes();
@@ -215,6 +222,63 @@ namespace PCGUtilsDynMeshLoft
 			}
 		}
 
+		int32 NumCapTriangles = 0;
+		if (Options.bCapRailB && Options.bClosed)
+		{
+			// The cap reuses the last row's vertices, so it shares Rail B exactly with the loft: no second seam.
+			const FVector3d AxisX = FVector3d::CrossProduct(
+				Up, FMath::Abs(Up.Z) < 0.9 ? FVector3d::UnitZ() : FVector3d::UnitX()).GetSafeNormal();
+			const FVector3d AxisY = FVector3d::CrossProduct(Up, AxisX);
+
+			TArray<FVector2d> Polygon;
+			Polygon.SetNumUninitialized(NumColumns);
+			TArray<int32> CapUVElementIDs;
+			CapUVElementIDs.SetNumUninitialized(NumColumns);
+			for (int32 Column = 0; Column < NumColumns; ++Column)
+			{
+				const FVector3d& Position = RailB[Column];
+				Polygon[Column] = FVector2d(FVector3d::DotProduct(Position, AxisX), FVector3d::DotProduct(Position, AxisY));
+				CapUVElementIDs[Column] = UVs->AppendElement(FVector2f(
+					static_cast<float>(Polygon[Column].X * Options.UVScale), static_cast<float>(Polygon[Column].Y * Options.UVScale)));
+			}
+
+			// Constrained Delaunay rather than ear clipping: a rail read off a mesh edge has runs of collinear
+			// vertices, and ear clipping turns three collinear vertices into a zero-area triangle.
+			TArray<FIndex3i> CapTriangles;
+			TArray<FIndex2i> CapEdges;
+			CapEdges.Reserve(NumColumns);
+			for (int32 Column = 0; Column < NumColumns; ++Column)
+			{
+				CapEdges.Add(FIndex2i(Column, (Column + 1) % NumColumns));
+			}
+			FDelaunay2 Delaunay;
+			if (!Delaunay.Triangulate(Polygon, CapEdges) ||
+				!Delaunay.GetFilledTriangles(CapTriangles, CapEdges, FDelaunay2::EFillMode::Solid) ||
+				CapTriangles.IsEmpty())
+			{
+				CapTriangles.Reset();
+				PolygonTriangulation::TriangulateSimplePolygon<double>(Polygon, CapTriangles, false);
+			}
+
+			const int32 CapGroupID = OutMesh.AllocateTriangleGroup();
+			for (FIndex3i Cap : CapTriangles)
+			{
+				const FVector3d Normal = FVector3d::CrossProduct(RailB[Cap.C] - RailB[Cap.A], RailB[Cap.B] - RailB[Cap.A]);
+				if ((FVector3d::DotProduct(Normal, Up) < 0.0) != Options.bFlipFaces)
+				{
+					Swap(Cap.B, Cap.C);
+				}
+				const int32 TriangleID = OutMesh.AppendTriangle(
+					FIndex3i(OutResultRailB(Cap.A), OutResultRailB(Cap.B), OutResultRailB(Cap.C)), CapGroupID);
+				if (TriangleID >= 0)
+				{
+					UVs->SetTriangle(TriangleID, FIndex3i(CapUVElementIDs[Cap.A], CapUVElementIDs[Cap.B], CapUVElementIDs[Cap.C]));
+					++NumCapTriangles;
+				}
+			}
+		}
+		OutResult.NumCapTriangles = NumCapTriangles;
+
 		FMeshNormals::InitializeOverlayToPerVertexNormals(OutMesh.Attributes()->PrimaryNormals(), false);
 
 		OutResult.NumColumns = NumColumns;
@@ -257,8 +321,60 @@ namespace PCGUtilsDynMeshLoft
 		const double MiterLimit = FMath::Max(1.0, Options.MiterLimit);
 		const int32 NumSegments = bClosed ? Num : Num - 1;
 
+		// Smoothed offset directions: each point's direction is the length-weighted average of the segment normals
+		// within SmoothingDistance of it along the rail. A dense rail turns a corner over one or two short
+		// segments, and a mitered offset reverses those segments as soon as they are shorter than the offset
+		// can absorb; spreading the turn over a window keeps the offset rail running the same way as the source.
+		TArray<FVector3d> SmoothedNormals;
+		if (Options.SmoothingDistance > 0.0)
+		{
+			TArray<FVector3d> SegmentNormals;
+			TArray<double> SegmentLengths;
+			SegmentNormals.SetNumUninitialized(NumSegments);
+			SegmentLengths.SetNumUninitialized(NumSegments);
+			for (int32 Segment = 0; Segment < NumSegments; ++Segment)
+			{
+				const FVector3d Flat = LoftPrivate::Flatten(Rail[(Segment + 1) % Num] - Rail[Segment], Up);
+				SegmentLengths[Segment] = Flat.Length();
+				SegmentNormals[Segment] = FVector3d::CrossProduct(Flat.GetSafeNormal(), Up);
+			}
+
+			SmoothedNormals.SetNumUninitialized(Num);
+			for (int32 Index = 0; Index < Num; ++Index)
+			{
+				FVector3d Sum = FVector3d::ZeroVector;
+				// Forward from this point, then backward; a closed rail wraps, an open one stops at its ends.
+				for (int32 Direction = 0; Direction < 2; ++Direction)
+				{
+					double Remaining = Options.SmoothingDistance;
+					for (int32 Step = 0; Step < NumSegments && Remaining > 0.0; ++Step)
+					{
+						int32 Segment = (Direction == 0) ? Index + Step : Index - 1 - Step;
+						if (bClosed)
+						{
+							Segment = ((Segment % NumSegments) + NumSegments) % NumSegments;
+						}
+						else if (Segment < 0 || Segment >= NumSegments)
+						{
+							break;
+						}
+						const double Used = FMath::Min(SegmentLengths[Segment], Remaining);
+						Sum += SegmentNormals[Segment] * Used;
+						Remaining -= Used;
+					}
+				}
+				SmoothedNormals[Index] = Sum.GetSafeNormal();
+			}
+		}
+
 		for (int32 Index = 0; Index < Num; ++Index)
 		{
+			if (SmoothedNormals.Num() == Num && !SmoothedNormals[Index].IsNearlyZero())
+			{
+				OutRail[Index] = Rail[Index] + SmoothedNormals[Index] * Distance + Up * Options.Height;
+				continue;
+			}
+
 			const bool bHasPrevious = bClosed || Index > 0;
 			const bool bHasNext = bClosed || Index < Num - 1;
 			FVector3d Previous = bHasPrevious

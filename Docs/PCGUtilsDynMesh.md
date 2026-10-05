@@ -287,8 +287,25 @@ The geometry lives in `Geometry/PCGUtilsDynMeshLoft.h` with no PCG dependency (`
 `AlignRail`, `ResampleByArcLength`) and is covered by `PCGUtils.DynMesh.Loft.*`. The node is a creation node with
 no DynMesh input, so it derives from `UPCGSettings` directly and has no Selector pin.
 
-Known limits: an offset rail miters corners one point for one point, so an Offset Distance larger than a concave
-corner can absorb folds the loft over itself. The node warns with the path index, segment count and first point.
+Per-path settings: Offset Distance, Offset Height and Rows can each be read from a `@Data` attribute on Path A
+(one flag and one exposed attribute name each), so a single node lofts many paths with different shapes.
+
+`Cap Rail B` fills a closed loft's far rail with a flat polygon that reuses the loft's own vertices, in its own
+PolyGroup. An inward loft plus a cap is a plateau or bowl with one seam instead of two.
+
+`Offset Smoothing` averages each point's offset direction along the path, over that multiple of the offset
+distance. A rail read off a remeshed boundary is dense, and a mitered offset reverses any segment shorter than the
+corner beside it can absorb; smoothing is what stops that. 0 restores mitered corners, which only suits sparse
+paths. If segments still fold, the node warns with the path index, segment count and first point.
+
+`DynMesh | Match Loops To Paths` is the companion node. A path that cut a hole no longer shares its points with the
+hole, so the loop has to be read back off the mesh and then identified among every other loop. For each Target
+path it emits the closest Loop; both outputs are ordered by Target, so an N:N Copy Attributes downstream carries
+each path's data attributes onto its loop. A target with no loop within `Max Average Distance` goes to
+`Unmatched Targets` with a warning naming the target and the distance.
+
+When welding a loft to its mesh, keep the merge distance far below the loft's own vertex spacing (0.01, not 1).
+The seam vertices are coincident, but the loft's inner rail is dense and a loose weld collapses it.
 
 ## Simplification
 

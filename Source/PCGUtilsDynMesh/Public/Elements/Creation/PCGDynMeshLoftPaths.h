@@ -109,10 +109,40 @@ public:
 		meta = (PCG_Overridable, EditCondition = "SecondRail==EPCGUtilsLoftSecondRail::Offset", EditConditionHides))
 	bool bPositiveOffsetIsOutward = true;
 
-	/** Caps how far a corner's offset may exceed Offset Distance, as a multiple of it. */
+	/**
+	 * Averages each point's offset direction over this multiple of the offset distance along the path, rounding
+	 * corners. This is what keeps a densely sampled path, such as a remeshed mesh boundary, from folding the loft
+	 * over itself at corners. 1 handles corners up to a right angle; sharper corners need more. 0 offsets each
+	 * point along its mitered corner instead, which keeps corners sharp but only suits sparse paths.
+	 */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Rails",
+		meta = (PCG_Overridable, ClampMin = "0.0", EditCondition = "SecondRail==EPCGUtilsLoftSecondRail::Offset", EditConditionHides))
+	double OffsetSmoothing = 1.0;
+
+	/** Used when Offset Smoothing is 0. Caps how far a corner's offset may exceed Offset Distance, as a multiple of it. */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Rails",
 		meta = (PCG_Overridable, ClampMin = "1.0", EditCondition = "SecondRail==EPCGUtilsLoftSecondRail::Offset", EditConditionHides))
 	double MiterLimit = 2.0;
+
+	/** Read Offset Distance per path from a Path A data attribute, so one node can loft paths of different widths. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Rails|Per-Path Attributes",
+		meta = (PCG_Overridable, EditCondition = "SecondRail==EPCGUtilsLoftSecondRail::Offset", EditConditionHides))
+	bool bOffsetDistanceFromAttribute = false;
+
+	/** Optional @Data-domain numeric attribute on Path A (double, float or integer). A path without it uses Offset Distance. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Rails|Per-Path Attributes",
+		meta = (PCG_Overridable, EditCondition = "SecondRail==EPCGUtilsLoftSecondRail::Offset && bOffsetDistanceFromAttribute", EditConditionHides))
+	FName OffsetDistanceAttributeName = TEXT("LoftOffsetDistance");
+
+	/** Read Offset Height per path from a Path A data attribute. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Rails|Per-Path Attributes",
+		meta = (PCG_Overridable, EditCondition = "SecondRail==EPCGUtilsLoftSecondRail::Offset", EditConditionHides))
+	bool bOffsetHeightFromAttribute = false;
+
+	/** Optional @Data-domain numeric attribute on Path A (double, float or integer). A path without it uses Offset Height. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Rails|Per-Path Attributes",
+		meta = (PCG_Overridable, EditCondition = "SecondRail==EPCGUtilsLoftSecondRail::Offset && bOffsetHeightFromAttribute", EditConditionHides))
+	FName OffsetHeightAttributeName = TEXT("LoftOffsetHeight");
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Rails",
 		meta = (PCG_Overridable, EditCondition = "SecondRail==EPCGUtilsLoftSecondRail::PathB", EditConditionHides))
@@ -135,6 +165,15 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Surface", meta = (PCG_Overridable, ClampMin = "1"))
 	int32 Rows = 8;
 
+	/** Read Rows per path from a Path A data attribute. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Surface|Per-Path Attributes", meta = (PCG_Overridable))
+	bool bRowsFromAttribute = false;
+
+	/** Optional @Data-domain numeric attribute on Path A (integer, or a float that is rounded). A path without it, or with a value below 1, uses Rows. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Surface|Per-Path Attributes",
+		meta = (PCG_Overridable, EditCondition = "bRowsFromAttribute", EditConditionHides))
+	FName RowsAttributeName = TEXT("LoftRows");
+
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Surface", meta = (PCG_Overridable))
 	EPCGUtilsLoftProfile Profile = EPCGUtilsLoftProfile::Smooth;
 
@@ -149,6 +188,14 @@ public:
 	/** Faces point along the up axis by default; this reverses them. */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Surface", meta = (PCG_Overridable))
 	bool bFlipFaces = false;
+
+	/**
+	 * Closed lofts only: fill Rail B with a flat cap that shares its vertices with the loft, in its own PolyGroup.
+	 * Turns an inward loft into a plateau or bowl with no second seam. The cap is a polygon fill with no interior
+	 * vertices.
+	 */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Surface", meta = (PCG_Overridable))
+	bool bCapRailB = false;
 
 	/** UV units per world unit. U runs along Path A, V across the loft. */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Surface", meta = (PCG_Overridable, ClampMin = "0.0"))

@@ -50,12 +50,19 @@ namespace PCGUtilsDynMeshLoft
 
 		/** UV units per world unit. U runs along Rail A's arc length, V across the loft. */
 		double UVScale = 0.01;
+
+		/**
+		 * Closed lofts only: fill Rail B with a flat cap that reuses the last row's vertices, in its own
+		 * triangle group. The cap has no interior vertices; it is a polygon fill, not a remeshed surface.
+		 */
+		bool bCapRailB = false;
 	};
 
 	struct FLoftResult
 	{
 		int32 NumColumns = 0;
 		int32 NumRows = 0;
+		int32 NumCapTriangles = 0;
 
 		/** Vertex IDs of row 0 and of the last row, in rail order. */
 		TArray<int32> RailAVertexIDs;
@@ -88,8 +95,16 @@ namespace PCGUtilsDynMeshLoft
 		/** Offset along UpAxis. */
 		double Height = 0.0;
 
-		/** Caps how far a corner's offset may exceed Distance, as a multiple of it. */
+		/** Caps how far a corner's offset may exceed Distance, as a multiple of it. Unused when smoothing. */
 		double MiterLimit = 2.0;
+
+		/**
+		 * When positive, each point is offset along the average of the segment normals within this distance of
+		 * it along the rail, instead of along its mitered corner bisector. This rounds corners and is what
+		 * keeps a densely sampled rail (a remeshed mesh boundary) from folding. For a right-angle corner it
+		 * needs to be at least about 0.7 times the offset distance; sharper corners need more.
+		 */
+		double SmoothingDistance = 0.0;
 	};
 
 	struct FOffsetResult
