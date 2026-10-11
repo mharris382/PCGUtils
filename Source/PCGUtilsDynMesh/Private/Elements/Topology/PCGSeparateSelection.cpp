@@ -73,7 +73,10 @@ namespace
 
 		// Unselected: deep-copy the source and delete exactly what was selected.
 		UE::Geometry::FDynamicMesh3 UnselectedMesh(*SourceMesh);
+		// Both halves are the input with part of it removed: each keeps the input's metadata (every domain, @Data
+		// included) and target actor.
 		UPCGDynamicMeshData* UnselectedData = FPCGContext::NewObject_AnyThread<UPCGDynamicMeshData>(Context);
+		UnselectedData->InitializeFromData(SourceData);
 		UnselectedData->Initialize(MoveTemp(UnselectedMesh), Materials);
 		UDynamicMesh* UnselectedTarget = UnselectedData->GetMutableDynamicMesh();
 
@@ -83,6 +86,7 @@ namespace
 		// Selected: deep-copy the source and delete the inverse of the selection.
 		UE::Geometry::FDynamicMesh3 SelectedMesh(*SourceMesh);
 		UPCGDynamicMeshData* SelectedData = FPCGContext::NewObject_AnyThread<UPCGDynamicMeshData>(Context);
+		SelectedData->InitializeFromData(SourceData);
 		SelectedData->Initialize(MoveTemp(SelectedMesh), Materials);
 		UDynamicMesh* SelectedTarget = SelectedData->GetMutableDynamicMesh();
 

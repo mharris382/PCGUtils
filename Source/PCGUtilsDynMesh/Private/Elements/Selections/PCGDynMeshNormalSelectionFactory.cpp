@@ -4,6 +4,7 @@
 
 #include "DynamicMesh/DynamicMesh3.h"
 #include "DynamicMesh/DynamicMeshAttributeSet.h"
+#include "Elements/Selections/PCGDynMeshSelectionNormalHelpers.h"
 #include "PCGContext.h"
 #include "Serialization/ArchiveCrc32.h"
 #include "Utils/PCGLogErrors.h"
@@ -12,44 +13,11 @@
 
 namespace
 {
-	template<typename OverlayType, typename ValueType>
-	ValueType GetFirstNormalOverlayElement(const UE::Geometry::FDynamicMesh3& Mesh,
-		const OverlayType* Overlay, int32 VertexID, const ValueType& DefaultValue)
-	{
-		if (!Overlay)
-		{
-			return DefaultValue;
-		}
-
-		ValueType Result = DefaultValue;
-		bool bFound = false;
-		Mesh.EnumerateVertexTriangles(VertexID, [&](int32 TriangleID)
-		{
-			if (bFound || !Overlay->IsSetTriangle(TriangleID))
-			{
-				return;
-			}
-
-			const UE::Geometry::FIndex3i TriangleVertices = Mesh.GetTriangle(TriangleID);
-			const UE::Geometry::FIndex3i TriangleElements = Overlay->GetTriangle(TriangleID);
-			for (int32 Corner = 0; Corner < 3; ++Corner)
-			{
-				if (TriangleVertices[Corner] == VertexID && Overlay->IsElement(TriangleElements[Corner]))
-				{
-					Result = Overlay->GetElement(TriangleElements[Corner]);
-					bFound = true;
-					break;
-				}
-			}
-		});
-		return Result;
-	}
-
 	class FNormalSelectionOperation final : public FPCGUtilsDynMeshSelectionOperation
 	{
 	public:
-		FNormalSelectionOperation(FVector InReferenceDirection, float InDotThreshold)
-			: ReferenceDirection(InReferenceDirection), DotThreshold(InDotThreshold)
+		FNormalSelectionOperation(FVector InReferenceDirection, const FPCGUtilsDynMeshDotComparison& InComparison)
+			: ReferenceDirection(InReferenceDirection), Comparison(InComparison)
 		{
 		}
 
@@ -68,7 +36,18 @@ namespace
 				return false;
 			}
 
-			DotThreshold = FMath::Clamp(DotThreshold, -1.0f, 1.0f);
+			// One threshold for the whole mesh: the constant, or a Data-domain attribute of the mesh.
+			TArray<double> Thresholds;
+			FText ThresholdError;
+			if (!Comparison.ResolveThresholds(SelectionContext->MeshData, 1, Thresholds, ThresholdError))
+			{
+				PCGLog::LogErrorOnGraph(FText::Format(
+					LOCTEXT("BadThreshold", "Select by Normal: {0}. It is read from the mesh, as a Data-domain attribute."),
+					ThresholdError), Context);
+				return false;
+			}
+			ThresholdDot = Thresholds[0];
+
 			const UE::Geometry::FDynamicMesh3& Mesh = SelectionContext->Mesh;
 			Normals = Mesh.HasAttributes() ? Mesh.Attributes()->PrimaryNormals() : nullptr;
 			return true;
@@ -81,22 +60,20 @@ namespace
 
 			if (SelectionContext->Domain.ElementType == UE::Geometry::EGeometryElementType::Face)
 			{
-				return Mesh.IsTriangle(ElementID) && FVector::DotProduct(
-					FVector(Mesh.GetTriNormal(ElementID)), ReferenceDirection) >= DotThreshold;
+				return Mesh.IsTriangle(ElementID) && Comparison.Test(
+					FVector::DotProduct(FVector(Mesh.GetTriNormal(ElementID)), ReferenceDirection), ThresholdDot);
 			}
 
 			if (SelectionContext->Domain.ElementType == UE::Geometry::EGeometryElementType::Vertex &&
 				Mesh.IsVertex(ElementID))
 			{
-				FVector3f VertexNormal = Normals
-					? GetFirstNormalOverlayElement<UE::Geometry::FDynamicMeshNormalOverlay, FVector3f>(
-						Mesh, Normals, ElementID, FVector3f::UnitZ())
-					: (Mesh.HasVertexNormals() ? Mesh.GetVertexNormal(ElementID) : FVector3f::UnitZ());
+				FVector3f VertexNormal = PCGDynMeshSelectionNormalHelpers::GetVertexNormal(
+					Mesh, Normals, ElementID, FVector3f::UnitZ());
 				if (!VertexNormal.Normalize())
 				{
 					return false;
 				}
-				return FVector::DotProduct(FVector(VertexNormal), ReferenceDirection) >= DotThreshold;
+				return Comparison.Test(FVector::DotProduct(FVector(VertexNormal), ReferenceDirection), ThresholdDot);
 			}
 
 			return false;
@@ -104,7 +81,8 @@ namespace
 
 	private:
 		FVector ReferenceDirection;
-		float DotThreshold;
+		FPCGUtilsDynMeshDotComparison Comparison;
+		double ThresholdDot = 0.9;
 		const UE::Geometry::FDynamicMeshNormalOverlay* Normals = nullptr;
 	};
 }
@@ -112,7 +90,7 @@ namespace
 TSharedPtr<FPCGUtilsDynMeshSelectionOperation>
 UPCGDynMeshNormalSelectionFactoryData::CreateNativeOperationInternal() const
 {
-	return MakeShared<FNormalSelectionOperation>(ReferenceDirection, DotThreshold);
+	return MakeShared<FNormalSelectionOperation>(ReferenceDirection, Comparison);
 }
 
 void UPCGDynMeshNormalSelectionFactoryData::AddToCrc(FArchiveCrc32& Ar, bool bFullDataCrc) const
@@ -121,9 +99,8 @@ void UPCGDynMeshNormalSelectionFactoryData::AddToCrc(FArchiveCrc32& Ar, bool bFu
 	if (bFullDataCrc)
 	{
 		FVector Direction = ReferenceDirection;
-		float Threshold = DotThreshold;
 		Ar << Direction;
-		Ar << Threshold;
+		Comparison.AddToCrc(Ar);
 	}
 }
 
@@ -138,6 +115,24 @@ FText UPCGDynMeshNormalSelectionFactoryProviderSettings::GetNodeTooltipText() co
 	return LOCTEXT("Tooltip", "Creates a reusable normal predicate. Vertex and face consumers test their native normals; edge consumers automatically convert the face result.");
 }
 #endif
+
+void UPCGDynMeshNormalSelectionFactoryProviderSettings::PostLoad()
+{
+	Super::PostLoad();
+
+	// A node saved before Comparison existed kept its threshold in DotThreshold, as a dot product that an
+	// element's normal had to reach. A node that never changed that threshold saved nothing, and Comparison's
+	// own defaults are that same rule.
+	if (DotThreshold_DEPRECATED != UnsetLegacyDotThreshold)
+	{
+		Comparison.Domain = EPCGUtilsDynMeshAngularDomain::Scalar;
+		Comparison.Comparison = EPCGUtilsDynMeshDistanceComparison::EqualOrGreater;
+		Comparison.bUnsignedComparison = false;
+		Comparison.ThresholdInput = EPCGUtilsDynMeshInputValueType::Constant;
+		Comparison.DotConstant = FMath::Clamp(static_cast<double>(DotThreshold_DEPRECATED), -1.0, 1.0);
+		DotThreshold_DEPRECATED = UnsetLegacyDotThreshold;
+	}
+}
 
 const FPCGDataTypeBaseId& UPCGDynMeshNormalSelectionFactoryProviderSettings::GetFactoryTypeId() const
 {
@@ -157,7 +152,7 @@ UPCGUtilsDynMeshFactoryData* UPCGDynMeshNormalSelectionFactoryProviderSettings::
 
 	Factory->Priority = Priority;
 	Factory->ReferenceDirection = ReferenceDirection;
-	Factory->DotThreshold = DotThreshold;
+	Factory->Comparison = Comparison;
 	return Super::CreateFactory(InContext, Factory);
 }
 

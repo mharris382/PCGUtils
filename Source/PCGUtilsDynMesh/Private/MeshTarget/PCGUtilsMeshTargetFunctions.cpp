@@ -446,7 +446,16 @@ void FPCGUtilsMeshTargetFunctions::EmitOutput(
 {
 	check(Handle.IsValid());
 
+	// The output is the input, modified: keep the input's metadata (every domain, @Data included) and target actor.
+	const UPCGDynamicMeshSelectionData* InputSelection = Cast<const UPCGDynamicMeshSelectionData>(Input.Data);
+	const UPCGDynamicMeshData* SourceData = InputSelection
+		? InputSelection->GetSourceMeshData() : Cast<const UPCGDynamicMeshData>(Input.Data);
+
 	UPCGDynamicMeshData* OutputData = FPCGContext::NewObject_AnyThread<UPCGDynamicMeshData>(Context);
+	if (SourceData)
+	{
+		OutputData->InitializeFromData(SourceData);
+	}
 	OutputData->Initialize(Handle.GetTargetMesh(), /*bCanTakeOwnership=*/true, Handle.GetMaterials());
 
 	FPCGTaggedData& Output = Context->OutputData.TaggedData.Emplace_GetRef(Input);

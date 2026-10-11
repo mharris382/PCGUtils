@@ -238,7 +238,9 @@ namespace
 				{
 					Materials.Add(Material);
 				}
+				// Out B is what is left of InB: it keeps InB's metadata (every domain, @Data included) and target actor.
 				UPCGDynamicMeshData* BData = FPCGContext::NewObject_AnyThread<UPCGDynamicMeshData>(Invocation.Context);
+				BData->InitializeFromData(Invocation.OperandMeshData);
 				BData->Initialize(MoveTemp(MeshB), Materials);
 				OutOutcome.AuxiliaryMeshOutputs.Add({ ContributionPinB, BData });
 			}

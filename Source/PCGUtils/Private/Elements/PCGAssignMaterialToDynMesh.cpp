@@ -180,7 +180,10 @@ bool FPCGAssignMaterialToDynMeshElement::ExecuteInternal(FPCGContext* InContext)
 			FVector3d Normal = (V1 - V0).Cross(V2 - V0);
 			
 			
-			MaterialIDs->SetValue(TriID, 0);
+			if (Settings->bAssignToAllTriangles)
+			{
+				MaterialIDs->SetValue(TriID, Settings->MaterialSlot);
+			}
 			//const double Dot = FMath::Abs(Normal.Dot(WorldUp));
 //
 			//if (Dot >= DotThreshold)
@@ -217,7 +220,25 @@ bool FPCGAssignMaterialToDynMeshElement::ExecuteInternal(FPCGContext* InContext)
 			//DataAsset->FlatGreenMaterial.LoadSynchronous();
 			//UMaterialInterface* SlopedMat = DataAsset->SlopedGreenMaterial.LoadSynchronous();
 
-			OutMeshData->SetMaterials({ Mat });
+			if (Settings->bAssignToAllTriangles && Settings->MaterialSlot == 0)
+			{
+				OutMeshData->SetMaterials({ Mat });
+			}
+			else
+			{
+				// Keep whatever the other slots hold.
+				TArray<UMaterialInterface*> Materials;
+				for (const TObjectPtr<UMaterialInterface>& Existing : OutMeshData->GetMaterials())
+				{
+					Materials.Add(Existing);
+				}
+				if (Materials.Num() <= Settings->MaterialSlot)
+				{
+					Materials.SetNumZeroed(Settings->MaterialSlot + 1);
+				}
+				Materials[Settings->MaterialSlot] = Mat;
+				OutMeshData->SetMaterials(Materials);
+			}
 		}
 
 		// ── 8. Output ─────────────────────────────────────────────────────────

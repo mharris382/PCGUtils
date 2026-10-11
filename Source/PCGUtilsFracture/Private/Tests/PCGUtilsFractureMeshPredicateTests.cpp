@@ -26,7 +26,7 @@ namespace PCGUtilsFractureMeshPredicateTests
 		UPCGDynMeshNormalSelectionFactoryProviderSettings* Settings =
 			NewObject<UPCGDynMeshNormalSelectionFactoryProviderSettings>();
 		Settings->ReferenceDirection = Direction;
-		Settings->DotThreshold = DotThreshold;
+		Settings->Comparison.DotConstant = DotThreshold;
 		Settings->Representation = EPCGUtilsDynMeshSelectionRepresentation::Selector;
 		return FirstOutput<UPCGUtilsDynMeshSelectionFactoryData>(Run(Settings, {}));
 	}

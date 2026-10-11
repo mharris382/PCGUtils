@@ -439,8 +439,12 @@ bool FPCGUtilsDynMeshProcessBaseElement::ExecuteInternal(FPCGContext* Context) c
 			Materials.Add(Material);
 		}
 
-		// Immediate mode never mutates upstream data: the process always operates on its own copy.
+		// Immediate mode never mutates upstream data: the process always operates on its own copy. The copy is
+		// still the input, modified: it starts from the input's metadata (every domain, @Data included) and target
+		// actor, and only the mesh is replaced. A bare new data here silently drops every attribute upstream nodes
+		// wrote, for every process node at once.
 		UPCGDynamicMeshData* OutputData = FPCGContext::NewObject_AnyThread<UPCGDynamicMeshData>(Context);
+		OutputData->InitializeFromData(SourceData);
 		OutputData->Initialize(UE::Geometry::FDynamicMesh3(*SourceMesh), MoveTemp(Materials));
 
 		// Rebind the input onto the freshly copied mesh, then run the same explicit resolver the deferred path

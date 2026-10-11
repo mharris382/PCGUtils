@@ -169,7 +169,7 @@ bool FPCGUtilsPainterSelectionSwitchTest::RunTest(const FString&)
 		UPCGDynMeshNormalSelectionFactoryData* VertexSelector =
 			NewObject<UPCGDynMeshNormalSelectionFactoryData>();
 		VertexSelector->ReferenceDirection = FVector::UpVector;
-		VertexSelector->DotThreshold = 0.5f;
+		VertexSelector->Comparison.DotConstant = 0.5;
 
 		const TSharedPtr<FPCGUtilsDynMeshPainterOperation> Op = PrepSwitch(MakeSwitch(
 			VertexSelector,

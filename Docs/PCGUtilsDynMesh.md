@@ -210,6 +210,23 @@ processing.
   it, and welds it back with `RestoreRegion` — unselected triangles keep their groups. With no selection the
   whole layer is cleared.
 
+## Materials by selection
+
+**DynMesh | Set Material** assigns a material to a whole mesh, or to a selection of it (a Selection input or a
+connected Selector).
+
+With a selection, only the selected triangles change:
+
+- They move to the slot that already holds the material. A slot is added, at the end of the list, only when no
+  slot holds it. Running the node again with the same material never grows the list.
+- Every other triangle keeps its slot and every existing material stays where it is.
+- A mesh that arrives with no material list is given **Default Material** for the triangles outside the
+  selection, not the selection's material.
+- A mesh whose triangles use slots its material list does not have is not an error. The list is extended to
+  cover them, with empty slots.
+
+With no selection the whole mesh is set to the one material.
+
 ## Shared geometry utilities
 
 `Geometry/PCGUtilsDynMeshSurfaceCorrespondence.h` is a standalone GeometryCore-only helper (no PCG element,
@@ -330,6 +347,49 @@ operation, so it works consistently inside Selection Logic and other nested sele
 native domain are automatically adapted to the consumer's vertex, edge, or face domain. **Select | By Normal**
 still evaluates vertex normals directly for vertex consumers and face normals for face consumers; an edge-only
 consumer such as Realize Builders receives the converted face result without a domain error.
+
+### Direction comparisons
+
+**Select | By Normal** and the normal comparison of **Select | In Bounds** share one group of settings for how
+closely two directions must agree. The settings and their Details panel preview are adapted from
+PCGExtendedToolkit's dot comparison.
+
+| Setting | Meaning |
+|---------|---------|
+| Domain | Whether thresholds are dot products (1 same, 0 perpendicular, -1 opposite) or angles in degrees (0 same, 90 perpendicular, 180 opposite) |
+| Comparison | The operator. The default, greater or equal, passes directions at least as close as the threshold |
+| Unsigned Comparison | Compare magnitudes, so a direction and its opposite count as the same |
+| Threshold Input | Constant, or read from an attribute |
+| Threshold (Attr) | The attribute, a number read in the chosen domain. Required when Threshold Input is Attribute |
+| Scalar / Degrees | The constant threshold. Default 0.9 |
+| Tolerance | For the Nearly Equal comparisons only |
+
+The preview arc above the settings shows which directions pass. A threshold attribute holding a value outside
+its domain is an error naming the attribute, the value and the index.
+
+Where a threshold attribute is read from depends on the node. **Select | By Normal** has no points, so it reads
+a Data-domain attribute (`@Data.Name`) of the mesh it is evaluated on. **Select | In Bounds** reads it from its
+Points input, one value per point.
+
+A **Select | By Normal** node saved with the single `Dot Threshold` setting keeps that threshold: it is moved
+into the comparison settings when the node loads. Its `Dot Threshold` override pin no longer exists.
+
+### Normals inside bounds
+
+**Select | In Bounds** has **Compare Normal**. When on, an element is selected only if it lies in a point's
+bounds *and* its normal agrees with a direction that point supplies. The reason this is one node, and not
+Select In Bounds combined with Select By Normal through Selection Logic, is that each point brings its own
+direction: one node can select the faces facing one way under one point and the faces facing another way under
+the next.
+
+| Setting | Meaning |
+|---------|---------|
+| Normal Direction Attribute | Attribute or property of the Points input giving the direction, in world space. Any vector-convertible value; must not be zero. Defaults to `$Rotation.Forward` |
+| Normal Comparison | The direction comparison above. A threshold attribute is read per point |
+| Normal Overlap Mode | For an element lying in several points' bounds: `Any` selects it if it passes for one of them, `All` only if it passes for every one. An element in no bounds is never selected |
+
+A face is judged by its face normal and a vertex by its vertex normal. An edge is judged by the faces on it and
+agrees with a direction if either of them does.
 
 ### PolyGroup Selector
 

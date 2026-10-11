@@ -1,6 +1,7 @@
 #include "Customizations/PluginCustomizations.h"
 #include "Customizations/PCGOverrideGraphCustomization.h"
 #include "Customizations/PCGUtilsGraphBatchDetails.h"
+#include "Customizations/PCGUtilsDotComparisonCustomization.h"
 #include "Customizations/Enums/PCGUtilsInlineEnumCustomization.h"
 #include "PropertyEditorModule.h"
 #include "AssetToolsModule.h"
@@ -58,6 +59,7 @@ namespace PluginCustomizations
 		FPropertyEditorModule& PropEd = FModuleManager::LoadModuleChecked<FPropertyEditorModule>("PropertyEditor");
 
 		PropEd.RegisterCustomPropertyTypeLayout("PCGOverrideGraph",FOnGetPropertyTypeCustomizationInstance::CreateStatic(&FPCGOverrideGraphCustomization::MakeInstance));
+		PropEd.RegisterCustomPropertyTypeLayout("PCGUtilsDynMeshDotComparison", FOnGetPropertyTypeCustomizationInstance::CreateStatic(&FPCGUtilsDotComparisonCustomization::MakeInstance));
 
 #define PCGUTILS_REGISTER_INLINE_FITTING_ENUM(_ENUM) \
 		class FPCGUtilsInline##_ENUM final : public FPCGUtilsInlineEnumCustomization \
@@ -87,6 +89,7 @@ namespace PluginCustomizations
 		{
 			FPropertyEditorModule& PropertyEditor = FModuleManager::GetModuleChecked<FPropertyEditorModule>("PropertyEditor");
 			PropertyEditor.UnregisterCustomPropertyTypeLayout("PCGOverrideGraph");
+			PropertyEditor.UnregisterCustomPropertyTypeLayout("PCGUtilsDynMeshDotComparison");
 
 #define PCGUTILS_UNREGISTER_INLINE_FITTING_ENUM(_ENUM) PropertyEditor.UnregisterCustomPropertyTypeLayout(TEXT(#_ENUM));
 			PCGUTILS_FOREACH_INLINE_FITTING_ENUM(PCGUTILS_UNREGISTER_INLINE_FITTING_ENUM)

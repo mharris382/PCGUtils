@@ -19,7 +19,7 @@ FText UPCGMaterialSettings::GetDefaultNodeTitle() const
 
 FText UPCGMaterialSettings::GetNodeTooltipText() const
 {
-	return LOCTEXT("Tooltip", "Assigns one material to a Dynamic Mesh, or appends a material and assigns it only to a Dynamic Mesh Selection.");
+	return LOCTEXT("Tooltip", "Assigns one material to a Dynamic Mesh, or only to a selection of it. With a selection, the selected triangles move to the slot that already holds the material, or to a new slot if none does; everything else is left as it was.");
 }
 #endif
 
@@ -69,8 +69,7 @@ bool FPCGUtilsDynMeshMaterialOperation::Execute(
 	{
 		Mesh->EnableAttributes();
 	}
-	const bool bHadMaterialIDs = Mesh->Attributes()->HasMaterialID();
-	if (!bHadMaterialIDs)
+	if (!Mesh->Attributes()->HasMaterialID())
 	{
 		Mesh->Attributes()->EnableMaterialID();
 	}
@@ -92,25 +91,25 @@ bool FPCGUtilsDynMeshMaterialOperation::Execute(
 		Materials.Add(ExistingMaterial);
 	}
 
-	int32 SelectionMaterialID = 1;
-	if (bHadMaterialIDs && !Materials.IsEmpty())
+	// The list must cover every slot a triangle already uses. A mesh that arrives with no list, or with a list
+	// shorter than its triangles' slots, is given slots for them rather than refused: the default material where
+	// there was no list at all, empty slots where an existing list fell short.
+	int32 HighestSlotInUse = 0;
+	for (const int32 TriangleID : Mesh->TriangleIndicesItr())
 	{
-		SelectionMaterialID = Materials.Num();
-		Materials.Add(AssignedMaterial);
+		HighestSlotInUse = FMath::Max(HighestSlotInUse, MaterialIDs->GetValue(TriangleID));
 	}
-	else
+	const bool bHadNoMaterials = Materials.IsEmpty();
+	while (Materials.Num() <= HighestSlotInUse)
 	{
-		Materials = {DefaultMaterial, AssignedMaterial};
-		for (const int32 TriangleID : Mesh->TriangleIndicesItr())
-		{
-			MaterialIDs->SetValue(TriangleID, 0);
-		}
-		if (!DefaultMaterial)
-		{
-			PCGLog::LogWarningOnGraph(
-				LOCTEXT("MissingDefaultMaterial", "Material created slot zero without a valid Default Material."),
-				Invocation.Context);
-		}
+		Materials.Add(bHadNoMaterials ? DefaultMaterial.Get() : nullptr);
+	}
+
+	// Reuse the slot that already holds this material; add one only if none does.
+	int32 SelectionMaterialID = bHadNoMaterials ? INDEX_NONE : Materials.IndexOfByKey(AssignedMaterial.Get());
+	if (SelectionMaterialID == INDEX_NONE)
+	{
+		SelectionMaterialID = Materials.Add(AssignedMaterial);
 	}
 
 	FGeometryScriptMeshSelection Selection;

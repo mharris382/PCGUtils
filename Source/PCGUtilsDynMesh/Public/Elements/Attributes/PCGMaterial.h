@@ -6,7 +6,13 @@
 
 #include "PCGMaterial.generated.h"
 
-/** Assigns a material to an entire Dynamic Mesh or appends it for a mesh selection. */
+/**
+ * Assigns a material to an entire Dynamic Mesh, or to just a selection of it.
+ *
+ * With a selection, only the selected triangles change. They are moved to the slot that already holds the
+ * material, or to a new slot added at the end if no slot holds it. Every other triangle keeps its slot and every
+ * existing material stays in the list, so the node can be run repeatedly to build up surfaces by selection.
+ */
 UCLASS(BlueprintType, ClassGroup=(Procedural), Category="PCGUtils|DynMesh", meta=(Keywords="DynMesh mesh selection selector material assign set"))
 class PCGUTILSDYNMESH_API UPCGMaterialSettings : public UPCGUtilsDynMeshProcessBaseSettings
 {
@@ -24,7 +30,11 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Material", meta=(PCG_Overridable))
 	TSoftObjectPtr<UMaterialInterface> Material;
 
-	/** Slot-zero material used when a selection is applied to a mesh with no established material assignment. */
+	/**
+	 * Material for the triangles outside the selection when the mesh arrives with no material list of its own.
+	 * They are given this rather than the selection's material. May be left empty, which leaves those slots
+	 * without a material. Unused when the mesh already has materials, or when there is no selection.
+	 */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Material", meta=(PCG_Overridable))
 	TSoftObjectPtr<UMaterialInterface> DefaultMaterial;
 
@@ -44,7 +54,8 @@ class PCGUTILSDYNMESH_API FPCGMaterialElement : public FPCGUtilsDynMeshProcessBa
 };
 
 /**
- * Assigns one material to a whole mesh, or appends a material and assigns it to just the effective selection.
+ * Assigns one material to a whole mesh, or to just the effective selection, reusing the slot that already holds
+ * the material and adding one only when none does.
  * Material assignment never changes topology, so an active Builder selection survives it.
  */
 class PCGUTILSDYNMESH_API FPCGUtilsDynMeshMaterialOperation final : public FPCGUtilsDynMeshProcessOperation
