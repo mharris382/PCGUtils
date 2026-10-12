@@ -43,5 +43,10 @@ public:
 	virtual bool SupportsDeferredBuilderProcessing() const override { return true; }
 
 protected:
+	virtual FPCGElementPtr CreateElement() const override;
 	virtual void AddProcessOperationToCrc(FArchiveCrc32& Ar) const override;
+};
+
+class PCGUTILSDYNMESH_API FPCGDynMeshPlanarCutElement final : public FPCGUtilsDynMeshProcessBaseElement
+{
 };

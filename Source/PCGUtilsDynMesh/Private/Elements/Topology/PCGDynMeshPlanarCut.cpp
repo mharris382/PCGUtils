@@ -85,6 +85,11 @@ TSharedPtr<const FPCGUtilsDynMeshProcessOperation> UPCGDynMeshPlanarCutSettings:
 	return Operation;
 }
 
+FPCGElementPtr UPCGDynMeshPlanarCutSettings::CreateElement() const
+{
+	return MakeShared<FPCGDynMeshPlanarCutElement>();
+}
+
 void UPCGDynMeshPlanarCutSettings::AddProcessOperationToCrc(FArchiveCrc32& Ar) const
 {
 	Super::AddProcessOperationToCrc(Ar);
