@@ -99,6 +99,14 @@ named region. Each retained region adds one extended integer PolyGroup layer.
   defaults to the extruded cap faces. Choose side faces or cap and border faces when needed.
 - **DynMesh | Inset Faces** uses the corresponding inset/outset operation, with inner faces as its default result.
   Border-only and combined results are also available. Negative distance outsets. UV Scale applies to the border.
+- **DynMesh | Extrude To Paths** separates the selected faces and joins them back with a strip, as the two nodes
+  above do, but moves each rim vertex to a path point instead of along a direction or by a distance. The points
+  are matched to rim vertices by vertex ID (`Vertex Index Attribute`), so the round trip is `DynMesh | Selection
+  To Paths` with `Output Vertex Index` on, any path nodes, then this node with the same mesh and selection.
+  Whether the result is an inset or an extrude depends only on where the points are; `Interior Vertices` chooses
+  whether vertices inside the rim stay (inset) or follow the rim's average move (extrude). A rim vertex no point
+  names stays in place; points that name no rim vertex are ignored. Both are logged with counts. It moves rim
+  vertices one for one and does not add or remove any.
 - **DynMesh | Bevel Edges** now reports the newly created bevel faces through the same base, replacing invalidated edge IDs.
   Its existing bare-mesh behavior (bevel every edge) is retained. It now supports result Selection data and a
   reusable Selector on its **Result** pin.

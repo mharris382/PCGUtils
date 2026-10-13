@@ -8,6 +8,8 @@
 #include "GeometryScript/GeometryScriptSelectionTypes.h"
 #include "GeometryScript/MeshSelectionQueryFunctions.h"
 #include "Metadata/PCGMetadata.h"
+#include "Metadata/PCGMetadataAttributeTpl.h"
+#include "Metadata/PCGMetadataDomain.h"
 #include "MeshTarget/PCGUtilsMeshTargetFunctions.h"
 #include "PCGContext.h"
 #include "PCGPin.h"
@@ -165,8 +167,16 @@ bool FPCGDynamicMeshSelectionToPathsElement::ExecuteInternal(FPCGContext* Contex
 			}
 		}
 
-		for (const FGeometryScriptPolyPath& PathLoop : PathLoops)
+		if (Settings->bOutputVertexIndex && Settings->VertexIndexAttribute.IsNone())
 		{
+			PCGLog::LogWarningOnGraph(
+				LOCTEXT("EmptyVertexIndexAttribute", "Dynamic Mesh Selection To Paths cannot output an unnamed Vertex Index attribute."),
+				Context);
+		}
+
+		for (int32 LoopIndex = 0; LoopIndex < PathLoops.Num(); ++LoopIndex)
+		{
+			const FGeometryScriptPolyPath& PathLoop = PathLoops[LoopIndex];
 			if (!PathLoop.Path.IsValid() || PathLoop.Path->Num() < 3)
 			{
 				PCGLog::LogWarningOnGraph(
@@ -198,6 +208,37 @@ bool FPCGDynamicMeshSelectionToPathsElement::ExecuteInternal(FPCGContext* Contex
 				BoundsMax[PointIndex] = FVector::ZeroVector;
 			}
 			SetClosedLoopDataAttribute(OutputData);
+
+			if (Settings->bOutputVertexIndex && !Settings->VertexIndexAttribute.IsNone())
+			{
+				// The loops come back twice, as vertex IDs and as positions, in the same order.
+				const TArray<int32>* VertexIDs = IndexLoops.IsValidIndex(LoopIndex) && IndexLoops[LoopIndex].List.IsValid()
+					? IndexLoops[LoopIndex].List.Get() : nullptr;
+				if (!VertexIDs || VertexIDs->Num() != OutputPositions.Num())
+				{
+					PCGLog::LogWarningOnGraph(FText::Format(
+						LOCTEXT("VertexIndexCountMismatch", "Dynamic Mesh Selection To Paths: boundary loop {0} has {1} points but {2} vertex IDs; its points were given no '{3}' attribute."),
+						FText::AsNumber(LoopIndex), FText::AsNumber(OutputPositions.Num()), FText::AsNumber(VertexIDs ? VertexIDs->Num() : 0),
+						FText::FromName(Settings->VertexIndexAttribute)), Context);
+				}
+				else if (UPCGMetadata* Metadata = OutputData->MutableMetadata())
+				{
+					FPCGMetadataDomain* ElementsDomain = Metadata->GetMetadataDomain(PCGMetadataDomainID::Elements);
+					FPCGMetadataAttribute<int32>* VertexIndexAttribute = ElementsDomain
+						? ElementsDomain->FindOrCreateAttribute<int32>(Settings->VertexIndexAttribute, INDEX_NONE, false, true)
+						: nullptr;
+					if (VertexIndexAttribute)
+					{
+						auto MetadataEntries = OutputData->GetMetadataEntryValueRange();
+						for (int32 PointIndex = 0; PointIndex < OutputPositions.Num(); ++PointIndex)
+						{
+							MetadataEntries[PointIndex] = PCGInvalidEntryKey;
+							ElementsDomain->InitializeOnSet(MetadataEntries[PointIndex]);
+							VertexIndexAttribute->SetValue(MetadataEntries[PointIndex], (*VertexIDs)[PointIndex]);
+						}
+					}
+				}
+			}
 
 			FPCGTaggedData& Output = Context->OutputData.TaggedData.Emplace_GetRef(Input);
 			Output.Data = OutputData;

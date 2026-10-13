@@ -33,6 +33,17 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Settings", meta=(PCG_Overridable))
 	bool bOutputToWorldSpace = true;
 
+	/**
+	 * Add the source dynamic-mesh vertex ID to every path point, as DynMesh | Selection To Points does. With it,
+	 * DynMesh | Apply Points By Vertex ID can move the boundary vertices to wherever path nodes put the points.
+	 */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Settings", meta=(PCG_Overridable))
+	bool bOutputVertexIndex = false;
+
+	/** Point attribute (int32) that receives the source dynamic-mesh vertex ID. Only written when Output Vertex Index is on. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Settings", meta=(PCG_Overridable, EditCondition="bOutputVertexIndex"))
+	FName VertexIndexAttribute = TEXT("VertexIndex");
+
 	/** Tag projected negative-winding loops as holes, matching the PCGEx/Clipper2 path convention. */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Settings|Tagging", meta=(PCG_Overridable, InlineEditConditionToggle))
 	bool bTagHoles = false;
