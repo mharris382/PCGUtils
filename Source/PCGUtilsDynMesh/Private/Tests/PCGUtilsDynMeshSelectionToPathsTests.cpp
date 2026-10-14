@@ -14,6 +14,7 @@
 #include "Generators/GridBoxMeshGenerator.h"
 #include "Metadata/PCGMetadata.h"
 #include "Metadata/PCGMetadataAttributeTpl.h"
+#include "Metadata/PCGMetadataDomain.h"
 #include "OrientedBoxTypes.h"
 #include "PCGContext.h"
 #include "Selections/GeometrySelection.h"
@@ -113,6 +114,48 @@ bool FPCGDynMeshSelectionToPathsVertexIndexTest::RunTest(const FString&)
 	}
 	TestEqual(TEXT("Every point names the mesh vertex it sits on"), Wrong, 0);
 	TestEqual(TEXT("No vertex is named twice"), Seen.Num(), Path->GetNumPoints());
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FPCGDynMeshSelectionToPathsDataDomainTest,
+	"PCGUtils.DynMesh.SelectionToPaths.PathsKeepTheMeshDataAttributes", EAutomationTestFlags::EditorContext | EAutomationTestFlags::ProductFilter)
+
+bool FPCGDynMeshSelectionToPathsDataDomainTest::RunTest(const FString&)
+{
+	using namespace PCGUtilsDynMeshSelectionToPathsTests;
+
+	const UPCGDynamicMeshSelectionData* Selection = TopOfBox();
+	UPCGDynamicMeshData* MeshData = const_cast<UPCGDynamicMeshData*>(Selection->GetSourceMeshData());
+	FPCGMetadataDomain* Domain = MeshData->MutableMetadata()->GetMetadataDomain(PCGMetadataDomainID::Data);
+	Domain->AddEntry();
+	Domain->FindOrCreateAttribute<int32>(TEXT("GroupID"), 0, false, false, true)->SetValue(PCGFirstEntryKey, 7);
+	// The mesh says it is open; the path is a closed loop, and the node's answer wins.
+	Domain->FindOrCreateAttribute<bool>(TEXT("IsClosed"), false, false, false, true)->SetValue(PCGFirstEntryKey, false);
+
+	UPCGDynamicMeshSelectionToPathsSettings* Settings = NewObject<UPCGDynamicMeshSelectionToPathsSettings>();
+	Settings->bOutputToWorldSpace = false;
+	const TArray<FPCGTaggedData> Paths = Run(Settings, Selection);
+	UTEST_EQUAL(TEXT("The top of a box has one boundary loop"), Paths.Num(), 1);
+	const UPCGMetadata* Metadata = Paths[0].Data ? Paths[0].Data->ConstMetadata() : nullptr;
+	UTEST_NOT_NULL(TEXT("The path has metadata"), Metadata);
+
+	const FPCGMetadataAttribute<int32>* GroupID =
+		Metadata->GetConstTypedAttribute<int32>(FPCGAttributeIdentifier(TEXT("GroupID"), PCGMetadataDomainID::Data));
+	UTEST_NOT_NULL(TEXT("The path carries the mesh's @Data GroupID"), GroupID);
+	TestEqual(TEXT("With the mesh's value"), GroupID->GetValueFromItemKey(PCGFirstEntryKey), 7);
+
+	const FPCGMetadataAttribute<bool>* IsClosed =
+		Metadata->GetConstTypedAttribute<bool>(FPCGAttributeIdentifier(TEXT("IsClosed"), PCGMetadataDomainID::Data));
+	UTEST_NOT_NULL(TEXT("The path has IsClosed"), IsClosed);
+	TestTrue(TEXT("IsClosed is the node's answer, not the mesh's"), IsClosed->GetValueFromItemKey(PCGFirstEntryKey));
+
+	Settings->IsClosedAttribute = TEXT("Loop");
+	const TArray<FPCGTaggedData> Renamed = Run(Settings, Selection);
+	UTEST_EQUAL(TEXT("Still one boundary loop"), Renamed.Num(), 1);
+	const FPCGMetadataAttribute<bool>* Loop = Renamed[0].Data->ConstMetadata()->GetConstTypedAttribute<bool>(
+		FPCGAttributeIdentifier(TEXT("Loop"), PCGMetadataDomainID::Data));
+	UTEST_NOT_NULL(TEXT("The closed flag is written under the name asked for"), Loop);
+	TestTrue(TEXT("And is true"), Loop->GetValueFromItemKey(PCGFirstEntryKey));
 	return true;
 }
 

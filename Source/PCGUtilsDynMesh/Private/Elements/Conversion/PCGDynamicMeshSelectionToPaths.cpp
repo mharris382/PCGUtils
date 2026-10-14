@@ -22,7 +22,6 @@ namespace
 {
 	const FName SelectionToPathsInputPin = TEXT("Selection");
 	const FName SelectionToPathsOutputPin = TEXT("Paths");
-	const FName IsClosedAttributeName = TEXT("IsClosed");
 
 	bool IsNegativeProjectedWinding(const TArray<FVector>& Positions, const FVector& ProjectionAxis)
 	{
@@ -46,20 +45,38 @@ namespace
 		return SignedTwiceArea < 0.0;
 	}
 
-	void SetClosedLoopDataAttribute(UPCGPointArrayData* PointData)
+	/**
+	 * A boundary path describes the selected mesh, not its vertices, so of the source mesh's metadata only the
+	 * dataset-wide @Data domain carries over. A selection holds no metadata of its own; its source mesh does.
+	 */
+	void InheritDataDomain(UPCGPointArrayData* OutputData, const UPCGDynamicMeshData* MeshData)
 	{
-		if (!PointData)
+		const FPCGMetadataDomain* SourceDomain = MeshData && MeshData->ConstMetadata()
+			? MeshData->ConstMetadata()->GetConstMetadataDomain(PCGMetadataDomainID::Data) : nullptr;
+		FPCGMetadataDomain* OutputDomain = OutputData && OutputData->MutableMetadata()
+			? OutputData->MutableMetadata()->GetMetadataDomain(PCGMetadataDomainID::Data) : nullptr;
+		if (SourceDomain && OutputDomain)
+		{
+			OutputDomain->Initialize(FPCGMetadataDomainInitializeParams(SourceDomain));
+		}
+	}
+
+	void SetClosedLoopDataAttribute(UPCGPointArrayData* PointData, FName IsClosedAttributeName)
+	{
+		if (!PointData || IsClosedAttributeName.IsNone())
 		{
 			return;
 		}
 
 		if (UPCGMetadata* Metadata = PointData->MutableMetadata())
 		{
+			// bOverrideParent is required: the source mesh's @Data may already carry this attribute, and this
+			// node's answer for the boundary path is the correct one.
 			if (FPCGMetadataAttribute<bool>* IsClosedAttribute = Metadata->FindOrCreateAttribute<bool>(
 				FPCGAttributeIdentifier(IsClosedAttributeName, PCGMetadataDomainID::Data),
 				true,
 				/*bAllowsInterpolation=*/false,
-				/*bOverrideParent=*/false,
+				/*bOverrideParent=*/true,
 				/*bOverwriteIfTypeMismatch=*/true))
 			{
 				IsClosedAttribute->SetValue(PCGInvalidEntryKey, true);
@@ -78,7 +95,8 @@ FText UPCGDynamicMeshSelectionToPathsSettings::GetNodeTooltipText() const
 {
 	return LOCTEXT("Tooltip",
 		"Outputs one closed, ordered point-data path for each boundary loop of the selection's implied triangle region. "
-		"Vertex and edge selections expand to incident triangles. Optional hole tagging uses projected winding and the PCGEx convention.");
+		"Vertex and edge selections expand to incident triangles. Each path keeps the source mesh's @Data attributes. "
+		"Optional hole tagging uses projected winding and the PCGEx convention.");
 }
 #endif
 
@@ -193,6 +211,7 @@ bool FPCGDynamicMeshSelectionToPathsElement::ExecuteInternal(FPCGContext* Contex
 			}
 
 			UPCGPointArrayData* OutputData = FPCGContext::NewObject_AnyThread<UPCGPointArrayData>(Context);
+			InheritDataDomain(OutputData, MeshData);
 			OutputData->SetNumPoints(OutputPositions.Num(), false);
 			auto Transforms = OutputData->GetTransformValueRange();
 			auto PointColors = OutputData->GetColorValueRange();
@@ -207,7 +226,7 @@ bool FPCGDynamicMeshSelectionToPathsElement::ExecuteInternal(FPCGContext* Contex
 				BoundsMin[PointIndex] = FVector::ZeroVector;
 				BoundsMax[PointIndex] = FVector::ZeroVector;
 			}
-			SetClosedLoopDataAttribute(OutputData);
+			SetClosedLoopDataAttribute(OutputData, Settings->IsClosedAttribute);
 
 			if (Settings->bOutputVertexIndex && !Settings->VertexIndexAttribute.IsNone())
 			{

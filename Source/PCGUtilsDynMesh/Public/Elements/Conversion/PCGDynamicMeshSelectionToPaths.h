@@ -44,6 +44,14 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Settings", meta=(PCG_Overridable, EditCondition="bOutputVertexIndex"))
 	FName VertexIndexAttribute = TEXT("VertexIndex");
 
+	/**
+	 * Optional @Data attribute (bool) written true on every output path, marking it closed for PCGEx and the
+	 * path nodes downstream. Overrides an attribute of the same name inherited from the source mesh's @Data.
+	 * None writes nothing.
+	 */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Settings", meta=(PCG_Overridable))
+	FName IsClosedAttribute = TEXT("IsClosed");
+
 	/** Tag projected negative-winding loops as holes, matching the PCGEx/Clipper2 path convention. */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Settings|Tagging", meta=(PCG_Overridable, InlineEditConditionToggle))
 	bool bTagHoles = false;
