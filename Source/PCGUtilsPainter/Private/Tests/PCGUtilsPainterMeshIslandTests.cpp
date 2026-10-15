@@ -168,7 +168,8 @@ bool FPCGUtilsPainterMeshIslandTest::RunTest(const FString&)
 		// The edge-isolated vertex is its own single-vertex island keyed by its own ID — a real per-island
 		// draw, not a silent floor value.
 		const float IsolatedValue = EvaluateAt(Op, IsolatedVID).Scalar;
-		const float ExpectedIsolated = FRandomStream(PCGHelpers::ComputeSeed(3, IsolatedVID)).FRandRange(0.0f, 1.0f);
+		const float ExpectedIsolated = FRandomStream(PCGHelpers::ComputeSeed(
+			3, PCGHelpers::ComputeSeedFromPosition(FVector(500, 500, 0)), IsolatedVID)).FRandRange(0.0f, 1.0f);
 		TestTrue(TEXT("Isolated vertex gets its own deterministic island value"),
 			FMath::IsNearlyEqual(IsolatedValue, ExpectedIsolated, 1e-5f));
 
@@ -179,6 +180,66 @@ bool FPCGUtilsPainterMeshIslandTest::RunTest(const FString&)
 		}
 	}
 
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FPCGUtilsPainterMeshIslandSingleIslandMeshesTest,
+	"PCGUtils.Painter.MeshIsland.SingleIslandMeshesGetTheirOwnValues",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::ProductFilter)
+
+bool FPCGUtilsPainterMeshIslandSingleIslandMeshesTest::RunTest(const FString&)
+{
+	// Each single-island mesh's only island is keyed by vertex 0. Separate meshes, whether separately built in
+	// world space or one local mesh placed by different transforms, must still draw separate random values.
+	constexpr int32 Seed = 42;
+	constexpr int32 MeshCount = 8;
+
+	TArray<float> WorldSpaceValues;
+	for (int32 Index = 0; Index < MeshCount; ++Index)
+	{
+		FDynamicMesh3 Mesh;
+		const TArray<int32> Quad = IslandTestQuad(Mesh, FVector3d(Index * 500.0, 0, 0));
+		const FPCGUtilsDynMeshPainterEvaluationContext Context(nullptr, Mesh, FTransform::Identity);
+		const TSharedPtr<FPCGUtilsDynMeshPainterOperation> Op = MakeIslandOperation(Mesh, Seed, 0.0f, 1.0f, Context);
+		if (!TestNotNull(TEXT("Single-island operation prepared"), Op.Get()))
+		{
+			return false;
+		}
+		const float Value = EvaluateAt(Op, Quad[0]).Scalar;
+		for (const int32 VID : Quad)
+		{
+			TestEqual(TEXT("A single-island mesh is uniform"), EvaluateAt(Op, VID).Scalar, Value);
+		}
+		TestTrue(TEXT("Single-island value within range"), Value >= 0.0f && Value < 1.0f);
+		WorldSpaceValues.Add(Value);
+	}
+
+	TArray<float> PlacedValues;
+	{
+		FDynamicMesh3 Mesh;
+		const TArray<int32> Quad = IslandTestQuad(Mesh, FVector3d::ZeroVector);
+		for (int32 Index = 0; Index < MeshCount; ++Index)
+		{
+			const FPCGUtilsDynMeshPainterEvaluationContext Context(
+				nullptr, Mesh, FTransform(FVector(0, Index * 500.0, 0)));
+			const TSharedPtr<FPCGUtilsDynMeshPainterOperation> Op = MakeIslandOperation(Mesh, Seed, 0.0f, 1.0f, Context);
+			if (!TestNotNull(TEXT("Placed single-island operation prepared"), Op.Get()))
+			{
+				return false;
+			}
+			PlacedValues.Add(EvaluateAt(Op, Quad[0]).Scalar);
+		}
+	}
+
+	auto CountDistinct = [](const TArray<float>& Values)
+	{
+		TSet<float> Distinct(Values);
+		return Distinct.Num();
+	};
+	TestEqual(TEXT("Separate single-island meshes draw separate values"), CountDistinct(WorldSpaceValues), MeshCount);
+	TestEqual(TEXT("Copies of one mesh at different placements draw separate values"),
+		CountDistinct(PlacedValues), MeshCount);
 	return true;
 }
 

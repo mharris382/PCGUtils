@@ -141,8 +141,11 @@ The Painter providers:
 - **Random Value by Mesh Island**: a topology-dependent scalar Painter. Its `Prepare()` pass finds the
   connected vertex components of the whole canonical mesh (`FMeshConnectedComponents::FindConnectedVertices`,
   edge connectivity) and gives each one a deterministic value in `[Min Value, Max Value]`, hashed from the
-  node `Seed` and the component's smallest canonical vertex ID (so inserting geometry elsewhere does not shift
-  other islands). `Evaluate` returns the cached per-vertex value. Islands are canonical base-topology
+  node `Seed`, the component's smallest canonical vertex ID (so inserting geometry elsewhere does not shift
+  other islands) and that vertex's world position. The position is what tells meshes apart: a single-island
+  mesh always has key vertex 0, so without it every single-island target drew the same value. Separate meshes
+  and separate placements of one mesh get separate values; moving a target changes its values.
+  `Evaluate` returns the cached per-vertex value. Islands are canonical base-topology
   components: UV / normal / colour-overlay seams and material boundaries never split one, and the outer paint
   Write Selection never redefines them. Empty meshes and sparse IDs are safe; an edge-isolated loose vertex
   becomes its own single-vertex island keyed by its own ID (a real per-island value, never a silent floor).
