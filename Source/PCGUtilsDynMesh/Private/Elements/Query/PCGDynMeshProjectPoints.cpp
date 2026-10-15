@@ -109,7 +109,7 @@ namespace
 			Blended = FVector3d(Mesh.GetVertexNormal(Tri.A)) * Bary.X + FVector3d(Mesh.GetVertexNormal(Tri.B)) * Bary.Y
 				+ FVector3d(Mesh.GetVertexNormal(Tri.C)) * Bary.Z;
 		}
-		return Blended.Normalize() > UE_DOUBLE_SMALL_NUMBER ? Blended : FaceNormal;
+		return Blended.Normalize(UE_DOUBLE_SMALL_NUMBER) ? Blended : FaceNormal;
 	}
 
 	TOptional<FVector2D> UVAt(const FDynamicMesh3& Mesh, int32 UVChannel, int32 TriangleID, const FVector3d& Bary)
