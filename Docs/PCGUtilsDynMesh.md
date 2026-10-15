@@ -293,6 +293,31 @@ helper with no PCG dependency, like `PCGUtilsDynMeshSurfaceCorrespondence.h`, wh
 by poking every anchor into that copy up front; the Geometry Script wrapper deep-copies the whole mesh on every
 call. `TraceSurfacePath()` drives `FMeshGeodesicSurfaceTracer` against a const mesh and copies nothing.
 
+## Projecting points
+
+**DynMesh | Project Points** (Query) casts a ray from every point and moves it onto the first DynMesh surface hit.
+It is the directional counterpart of the closest-point projection the surface-pathing nodes use. Pins follow the
+mutation rule: `In` (the points, emitted mutated on `Out`) first, then `Mesh`, then the optional `Selector`.
+
+- **Direction** is a constant or a per-point Vector selector (`$Rotation.Up` by default). **Direction In Point
+  Space** rotates it by each point's rotation, and **Invert Direction** flips it. **Max Distance** is `0` for
+  unlimited and is measured in the points' space. **Bidirectional** also casts backwards and keeps the nearer hit,
+  reporting it with a negative distance. **Ignore Back Faces** skips triangles reached from behind.
+- **Several mesh inputs act as one scene**: each ray keeps the nearest hit across all of them. A Selection or
+  Selector limits the surface to the selected triangles. Reported triangle IDs are always the source mesh's, and
+  per-corner data (normals, UVs, colors) is read from the source mesh too.
+- **Apply.** **Project Position** writes the hit back on the axes in **Position Axes** (X, Y and Z by default;
+  clear X and Y to only drop points vertically), lifted by **Surface Offset** along the normal. **Project
+  Rotation** turns **Align Axis** onto the hit normal by the smallest rotation, so heading around the normal
+  survives. **Prune Misses** removes points that hit nothing; otherwise they pass through unmoved.
+- **Attributes.** Each is opt-in with its own name: hit flag, signed distance, hit location, hit normal
+  (interpolated shading normal or face normal, per **Normal Source**), back face, triangle ID, barycentrics, UV
+  (per channel), vertex color, PolyGroup ID (default groups or a named layer), material ID, material, and which
+  mesh input was hit.
+
+The output is the input point data, mutated: it is initialized from the input, so every attribute in every domain,
+every tag and the target actor survive, and pruning keeps each surviving point's own metadata entry.
+
 ## Structured surface generation
 
 `DynMesh | Loft Paths` builds a quad grid between two paths: one column per path point and a set number of rows
