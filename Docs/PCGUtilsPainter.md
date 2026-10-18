@@ -150,6 +150,27 @@ The Painter providers:
   Write Selection never redefines them. Empty meshes and sparse IDs are safe; an edge-isolated loose vertex
   becomes its own single-vertex island keyed by its own ID (a real per-island value, never a silent floor).
   Topology rebuilding or vertex-ID reassignment can change which value an island gets.
+- **Painter | Constant**: one value over the whole target, a scalar or a color defining the enabled `Color
+  Channels`. `Value` (scalar) and `Color` (Vector4) are input shorthands: a constant, or one value read per
+  target mesh from that mesh's own `@Data` domain during `Prepare()`. One Painter therefore gives every mesh
+  its own value — `Value = @Data.PathColor.R` paints each mesh with the red channel of the path color it was
+  built from (the `@Data.` prefix is optional on DynMesh data; extractors such as `.R` apply). Attribute mode
+  is strict: a target without the attribute fails with an error naming it and is not painted. Static Mesh
+  Component targets carry no `@Data`, so attribute mode is DynMesh-only in practice.
+- **Painter decorators** wrap exactly one Painter (required `Painter` input pin) and change its field. The
+  shared base (`PCGUtilsPainterDecorator.h`) creates, initializes and prepares the wrapped Painter, and a
+  decorator returns the same value type as the Painter it wraps.
+  - **Painter | Blur**: evaluates the wrapped Painter once per canonical vertex during `Prepare()` (through
+    `FPCGUtilsPainterSampleBuilder`, the same sample definition the paint traversal uses), then gives each
+    vertex the weighted average over every vertex within `Radius`, straight-line distance, found with a
+    point hash grid. `Falloff` is Uniform (box), Linear, or Gaussian (Radius = 3σ). `Space` measures Radius in
+    world centimetres (default) or DynMesh-local units. `Radius` is an input shorthand (constant, or per-target
+    `@Data`, default attribute `BlurRadius`; negative values are errors) and 0 is a pass-through. Colors
+    average per channel over only the neighbours defining that channel. `Keep Islands Separate` restricts the
+    average to the vertex's own connected component, so touching pieces never bleed. The Write Selection
+    limits writes only; every vertex still contributes to its neighbours. Cost grows with vertices per
+    radius, so very large radii on dense meshes are slow, and the straight-line distance blurs through thin
+    walls.
 - **Selection Painter Switch** / **Selection to Painter**: two presentations of one binary Painter
   multiplexer. A **Value Selection** (any DynMesh Selector, including composite Selection Logic) classifies
   every canonical-mesh vertex during `Prepare()` — evaluated once, in the vertex domain, with the Selector
