@@ -114,9 +114,15 @@ bool FPCGSavePCGCacheDataElement::ExecuteInternal(FPCGContext* Context) const
 	Parameters.AssetPath = FPackageName::GetLongPackagePath(PackageName);
 	Parameters.AssetName = CacheComponent->CacheSaveName.ToString();
 
-	if (!UPCGAssetExporterUtils::CreateAsset(Exporter, Parameters, Context))
+	const UPackage* SavedPackage = UPCGAssetExporterUtils::CreateAsset(Exporter, Parameters, Context);
+	if (!SavedPackage)
 	{
 		PCGE_LOG_C(Error, GraphAndLog, Context, FText::Format(LOCTEXT("SaveFailed", "Failed to save PCG cache asset '{0}'."), FText::FromString(ObjectPath.ToString())));
+	}
+	else if (SavedPackage->IsDirty())
+	{
+		// CreateAsset returns the package even when writing it to disk fails; a failed save leaves it dirty.
+		PCGE_LOG_C(Error, GraphAndLog, Context, FText::Format(LOCTEXT("WriteFailed", "PCG cache asset '{0}' was created but could not be written to disk. The Output Log (LogSavePackage) has the reason."), FText::FromString(ObjectPath.ToString())));
 	}
 	else
 	{

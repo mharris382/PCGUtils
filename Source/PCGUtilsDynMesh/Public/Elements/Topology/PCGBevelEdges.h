@@ -1,6 +1,7 @@
 #pragma once
 
 #include "CoreMinimal.h"
+#include "Details/PCGUtilsInputShorthands.h"
 #include "Elements/PCGUtilsDynMeshTopologyProcessBase.h"
 
 #include "PCGBevelEdges.generated.h"
@@ -21,11 +22,20 @@ public:
 	virtual FText GetDefaultNodeTitle() const override;
 	virtual FText GetNodeTooltipText() const override;
 	virtual FLinearColor GetNodeTitleColor() const override { return FLinearColor(0.413f, 0.25f, 1.0f, 1.0f); }
+	virtual EPCGChangeType GetChangeTypeForProperty(FPropertyChangedEvent& PropertyChangedEvent) const override;
 #endif
 
-	/** Distance each beveled edge is inset from its initial position. */
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Bevel", meta=(PCG_Overridable, ClampMin="0.0"))
-	float BevelDistance = 1.0f;
+	/**
+	 * Distance each beveled edge is inset from its initial position. Must not be negative.
+	 *
+	 * @Data mode reads one value per input from the input's @Data domain: a number (Integer32, Integer64, Float or
+	 * Double) of 0 or more. The @Data. prefix is optional on DynMesh data. The attribute is required on every
+	 * input: an input without it, with a non-numeric value, or with a negative value fails with an error and is
+	 * skipped; the constant is never used as a fallback. Builder inputs are refused in @Data mode, because a
+	 * Builder has no @Data until it is realized.
+	 */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Bevel", meta=(PCG_Overridable))
+	FPCGUtilsInputShorthandDoubleAbs BevelDistance;
 
 	/** Number of edge loops added along the bevel faces. 0 produces a single planar chamfer face per edge - eg for a golf ramp rather than a rounded decorative bevel. */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Bevel", meta=(PCG_Overridable, ClampMin="0"))
@@ -56,6 +66,10 @@ public:
 		return true;
 	}
 
+	/** A Builder carries no @Data until realized, so @Data-driven Bevel Distance only runs on realized meshes. */
+	virtual bool SupportsDeferredBuilderProcessing() const override { return BevelDistance.IsConstant(); }
+	virtual FText GetBuilderInputRejectionReason() const override;
+
 protected:
 	virtual TSharedPtr<FPCGUtilsDynMeshTopologyOperation> CreateTopologyOperation(FPCGContext* InContext) const override;
 	virtual FName GetMainInputPinLabel() const override;
@@ -74,11 +88,16 @@ class PCGUTILSDYNMESH_API FPCGBevelEdgesElement : public FPCGUtilsDynMeshProcess
 class PCGUTILSDYNMESH_API FPCGUtilsDynMeshBevelEdgesOperation final : public FPCGUtilsDynMeshTopologyOperation
 {
 public:
+	/** Per-input source of the distance; in @Data mode Execute resolves it into BevelDistance on a local copy. */
+	FPCGUtilsInputShorthandDoubleAbs BevelDistanceInput;
 	float BevelDistance = 1.0f;
 	int32 Subdivisions = 0;
 	float RoundWeight = 1.0f;
 	bool bInferMaterialID = false;
 	int32 SetMaterialID = 0;
+
+	virtual bool Execute(const FPCGUtilsDynMeshProcessInvocation& Invocation,
+		FPCGUtilsDynMeshProcessOutcome& OutOutcome) const override;
 
 protected:
 	virtual bool Apply(UE::Geometry::FDynamicMesh3& Mesh,

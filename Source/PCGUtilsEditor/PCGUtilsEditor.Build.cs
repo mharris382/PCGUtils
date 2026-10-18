@@ -16,6 +16,7 @@ public class PCGUtilsEditor : ModuleRules
                 "Engine",
                 "GameplayTags",
                 "PCGUtils",
+                "PCGUtilsCore",
 				"PCGUtilsDynMesh",
 				"PCGUtilsPainter",
 				"PCGUtilsFracture",

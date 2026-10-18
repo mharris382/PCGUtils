@@ -173,6 +173,14 @@ followed by a mutable metadata-entry range, set every new entry to `PCGInvalidEn
 arbitrary nonnegative value left by uninitialized storage, which can produce unreadable attributes and the graph
 warning that an output does not have valid point metadata.
 
+## Constant-or-@Data settings
+
+A numeric, vector or name setting that a data set could reasonably supply for itself is an input shorthand
+(`FPCGUtilsInputShorthand<Type>` in `PCGUtilsCore`), not a plain property. `@Data` reads are strict: a missing or
+mistyped attribute is an error for that input, never a fallback to the constant. Upgrading an existing setting must
+keep saved values and override wires; `Docs/PCGUtilsInputShorthands.md` has the migration recipe and the upgrade
+log, which every upgrade adds a row to.
+
 ## Unity builds
 
 A module's `.cpp` files are concatenated into one translation unit (`Module.<Name>.cpp`) unless something pulls

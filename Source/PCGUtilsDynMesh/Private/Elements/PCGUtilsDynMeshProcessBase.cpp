@@ -2,7 +2,9 @@
 
 #include "Data/PCGDynamicMeshData.h"
 #include "Data/PCGDynamicMeshSelectionData.h"
+#include "Details/PCGUtilsInputShorthands.h"
 #include "DynamicMesh/DynamicMesh3.h"
+#include "PCGUtilsCustomVersion.h"
 #include "Factories/PCGUtilsDynMeshBuilderFactory.h"
 #include "Factories/PCGUtilsDynMeshDomainSelectionFactory.h"
 #include "Factories/PCGUtilsDynMeshFactories.h"
@@ -13,6 +15,7 @@
 #include "PCGPin.h"
 #include "PCGNode.h"
 #include "Serialization/ArchiveCrc32.h"
+#include "Settings/PCGUtilsDynMeshSettings.h"
 #include "UDynamicMesh.h"
 #include "Utils/PCGLogErrors.h"
 
@@ -29,7 +32,20 @@ void UPCGUtilsDynMeshProcessBaseSettings::ApplyDeprecationBeforeUpdatePins(
 		InOutNode->RenameInputPin(TEXT("Selection Factory"), PCGUtilsDynMeshProcessConstants::SelectionFactoryInputPin);
 	}
 }
+
+TArray<FPCGSettingsOverridableParam> UPCGUtilsDynMeshProcessBaseSettings::GatherOverridableParams() const
+{
+	TArray<FPCGSettingsOverridableParam> Params = Super::GatherOverridableParams();
+	PCGUtilsInputShorthands::ApplyOverrideLabels(Params);
+	return Params;
+}
 #endif
+
+void UPCGUtilsDynMeshProcessBaseSettings::Serialize(FArchive& Ar)
+{
+	Ar.UsingCustomVersion(FPCGUtilsCustomVersion::GUID);
+	Super::Serialize(Ar);
+}
 
 namespace
 {
@@ -123,11 +139,21 @@ TArray<FPCGPinProperties> UPCGUtilsDynMeshProcessBaseSettings::OutputPinProperti
 	return {FPCGPinProperties(GetMainOutputPinLabel(), GetProcessDataTypes(), true, true)};
 }
 
+bool UPCGUtilsDynMeshProcessBaseSettings::HasDynamicPins() const
+{
+	// The concrete-output-type option needs the pins refreshed whenever a setting changes (Output Selection
+	// Data, or a shorthand switching to @Data and so refusing Builders), which is what dynamic pins give us.
+	return SupportsDeferredBuilderProcessing() || GetDefault<UPCGUtilsDynMeshSettings>()->bShowConcreteOutputPinTypes;
+}
+
 FPCGDataTypeIdentifier UPCGUtilsDynMeshProcessBaseSettings::GetCurrentPinTypesID(const UPCGPin* InPin) const
 {
-	// Only a migrated node narrows its pins dynamically; everything else keeps the engine's default behaviour
-	// so no unmigrated process can accidentally advertise a type its executor cannot honour.
-	if (!InPin || !InPin->IsOutputPin() || !SupportsDeferredBuilderProcessing())
+	const bool bShowConcrete = GetDefault<UPCGUtilsDynMeshSettings>()->bShowConcreteOutputPinTypes;
+
+	// Only a migrated node narrows its pins by what is connected, so no unmigrated process can advertise a
+	// Builder its executor cannot honour. The concrete-type option is the exception: it only ever narrows to
+	// the type the immediate executor emits.
+	if (!InPin || !InPin->IsOutputPin() || (!SupportsDeferredBuilderProcessing() && !bShowConcrete))
 	{
 		return Super::GetCurrentPinTypesID(InPin);
 	}
@@ -138,11 +164,24 @@ FPCGDataTypeIdentifier UPCGUtilsDynMeshProcessBaseSettings::GetCurrentPinTypesID
 		return InPin->Properties.AllowedTypes;
 	}
 
+	// What the immediate executor emits on the main pin.
+	const FPCGDataTypeIdentifier ConcreteType = bOutputSelectionData
+		? FPCGDataTypeIdentifier(UPCGDynamicMeshSelectionData::StaticClass())
+		: FPCGDataTypeIdentifier(EPCGDataType::DynamicMesh);
+	// A derived node that declared a different main output (points, say) is left alone.
+	const bool bCanShowConcrete = bShowConcrete && InPin->Properties.AllowedTypes.Intersects(ConcreteType);
+
+	if (!SupportsDeferredBuilderProcessing())
+	{
+		// Not Super: with dynamic pins on, it would copy the input type onto this pin.
+		return bCanShowConcrete ? ConcreteType : InPin->Properties.AllowedTypes;
+	}
+
 	const FPCGDataTypeIdentifier ConnectedTypes = GetTypeUnionIDOfIncidentEdges(GetMainInputPinLabel());
 	if (!ConnectedTypes.IsValid())
 	{
-		// Nothing wired in yet: show the full contract this node can accept.
-		return InPin->Properties.AllowedTypes;
+		// Nothing wired in yet: show the full contract this node can accept, unless asked for the concrete type.
+		return bCanShowConcrete ? ConcreteType : InPin->Properties.AllowedTypes;
 	}
 
 	const FPCGDataTypeIdentifier BuilderType(FPCGUtilsDynMeshBuilderFactoryDataTypeInfo::AsId());
@@ -154,9 +193,7 @@ FPCGDataTypeIdentifier UPCGUtilsDynMeshProcessBaseSettings::GetCurrentPinTypesID
 
 	// Concrete data in: the output kind is decided by this node's own output semantics, exactly as the
 	// immediate executor emits it below.
-	return bOutputSelectionData
-		? FPCGDataTypeIdentifier(UPCGDynamicMeshSelectionData::StaticClass())
-		: FPCGDataTypeIdentifier(EPCGDataType::DynamicMesh);
+	return ConcreteType;
 }
 
 const UPCGData* FPCGUtilsDynMeshResolvedInput::GetData() const
@@ -417,6 +454,13 @@ bool FPCGUtilsDynMeshProcessBaseElement::ExecuteInternal(FPCGContext* Context) c
 	{
 		if (Input.Data && Input.Data->IsA<UPCGUtilsDynMeshBuilderFactoryData>())
 		{
+			if (!Settings->SupportsDeferredBuilderProcessing())
+			{
+				const FText Reason = Settings->GetBuilderInputRejectionReason();
+				PCGLog::LogErrorOnGraph(Reason.IsEmpty()
+					? LOCTEXT("BuilderRejected", "A Builder input was skipped: this node does not accept Builders in its current configuration. Realize the Builder first.")
+					: FText::Format(LOCTEXT("BuilderRejectedReason", "A Builder input was skipped: {0}"), Reason), Context);
+			}
 			continue;
 		}
 		const int32 InvocationInputIndex = ConcreteInputIndex++;

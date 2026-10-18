@@ -92,6 +92,18 @@ public:
 	 */
 	virtual bool SupportsDeferredBuilderProcessing() const { return false; }
 
+	/**
+	 * Why a Builder on the main input is refused when SupportsDeferredBuilderProcessing() is false for this
+	 * configuration (an @Data-driven setting, say). Empty uses a generic message. Reported as a graph error per
+	 * refused input, so a Builder is never dropped silently.
+	 */
+	virtual FText GetBuilderInputRejectionReason() const { return FText::GetEmpty(); }
+
+	//~Begin UObject interface
+	/** Records FPCGUtilsCustomVersion so derived PostLoad migrations can tell old assets from new ones. */
+	virtual void Serialize(FArchive& Ar) override;
+	//~End UObject interface
+
 	/** Evaluation domain for the optional Selector when the derived process does not require a domain. */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Selector", meta=(PCG_Overridable))
 	EPCGUtilsDynMeshProcessSelectionEvaluationDomain SelectionFactoryEvaluationDomain =
@@ -109,7 +121,7 @@ public:
 	FPCGUtilsDynMeshProcessSelectionPolicy CaptureSelectionPolicy() const;
 
 	//~Begin UPCGSettings interface
-	virtual bool HasDynamicPins() const override { return SupportsDeferredBuilderProcessing(); }
+	virtual bool HasDynamicPins() const override;
 	virtual FPCGDataTypeIdentifier GetCurrentPinTypesID(const UPCGPin* InPin) const override;
 	//~End UPCGSettings interface
 
@@ -140,6 +152,9 @@ protected:
 	virtual void ApplyDeprecationBeforeUpdatePins(
 		UPCGNode* InOutNode, TArray<TObjectPtr<UPCGPin>>& InputPins,
 		TArray<TObjectPtr<UPCGPin>>& OutputPins) override;
+
+	/** Gives input-shorthand members their plain override labels (Distance, DistanceAttribute). */
+	virtual TArray<FPCGSettingsOverridableParam> GatherOverridableParams() const override;
 #endif
 	virtual TArray<FPCGPinProperties> InputPinProperties() const override;
 	virtual TArray<FPCGPinProperties> OutputPinProperties() const override;

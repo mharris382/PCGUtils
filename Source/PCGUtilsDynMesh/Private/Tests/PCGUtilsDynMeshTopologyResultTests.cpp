@@ -144,7 +144,7 @@ bool FPCGDynMeshExtrudeResultTest::RunTest(const FString&)
 	if (!TestTrue(TEXT("Primitive builds"), Source.IsValid())) { return false; }
 	auto* Up = NewObject<UPCGDynMeshNormalSelectionFactoryData>();
 	auto* Settings = NewObject<UPCGDynMeshExtrudeSettings>();
-	Settings->Options.Distance = 20;
+	Settings->Distance.Constant = 20;
 	Settings->bOutputSelectionData = true;
 	Settings->bOutputResultSelector = true; // forces group assignment without bAssignResultPolygroup
 	Settings->ResultPolygroupName = TEXT("ExtrudedFace");
@@ -202,15 +202,15 @@ bool FPCGDynMeshTopologyChainTest::RunTest(const FString&)
 	auto Source = Build(Leaf);
 	auto* Up = NewObject<UPCGDynMeshNormalSelectionFactoryData>();
 	auto* Extrude = NewObject<UPCGDynMeshExtrudeSettings>();
-	Extrude->Options.Distance = 20;
+	Extrude->Distance.Constant = 20;
 	Extrude->bOutputResultSelector = true;
 	Extrude->ResultPolygroupName = TEXT("FirstExtrude");
 	auto* Inset = NewObject<UPCGDynMeshInsetSettings>();
-	Inset->Options.Distance = 10;
+	Inset->Distance.Constant = 10;
 	Inset->bOutputResultSelector = true;
 	Inset->ResultPolygroupName = TEXT("InsetFace");
 	auto* Last = NewObject<UPCGDynMeshExtrudeSettings>();
-	Last->Options.Distance = 30;
+	Last->Distance.Constant = 30;
 	Last->bOutputResultSelector = true;
 	Last->ResultPolygroupName = TEXT("LastExtrude");
 	const auto Immediate1 = Run(Extrude, { Source.MeshData }, Up);
@@ -235,7 +235,8 @@ bool FPCGDynMeshTopologyChainTest::RunTest(const FString&)
 	// No explicit Selector needed here: the Builder carries Inset's replacement selection internally.
 	const auto Deferred3 = Run(Last, { Main(Deferred2) });
 	if (!TestNotNull(TEXT("Deferred node emits a Selector before building any geometry"), Selector(Deferred3))) { return false; }
-	Extrude->Options.Distance = Inset->Options.Distance = Last->Options.Distance = 999;
+	Extrude->Distance.Constant = Last->Distance.Constant = 999;
+	Inset->Distance.Constant = 999;
 	Last->ResultPolygroupName = TEXT("ChangedAfterCapture");
 	const auto Built = Build(Main(Deferred3));
 	if (!TestTrue(TEXT("Deferred chain builds from captured settings"), Built.IsValid())) { return false; }
@@ -320,7 +321,7 @@ bool FPCGDynMeshTopologyIdentityTest::RunTest(const FString&)
 	TestTrue(TEXT("Companion pin stays Selector when primary output becomes Builder"),
 		Node->GetOutputPin(TEXT("Result"))->GetCurrentTypesID() == FPCGDataTypeIdentifier(FPCGUtilsDynMeshSelectionFactoryDataTypeInfo::AsId()));
 	Settings->bOutputResultSelector = true;
-	Settings->Options.Distance = 20;
+	Settings->Distance.Constant = 20;
 	auto A = Build(BoxBuilder());
 	auto B = Build(BoxBuilder());
 	B.MeshData->GetMutableDynamicMesh()->EditMesh([](UE::Geometry::FDynamicMesh3& Edit)

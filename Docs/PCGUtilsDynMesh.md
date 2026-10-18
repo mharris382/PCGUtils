@@ -87,6 +87,11 @@ meshes that lack its named layer. One descriptor serves all outputs and all Buil
 The **Result** pin is always declared and keeps its Selector type when `Out` becomes a Builder pin, so
 property overrides may enable it. It emits data only when enabled and a primary output was produced.
 
+**Output pin type.** By default a process node's `Out` pin shows the type it will emit: purple Dynamic Mesh,
+or DynMesh Selection when **Output Selection Data** is on, and a Builder pin when a Builder is wired in. This
+applies even when nothing is connected and on nodes that cannot take Builders. Turn off **Show Concrete DynMesh
+Output Pin Types** (Project Settings > Plugins > PCG Utils DynMesh) to get the old grey union pin back.
+
 This is a mesh-attribute region, not an arbitrary topology-history system. Surviving membership follows the
 engine's attribute propagation through subsequent edits. Deleting faces removes them; operations that discard
 or regenerate PolyGroup layers can lose the region. Automatic names change if the node/asset path changes.
@@ -96,9 +101,13 @@ named region. Each retained region adds one extended integer PolyGroup layer.
 ### Extrude, Inset and Bevel
 
 - **DynMesh | Extrude Faces** uses Geometry Script's underlying linear-extrude operation and options. Its result
-  defaults to the extruded cap faces. Choose side faces or cap and border faces when needed.
+  defaults to the extruded cap faces. Choose side faces or cap and border faces when needed. `Distance` is an
+  input shorthand: a constant, or one value per input read from `@Data` (a path's `PathHeight`, say). In `@Data`
+  mode Builder inputs are refused. See `PCGUtilsInputShorthands.md`.
 - **DynMesh | Inset Faces** uses the corresponding inset/outset operation, with inner faces as its default result.
   Border-only and combined results are also available. Negative distance outsets. UV Scale applies to the border.
+  `Distance` is an input shorthand (default attribute `InsetDistance`); its old Geometry Script options struct is
+  flattened into separate settings, as Extrude's was.
 - **DynMesh | Extrude To Paths** separates the selected faces and joins them back with a strip, as the two nodes
   above do, but moves each rim vertex to a path point instead of along a direction or by a distance. The points
   are matched to rim vertices by vertex ID (`Vertex Index Attribute`), so the round trip is `DynMesh | Selection
@@ -109,7 +118,8 @@ named region. Each retained region adds one extended integer PolyGroup layer.
   vertices one for one and does not add or remove any.
 - **DynMesh | Bevel Edges** now reports the newly created bevel faces through the same base, replacing invalidated edge IDs.
   Its existing bare-mesh behavior (bevel every edge) is retained. It now supports result Selection data and a
-  reusable Selector on its **Result** pin.
+  reusable Selector on its **Result** pin. `Bevel Distance` is a non-negative input shorthand (default attribute
+  `BevelDistance`); a negative `@Data` value is an error, not clamped.
 
 Extrude and Inset enable **Require Selection** by default; Bevel leaves it off for compatibility. All three accept
 DynMesh, Selection and Builder inputs and the optional Selector. The shared resolver converts input selection
