@@ -453,6 +453,22 @@ node's optional `Selector` input, including processes in deferred Builder chains
   true (any incident selected face); disable it to require all incident faces. Existing incoming selections are
   intersected by the standard process resolver.
 
+### Inside Mesh Selector
+
+**Select | Inside Mesh** selects the vertices, edges or triangles of the tested mesh that lie inside the volume
+enclosed by the DynMeshes on its `Volume` pin. **Invert Selection** selects what lies outside instead.
+
+- Inside is the generalized winding number (`TFastWindingTree`) above **Winding Threshold** (0.5, advanced),
+  so volumes with small holes or overlapping parts still have a sensible inside. Each element is tested at its
+  center (vertex, edge midpoint, triangle centroid). Several Volume meshes act as their union.
+- **Offset** grows (positive) or shrinks (negative) the volume by a distance from its surface, measured in the
+  volume mesh's units. A small positive Offset counts elements lying on the surface as inside. A negative Offset
+  keeps only elements deeper than that. Run on a boolean result against the original operand, this picks out
+  the faces the boolean carved into the operand and leaves the operand's own surface out.
+- **Meshes Are Actor Local** (advanced, default on) places the tested mesh and each Volume mesh by its own PCG
+  target actor before testing. Disable it when they already share one space.
+- A Volume input with no triangles is ignored with a warning; no usable volume is an error.
+
 ### Selection operations
 
 Selection-transforming nodes derive from `UPCGUtilsDynMeshSelectionOperationSettings`. Their `Operation Mode`
