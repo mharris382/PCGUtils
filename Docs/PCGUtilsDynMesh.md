@@ -388,6 +388,32 @@ each path's data attributes onto its loop. A target with no loop within `Max Ave
 When welding a loft to its mesh, keep the merge distance far below the loft's own vertex spacing (0.01, not 1).
 The seam vertices are coincident, but the loft's inner rail is dense and a loose weld collapses it.
 
+## Filling closed paths
+
+`DynMesh | Path To Mesh` fills each closed path with a triangulated mesh, optionally extruded into a solid. It
+replaces the chain `PCGEx | Create Spline` -> engine `Spline To Mesh` -> `Copy Attributes` (from the path with
+`IsClosed` deleted). `DynMesh | Spline To Mesh` is the same class with `Input Splines` on: the `In` pin takes
+splines and 2D polygons exactly like the engine node, so it can replace that node too. The pin label is `In` in
+both, matching the engine node.
+
+- **Closed only.** A path is closed when its `@Data` Boolean `Closed Attribute Name` (default `IsClosed`) is true.
+  A path that is open, lacks the attribute, or has fewer than 3 points is discarded with a warning naming which.
+  Open splines are discarded the same way; 2D polygons are always closed.
+- **@Data carries over.** `Copy Data Attributes` (on) copies the input's whole `@Data` domain onto the mesh.
+  `Copy Closed Attribute` (off) decides whether `IsClosed` comes along.
+- **Frame.** Vertices are stored relative to a frame that is written, in world space, to `@Data.MeshTransform`
+  (name exposed), as the engine node does. The frame is the first of: the input's `@Data` Transform
+  `Transform Attribute Name` (default `RelativeTransform`, as written by Get Component Data) when present; the
+  path centroid (`Use Centroid`, on); the spline/polygon's own transform, or the world origin for a path.
+- **Facing.** The triangulation faces the way the path winds. `Face Up Direction` (on) turns each mesh so its
+  area-weighted normal points toward `Up Direction` - a Vector shorthand, constant `(0,0,1)` or `@Data.Normal`.
+  `Flip Result` then reverses the result. Facing is settled before extrusion, so `Thickness` (a DoubleAbs
+  shorthand) always grows the solid toward the faces.
+
+The triangulation is the engine's `FTriangulateCurvesOp`, with the engine node's settings (flatten, offset,
+extrusion vector). Open-curve offset settings are omitted because open input is rejected. Coverage:
+`PCGUtils.DynMesh.PathToMesh.*`.
+
 ## Simplification
 
 **DynMesh | Simplify Planar** defaults to Geometry Script's planar simplifier and also exposes Polygroup

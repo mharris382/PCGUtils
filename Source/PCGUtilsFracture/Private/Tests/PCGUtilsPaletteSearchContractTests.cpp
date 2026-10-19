@@ -290,7 +290,8 @@ bool FPCGUtilsPaletteSearchContractTest::RunTest(const FString&)
 	TestTrue(TEXT("GC | Spawn Component is checked"), bFoundSpawnComponent);
 	TestEqual(TEXT("Primitive Builders and both placement decorators are present"), BuilderCount, 13);
 	for (const FString& Title : {FString(TEXT("Builder | Refit")), FString(TEXT("Builder | Retarget")),
-		FString(TEXT("GC | Transform Bones")), FString(TEXT("GC | Project Bones"))})
+		FString(TEXT("GC | Transform Bones")), FString(TEXT("GC | Project Bones")),
+		FString(TEXT("DynMesh | Path To Mesh")), FString(TEXT("DynMesh | Spline To Mesh"))})
 	{
 		TestTrue(*FString::Printf(TEXT("%s is exposed"), *Title), Entries.ContainsByPredicate([&Title](const FEntry& Entry) { return Entry.Label == Title; }));
 	}
