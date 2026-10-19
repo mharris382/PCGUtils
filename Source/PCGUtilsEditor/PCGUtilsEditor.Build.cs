@@ -19,6 +19,7 @@ public class PCGUtilsEditor : ModuleRules
                 "PCGUtilsCore",
 				"PCGUtilsDynMesh",
 				"PCGUtilsPainter",
+				"PCGUtilsTextures",
 				"PCGUtilsFracture",
                 "PCG",
                 "SlateCore",

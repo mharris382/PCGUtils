@@ -47,6 +47,26 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Settings", meta = (ShowOnlyInnerProperties))
 	FGetPathElementSettingsConfiguration PathSettings;
 
+	/**
+	 * Write the path's index within its provider to @Data (Integer32, optional). Only providers that supply several
+	 * paths, such as an Image Path's contours, emit one data per path and write this; single-path providers do not.
+	 */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Settings|Multiple Paths")
+	bool bOutputPathIndex = false;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Settings|Multiple Paths", meta = (EditCondition = "bOutputPathIndex", EditConditionHides))
+	FName PathIndexAttributeName = TEXT("PathIndex");
+
+	/**
+	 * Write whether the path bounds a hole inside another path to @Data (Boolean, optional), e.g. the inside of an
+	 * O traced from an image. Multi-path providers only.
+	 */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Settings|Multiple Paths")
+	bool bOutputIsHole = false;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Settings|Multiple Paths", meta = (EditCondition = "bOutputIsHole", EditConditionHides))
+	FName IsHoleAttributeName = TEXT("IsHole");
+
 protected:
 	virtual TArray<FPCGPinProperties> OutputPinProperties() const override;
 	virtual FPCGElementPtr CreateElement() const override;

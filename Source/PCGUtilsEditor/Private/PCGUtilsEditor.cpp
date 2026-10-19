@@ -13,6 +13,8 @@
 #include "Visualizers/PCGSplineComponentVisualizer.h"
 #include "Visualizers/PCGChildSplineComponentVisualizer.h"
 #include "Visualizers/ShapePathComponentVisualizer.h"
+#include "Visualizers/ImagePathComponentVisualizer.h"
+#include "Components/ImagePathComponent.h"
 #include "Components/PCGMarkerComponent.h"
 #include "Components/PCGSplineComponent.h"
 #include "Components/PCGChildSplineComponent.h"
@@ -45,6 +47,10 @@ void FPCGUtilsEditor::StartupModule()
 		TSharedPtr<FShapePathComponentVisualizer> ShapeVis = MakeShared<FShapePathComponentVisualizer>();
 		GUnrealEd->RegisterComponentVisualizer(UShapePathComponent::StaticClass()->GetFName(), ShapeVis);
 		ShapeVis->OnRegister();
+
+		TSharedPtr<FImagePathComponentVisualizer> ImagePathVis = MakeShared<FImagePathComponentVisualizer>();
+		GUnrealEd->RegisterComponentVisualizer(UImagePathComponent::StaticClass()->GetFName(), ImagePathVis);
+		ImagePathVis->OnRegister();
 	}
 }
 
@@ -58,6 +64,7 @@ void FPCGUtilsEditor::ShutdownModule()
 		GUnrealEd->UnregisterComponentVisualizer(UPCGSplineComponent::StaticClass()->GetFName());
 		GUnrealEd->UnregisterComponentVisualizer(UPCGChildSplineComponent::StaticClass()->GetFName());
 		GUnrealEd->UnregisterComponentVisualizer(UShapePathComponent::StaticClass()->GetFName());
+		GUnrealEd->UnregisterComponentVisualizer(UImagePathComponent::StaticClass()->GetFName());
 	}
 
 	UnregisterPinIcons();
