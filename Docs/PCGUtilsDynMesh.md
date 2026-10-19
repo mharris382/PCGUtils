@@ -109,13 +109,34 @@ named region. Each retained region adds one extended integer PolyGroup layer.
   `Distance` is an input shorthand (default attribute `InsetDistance`); its old Geometry Script options struct is
   flattened into separate settings, as Extrude's was.
 - **DynMesh | Extrude To Paths** separates the selected faces and joins them back with a strip, as the two nodes
-  above do, but moves each rim vertex to a path point instead of along a direction or by a distance. The points
-  are matched to rim vertices by vertex ID (`Vertex Index Attribute`), so the round trip is `DynMesh | Selection
-  To Paths` with `Output Vertex Index` on, any path nodes, then this node with the same mesh and selection.
-  Whether the result is an inset or an extrude depends only on where the points are; `Interior Vertices` chooses
-  whether vertices inside the rim stay (inset) or follow the rim's average move (extrude). A rim vertex no point
-  names stays in place; points that name no rim vertex are ignored. Both are logged with counts. It moves rim
-  vertices one for one and does not add or remove any.
+  above do, but puts the separated rim on paths you supply instead of moving it along a direction or by a
+  distance. Whether the result is an inset or an extrude depends only on where the paths are. `Matching` picks
+  how rim and paths correspond:
+  - **By Shape** (default) treats each path input as one closed outline: any point count, start, order or
+    winding, and no attributes. Each rim loop of the selection (an area with a hole has two) takes the outline
+    nearest it in shape (mean distance both ways), closest pairs first; `Max Match Distance` (0 = any) bounds
+    that. Rim and outline are then walked round together: each rim vertex pairs with an outline corner, never
+    going backwards, minimising total distance, with a cost of one average outline edge for two rim vertices
+    sharing a corner. A few start corners are tried, because the corner nearest the rim's first vertex is not
+    always its partner. The strip joins each rim edge to the run of corners between its ends, each corner
+    fanning from the nearer rim vertex. Every outline corner becomes a vertex, so the result has exactly the
+    outline's shape; this is what makes Clipper2 offsets and booleans usable as targets.
+    `Inner Faces` decides what the selected faces become. **Keep Faces** keeps them: their rim vertices move onto
+    the outline (vertices sharing a corner are spread along the outline beside it) and the other corners are
+    split into the rim edges, so interior vertices, UVs and a shaped surface survive. **Refill From Path** cuts
+    them out and fills the outlines flat (constrained Delaunay, even-odd so holes stay open); clean for a flat
+    top, but there are no interior vertices. If the outlines cannot be triangulated (they cross), that area falls
+    back to Keep Faces with a warning. Unmatched rim loops stay where they are; unused paths are logged.
+    The geometry is in `Geometry/PCGUtilsDynMeshRimToPath.h` (no PCG dependency), covered by
+    `PCGUtils.DynMesh.ExtrudeToPaths.ByShape.*`.
+  - **By Vertex ID** is the original one-for-one mode: points are matched to rim vertices by vertex ID
+    (`Vertex Index Attribute`), so the round trip is `DynMesh | Selection To Paths` with `Output Vertex Index`
+    on, any path nodes, then this node. A rim vertex no point names stays in place; points that name no rim
+    vertex are ignored. Both are logged with counts. Nodes saved before By Shape existed
+    (`FPCGUtilsCustomVersion::ExtrudeToPathsByShape`) load in this mode.
+
+  `Interior Vertices` (Keep Faces and By Vertex ID) chooses whether vertices inside the rim stay (inset) or follow
+  the rim's average move (extrude).
 - **DynMesh | Bevel Edges** now reports the newly created bevel faces through the same base, replacing invalidated edge IDs.
   Its existing bare-mesh behavior (bevel every edge) is retained. It now supports result Selection data and a
   reusable Selector on its **Result** pin. `Bevel Distance` is a non-negative input shorthand (default attribute

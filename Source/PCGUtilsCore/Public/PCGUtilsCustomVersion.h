@@ -20,6 +20,9 @@ struct PCGUTILSCORE_API FPCGUtilsCustomVersion
 		/** Constant settings became Constant-or-Attribute input shorthands (Extrude Faces' Distance first). */
 		InputShorthands,
 
+		/** Extrude To Paths gained By Shape matching as its default; older nodes keep By Vertex ID. */
+		ExtrudeToPathsByShape,
+
 		// -----<new versions can be added above this line>-------------------------------------------------
 		VersionPlusOne,
 		LatestVersion = VersionPlusOne - 1
