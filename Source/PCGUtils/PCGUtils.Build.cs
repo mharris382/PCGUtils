@@ -16,6 +16,7 @@ public class PCGUtils : ModuleRules
                 "Engine",
                 "GeometryScriptingCore",
                 "PCG",
+                "PCGUtilsCore",
                 "PCGGeometryScriptInterop",
                 "RHI",
                 "RenderCore",

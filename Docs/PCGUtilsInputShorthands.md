@@ -81,6 +81,8 @@ no pin rename. A label that would collide falls back to the full property path.
 | DynMesh \| Inset Faces | Distance | `Double` (default attribute `InsetDistance`) | `Options.Distance` (float in `FGeometryScriptMeshInsetOutsetFacesOptions`) | `Options` -> `Options_DEPRECATED`; fields flattened (`bReproject`, `bBoundaryOnly`, `Softness`, `AreaScale`, `AreaMode`, `GroupOptions`, `UVScale`); pin labels unchanged | GRAPHS_INSET |
 | DynMesh \| Bevel Edges | BevelDistance | `DoubleAbs` (default attribute `BevelDistance`) | top-level `float BevelDistance` | none: loads through `SerializeFromMismatchedTag`; pin label unchanged | GRAPHS_BEVEL |
 
+| Path \| Decompose Closed | AreaWeight, LengthWeight, MaxConcavity, MaxQuadWarp, MaxPolygonWarp, MaxInputPoints | Double / Integer32 | CourseGen experimental scalar settings | Class redirect; same-name scalar shorthand deserialization; override labels retained | Native tests; spline input wires must be replaced with point paths |
+
 ## Candidates
 
 A 2026-10-17 survey found about 150 plain numeric/vector overridable settings in PCGUtilsDynMesh, 22 in

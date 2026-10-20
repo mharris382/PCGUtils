@@ -95,7 +95,7 @@ namespace PCGUtilsPaletteSearchContract
 			}
 
 			const FString Package = Class->GetOutermost()->GetName();
-			if (!Packages.Contains(Package))
+			if (!Packages.Contains(Package) && Class->GetName() != TEXT("PCGDecomposeClosedPathSettings"))
 			{
 				continue;
 			}
@@ -160,6 +160,7 @@ bool FPCGUtilsPaletteSearchContractTest::RunTest(const FString&)
 	int32 FractureFactoryCount = 0;
 	int32 BuilderCount = 0;
 	bool bFoundRealizeBuilders = false;
+	bool bFoundPathDecomposition = false;
 	bool bFoundSpawnComponent = false;
 
 	for (const FEntry& Entry : Entries)
@@ -168,7 +169,15 @@ bool FPCGUtilsPaletteSearchContractTest::RunTest(const FString&)
 
 		// PCGUtilsSimulation's GC nodes (GC | Spawn Component) belong to the GC family and obey every GC rule; its
 		// other nodes are neither GC nor DynMesh. PCGUtilsChaosCache is wholly GC family (GC | Load Chaos Cache).
-		const bool bIsSimulation = Entry.Package == TEXT("/Script/PCGUtilsSimulation");
+		if (Entry.ClassName == TEXT("PCGDecomposeClosedPathSettings"))
+        {
+            bFoundPathDecomposition = true;
+            TestEqual(TEXT("Path category"), Entry.Category, FString(TEXT("PCGUtils|Paths")));
+            TestEqual(TEXT("Path palette label"), Entry.Label, FString(TEXT("Path | Decompose Closed")));
+            TestTrue(TEXT("Path search finds decomposition"), Matches(Entry.SearchText, TEXT("Path Decompose")));
+            continue;
+        }
+        const bool bIsSimulation = Entry.Package == TEXT("/Script/PCGUtilsSimulation");
 		const bool bIsChaosCache = Entry.Package == TEXT("/Script/PCGUtilsChaosCache");
 		const bool bIsFracture = Entry.Package == TEXT("/Script/PCGUtilsFracture") || bIsChaosCache ||
 			(bIsSimulation && Entry.Label.StartsWith(TEXT("GC | ")));
@@ -299,6 +308,7 @@ bool FPCGUtilsPaletteSearchContractTest::RunTest(const FString&)
 	TestTrue(TEXT("GC selections were found"), GCSelectCount > 5);
 	TestTrue(TEXT("Fracture elements were found"), FractureCount > 5);
 	TestEqual(TEXT("Every fracture factory is present"), FractureFactoryCount, 6);
+	TestTrue(TEXT("Path decomposition is registered"), bFoundPathDecomposition);
 	return true;
 }
 
