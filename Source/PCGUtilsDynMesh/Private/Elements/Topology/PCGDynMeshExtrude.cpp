@@ -18,6 +18,8 @@ namespace
 	public:
 		FPCGUtilsInputShorthandDouble Distance;
 		FGeometryScriptMeshLinearExtrudeOptions Options;
+		EPCGUtilsDynMeshExtrudeDirection ExtrudeDirection = EPCGUtilsDynMeshExtrudeDirection::FixedDirection;
+		double MaxCornerStretch = 4.0;
 		EPCGUtilsDynMeshFaceRegionResult ResultRegion = EPCGUtilsDynMeshFaceRegionResult::Faces;
 
 		virtual bool Execute(const FPCGUtilsDynMeshProcessInvocation& Invocation,
@@ -53,8 +55,17 @@ namespace
 			{
 				FOffsetMeshRegion Extrude(&Mesh);
 				Extrude.Triangles = MoveTemp(Area);
+				if (ExtrudeDirection == EPCGUtilsDynMeshExtrudeDirection::FaceNormals)
+				{
+					// The engine's shell offset: each vertex along the angle-weighted average of its selected faces'
+					// normals, lengthened so those faces stay parallel, Distance away. The default position function
+					// applies DefaultOffsetDistance along that vector.
+					Extrude.ExtrusionVectorType = FOffsetMeshRegion::EVertexExtrusionVectorType::SelectionTriNormalsAngleWeightedAdjusted;
+					Extrude.MaxScaleForAdjustingTriNormalsOffset = FMath::Max(1.0, MaxCornerStretch);
+					Extrude.DefaultOffsetDistance = Options.Distance;
+				}
 				FVector3d Direction = Options.Direction;
-				if (Options.DirectionMode == EGeometryScriptLinearExtrudeDirection::AverageFaceNormal)
+				if (ExtrudeDirection == EPCGUtilsDynMeshExtrudeDirection::AverageFaceNormal)
 				{
 					Direction = FVector3d::Zero();
 					for (int32 ID : Extrude.Triangles)
@@ -67,7 +78,10 @@ namespace
 					if (Normalize(Direction) <= 0) { Direction = Options.Direction; }
 				}
 				Direction *= Options.Distance;
-				Extrude.OffsetPositionFunc = [Direction](const FVector3d& Position, const FVector3d&, int32) { return Position + Direction; };
+				if (ExtrudeDirection != EPCGUtilsDynMeshExtrudeDirection::FaceNormals)
+				{
+					Extrude.OffsetPositionFunc = [Direction](const FVector3d& Position, const FVector3d&, int32) { return Position + Direction; };
+				}
 				Extrude.bIsPositiveOffset = Options.Distance > 0;
 				Extrude.UVScaleFactor = Options.UVScale;
 				Extrude.bOffsetFullComponentsAsSolids = Options.bSolidsToShells;
@@ -92,7 +106,7 @@ UPCGDynMeshExtrudeSettings::UPCGDynMeshExtrudeSettings()
 FText UPCGDynMeshExtrudeSettings::GetDefaultNodeTitle() const { return LOCTEXT("Title", "DynMesh | Extrude Faces"); }
 FText UPCGDynMeshExtrudeSettings::GetNodeTooltipText() const
 {
-	return LOCTEXT("Tooltip", "Linearly extrudes selected faces. Distance is a constant or is read per input from an @Data attribute (such as a path's PathHeight). The cap is the result selection by default; sides or both are optional. Can assign a named result PolyGroup and emit a reusable Selector on the Result pin. Supports DynMesh, Selection and Builder inputs (Builders only with a constant Distance).");
+	return LOCTEXT("Tooltip", "Extrudes selected faces along a fixed direction, the area's average normal, or each face's own normal (Per Face Normal, which keeps the area connected and every face parallel). Distance is a constant or is read per input from an @Data attribute (such as a path's PathHeight). The cap is the result selection by default; sides or both are optional. Can assign a named result PolyGroup and emit a reusable Selector on the Result pin. Supports DynMesh, Selection and Builder inputs (Builders only with a constant Distance).");
 }
 
 EPCGChangeType UPCGDynMeshExtrudeSettings::GetChangeTypeForProperty(FPropertyChangedEvent& PropertyChangedEvent) const
@@ -129,6 +143,13 @@ void UPCGDynMeshExtrudeSettings::PostLoad()
 		UE_LOG(LogPCGUtilsDynMesh, Log, TEXT("Extrude Faces '%s': migrated Options to flattened settings (Distance %g as Constant)."),
 			*GetPathName(), Distance.Constant);
 	}
+
+	// Direction Mode moved from Geometry Script's enum to one that also has Per Face Normal; same values, same label.
+	if (GetLinkerCustomVersion(FPCGUtilsCustomVersion::GUID) < FPCGUtilsCustomVersion::ExtrudePerFaceNormal)
+	{
+		ExtrudeDirection = DirectionMode == EGeometryScriptLinearExtrudeDirection::AverageFaceNormal
+			? EPCGUtilsDynMeshExtrudeDirection::AverageFaceNormal : EPCGUtilsDynMeshExtrudeDirection::FixedDirection;
+	}
 }
 
 TSharedPtr<FPCGUtilsDynMeshTopologyOperation> UPCGDynMeshExtrudeSettings::CreateTopologyOperation(FPCGContext*) const
@@ -136,7 +157,8 @@ TSharedPtr<FPCGUtilsDynMeshTopologyOperation> UPCGDynMeshExtrudeSettings::Create
 	auto Operation = MakeShared<FExtrudeOperation>();
 	Operation->Distance = Distance;
 	Operation->Options.Distance = static_cast<float>(Distance.Constant);
-	Operation->Options.DirectionMode = DirectionMode;
+	Operation->ExtrudeDirection = ExtrudeDirection;
+	Operation->MaxCornerStretch = MaxCornerStretch;
 	Operation->Options.Direction = Direction;
 	Operation->Options.AreaMode = AreaMode;
 	Operation->Options.GroupOptions = GroupOptions;

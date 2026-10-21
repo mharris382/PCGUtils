@@ -104,6 +104,14 @@ named region. Each retained region adds one extended integer PolyGroup layer.
   defaults to the extruded cap faces. Choose side faces or cap and border faces when needed. `Distance` is an
   input shorthand: a constant, or one value per input read from `@Data` (a path's `PathHeight`, say). In `@Data`
   mode Builder inputs are refused. See `PCGUtilsInputShorthands.md`.
+  `Direction Mode` is `Fixed Direction` (default), `Average Face Normal` (one area-weighted normal per
+  extruded area), or `Per Face Normal`: each face moves Distance along its own normal while the area stays
+  connected, using the engine's shell offset (`SelectionTriNormalsAngleWeightedAdjusted`), so a box's top and
+  side go up and out by the same amount and stay parallel. `Max Corner Stretch` (advanced, default 4) caps how far
+  a vertex at a sharp fold may be pushed to keep that; past it those faces end up nearer than Distance. For
+  separate prisms instead of a connected shell, use `Average Face Normal` with `Area Mode` Per Triangle or Per
+  Polygroup. Direction Mode used to be Geometry Script's two-value enum; nodes saved before
+  `FPCGUtilsCustomVersion::ExtrudePerFaceNormal` are migrated in PostLoad, under the same override-pin label.
 - **DynMesh | Inset Faces** uses the corresponding inset/outset operation, with inner faces as its default result.
   Border-only and combined results are also available. Negative distance outsets. UV Scale applies to the border.
   `Distance` is an input shorthand (default attribute `InsetDistance`); its old Geometry Script options struct is

@@ -95,7 +95,8 @@ namespace PCGUtilsPaletteSearchContract
 			}
 
 			const FString Package = Class->GetOutermost()->GetName();
-			if (!Packages.Contains(Package) && Class->GetName() != TEXT("PCGDecomposeClosedPathSettings"))
+			if (!Packages.Contains(Package) && Class->GetName() != TEXT("PCGDecomposeClosedPathSettings") &&
+				Class->GetName() != TEXT("PCGSwizzleBoundsSettings"))
 			{
 				continue;
 			}
@@ -161,6 +162,7 @@ bool FPCGUtilsPaletteSearchContractTest::RunTest(const FString&)
 	int32 BuilderCount = 0;
 	bool bFoundRealizeBuilders = false;
 	bool bFoundPathDecomposition = false;
+	bool bFoundSwizzleBounds = false;
 	bool bFoundSpawnComponent = false;
 
 	for (const FEntry& Entry : Entries)
@@ -169,6 +171,14 @@ bool FPCGUtilsPaletteSearchContractTest::RunTest(const FString&)
 
 		// PCGUtilsSimulation's GC nodes (GC | Spawn Component) belong to the GC family and obey every GC rule; its
 		// other nodes are neither GC nor DynMesh. PCGUtilsChaosCache is wholly GC family (GC | Load Chaos Cache).
+		if (Entry.ClassName == TEXT("PCGSwizzleBoundsSettings"))
+		{
+			bFoundSwizzleBounds = true;
+			TestEqual(TEXT("Point category"), Entry.Category, FString(TEXT("PCGUtils|Points")));
+			TestEqual(TEXT("Swizzle Bounds palette label"), Entry.Label, FString(TEXT("Point | Swizzle Bounds")));
+			TestTrue(TEXT("Point search finds Swizzle Bounds"), Matches(Entry.SearchText, TEXT("Point Swizzle")));
+			continue;
+		}
 		if (Entry.ClassName == TEXT("PCGDecomposeClosedPathSettings"))
         {
             bFoundPathDecomposition = true;
@@ -309,6 +319,7 @@ bool FPCGUtilsPaletteSearchContractTest::RunTest(const FString&)
 	TestTrue(TEXT("Fracture elements were found"), FractureCount > 5);
 	TestEqual(TEXT("Every fracture factory is present"), FractureFactoryCount, 6);
 	TestTrue(TEXT("Path decomposition is registered"), bFoundPathDecomposition);
+	TestTrue(TEXT("Swizzle Bounds is registered"), bFoundSwizzleBounds);
 	return true;
 }
 

@@ -1,6 +1,8 @@
 #include "Geometry/ClosedPathDecomposition.h"
 #include "Algo/Reverse.h"
 
+DEFINE_LOG_CATEGORY_STATIC(LogClosedPathDecomposition, Log, All);
+
 namespace ClosedPathDecomposition
 {
 static double Cross2(const FVector2D& A, const FVector2D& B) { return A.X*B.Y-A.Y*B.X; }
@@ -210,6 +212,7 @@ bool Solve(const TArray<FVector>& Points,const FOptions& O,TArray<FLoop>& Out,FS
 	TArray<FVector> P;for(FVector Q:Points) P.Add((Q-Center)/Scale);
 	for(int I=0;I<N;++I) for(int J=I+1;J<N;++J) if(FVector::Distance(P[I],P[J])<1e-8)
 		return Fail(FString::Printf(TEXT("Points %d and %d are coincident; separation=%g, required >= %g world units."),I,J,FVector::Distance(Points[I],Points[J]),Scale*1e-8));
+	const double TimeStart=FPlatformTime::Seconds();
 	TArray<double> DP;DP.Init(TNumericLimits<double>::Max(),N*N);
 	TArray<int> Choice;Choice.Init(INDEX_NONE,N*N);
 	for(int I=0;I<N-1;++I) DP[I*N+I+1]=0;
@@ -230,9 +233,11 @@ bool Solve(const TArray<FVector>& Points,const FOptions& O,TArray<FLoop>& Out,FS
 			if(C<DP[I*N+J]) {DP[I*N+J]=C;Choice[I*N+J]=K;}
 		}
 	}
+	const double TimeDP=FPlatformTime::Seconds();
 	if(Choice[N-1]==INDEX_NONE) return Fail(TEXT("No nondegenerate boundary-vertex triangulation found; normalized triangle area must be >= 1e-10."));
 	TFunction<void(int,int)> Recover=[&](int I,int J){if(J-I<2)return;const int K=Choice[I*N+J];Out.Add({I,K,J});Recover(I,K);Recover(K,J);};
 	Recover(0,N-1);
+	const double TimeRecover=FPlatformTime::Seconds();
 	for(int I=0;I<Out.Num();++I) for(int J=I+1;J<Out.Num();++J) if(Intersects(P,Out[I],Out[J]))
 	{
 		// A preference must not turn a valid original solution into a crossing surface.
@@ -244,8 +249,12 @@ bool Solve(const TArray<FVector>& Points,const FOptions& O,TArray<FLoop>& Out,FS
 		}
 		return Fail(FString::Printf(TEXT("Seed triangles %d (%d,%d,%d) and %d (%d,%d,%d) intersect outside shared topology; expected an embedded disk."),I,Out[I][0],Out[I][1],Out[I][2],J,Out[J][0],Out[J][1],Out[J][2]));
 	}
+	const double TimeScreen=FPlatformTime::Seconds();
+	int32 MergeRounds=0;
+	const int32 SeedTriangles=Out.Num();
 	while(true)
 	{
+		++MergeRounds;
 		int BestI=INDEX_NONE,BestJ=INDEX_NONE;double BestQ=0,BestLength=0;FLoop Best;
 		for(int I=0;I<Out.Num();++I) for(int J=I+1;J<Out.Num();++J)
 		{
@@ -267,6 +276,7 @@ bool Solve(const TArray<FVector>& Points,const FOptions& O,TArray<FLoop>& Out,FS
 		if(BestI==INDEX_NONE) break;
 		Out[BestI]=MoveTemp(Best);Out.RemoveAt(BestJ);
 	}
+	const double TimeMerge=FPlatformTime::Seconds();
 	TMap<FIntPoint,int32> Counts;
 	for(int32 PatchIndex=0;PatchIndex<Out.Num();++PatchIndex)
 	{
@@ -279,6 +289,9 @@ bool Solve(const TArray<FVector>& Points,const FOptions& O,TArray<FLoop>& Out,FS
 	for(auto E:Counts) if((E.Key.X+1)%N!=E.Key.Y)
 		if(E.Value!=1||Counts.FindRef(FIntPoint(E.Key.Y,E.Key.X))!=1)
 			return Fail(FString::Printf(TEXT("Interior edge %d->%d lacks exactly one reverse occurrence."),E.Key.X,E.Key.Y));
+	const double TimeEnd=FPlatformTime::Seconds();
+	UE_LOG(LogClosedPathDecomposition,Log,TEXT("Solve N=%d seedTris=%d mergeRounds=%d patches=%d | DP %.1f ms, recover %.1f ms, intersect screen %.1f ms, merge %.1f ms, validate %.1f ms, total %.1f ms"),
+		N,SeedTriangles,MergeRounds,Out.Num(),(TimeDP-TimeStart)*1e3,(TimeRecover-TimeDP)*1e3,(TimeScreen-TimeRecover)*1e3,(TimeMerge-TimeScreen)*1e3,(TimeEnd-TimeMerge)*1e3,(TimeEnd-TimeStart)*1e3);
 	return true;
 }
 }

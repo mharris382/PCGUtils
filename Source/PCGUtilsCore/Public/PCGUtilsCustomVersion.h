@@ -23,6 +23,9 @@ struct PCGUTILSCORE_API FPCGUtilsCustomVersion
 		/** Extrude To Paths gained By Shape matching as its default; older nodes keep By Vertex ID. */
 		ExtrudeToPathsByShape,
 
+		/** Extrude Faces' Direction Mode moved to a PCGUtils enum that adds Per Face Normal. */
+		ExtrudePerFaceNormal,
+
 		// -----<new versions can be added above this line>-------------------------------------------------
 		VersionPlusOne,
 		LatestVersion = VersionPlusOne - 1

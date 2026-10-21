@@ -17,6 +17,7 @@ namespace
 
 	constexpr FPCGUtilsSettingsCategorySpec PCGUtilsSettingsCategorySpecs[] = {
 		{PCGUtilsSettingsCategories::EValue::Paths, TEXT("PCGUtilsPaths"), TEXT("PCGUtils|Paths")},
+		{PCGUtilsSettingsCategories::EValue::Points, TEXT("PCGUtilsPoints"), TEXT("PCGUtils|Points")},
 		{PCGUtilsSettingsCategories::EValue::DynMesh, TEXT("PCGUtilsDynMesh"), TEXT("PCGUtils|DynMesh")},
 		{PCGUtilsSettingsCategories::EValue::DynMeshSelection, TEXT("PCGUtilsDynMeshSelection"), TEXT("PCGUtils|DynMesh|Selection")},
 		{PCGUtilsSettingsCategories::EValue::DynMeshTopology, TEXT("PCGUtilsDynMeshTopology"), TEXT("PCGUtils|DynMesh|Topology")},
