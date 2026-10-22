@@ -268,10 +268,11 @@ void PCGUtilsDynMeshProperties::Write(UPCGDynamicMeshData& Data, const FPCGUtils
 		{
 			FVector3d A, B, C;
 			Mesh->GetTriVertices(TriangleID, A, B, C);
-			const FVector3d Cross = (B - A).Cross(C - A);
-			const double TriangleArea = 0.5 * Cross.Length();
+			const double TriangleArea = 0.5 * (B - A).Cross(C - A).Length();
 			Area += TriangleArea;
-			SignedVolume += A.Dot(B.Cross(C)) / 6.0;
+			// Unreal winds outward faces the other way round from the right-hand rule (see GetTriNormal), so the
+			// divergence-theorem term is negated to make a correctly wound closed mesh positive.
+			SignedVolume -= A.Dot(B.Cross(C)) / 6.0;
 
 			if (bGroups && bHasGroups)
 			{
@@ -306,7 +307,8 @@ void PCGUtilsDynMeshProperties::Write(UPCGDynamicMeshData& Data, const FPCGUtils
 					Normals->GetElement(Elements[Corner], Element);
 					Sum += Element;
 				}
-				if (FVector3d(Sum).Dot(Cross) < 0.0)
+				// The engine's own face normal, so the winding convention matches what the renderer and overlay use.
+				if (FVector3d(Sum).Dot(Mesh->GetTriNormal(TriangleID)) < 0.0)
 				{
 					++InvertedCount;
 				}

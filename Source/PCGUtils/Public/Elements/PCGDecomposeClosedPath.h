@@ -43,7 +43,7 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Merging", meta=(PCG_Overridable, ClampMin="0"))
 	FPCGUtilsInputShorthandDouble MaxPolygonWarp {0.02};
 
-	/** Reject larger inputs before the cubic triangulation search. Supported range 3..2048 points per input path. */
+	/** Forward larger inputs unchanged with a warning instead of running the cubic triangulation search. Supported range 3..2048 points per input path. */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Limits", meta=(PCG_Overridable, ClampMin="3", ClampMax="2048"))
 	FPCGUtilsInputShorthandInteger32 MaxInputPoints {2048};
 

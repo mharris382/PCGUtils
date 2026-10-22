@@ -189,6 +189,52 @@ static bool Intersects(const TArray<FVector>& P,const FLoop& AI,const FLoop& BI)
 	}
 	return false;
 }
+// Recovery only: a simple projected boundary permits an orientation-preserving disk.
+// Requiring every seed triangle to have the boundary winding prevents the cheap
+// exterior diagonals admitted by the unconstrained 3D cost search. Non-projectable
+// overhangs retain the original 3D search; no global projection is required of inputs.
+static bool RetryProjectedSeed(const TArray<FVector>& P, const FOptions& O, TArray<FLoop>& Out)
+{
+ const int32 N=P.Num();
+ const FVector Normals[]={PlaneNormal(P,FVector::ZeroVector),FVector::UpVector,FVector::XAxisVector,FVector::YAxisVector};
+ for(const FVector& Normal:Normals)
+ {
+  if(Normal.IsNearlyZero())continue;
+  const FVector Axis=FMath::Abs(Normal.X)<.8?FVector::XAxisVector:FVector::YAxisVector;
+  const FVector U=FVector::CrossProduct(Normal,Axis).GetSafeNormal(),V=FVector::CrossProduct(Normal,U);
+  TArray<FVector2D> UV;for(const FVector& Q:P)UV.Emplace(FVector::DotProduct(Q,U),FVector::DotProduct(Q,V));
+  if(!Simple(UV))continue;
+  double SignedArea=0;for(int I=0;I<N;++I)SignedArea+=Cross2(UV[I],UV[(I+1)%N]);
+  if(FMath::Abs(SignedArea)<1e-10)continue;
+  const double Winding=SignedArea>0?1.0:-1.0;
+  TArray<double> Cost;Cost.Init(TNumericLimits<double>::Max(),N*N);
+  TArray<int32> Choice;Choice.Init(INDEX_NONE,N*N);
+  for(int I=0;I<N-1;++I)Cost[I*N+I+1]=0;
+  for(int Span=2;Span<N;++Span)for(int I=0;I<N-Span;++I)
+  {
+   const int J=I+Span;
+   for(int K=I+1;K<J;++K)
+   {
+    if(Orient(UV[I],UV[K],UV[J])*Winding<=1e-10)continue;
+    if(Cost[I*N+K]==TNumericLimits<double>::Max()||Cost[K*N+J]==TNumericLimits<double>::Max())continue;
+    const double A=FVector::CrossProduct(P[K]-P[I],P[J]-P[I]).Size()*.5;
+    double TriangleCost=O.AreaWeight*A+O.LengthWeight*(FVector::Distance(P[I],P[K])+FVector::Distance(P[K],P[J])+FVector::Distance(P[J],P[I]));
+    if(O.bBiasFlatCuts&&FMath::Max3(P[I].Z,P[K].Z,P[J].Z)-FMath::Min3(P[I].Z,P[K].Z,P[J].Z)<=LevelHeightTolerance)TriangleCost*=.5;
+    const double C=Cost[I*N+K]+Cost[K*N+J]+TriangleCost;
+    if(C<Cost[I*N+J]){Cost[I*N+J]=C;Choice[I*N+J]=K;}
+   }
+  }
+  if(Choice[N-1]==INDEX_NONE)continue;
+  TArray<FLoop> Candidate;
+  TFunction<void(int,int)> Recover=[&](int I,int J){if(J-I<2)return;const int K=Choice[I*N+J];Candidate.Add({I,K,J});Recover(I,K);Recover(K,J);};
+  Recover(0,N-1);
+  bool bCrossing=false;
+  for(int I=0;I<Candidate.Num()&&!bCrossing;++I)for(int J=I+1;J<Candidate.Num();++J)
+   if(Intersects(P,Candidate[I],Candidate[J])){bCrossing=true;break;}
+  if(!bCrossing){Out=MoveTemp(Candidate);return true;}
+ }
+ return false;
+}
 bool Solve(const TArray<FVector>& Points,const FOptions& O,TArray<FLoop>& Out,FString& Error)
 {
 	Out.Reset();Error.Reset();
@@ -238,16 +284,17 @@ bool Solve(const TArray<FVector>& Points,const FOptions& O,TArray<FLoop>& Out,FS
 	TFunction<void(int,int)> Recover=[&](int I,int J){if(J-I<2)return;const int K=Choice[I*N+J];Out.Add({I,K,J});Recover(I,K);Recover(K,J);};
 	Recover(0,N-1);
 	const double TimeRecover=FPlatformTime::Seconds();
-	for(int I=0;I<Out.Num();++I) for(int J=I+1;J<Out.Num();++J) if(Intersects(P,Out[I],Out[J]))
+	bool bCrossingSeed=false;
+	for(int I=0;I<Out.Num()&&!bCrossingSeed;++I)for(int J=I+1;J<Out.Num();++J)
+		if(Intersects(P,Out[I],Out[J])){bCrossingSeed=true;break;}
+	if(bCrossingSeed && !RetryProjectedSeed(P,O,Out))
 	{
-		// A preference must not turn a valid original solution into a crossing surface.
-		// Retry the unchanged algorithm if the preferred seed fails the intersection screen.
-		if (O.bBiasFlatCuts)
+		if(O.bBiasFlatCuts)
 		{
-			FOptions Fallback = O; Fallback.bBiasFlatCuts = false;
-			return Solve(Points, Fallback, Out, Error);
+			FOptions Fallback=O;Fallback.bBiasFlatCuts=false;
+			return Solve(Points,Fallback,Out,Error);
 		}
-		return Fail(FString::Printf(TEXT("Seed triangles %d (%d,%d,%d) and %d (%d,%d,%d) intersect outside shared topology; expected an embedded disk."),I,Out[I][0],Out[I][1],Out[I][2],J,Out[J][0],Out[J][1],Out[J][2]));
+		return Fail(TEXT("The internal surface search could not find non-crossing cuts; this does not establish an invalid input path."));
 	}
 	const double TimeScreen=FPlatformTime::Seconds();
 	int32 MergeRounds=0;

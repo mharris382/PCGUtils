@@ -16,7 +16,7 @@ FText UPCGDecomposeClosedPathSettings::GetDefaultNodeTitle() const
 }
 FText UPCGDecomposeClosedPathSettings::GetNodeTooltipText() const
 {
-	return LOCTEXT("Tooltip", "Experimental 3D decomposition of ordered closed point paths into smaller closed PointArrayData paths. Supports overhangs and uses existing vertices only. Each input is an independent disk boundary, not a hole. Requires a true Data-domain closure attribute (default IsClosed).");
+	return LOCTEXT("Tooltip", "Experimental 3D decomposition of ordered closed point paths into smaller closed PointArrayData paths. Supports overhangs and uses existing vertices only. Each input is an independent closed boundary. Requires a true Data-domain closure attribute (default IsClosed). If decomposition is unavailable, the input path is preserved with a warning; internal surface checks never discard it.");
 }
 TArray<FPCGSettingsOverridableParam> UPCGDecomposeClosedPathSettings::GatherOverridableParams() const
 {
@@ -42,32 +42,62 @@ FPCGElementPtr UPCGDecomposeClosedPathSettings::CreateElement() const
 bool FPCGDecomposeClosedPathElement::ExecuteInternal(FPCGContext* Context) const
 {
 	const auto* Settings = Context->GetInputSettings<UPCGDecomposeClosedPathSettings>();
-	check(Settings);
+	if (!Settings)
+	{
+		for (auto Input : Context->InputData.GetInputsByPin(PCGPinConstants::DefaultInputLabel))
+		{ Input.Pin=PCGPinConstants::DefaultOutputLabel; Context->OutputData.TaggedData.Add(MoveTemp(Input)); }
+		PCGLog::LogErrorOnGraph(LOCTEXT("MissingSettings", "Decompose Closed settings are unavailable; inputs forwarded unchanged."), Context);
+		return true;
+	}
 	const auto Inputs = Context->InputData.GetInputsByPin(PCGPinConstants::DefaultInputLabel);
 	for (int32 Dataset = 0; Dataset < Inputs.Num(); ++Dataset)
 	{
 		const FPCGTaggedData& Input = Inputs[Dataset];
-		auto Fail = [&](const FString& Reason)
-		{
-			PCGLog::LogErrorOnGraph(FText::FromString(FString::Printf(TEXT("Input dataset %d: %s"), Dataset, *Reason)), Context);
-		};
 		const auto* Source = Cast<UPCGBasePointData>(Input.Data);
-		if (!Source) { Fail(TEXT("Data type is not Point; expected ordered point path data.")); continue; }
+		const int32 OutputStart = Context->OutputData.TaggedData.Num();
+		// Every recoverable exit goes through this handler. Never discard the source
+		// because the heuristic or a setting could not produce a decomposition.
+		auto Fail = [&](const FString& Reason, bool bContractViolation = false)
+		{
+			Context->OutputData.TaggedData.SetNum(OutputStart);
+			auto& Tagged = Context->OutputData.TaggedData.Emplace_GetRef(Input);
+			Tagged.Pin = PCGPinConstants::DefaultOutputLabel;
+			if (Source)
+			{
+				auto* Preserved = FPCGContext::NewObject_AnyThread<UPCGPointArrayData>(Context);
+				Preserved->InitializeFromData(Source);
+				TArray<int32> Indices; Indices.Reserve(Source->GetNumPoints());
+				for (int32 I=0; I<Source->GetNumPoints(); ++I) Indices.Add(I);
+				Preserved->SetPointsFrom(Source, MakeArrayView(Indices));
+				if (Settings->bOutputIsCut && !Settings->IsCutAttributeName.IsNone() && FPCGMetadataAttributeBase::IsValidName(Settings->IsCutAttributeName))
+				{
+					// No new cuts on pass-through, even if the source had an old IsCut attribute.
+					auto* Elements=Preserved->Metadata->GetMetadataDomain(PCGMetadataDomainID::Elements);
+					Elements->DeleteAttribute(Settings->IsCutAttributeName);
+					Elements->CreateAttribute<bool>(Settings->IsCutAttributeName, false, false);
+				}
+				Tagged.Data=Preserved;
+			}
+			const FText Message=FText::FromString(FString::Printf(TEXT("Input dataset %d: forwarded without decomposition. %s"),Dataset,*Reason));
+			if (bContractViolation) PCGLog::LogErrorOnGraph(Message,Context);
+			else PCGLog::LogWarningOnGraph(Message,Context);
+		};
+		if (!Source) { Fail(TEXT("Data type is not Point; expected ordered point path data."), true); continue; }
 		if (Settings->ClosedAttributeName.IsNone()) { Fail(TEXT("Closed Attribute Name=None; expected a Data-domain bool attribute name.")); continue; }
 		if (!FPCGMetadataAttributeBase::IsValidName(Settings->ClosedAttributeName))
-        { Fail(FString::Printf(TEXT("Closed Attribute Name='%s'; expected a valid bare metadata attribute name."), *Settings->ClosedAttributeName.ToString())); continue; }
+        { Fail(FString::Printf(TEXT("Closed Attribute Name='%s'; expected a valid bare metadata attribute name."), *Settings->ClosedAttributeName.ToString()), true); continue; }
         if (Settings->bOutputIsCut && !Settings->IsCutAttributeName.IsNone() && !FPCGMetadataAttributeBase::IsValidName(Settings->IsCutAttributeName))
         { Fail(FString::Printf(TEXT("Is Cut Attribute Name='%s'; expected a valid bare metadata attribute name."), *Settings->IsCutAttributeName.ToString())); continue; }
         const auto* DataDomain = Source->Metadata->GetConstMetadataDomain(PCGMetadataDomainID::Data);
 		const auto* Closure = DataDomain ? DataDomain->GetConstAttribute(Settings->ClosedAttributeName) : nullptr;
-		if (!Closure) { Fail(FString::Printf(TEXT("@Data.%s is missing; expected a required bool attribute."), *Settings->ClosedAttributeName.ToString())); continue; }
+		if (!Closure) { Fail(FString::Printf(TEXT("@Data.%s is missing; expected a required bool attribute."), *Settings->ClosedAttributeName.ToString()), true); continue; }
 		if (Closure->GetTypeId() != PCG::Private::MetadataTypes<bool>::Id)
 		{
-			Fail(FString::Printf(TEXT("@Data.%s has type ID %d; expected bool (type ID %d)."), *Settings->ClosedAttributeName.ToString(), Closure->GetTypeId(), PCG::Private::MetadataTypes<bool>::Id)); continue;
+			Fail(FString::Printf(TEXT("@Data.%s has type ID %d; expected bool (type ID %d)."), *Settings->ClosedAttributeName.ToString(), Closure->GetTypeId(), PCG::Private::MetadataTypes<bool>::Id), true); continue;
 		}
 		if (!static_cast<const FPCGMetadataAttribute<bool>*>(Closure)->GetValueFromItemKey(DataDomain->GetItemCountForChild() > 0 ? PCGFirstEntryKey : PCGInvalidEntryKey))
 		{
-			Fail(FString::Printf(TEXT("@Data.%s=false; expected true for a closed path."), *Settings->ClosedAttributeName.ToString())); continue;
+			Fail(FString::Printf(TEXT("@Data.%s=false; expected true for a closed path."), *Settings->ClosedAttributeName.ToString()), true); continue;
 		}
 		const bool bWriteCut = Settings->bOutputIsCut && !Settings->IsCutAttributeName.IsNone();
 		if (Settings->bOutputIsCut && !bWriteCut)
@@ -80,9 +110,10 @@ bool FPCGDecomposeClosedPathElement::ExecuteInternal(FPCGContext* Context) const
 		bool bOptionsValid = true;
 		auto Read = [&](const auto& Setting, auto& Value, const TCHAR* Label)
 		{
+			if (!bOptionsValid) return;
 			if (!Setting.TryReadDataValue(Source, Value, ReadError, FText::FromString(Label), Dataset))
 			{
-				Fail(ReadError.ToString()); bOptionsValid = false;
+				bOptionsValid = false;
 			}
 		};
 		Read(Settings->AreaWeight, Options.AreaWeight, TEXT("Area Weight"));
@@ -91,11 +122,16 @@ bool FPCGDecomposeClosedPathElement::ExecuteInternal(FPCGContext* Context) const
 		Read(Settings->MaxQuadWarp, Options.QuadWarp, TEXT("Max Quad Warp"));
 		Read(Settings->MaxPolygonWarp, Options.PolygonWarp, TEXT("Max Polygon Warp"));
 		Read(Settings->MaxInputPoints, Options.MaxPoints, TEXT("Max Input Points"));
-		if (!bOptionsValid) continue;
+		if (!bOptionsValid) { Fail(ReadError.ToString()); continue; }
 		TArray<FVector> Positions;
 		for (const FTransform& Transform : Source->GetConstTransformValueRange()) Positions.Add(Transform.GetLocation());
 		TArray<ClosedPathDecomposition::FLoop> Loops;
 		FString Error;
+		bool bFinite = true;
+		for (int32 I=0; I<Positions.Num() && bFinite; ++I) for (int32 Axis=0; Axis<3; ++Axis)
+			if (!FMath::IsFinite(Positions[I][Axis]))
+			{ Fail(FString::Printf(TEXT("Point %d coordinate %d=%g; expected finite."),I,Axis,Positions[I][Axis]),true); bFinite=false; break; }
+		if (!bFinite) continue;
 		if (!ClosedPathDecomposition::Solve(Positions, Options, Loops, Error)) { Fail(Error); continue; }
 		for (const auto& Loop : Loops)
 		{
@@ -108,13 +144,13 @@ bool FPCGDecomposeClosedPathElement::ExecuteInternal(FPCGContext* Context) const
 			auto* OutData = Output->Metadata->GetMetadataDomain(PCGMetadataDomainID::Data);
 			OutData->DeleteAttribute(Settings->ClosedAttributeName);
 			auto* Closed = OutData->CreateAttribute<bool>(Settings->ClosedAttributeName, true, false);
-			check(Closed);
+			if (!Closed) { Fail(TEXT("Unable to write the required closure attribute.")); break; }
 			if (bWriteCut)
 			{
 				auto* Elements = Output->Metadata->GetMetadataDomain(PCGMetadataDomainID::Elements);
 				Elements->DeleteAttribute(Settings->IsCutAttributeName);
 				auto* Cut = Elements->CreateAttribute<bool>(Settings->IsCutAttributeName, false, false);
-				check(Cut);
+				if (!Cut) { Fail(TEXT("Unable to write the requested cut attribute.")); break; }
 				for (int32 I = 0; I < Loop.Num(); ++I)
 				{
 					// Allocate a child entry per occurrence: the same source vertex may start

@@ -105,9 +105,8 @@ bool FPCGUtilsDynMeshPropertiesTest::RunTest(const FString&)
 	// Flip one triangle's winding without touching its stored normals: exactly the fold-over the count is for.
 	Data->GetMutableDynamicMesh()->EditMesh([](UE::Geometry::FDynamicMesh3& EditMesh)
 	{
-		const int32 TriangleID = *EditMesh.TriangleIndicesItr().begin();
-		const UE::Geometry::FIndex3i Tri = EditMesh.GetTriangle(TriangleID);
-		EditMesh.SetTriangle(TriangleID, UE::Geometry::FIndex3i(Tri.A, Tri.C, Tri.B), /*bRemoveIsolatedVertices=*/false);
+		// Reverses the triangle and its overlay corner order, but leaves the stored normal values pointing outward.
+		EditMesh.ReverseTriOrientation(*EditMesh.TriangleIndicesItr().begin());
 	});
 	PCGUtilsDynMeshProperties::Write(*Data, Computed);
 	ReadData(*Data, TEXT("InvertedNormalTriangleCount"), Inverted);

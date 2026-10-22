@@ -437,6 +437,40 @@ The simplification itself lives in `FPCGDynMeshSimplifyParameters` / `PCGUtilsDy
 (`Geometry/PCGUtilsDynMeshSimplifyParameters.h`), so code outside a graph, such as the Static Mesh Brush cache,
 runs exactly the same simplifier as the node.
 
+## Mesh properties
+
+**DynMesh | Properties** writes facts about each mesh to its `@Data` domain and passes the mesh through. The
+properties are split by cost, and each has its own `bOutput<Thing>` flag and `<Thing>AttributeName`:
+
+- **Free** (`FPCGUtilsDynMeshFreeProperties`, constant time): triangle, vertex and edge counts, Euler
+  characteristic (V − E + T; 2 per closed piece without handles), whether IDs are compact, material slot count and
+  slot materials, UV channel count, whether normals / vertex colors / default PolyGroups exist, and the extended
+  PolyGroup layer count. Triangle and vertex count are on by default on this node.
+- **Computed** (`FPCGUtilsDynMeshComputedProperties`, one pass): bounds min/max, surface area, volume, closed,
+  open edge count, connected pieces, distinct PolyGroup count, and quality checks: degenerate triangles (area at
+  or below a threshold), smallest triangle angle, triangles whose winding disagrees with their stored normals
+  (*inverted normal* triangles — the dark facets left by a fold-over or stale normals), hard (normal seam) edges,
+  and bowtie vertices. Only enabled properties are computed, and properties sharing a pass share it.
+
+Properties always describe the whole mesh; a selection input passes through and does not narrow them.
+
+**Inline writes.** The reading and writing live in `PCGUtilsDynMeshProperties` (`Geometry/PCGUtilsDynMeshProperties.h`),
+not on the node. A process node exposes a `FPCGUtilsDynMeshFreeProperties` UPROPERTY and returns it from
+`GetInlineFreeProperties()`; the process base validates the names once and writes after each successful input.
+Simplify, Remesh, Self Union, Merge by Distance, Delete, Planar Cut, Mirror, Array, Separate (both outputs) and
+every topology-base node (Extrude, Extrude to Paths, Inset, Bevel) offer this under *Output Properties*, all off by
+default. Default names match the Properties node, so a renamed write before an operation (`PrevTriCount`) and a
+default-named write after it can be subtracted. Builder results are the exception: realizing a Builder keeps the
+mesh but not intermediate `@Data`, so a node given a Builder with inline writes on logs a note instead. Boolean
+uses its own operand executor and does not offer inline writes yet. Coverage: `PCGUtils.DynMesh.Properties`.
+
+## Node colors
+
+Every DynMesh-family node draws in `PCGUtilsDynMeshNodeColor::Title` (`PCGUtilsCore`). PCGUtils nodes report
+PCGUtils category types, which the PCG editor has no color for, so a node without an override is colorless. The
+process base and the Selector/Builder/Painter provider base return the color; other nodes return it directly.
+`PCGUtils.DynMesh.NodeColor` checks every node class in the DynMesh and Painter modules.
+
 ## Static Mesh Brushes and the brush cache
 
 Hand-placed `UStaticMeshBrushComponent`s are editor-only Static Meshes that feed PCG as DynMesh data. Processing
