@@ -3,21 +3,9 @@
 #pragma once
 
 #include "Elements/PCGUtilsDynMeshProcessBase.h"
-#include "GeometryScript/MeshSimplifyFunctions.h"
+#include "Geometry/PCGUtilsDynMeshSimplifyParameters.h"
 
 #include "PCGDynMeshSimplify.generated.h"
-
-UENUM(BlueprintType)
-enum class EPCGDynMeshSimplifyMode : uint8
-{
-	Planar,
-	PolygroupTopology UMETA(DisplayName="Polygroup Topology"),
-	TriangleCount UMETA(DisplayName="Triangle Count"),
-	VertexCount UMETA(DisplayName="Vertex Count"),
-	Tolerance,
-	EdgeLength UMETA(DisplayName="Edge Length"),
-	ClusterEdgeLength UMETA(DisplayName="Cluster Edge Length")
-};
 
 /** Exposes Geometry Script's mesh simplification library as a selection-aware DynMesh process. */
 UCLASS(BlueprintType, ClassGroup=(Procedural), Category="PCGUtils|DynMesh|Topology",
@@ -93,6 +81,8 @@ public:
 	double TargetEdgeLength = 10.0;
 	FGeometryScriptSimplifyMeshOptions SimplifyOptions;
 	FGeometryScriptClusterSimplifyMeshOptions ClusterOptions;
+
+	FPCGDynMeshSimplifyParameters ToParameters() const;
 
 	virtual bool Execute(const FPCGUtilsDynMeshProcessInvocation& Invocation,
 		FPCGUtilsDynMeshProcessOutcome& OutOutcome) const override;

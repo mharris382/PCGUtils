@@ -433,6 +433,55 @@ deferred Builder chains. Selection regions are restored before optional ID compa
 only vertices resolved by a DynMesh Selection/Selector, and quietly discards duplicate triangles created as a
 normal consequence of welding rather than turning successful execution into a warning.
 
+The simplification itself lives in `FPCGDynMeshSimplifyParameters` / `PCGUtilsDynMeshSimplify::ApplySimplify()`
+(`Geometry/PCGUtilsDynMeshSimplifyParameters.h`), so code outside a graph, such as the Static Mesh Brush cache,
+runs exactly the same simplifier as the node.
+
+## Static Mesh Brushes and the brush cache
+
+Hand-placed `UStaticMeshBrushComponent`s are editor-only Static Meshes that feed PCG as DynMesh data. Processing
+a brush (reading an LOD, baking scale, simplifying) and merging brushes (self union) only needs redoing when its
+inputs change, so it happens outside the graph and is cached. **DynMesh | Get Static Mesh Brush Data** then only
+copies and places the cached result.
+
+**Per brush.** Each component has `Processing`: the source LOD, and an optional simplification. The cached mesh is
+the Static Mesh with the component's world scale baked in, then simplified, so simplify lengths and tolerances
+are world units. Moving or rotating a brush does not invalidate it; placement is applied when the node reads it.
+
+**Per actor.** A `UStaticMeshBrushCombinerComponent` (an actor component, not a scene component) appends every
+brush on its actor, self-unions the result with its `SelfUnionOptions`, and can simplify the union. The combined
+mesh is stored in the actor's rigid frame (rotation and location, no scale), so moving the whole actor keeps it;
+moving, rescaling, re-meshing, adding or removing a brush, or changing any brush's `Processing`, rebuilds it. Brush
+order does not matter. With `Recombine When Brushes Change` on (the default), the combiner rebuilds on the next
+editor tick after a brush finishes moving, after a property commit, and after a brush's Static Mesh is edited.
+With it off, it rebuilds only when the node asks and finds the cached result out of date. Adding or removing a
+brush is always picked up on the next request.
+
+**The cache.** `FStaticMeshBrushCache` is keyed by content, not by component: the asset, the world scale and the
+exported `Processing` text for a brush; every brush key plus its placement in the actor frame plus the combine
+settings for a combined mesh. That matters because Blueprint construction scripts re-create SCS components on
+every move; a re-created component with the same inputs finds the same entry. Entries are dropped when their
+Static Mesh broadcasts `OnMeshChanged` (reimport, mesh editor edits, Geometry Script writes), evicted
+least-recently-used past `pcgutils.StaticMeshBrushCache.MaxEntries` (256 of each kind), and never saved to disk:
+the first read in an editor session builds them. `pcgutils.StaticMeshBrushCache.Clear` drops everything. The
+brush's `Rebuild Processed Mesh` and the combiner's `Recombine Now` buttons force a rebuild.
+
+**The node.** `Source` picks the meshes per actor:
+
+| Source | Actor with a combiner | Actor without one |
+| --- | --- | --- |
+| Automatic (default) | combined mesh | each brush |
+| Combined | combined mesh | warning, actor skipped |
+| Individual | each brush | each brush |
+
+Automatic never emits both for one actor. Combined meshes get the `Combined Tag` (default `Combined`), meaning
+they are already one self-unioned solid, so a graph can skip DynMesh | Self Union for them. Every output carries
+the actor's tags plus the brush's (or combiner's) component tags. The inherited component filter applies to
+separate brushes only; a combined mesh always holds every brush on its actor. `Convert World To Actor Local`
+(on by default) puts the result in the PCG target actor's space, matching the module's local-space convention.
+Materials are the Static Mesh asset's slot materials, not the brush's visualisation override material. Coverage:
+`PCGUtils.DynMesh.StaticMeshBrush.Cache`.
+
 ## Selection modifiers
 
 **Select | Interior Faces** exposes the first Blender Select by Trait predicate. It selects faces whose three
