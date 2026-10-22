@@ -3,6 +3,8 @@
 #include "CoreMinimal.h"
 #include "Elements/PCGUtilsDynMeshProcessBase.h"
 
+#include "Geometry/PCGUtilsDynMeshProperties.h"
+#include "PCGUtilsDynMeshNodeColor.h"
 #include "PCGSeparateSelection.generated.h"
 
 /** Which GeometryScript mesh-edit operation to delegate the split to, mirroring Delete Mesh Selection's Delete Mode. */
@@ -28,6 +30,13 @@ class PCGUTILSDYNMESH_API UPCGSeparateSelectionSettings : public UPCGUtilsDynMes
 	GENERATED_BODY()
 
 public:
+	/** Mesh properties written to @Data after this node runs, as DynMesh | Properties writes them. All off by default. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Output Properties", meta=(PCG_Overridable, ShowOnlyInnerProperties))
+	FPCGUtilsDynMeshFreeProperties OutputProperties;
+
+	virtual const FPCGUtilsDynMeshFreeProperties* GetInlineFreeProperties() const override { return &OutputProperties; }
+
+public:
 	virtual bool RequiresSelection() const override { return true; }
 	virtual bool GetRequiredSelectionDomain(UE::Geometry::EGeometryElementType& OutElementType) const override
 	{
@@ -40,7 +49,7 @@ public:
 	virtual FName GetDefaultNodeName() const override { return TEXT("SeparateSelection"); }
 	virtual FText GetDefaultNodeTitle() const override;
 	virtual FText GetNodeTooltipText() const override;
-	virtual FLinearColor GetNodeTitleColor() const override { return FLinearColor(0.413f, 0.25f, 1.0f, 1.0f); }
+	virtual FLinearColor GetNodeTitleColor() const override { return PCGUtilsDynMeshNodeColor::Title; }
 #endif
 
 	/** Whether to split along the exact selected elements, or every vertex the selection touches (and, transitively, every triangle incident to those vertices). */

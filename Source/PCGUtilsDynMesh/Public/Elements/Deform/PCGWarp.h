@@ -5,6 +5,7 @@
 #include "MeshTarget/PCGUtilsMeshTargetTypes.h"
 #include "Elements/PCGUtilsDynMeshProcessBase.h"
 
+#include "PCGUtilsDynMeshNodeColor.h"
 #include "PCGWarp.generated.h"
 
 UENUM(BlueprintType)
@@ -50,7 +51,7 @@ public:
 	virtual FName GetDefaultNodeName() const override { return TEXT("Warp"); }
 	virtual FText GetDefaultNodeTitle() const override;
 	virtual FText GetNodeTooltipText() const override;
-	virtual FLinearColor GetNodeTitleColor() const override { return FLinearColor(0.413f, 0.25f, 1.0f, 1.0f); }
+	virtual FLinearColor GetNodeTitleColor() const override { return PCGUtilsDynMeshNodeColor::Title; }
 	virtual EPCGChangeType GetChangeTypeForProperty(FPropertyChangedEvent& PropertyChangedEvent) const override;
 #endif
 

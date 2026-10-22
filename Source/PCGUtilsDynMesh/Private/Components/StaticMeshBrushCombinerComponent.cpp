@@ -59,6 +59,37 @@ namespace StaticMeshBrushCombine
 		}
 	}
 
+	/**
+	 * Relative placements are recomputed from world transforms, so moving or rotating the whole actor perturbs them
+	 * in the last few bits. Snapping to a fine grid keeps the key stable; the geometry is placed with the snapped
+	 * values too, so the key always describes the cached mesh exactly.
+	 */
+	constexpr double BrushPlacementTranslationStep = 0.001;
+	constexpr double BrushPlacementRotationStep = 1.0e-6;
+
+	FVector3d QuantizeTranslation(const FVector3d& Translation)
+	{
+		auto Snap = [](double Value)
+		{
+			const double Snapped = FMath::GridSnap(Value, BrushPlacementTranslationStep);
+			return Snapped == 0.0 ? 0.0 : Snapped; // -0.0 must hash like 0.0
+		};
+		return FVector3d(Snap(Translation.X), Snap(Translation.Y), Snap(Translation.Z));
+	}
+
+	FQuat4d QuantizeRotation(FQuat4d Rotation)
+	{
+		Rotation.Normalize();
+		// q and -q are the same rotation; pick one so they key identically.
+		const double Sign = Rotation.W < 0.0 ? -1.0 : 1.0;
+		auto Snap = [Sign](double Value)
+		{
+			const double Snapped = FMath::GridSnap(Sign * Value, BrushPlacementRotationStep);
+			return Snapped == 0.0 ? 0.0 : Snapped; // -0.0 must hash like 0.0
+		};
+		return FQuat4d(Snap(Rotation.X), Snap(Rotation.Y), Snap(Rotation.Z), Snap(Rotation.W));
+	}
+
 	FText BrushLabel(const UStaticMeshBrushComponent* Brush)
 	{
 		const AActor* Owner = Brush->GetOwner();
@@ -172,8 +203,8 @@ TSharedPtr<const FStaticMeshBrushCachedMesh> UStaticMeshBrushCombinerComponent::
 		Entry.Brush = Brush;
 		Entry.Part.MeshKey = Brush->MakeProcessedMeshKey();
 		const FTransform Relative = Brush->GetBrushPlacement().GetRelativeTransform(Frame);
-		Entry.Part.Rotation = Relative.GetRotation();
-		Entry.Part.Translation = Relative.GetTranslation();
+		Entry.Part.Rotation = QuantizeRotation(Relative.GetRotation());
+		Entry.Part.Translation = QuantizeTranslation(Relative.GetTranslation());
 	}
 
 	if (Gathered.IsEmpty())

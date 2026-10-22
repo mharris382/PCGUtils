@@ -7,6 +7,7 @@
 #include "Metadata/PCGAttributePropertySelector.h"
 #include "GeometryScript/GeometryScriptTypes.h"
 
+#include "PCGUtilsDynMeshNodeColor.h"
 #include "PCGPaintStaticMeshVertexColor.generated.h"
 
 /**
@@ -70,7 +71,7 @@ public:
 	virtual FText GetDefaultNodeTitle() const override;
 	virtual FText GetNodeTooltipText() const override;
 	virtual EPCGSettingsType GetType() const override { return EPCGSettingsType::Resource; }
-	virtual FLinearColor GetNodeTitleColor() const override { return FLinearColor(0.413f, 0.25f, 1.0f, 1.0f); }
+	virtual FLinearColor GetNodeTitleColor() const override { return PCGUtilsDynMeshNodeColor::Title; }
 #endif
 
 	/**

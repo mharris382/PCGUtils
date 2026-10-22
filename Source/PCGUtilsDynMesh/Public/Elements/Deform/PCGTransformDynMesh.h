@@ -5,6 +5,7 @@
 #include "CoreMinimal.h"
 #include "Elements/PCGUtilsDynMeshProcessBase.h"
 
+#include "PCGUtilsDynMeshNodeColor.h"
 #include "PCGTransformDynMesh.generated.h"
 
 /** The frame a Transform DynMesh's transform is expressed in. */
@@ -86,7 +87,7 @@ public:
 	virtual FName GetDefaultNodeName() const override { return TEXT("TransformDynMesh"); }
 	virtual FText GetDefaultNodeTitle() const override;
 	virtual FText GetNodeTooltipText() const override;
-	virtual FLinearColor GetNodeTitleColor() const override { return FLinearColor(0.413f, 0.25f, 1.0f, 1.0f); }
+	virtual FLinearColor GetNodeTitleColor() const override { return PCGUtilsDynMeshNodeColor::Title; }
 #endif
 
 	/** Offset, rotation, and scale applied to the mesh, expressed in Space below. */

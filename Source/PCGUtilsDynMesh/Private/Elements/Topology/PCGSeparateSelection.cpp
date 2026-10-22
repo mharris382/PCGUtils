@@ -46,7 +46,8 @@ namespace
 		}
 	}
 
-	void SeparateOne(FPCGContext* Context, const UPCGSeparateSelectionSettings* Settings, const FPCGTaggedData& Input)
+	void SeparateOne(FPCGContext* Context, const UPCGSeparateSelectionSettings* Settings, const FPCGTaggedData& Input,
+		const FPCGUtilsDynMeshFreeProperties* OutputProperties)
 	{
 		const FPCGUtilsDynMeshResolvedInput ResolvedInput =
 			FPCGUtilsDynMeshProcessFunctions::ResolveInput(Input.Data, Settings, Context);
@@ -102,6 +103,12 @@ namespace
 			PCGLog::LogWarningOnGraph(LOCTEXT("InvalidSelectionIDs", "Separate Selection ignored invalid or stale selection element(s) while splitting."), Context);
 		}
 
+		if (OutputProperties)
+		{
+			PCGUtilsDynMeshProperties::Write(*SelectedData, *OutputProperties);
+			PCGUtilsDynMeshProperties::Write(*UnselectedData, *OutputProperties);
+		}
+
 		FPCGTaggedData& SelectedOutput = Context->OutputData.TaggedData.Emplace_GetRef(Input);
 		SelectedOutput.Data = SelectedData;
 		SelectedOutput.Pin = SeparateSelectionSelectedPin;
@@ -152,9 +159,14 @@ bool FPCGSeparateSelectionElement::ExecuteInternal(FPCGContext* Context) const
 	const UPCGSeparateSelectionSettings* Settings = Context->GetInputSettings<UPCGSeparateSelectionSettings>();
 	check(Settings);
 
+	// Validated once; written to both the Selected and the Unselected result.
+	const FPCGUtilsDynMeshFreeProperties* OutputProperties =
+		Settings->OutputProperties.AnyEnabled() && PCGUtilsDynMeshProperties::Validate(Settings->OutputProperties, Context)
+			? &Settings->OutputProperties : nullptr;
+
 	for (const FPCGTaggedData& Input : Context->InputData.GetInputsByPin(SeparateSelectionInputPin))
 	{
-		SeparateOne(Context, Settings, Input);
+		SeparateOne(Context, Settings, Input, OutputProperties);
 	}
 
 	return true;

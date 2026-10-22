@@ -4,6 +4,7 @@
 
 #include "Elements/PCGUtilsDynMeshProcessBase.h"
 
+#include "Geometry/PCGUtilsDynMeshProperties.h"
 #include "PCGUtilsDynMeshTopologyProcessBase.generated.h"
 
 namespace UE::Geometry { class FDynamicMesh3; }
@@ -56,6 +57,13 @@ UCLASS(Abstract, BlueprintType, ClassGroup=(Procedural), Category="PCGUtils|DynM
 class PCGUTILSDYNMESH_API UPCGUtilsDynMeshTopologyProcessBaseSettings : public UPCGUtilsDynMeshProcessBaseSettings
 {
 	GENERATED_BODY()
+
+public:
+	/** Mesh properties written to @Data after this node runs, as DynMesh | Properties writes them. All off by default. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Output Properties", meta=(PCG_Overridable, ShowOnlyInnerProperties))
+	FPCGUtilsDynMeshFreeProperties OutputProperties;
+
+	virtual const FPCGUtilsDynMeshFreeProperties* GetInlineFreeProperties() const override { return &OutputProperties; }
 
 public:
 	UPCGUtilsDynMeshTopologyProcessBaseSettings();

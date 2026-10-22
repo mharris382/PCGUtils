@@ -4,6 +4,7 @@
 #include "Elements/PCGUtilsDynMeshProcessBase.h"
 #include "MeshTarget/PCGUtilsMeshTargetTypes.h"
 
+#include "PCGUtilsDynMeshNodeColor.h"
 #include "PCGSmoothDynamicMesh.generated.h"
 
 /**
@@ -42,7 +43,7 @@ public:
 	virtual FName GetDefaultNodeName() const override { return TEXT("SmoothDynMesh"); }
 	virtual FText GetDefaultNodeTitle() const override;
 	virtual FText GetNodeTooltipText() const override;
-	virtual FLinearColor GetNodeTitleColor() const override { return FLinearColor(0.413f, 0.25f, 1.0f, 1.0f); }
+	virtual FLinearColor GetNodeTitleColor() const override { return PCGUtilsDynMeshNodeColor::Title; }
 #endif
 
 	/** Laplacian smoothing (uniform) shrinks meshes as iterations/strength increase. Taubin/no-shrink alternates an expansion and a contraction pass to remove noise while preserving overall mass - prefer it when the mesh's silhouette/volume matters, eg after a boolean union. */

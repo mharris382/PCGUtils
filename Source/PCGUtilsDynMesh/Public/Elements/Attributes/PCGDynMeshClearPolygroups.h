@@ -6,6 +6,7 @@
 #include "Elements/PCGUtilsDynMeshProcessBase.h"
 #include "GeometryScript/GeometryScriptTypes.h"
 
+#include "PCGUtilsDynMeshNodeColor.h"
 #include "PCGDynMeshClearPolygroups.generated.h"
 
 /**
@@ -25,7 +26,7 @@ public:
 	virtual FName GetDefaultNodeName() const override { return TEXT("DynMeshClearPolygroups"); }
 	virtual FText GetDefaultNodeTitle() const override;
 	virtual FText GetNodeTooltipText() const override;
-	virtual FLinearColor GetNodeTitleColor() const override { return FLinearColor(0.413f, 0.25f, 1.0f, 1.0f); }
+	virtual FLinearColor GetNodeTitleColor() const override { return PCGUtilsDynMeshNodeColor::Title; }
 #endif
 
 	/** Which PolyGroup layer to clear. Clearing has no effect if the layer does not exist on the mesh. */

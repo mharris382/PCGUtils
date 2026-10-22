@@ -7,6 +7,7 @@
 #include "Elements/PCGUtilsDynMeshProcessBase.h"
 #include "GeometryScript/MeshBooleanFunctions.h"
 
+#include "Geometry/PCGUtilsDynMeshProperties.h"
 #include "PCGDynMeshPlanarCut.generated.h"
 
 /** Removes one side of a DynMesh or selected region with an infinite plane. */
@@ -15,6 +16,13 @@ UCLASS(BlueprintType, ClassGroup=(Procedural), Category="PCGUtils|DynMesh|Topolo
 class PCGUTILSDYNMESH_API UPCGDynMeshPlanarCutSettings : public UPCGUtilsDynMeshProcessBaseSettings
 {
 	GENERATED_BODY()
+
+public:
+	/** Mesh properties written to @Data after this node runs, as DynMesh | Properties writes them. All off by default. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Output Properties", meta=(PCG_Overridable, ShowOnlyInnerProperties))
+	FPCGUtilsDynMeshFreeProperties OutputProperties;
+
+	virtual const FPCGUtilsDynMeshFreeProperties* GetInlineFreeProperties() const override { return &OutputProperties; }
 
 public:
 #if WITH_EDITOR

@@ -1,5 +1,7 @@
 #include "Elements/PCGUtilsDynMeshProcessBase.h"
 
+#include "Geometry/PCGUtilsDynMeshProperties.h"
+
 #include "Data/PCGDynamicMeshData.h"
 #include "Data/PCGDynamicMeshSelectionData.h"
 #include "Details/PCGUtilsInputShorthands.h"
@@ -435,10 +437,28 @@ bool FPCGUtilsDynMeshProcessBaseElement::ExecuteInternal(FPCGContext* Context) c
 	// Resolved once, while this node executes - never rediscovered per input, and never from another context.
 	const TSharedPtr<const FPCGUtilsDynMeshProcessOperation> Operation = Settings->CreateProcessOperation(Context);
 
+	// Inline property writes: validate the names once, not per input.
+	const FPCGUtilsDynMeshFreeProperties* FreeProperties = Settings->GetInlineFreeProperties();
+	const FPCGUtilsDynMeshComputedProperties* ComputedProperties = Settings->GetInlineComputedProperties();
+	if (FreeProperties && (!FreeProperties->AnyEnabled() || !PCGUtilsDynMeshProperties::Validate(*FreeProperties, Context)))
+	{
+		FreeProperties = nullptr;
+	}
+	if (ComputedProperties && (!ComputedProperties->AnyEnabled() || !PCGUtilsDynMeshProperties::Validate(*ComputedProperties, Context)))
+	{
+		ComputedProperties = nullptr;
+	}
+
 	if (Settings->SupportsDeferredBuilderProcessing())
 	{
 		// Builder inputs are wrapped, never evaluated. Concrete inputs on the same pin still run immediately.
-		EmitDeferredBuilders(Context, Settings, SelectionFactory);
+		const int32 BuilderCount = EmitDeferredBuilders(Context, Settings, SelectionFactory);
+		if (BuilderCount > 0 && (FreeProperties || ComputedProperties))
+		{
+			PCGLog::LogWarningOnGraph(LOCTEXT("PropertiesOnBuilder",
+				"Output properties are not written to Builder results: realizing a Builder keeps the mesh, not "
+				"intermediate @Data. Add DynMesh | Properties after Realize Builders to read them."), Context);
+		}
 	}
 
 	const TArray<FPCGTaggedData>& ProcessInputs =
@@ -535,6 +555,15 @@ bool FPCGUtilsDynMeshProcessBaseElement::ExecuteInternal(FPCGContext* Context) c
 		if (!bProcessed)
 		{
 			continue;
+		}
+
+		if (FreeProperties)
+		{
+			PCGUtilsDynMeshProperties::Write(*OutputData, *FreeProperties);
+		}
+		if (ComputedProperties)
+		{
+			PCGUtilsDynMeshProperties::Write(*OutputData, *ComputedProperties);
 		}
 
 		// Immediate output follows the same selection contract as the deferred Builder decorator.

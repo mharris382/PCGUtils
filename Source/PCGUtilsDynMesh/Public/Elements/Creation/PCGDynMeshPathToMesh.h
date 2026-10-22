@@ -8,6 +8,7 @@
 #include "Elements/PCGDynamicMeshBaseElement.h"
 #include "PCGUtilsSettingsCategories.h"
 
+#include "PCGUtilsDynMeshNodeColor.h"
 #include "PCGDynMeshPathToMesh.generated.h"
 
 /**
@@ -45,7 +46,7 @@ public:
 	virtual FName GetDefaultNodeName() const override;
 	virtual FText GetDefaultNodeTitle() const override;
 	virtual FText GetNodeTooltipText() const override;
-	virtual FLinearColor GetNodeTitleColor() const override { return FLinearColor(0.413f, 0.25f, 1.0f, 1.0f); }
+	virtual FLinearColor GetNodeTitleColor() const override { return PCGUtilsDynMeshNodeColor::Title; }
 	virtual TArray<FPCGPreConfiguredSettingsInfo> GetPreconfiguredInfo() const override;
 	virtual bool OnlyExposePreconfiguredSettings() const override { return true; }
 	virtual bool GroupPreconfiguredSettings() const override { return false; }

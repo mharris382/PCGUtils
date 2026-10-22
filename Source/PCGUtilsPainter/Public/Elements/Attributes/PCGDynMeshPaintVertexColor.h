@@ -7,6 +7,7 @@
 #include "Factories/PCGUtilsDynMeshPainterFactory.h"
 #include "GeometryScript/GeometryScriptTypes.h"
 
+#include "PCGUtilsDynMeshNodeColor.h"
 #include "PCGDynMeshPaintVertexColor.generated.h"
 
 UENUM(BlueprintType)
@@ -30,7 +31,7 @@ public:
 	virtual FText GetNodeTooltipText() const override;
 	virtual FLinearColor GetNodeTitleColor() const override
 	{
-		return FLinearColor(0.413f, 0.25f, 1.0f, 1.0f);
+		return PCGUtilsDynMeshNodeColor::Title;
 	}
 #endif
 

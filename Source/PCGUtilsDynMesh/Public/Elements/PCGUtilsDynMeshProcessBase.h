@@ -3,7 +3,7 @@
 #include "CoreMinimal.h"
 #include "Elements/PCGDynamicMeshBaseElement.h"
 #include "Elements/PCGUtilsDynMeshProcessOperation.h"
-#include "PCGUtilsSettingsCategories.h"
+#include "PCGUtilsDynMeshNodeColor.h"
 #include "PCGUtilsSettingsCategories.h"
 #include "Selections/GeometrySelection.h"
 
@@ -13,6 +13,8 @@ class UPCGDynamicMeshData;
 class UPCGDynamicMeshSelectionData;
 class UPCGUtilsDynMeshSelectionFactoryData;
 class UPCGData;
+struct FPCGUtilsDynMeshFreeProperties;
+struct FPCGUtilsDynMeshComputedProperties;
 
 namespace PCGUtilsDynMeshProcessConstants
 {
@@ -40,6 +42,8 @@ public:
 	{
 		return PCGUtilsSettingsCategories::DynMeshCategoryForClass(GetClass());
 	}
+	/** Every DynMesh process shares the family color; see PCGUtilsDynMeshNodeColor. */
+	virtual FLinearColor GetNodeTitleColor() const override { return PCGUtilsDynMeshNodeColor::Title; }
 #endif
 
 	/**
@@ -98,6 +102,17 @@ public:
 	 * refused input, so a Builder is never dropped silently.
 	 */
 	virtual FText GetBuilderInputRejectionReason() const { return FText::GetEmpty(); }
+
+	/**
+	 * Mesh properties this node writes to each result's @Data domain after it runs (see PCGUtilsDynMeshProperties),
+	 * or null when it offers none. A node exposes a FPCGUtilsDynMeshFreeProperties UPROPERTY and returns it here;
+	 * the executor validates the names once and writes after every successful input. Immediate results only: a
+	 * realized Builder chain keeps the mesh but not intermediate @Data, so a Builder input gets a graph note instead.
+	 */
+	virtual const FPCGUtilsDynMeshFreeProperties* GetInlineFreeProperties() const { return nullptr; }
+
+	/** As GetInlineFreeProperties(), for properties that need a pass over the mesh. */
+	virtual const FPCGUtilsDynMeshComputedProperties* GetInlineComputedProperties() const { return nullptr; }
 
 	//~Begin UObject interface
 	/** Records FPCGUtilsCustomVersion so derived PostLoad migrations can tell old assets from new ones. */

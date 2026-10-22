@@ -4,6 +4,7 @@
 #include "Elements/PCGUtilsDynMeshProcessBase.h"
 #include "Materials/MaterialInterface.h"
 
+#include "PCGUtilsDynMeshNodeColor.h"
 #include "PCGMaterial.generated.h"
 
 /**
@@ -23,7 +24,7 @@ public:
 	virtual FName GetDefaultNodeName() const override { return TEXT("Material"); }
 	virtual FText GetDefaultNodeTitle() const override;
 	virtual FText GetNodeTooltipText() const override;
-	virtual FLinearColor GetNodeTitleColor() const override { return FLinearColor(0.413f, 0.25f, 1.0f, 1.0f); }
+	virtual FLinearColor GetNodeTitleColor() const override { return PCGUtilsDynMeshNodeColor::Title; }
 #endif
 
 	/** Material assigned to the whole mesh or to the supplied selection. */
