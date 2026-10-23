@@ -28,18 +28,28 @@ The current 58-point Ex capture reproduces the reported choice: off retains the 
 | Max Concavity | 0.1 | Maximum 1 - projected area / convex hull area for merges |
 | Max Quad Warp | 0.35 | Normalized plane deviation for patches of up to four points |
 | Max Polygon Warp | 0.02 | Normalized plane deviation for larger patches |
-| Max Input Points | 128 | Per-path search guard, 3..128 |
+| Max Input Points | 2048 | Per-path search guard, 3..2048; larger paths are forwarded |
 | Inherit Metadata | true | Retain all input metadata domains |
 
-Numeric settings support constants or strict per-input `@Data` attribute reads. For point paths, include the selector prefix, e.g. `@Data.Concavity`. Missing/mistyped values report an error for that dataset. Invalid inputs emit no patches; other input datasets continue.
+Numeric settings support constants or strict per-input `@Data` attribute reads. For point paths, include the selector prefix, e.g. `@Data.Concavity`. Missing/mistyped setting values report the exact failed read. A failed setting read does not substitute a constant: the input is forwarded without decomposition with a specific warning.
 
 Every output copies the source native point properties by exact vertex index: transform, density, bounds, color, steepness, seed and metadata correspondence. Tags and target actor are retained. Metadata inheritance defaults on, including `@Data`; disabling it drops source attributes but retains native point properties and the required closure contract.
 
+## Output preservation and recovery
+
+Every input dataset is retained: successful decomposition emits patches; an unsuccessful decomposition emits the original ordered path as PointArrayData with a warning. There is no strict/drop mode. This applies to duplicates (including a repeated closing point), degenerate or crossing geometry, point-count limits, unsuitable merge settings, failed per-input setting reads and internal surface-search failures. A failure on one input does not prevent processing the others.
+
+Fallback preserves every source point, its order and native properties, all metadata domains, tags and target actor, even when `Inherit Metadata` is disabled. It does not guess a new closure value. If optional cut output is enabled with a valid name, its point bool is reset to false: pass-through creates no new cuts. An invalid optional attribute name is not written. A warning explicitly says the path was forwarded without decomposition and gives the reason. Forwarding is continuity of data, not a claim that decomposition or downstream meshing succeeded.
+
+Actual contract violations (non-point data, missing/mistyped/false closure attribute, non-finite positions) report errors, but even those inputs are forwarded rather than silently removed. Non-point data remains its original type; it cannot be converted into an ordered path without inventing data. Invalid node settings are warnings with pass-through.
+
+The triangles mentioned in earlier errors were generated internally to propose cuts, not supplied by the input or emitted by the node. The unconstrained minimum-cost search could choose exterior diagonals for a valid concave polygon. If its initial surface crosses itself, the solver now tries an orientation-constrained triangulation in a simple projection before giving up on decomposition. This retry is optional internally: paths do not need to admit a simple global projection, and successful 3D overhang solutions use the existing search unchanged.
+
 ## Algorithm and limits
 
-The solver normalizes 3D positions by median boundary edge length, finds a minimum-cost triangulated disk by dynamic programming, screens seed triangle intersections, then greedily merges adjacent patches subject to concavity and fitted-plane warp limits. It supports overhangs without a single global projection. Complexity is cubic; the hard cap is 128 points.
+The solver normalizes 3D positions by median boundary edge length, finds a minimum-cost triangulated disk by dynamic programming, screens seed triangle intersections, then greedily merges adjacent patches subject to concavity and fitted-plane warp limits. It supports overhangs without a single global projection. Complexity is cubic; the configured search cap is at most 2048 points. Paths above the cap are forwarded rather than discarded.
 
-This is an experimental surface inference heuristic. A boundary does not uniquely specify its interior. Inputs are independent disk boundaries, not holes; there are no inserted interior vertices. Intersection checks use floating-point tolerances. A downstream mesher can choose different diagonals for a warped patch. Inspect the actual mesh, normals, seams and collision before production use.
+This is an experimental surface inference heuristic. A boundary does not uniquely specify its interior. Inputs are independent closed boundaries, not a coupled outer-boundary/hole system; there are no inserted interior vertices. Intersection checks use floating-point tolerances. A downstream mesher can choose different diagonals for a warped patch. Inspect the actual mesh, normals, seams and collision before production use.
 
 ## Migration and validation
 
@@ -50,3 +60,7 @@ Native suite: `PCGUtils.Paths.Decomposition`. Covers the captured 32-point Ex fi
 Verified 2026-10-20 on UE 5.8: Development Editor build with `-DisableAdaptiveUnity` succeeded; five decomposition tests plus `PCGUtils.Palette.SearchContract` passed (6 successes, 0 warnings, 0 failures). Project report: `Saved/Automation/PathDecomposition/index.json`.
 
 The `FlatCutBias` native regression also checks the current Ex capture, node-setting wiring, both seam flags, reversed winding, cyclic starts, translations, uniform scaling, world-Z rotations and an entirely level square.
+
+Added regressions cover a simple planar concave boundary rejected by the original solver, winding/rotation variations, and preservation across ten solver/setting failure scenarios with multiple inputs, inherited metadata, native properties, and stale cut flags.
+
+Verified 2026-10-22 on UE 5.8: Development Editor build with `-DisableAdaptiveUnity` succeeded. All eight decomposition/palette tests passed (0 unexpected warnings or failures); expected pass-through warnings and contract errors were asserted by the tests. The current Island graph was inspected but not regenerated with the rebuilt node; the new concave-boundary fixture reproduces the original solver defect independently.

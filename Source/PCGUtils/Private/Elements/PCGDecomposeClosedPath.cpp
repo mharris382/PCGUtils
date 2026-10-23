@@ -85,7 +85,7 @@ bool FPCGDecomposeClosedPathElement::ExecuteInternal(FPCGContext* Context) const
 		if (!Source) { Fail(TEXT("Data type is not Point; expected ordered point path data."), true); continue; }
 		if (Settings->ClosedAttributeName.IsNone()) { Fail(TEXT("Closed Attribute Name=None; expected a Data-domain bool attribute name.")); continue; }
 		if (!FPCGMetadataAttributeBase::IsValidName(Settings->ClosedAttributeName))
-        { Fail(FString::Printf(TEXT("Closed Attribute Name='%s'; expected a valid bare metadata attribute name."), *Settings->ClosedAttributeName.ToString()), true); continue; }
+        { Fail(FString::Printf(TEXT("Closed Attribute Name='%s'; expected a valid bare metadata attribute name."), *Settings->ClosedAttributeName.ToString())); continue; }
         if (Settings->bOutputIsCut && !Settings->IsCutAttributeName.IsNone() && !FPCGMetadataAttributeBase::IsValidName(Settings->IsCutAttributeName))
         { Fail(FString::Printf(TEXT("Is Cut Attribute Name='%s'; expected a valid bare metadata attribute name."), *Settings->IsCutAttributeName.ToString())); continue; }
         const auto* DataDomain = Source->Metadata->GetConstMetadataDomain(PCGMetadataDomainID::Data);
@@ -133,6 +133,7 @@ bool FPCGDecomposeClosedPathElement::ExecuteInternal(FPCGContext* Context) const
 			{ Fail(FString::Printf(TEXT("Point %d coordinate %d=%g; expected finite."),I,Axis,Positions[I][Axis]),true); bFinite=false; break; }
 		if (!bFinite) continue;
 		if (!ClosedPathDecomposition::Solve(Positions, Options, Loops, Error)) { Fail(Error); continue; }
+		if (Loops.IsEmpty()) { Fail(TEXT("Internal search returned no patches.")); continue; }
 		for (const auto& Loop : Loops)
 		{
 			auto* Output = FPCGContext::NewObject_AnyThread<UPCGPointArrayData>(Context);

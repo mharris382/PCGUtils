@@ -196,7 +196,7 @@ bool FClosedPathContractTest::RunTest(const FString&)
  Positions[0]=FTransform(FVector(0,0,0));Positions[1]=FTransform(FVector(10,0,0));
  Positions[2]=FTransform(FVector(10,10,0));Positions[3]=FTransform(FVector(0,10,0));
  auto* Data=Source->Metadata->GetMetadataDomain(PCGMetadataDomainID::Data);
- auto Run=[&](int Expected)
+ auto Run=[&](int Expected, bool bExpectClosed=true)
  {
   FPCGContext Context;Context.InputData.TaggedData.Emplace_GetRef().Data=Settings;
   auto& Input=Context.InputData.TaggedData.Emplace_GetRef();Input.Data=Source;Input.Pin=PCGPinConstants::DefaultInputLabel;
@@ -204,20 +204,21 @@ bool FClosedPathContractTest::RunTest(const FString&)
   TestEqual(TEXT("Expected output count"),Context.OutputData.TaggedData.Num(),Expected);
   for(const auto& Output:Context.OutputData.TaggedData)
   {
+   if(!bExpectClosed)continue;
    const auto* Points=CastChecked<UPCGPointArrayData>(Output.Data);
    const auto* Closed=Points->Metadata->GetConstMetadataDomain(PCGMetadataDomainID::Data)->GetConstTypedAttribute<bool>(TEXT("CustomClosed"));
    if(TestNotNull(TEXT("Custom closure output"),Closed))TestTrue(TEXT("Custom closure true"),Closed->GetValueFromItemKey(Points->Metadata->GetConstMetadataDomain(PCGMetadataDomainID::Data)->GetItemCountForChild() > 0 ? PCGFirstEntryKey : PCGInvalidEntryKey));
   }
  };
- AddExpectedError(TEXT("@Data.CustomClosed is missing"),EAutomationExpectedErrorFlags::Contains,1);Run(0);
+ AddExpectedError(TEXT("@Data.CustomClosed is missing"),EAutomationExpectedErrorFlags::Contains,1);Run(1,false);
  Data->CreateAttribute<int32>(TEXT("CustomClosed"),1,false);
- AddExpectedError(TEXT("@Data.CustomClosed has type ID"),EAutomationExpectedErrorFlags::Contains,1);Run(0);
+ AddExpectedError(TEXT("@Data.CustomClosed has type ID"),EAutomationExpectedErrorFlags::Contains,1);Run(1,false);
  Data->DeleteAttribute(TEXT("CustomClosed"));Data->CreateAttribute<bool>(TEXT("CustomClosed"),false,false);
- AddExpectedError(TEXT("@Data.CustomClosed=false"),EAutomationExpectedErrorFlags::Contains,1);Run(0);
+ AddExpectedError(TEXT("@Data.CustomClosed=false"),EAutomationExpectedErrorFlags::Contains,1);Run(1,false);
  Data->DeleteAttribute(TEXT("CustomClosed"));Data->CreateAttribute<bool>(TEXT("CustomClosed"),true,false);Run(1);
  Settings->MaxConcavity.Input=EPCGUtilsInputValueType::Attribute;
  Settings->MaxConcavity.Attribute.Update(TEXT("@Data.Concavity"));
- AddExpectedError(TEXT("was not found"),EAutomationExpectedErrorFlags::Contains,1);Run(0);
+ AddExpectedMessage(TEXT("was not found"),ELogVerbosity::Warning,EAutomationExpectedMessageFlags::Contains,1);Run(1);
  Data->CreateAttribute<double>(TEXT("Concavity"),0.1,false);Run(1);
  return true;
 }
@@ -290,6 +291,100 @@ bool FClosedPathFlatBiasTest::RunTest(const FString&)
  const TArray<FVector> Square={{0,0,0},{10,0,0},{10,10,0},{0,10,0}};
  TestTrue(TEXT("Flat square solves"),Solve(Square,Options,Biased,Error));
  TestEqual(TEXT("No artificial cuts in a flat square"),Biased.Num(),1);
+ return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FClosedPathConcaveRetryTest,"PCGUtils.Paths.Decomposition.ConcaveBoundaryRecovery",ClosedPathTests::Flags)
+bool FClosedPathConcaveRetryTest::RunTest(const FString&)
+{
+ using namespace ClosedPathDecomposition;
+ // Simple, planar, non-crossing polygon rejected by the original unconstrained seed search.
+ const TArray<FVector> P={{.5930311912827795,.3057937915799492,0},{2.1689418289762816,1.7214347601430933,0},
+ {.8396576305016955,1.0614924988287642,0},{-1.9095836161850472,-1.820408794384081,0},
+ {.1686554145531528,-4.901269662756757,0},{.5172791447061381,-2.0810172067936956,0},
+ {.9942253254347475,-3.7733752817278696,0},{3.7719234785391227,-2.881653235927635,0},
+ {.6370120382440554,-.037821611536838745,0}};
+ auto Area=[&](const FLoop& L){double A=0;for(int I=0;I<L.Num();++I){const auto& U=P[L[I]];const auto& V=P[L[(I+1)%L.Num()]];A+=U.X*V.Y-U.Y*V.X;}return FMath::Abs(A)*.5;};
+ FLoop Boundary;for(int I=0;I<P.Num();++I)Boundary.Add(I);
+ for(int Bias=0;Bias<2;++Bias)for(int Reverse=0;Reverse<2;++Reverse)for(int Shift:{0,3,7})
+ {
+  FOptions O;O.bBiasFlatCuts=Bias!=0;TArray<FLoop> Out;FString Error;
+  TArray<FVector> Input;TArray<int32> Map;
+  for(int I=0;I<P.Num();++I){const int Index=(Shift+(Reverse?P.Num()-1-I:I))%P.Num();Map.Add(Index);Input.Add(FQuat(FVector(1,2,3).GetSafeNormal(),.7).RotateVector(P[Index])*3+FVector(100,-20,70));}
+  if(!TestTrue(TEXT("Ordinary concave boundary decomposes"),Solve(Input,O,Out,Error))){AddError(Error);return false;}
+  TestTrue(TEXT("Recovery creates actual patches, not pass-through"),Out.Num()>1);
+  double Total=0;for(auto L:Out){for(int& I:L)I=Map[I];Total+=Area(L);}
+  TestTrue(TEXT("Patch area covers boundary without exterior overlap"),FMath::IsNearlyEqual(Total,Area(Boundary),1e-7));
+ }
+ return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FClosedPathPreservationTest,"PCGUtils.Paths.Decomposition.NeverDropsPointInputs",ClosedPathTests::Flags)
+bool FClosedPathPreservationTest::RunTest(const FString&)
+{
+ const TArray<FVector> Square={{0,0,0},{10,0,0},{10,10,0},{0,10,0}};
+ for(int Case=0;Case<10;++Case)
+ {
+  auto* Settings=NewObject<UPCGDecomposeClosedPathSettings>();Settings->bOutputIsCut=true;
+  Settings->IsCutAttributeName=TEXT("TestCut");Settings->bInheritMetadata=false;
+  TArray<FVector> P=Square;
+  switch(Case)
+  {
+   case 0:P[2]=P[0];break; // Non-adjacent coincident vertices.
+   case 1:P.Add(FVector(P[0]));break; // Explicit repeated closing vertex.
+   case 2:P={{0,0,0},{1,0,0},{2,0,0}};break; // Collinear.
+   case 3:P={{0,0,0},{10,10,0},{0,10,0},{10,0,0}};break; // Crossing boundary.
+   case 4:Settings->MaxInputPoints.Constant=3;break; // Visible search guard.
+   case 5:Settings->MaxConcavity.Constant=1;break;
+   case 6:Settings->AreaWeight.Constant=0;Settings->LengthWeight.Constant=0;break;
+   case 7:Settings->MaxInputPoints.Constant=2;break;
+   case 8:P.Reset();break;
+   case 9:P={FVector::ZeroVector,FVector::ZeroVector,FVector::ZeroVector};break;
+  }
+  FPCGContext Context;Context.InputData.TaggedData.Emplace_GetRef().Data=Settings;
+  TArray<UPCGPointArrayData*> Sources;
+  for(int Dataset=0;Dataset<2;++Dataset)
+  {
+   const auto& Positions=Dataset==0?P:Square;
+   auto* Source=NewObject<UPCGPointArrayData>();Sources.Add(Source);Source->SetNumPoints(Positions.Num());
+   Source->TargetActor=GetMutableDefault<AActor>();
+   auto* Elements=Source->Metadata->GetMetadataDomain(PCGMetadataDomainID::Elements);
+   auto* ID=Elements->CreateAttribute<int32>(TEXT("TestID"),-1,false);
+   Elements->CreateAttribute<bool>(TEXT("TestCut"),true,false);
+   auto* Data=Source->Metadata->GetMetadataDomain(PCGMetadataDomainID::Data);
+   Data->CreateAttribute<bool>(TEXT("IsClosed"),true,false);Data->CreateAttribute<int32>(TEXT("Sentinel"),934,false);
+   auto T=Source->GetTransformValueRange();auto Keys=Source->GetMetadataEntryValueRange();auto Density=Source->GetDensityValueRange();
+   for(int I=0;I<Positions.Num();++I){T[I]=FTransform(FRotator(0,I,0),Positions[I],FVector(1,2,3));Keys[I]=Elements->AddEntry();ID->SetValue(Keys[I],I);Density[I]=.2f+.01f*I;}
+   auto& Tagged=Context.InputData.TaggedData.Emplace_GetRef();Tagged.Data=Source;Tagged.Pin=PCGPinConstants::DefaultInputLabel;Tagged.Tags.Add(Dataset==0?TEXT("ProblemPath"):TEXT("OtherPath"));
+  }
+  const bool bBothForwarded=Case>=4&&Case<=7;
+  AddExpectedMessage(TEXT("forwarded without decomposition"),ELogVerbosity::Warning,EAutomationExpectedMessageFlags::Contains,bBothForwarded?2:1);
+  ClosedPathTests::FExecute Execute;Execute.ExecuteInternal(&Context);
+  if(!TestEqual(TEXT("Every input survives"),Context.OutputData.TaggedData.Num(),2))return false;
+  for(int Dataset=0;Dataset<(bBothForwarded?2:1);++Dataset)
+  {
+   const auto& Tagged=Context.OutputData.TaggedData[Dataset];const auto* Output=CastChecked<UPCGPointArrayData>(Tagged.Data);const auto* Source=Sources[Dataset];
+   TestEqual(TEXT("Point count preserved"),Output->GetNumPoints(),Source->GetNumPoints());
+   TestTrue(TEXT("Tags preserved"),Tagged.Tags.Contains(Dataset==0?TEXT("ProblemPath"):TEXT("OtherPath")));
+   TestTrue(TEXT("Target actor preserved"),Output->TargetActor==Source->TargetActor);
+   const auto* Data=Output->Metadata->GetConstMetadataDomain(PCGMetadataDomainID::Data);
+   const auto* Sentinel=Data->GetConstTypedAttribute<int32>(TEXT("Sentinel"));
+   if(!TestNotNull(TEXT("Fallback preserves Data metadata even with inheritance disabled"),Sentinel))return false;
+   TestEqual(TEXT("Data value preserved"),Sentinel->GetValueFromItemKey(PCGInvalidEntryKey),934);
+   const auto* Elements=Output->Metadata->GetConstMetadataDomain(PCGMetadataDomainID::Elements);
+   const auto* ID=Elements->GetConstTypedAttribute<int32>(TEXT("TestID"));const auto* Cut=Elements->GetConstTypedAttribute<bool>(TEXT("TestCut"));
+   if(!TestNotNull(TEXT("Point metadata preserved"),ID)||!TestNotNull(TEXT("Cut contract exists"),Cut))return false;
+   const auto Keys=Output->GetConstMetadataEntryValueRange();
+   for(int I=0;I<Output->GetNumPoints();++I)
+   {
+    TestTrue(TEXT("Transform preserved"),Output->GetConstTransformValueRange()[I].Equals(Source->GetConstTransformValueRange()[I]));
+    TestEqual(TEXT("Density preserved"),Output->GetConstDensityValueRange()[I],Source->GetConstDensityValueRange()[I]);
+    TestEqual(TEXT("Metadata correspondence preserved"),ID->GetValueFromItemKey(Keys[I]),I);
+    TestFalse(TEXT("Pass-through invents no cuts and clears stale flags"),Cut->GetValueFromItemKey(Keys[I]));
+   }
+   TestTrue(TEXT("Input cut attribute unchanged"),Source->Metadata->GetConstMetadataDomain(PCGMetadataDomainID::Elements)->GetConstTypedAttribute<bool>(TEXT("TestCut"))->GetValueFromItemKey(PCGInvalidEntryKey));
+  }
+ }
  return true;
 }
 #endif
