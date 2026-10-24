@@ -139,6 +139,28 @@ The Painter providers:
   computed once per mesh in `Prepare()`. `PCGUtilsAxisGradientBounds::Measure` is the span calculation; it finds the
   nearest touching line exactly by solving the box-constrained distance problem.
   Tests: `PCGUtils.DynMesh.Painter.AxisGradient.*`.
+- **Distance Painter** (`Painter | Distance`): paints each vertex by its world-space distance to the PCG points
+  on its Points pin. The distance settings mirror PCGEx's Filter : Distance:
+  - **Target**: Center, Sphere Bounds (radius = length of the scaled extents) or Box Bounds (the oriented bounds
+    box; a vertex inside is at 0). **Type**: Euclidean, Manhattan or Chebyshev. **Overlap Is Zero** (Sphere
+    Bounds only): a vertex inside the sphere is at 0; off, it is measured to the surface from inside. There is no
+    Source setting, because a vertex has no bounds.
+  - **Min Radius / Max Radius** (0 / 200): a point is in range up to Max Radius. Between the radii the value
+    blends from **Value At Min Radius** (1) to **Value At Max Radius** (0). **Inside Min Radius** is either Solid
+    Core (Value At Min Radius) or Out Of Range. Equal radii make a step.
+  - **Out Of Range Value** (0) is what a vertex with no point in range gets. It is separate from the in-range
+    values: 1 to 0 is a soft dot with no edge, 0 to 1 a ring, 0.5 to 1 a soft dot on a raised base, 1 to 1 a hard dot.
+  - **Falloff**: Linear, Smooth, Power (`t^Exponent`), Exponential (decay with Steepness, normalized to land
+    exactly on the end value at Max Radius), or Curve (inline or external float curve; X is 0 at Min Radius and 1
+    at Max Radius, Y is the blend from the start value to the end value).
+  - **Overlapping Points**: Nearest (only the nearest point in range, the default), Max, Min, Average, Add or
+    Multiply. **Clamp Value** clamps the result to `[0,1]`.
+
+  The points go into a uniform grid. Each point covers its shape's bounding box grown by Max Radius, which no
+  metric can reach past, and the cell size is the mean of those boxes. A vertex tests only the points in its own
+  cell. A point that would cover more than 4096 cells is tested by every vertex instead. `Prepare()` evaluates every
+  vertex in a `ParallelFor`, so `Evaluate` is a lookup; a sample that is not a vertex is evaluated on the spot.
+  Tests: `PCGUtils.DynMesh.Painter.Distance.*`, including a grid against brute-force comparison.
 - **Painter Blend**: blends base `A` with blend `B` using Add, Subtract (`A-B`), Multiply, Darken (Min),
   Lighten (Max), Mix (Normal), or Screen. Scalar/scalar inputs return a scalar; mixed/color inputs return color.
   Scalars broadcast to the color operand's valid channels. The base defines output channels; undefined blend

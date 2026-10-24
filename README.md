@@ -197,7 +197,7 @@ Builder support is opt-in per operation, and currently covers the families where
 
 | Supports Builders | Does not |
 |---|---|
-| Topology — Extrude, Inset, Bevel, Boolean, Delete Selection, Remesh, Simplify, Merge by Distance | Painter consumers (Builder integration is deferred by design) |
+| Topology — Extrude, Inset, Bevel, Boolean, Delete Selection, Remesh, Simplify, Decimate, Merge by Distance | Painter consumers (Builder integration is deferred by design) |
 | Deform — Smooth, Warp, Transform, Deform Along Spline | Conversion and query nodes |
 | Attributes — Set Material, Set Vertex Colors, Set/Clear PolyGroup, Project UVs | Write DynMesh LODs |
 
@@ -230,7 +230,8 @@ Component geometry from actors in the level).
 operands, optional per-operand PolyGroup tagging, and a mode that splits the result into separate A-derived and
 B-derived outputs), `Extrude DynMesh Faces`, `Inset DynMesh Faces`, `Bevel DynMesh Edges`, `Delete DynMesh
 Selection`, `Separate DynMesh Selection`, `Remesh DynMesh` (uniform and adaptive), `Simplify DynMesh` (the full
-Geometry Script simplification library, including Planar), and `Merge by Distance`.
+Geometry Script simplification library, including Planar), `Decimate` (Blender's Collapse, Un-Subdivide and
+Planar modes, with delimits and selections), and `Merge by Distance`.
 
 **Deform** — `Smooth DynMesh`, `Warp DynMesh` (bend, twist, flare/squish), `Transform DynMesh`, `Deform DynMesh
 Along Spline`, `ToWorld` / `ToLocal`.
@@ -273,6 +274,7 @@ or a color with explicit valid channels; the consuming node decides where the re
 |---|---|
 | **Axis Gradient Painter** | A clamped projection between Start and End along a normalized axis, in mesh-local or world space, optionally inverted |
 | **Bounds Brush Painter** | PCG points as independently sized world-space brushes — oriented ellipsoids fitted to point bounds, or a uniform radius from an attribute — with an optional solid inner core, Hard/Linear/Smooth falloff, and Max/Min/Add/Multiply overlap reduction |
+| **Distance Painter** | Distance from each vertex to the PCG points in range (center, bounds sphere or bounds box; Euclidean, Manhattan or Chebyshev), blended between Min and Max Radius with Linear/Smooth/Power/Exponential/Curve falloff, a separate out-of-range value, and Nearest/Max/Min/Average/Add/Multiply for overlapping points |
 | **Painter by Vertex ID** | Explicit point → vertex correspondence, reading values from an attribute. Not projection, not falloff |
 | **Random Value by Mesh Island** | A deterministic value per connected component of the mesh, seeded stably so adding geometry elsewhere does not reshuffle existing islands |
 | **Selection Painter Switch** / **Selection to Painter** | A DynMesh Selector classifies every vertex, and each branch is a constant or another Painter |

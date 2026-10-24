@@ -433,6 +433,40 @@ deferred Builder chains. Selection regions are restored before optional ID compa
 only vertices resolved by a DynMesh Selection/Selector, and quietly discards duplicate triangles created as a
 normal consequence of welding rather than turning successful execution into a warning.
 
+**DynMesh | Decimate** offers Blender's three Decimate modifier modes on the standard DynMesh/Selection input
+and Selector, with Builder support:
+
+- **Collapse** reduces to a fraction (`Ratio`) of the triangles with Geometry Script's quadric simplifier. The
+  optional `WeightMapName` names a vertex weight map that steers where detail is kept, like Blender's vertex group,
+  scaled by `WeightFactor` (negative inverts it). A missing map is an error naming the map. Selections run on an
+  extracted region that is welded back. Blender's Symmetry and Triangulate options are not implemented.
+- **Un-Subdivide** reverses grid subdivision: each pass merges every 2x2 block of quads into one quad. It pairs
+  triangles into quads, labels each vertex as an original vertex, an edge midpoint or a face center, and removes
+  the face centers and edge midpoints. Labels are vertex classes, not grid directions, because the two grid
+  directions swap around a pole such as a cube corner. Each connected patch tries all four labelings and keeps the
+  one that puts poles on original vertices. A face center needs four nearly coplanar quads, so creases survive.
+- **Planar** merges faces whose normals differ by less than `AngleLimit` into regions, removes every vertex inside a
+  region and every outline vertex whose bend is under the limit, then flips edges toward a Delaunay triangulation.
+  Delimit by Material (on), Polygroup, UV Seams (on) and Normal Seams. `bAllBoundaries` drops all removable outline
+  vertices regardless of angle.
+
+Un-Subdivide and Planar live in `PCGUtilsDynMeshDecimate` (`Geometry/PCGUtilsDynMeshDecimate.h`). They are written
+from Blender's documented behaviour, not translated from its GPL source, so they ship under the plugin's MIT
+license. Every change goes through `FDynamicMesh3` collapses and flips, so UVs, normals, colors, material IDs and
+polygroups stay consistent. Unselected triangles are locked. When a straight-outline vertex cannot collapse
+because its triangle fan reaches other vertices on the same line, flips inside the region reduce its fan first.
+
+On the test meshes, Planar at 5 degrees gives the same triangle count and smallest angle as Geometry Script's
+Simplify Planar (box 432 to 12, grid 288 to 2, capped cylinder 384 to 92). The differences are the extras: delimits,
+selections, `bAllBoundaries`, and an angle limit that also merges curved surfaces at large angles. Coverage:
+`PCGUtils.DynMesh.Decimate`.
+
+**Dark triangles after Simplify** usually come from earlier in the chain. In the tidepool Builder
+(`Builder_Box_Tidepool`: Box with 2/2/6 steps, then Bevel 21, Taubin Smooth, Simplify Planar), the Bevel is wider
+than half the step spacing. Neighbouring bevels overlap and fold, giving about 110 triangles that face inward
+before Simplify runs. Simplify adds none. Keep a bevel under half the smallest step spacing, or simplify before
+bevelling. The Properties node's inverted-normal count shows the fold.
+
 The simplification itself lives in `FPCGDynMeshSimplifyParameters` / `PCGUtilsDynMeshSimplify::ApplySimplify()`
 (`Geometry/PCGUtilsDynMeshSimplifyParameters.h`), so code outside a graph, such as the Static Mesh Brush cache,
 runs exactly the same simplifier as the node.
