@@ -120,7 +120,25 @@ The Painter providers:
   `$Steepness`, or a constant power. Max/Min/Add/Multiply overlap reduction is followed by the explicit `Clamp
   Value` option, which clamps the final result to `[0,1]`.
 - **Axis Gradient Painter**: evaluates a clamped projection between Start and End along a normalized axis, in
-  either DynMesh-local or world space, with optional inversion.
+  either DynMesh-local or world space, with optional inversion. Two options measure from the mesh instead of
+  from typed numbers:
+  - **Origin Mode = Bounds Relative**: Origin Alignment picks, per axis, a point of the mesh's bounding box (the
+    same alignment controls as Planar Cut's Bounds Relative mode; defaults are centered X/Y, bottom Z). Origin then
+    becomes an offset from that point. An axis whose alignment is off stays at 0.
+  - **Distances Relative To Bounds**: Start and End become multiples of the *span*, the distance a ray from the
+    origin along Axis travels before it leaves the bounding box through the far side. Origin at the bottom and
+    Axis up gives 0 = bottom and 1 = top, the usual ground gradient, with no Bounds From Mesh or math nodes. The
+    span is measured from the origin, so an origin below the box spans to the top, and one in the middle spans half.
+    If the line through the origin misses the box, the origin slides sideways (perpendicular to Axis) onto the
+    nearest parallel line that touches the box. The span is then measured along that line, still from the origin's
+    position along Axis. If the box is wholly behind the origin, the box's thickness along the axis is used. A mesh
+    with no extent along the axis turns the gradient into a step at the origin.
+
+  The bounding box is the whole mesh's (not the selection's), in the gradient's Coordinate Space. In World space it
+  is the exact world-aligned box of the transformed vertices, not a transformed local box. Both options are
+  computed once per mesh in `Prepare()`. `PCGUtilsAxisGradientBounds::Measure` is the span calculation; it finds the
+  nearest touching line exactly by solving the box-constrained distance problem.
+  Tests: `PCGUtils.DynMesh.Painter.AxisGradient.*`.
 - **Painter Blend**: blends base `A` with blend `B` using Add, Subtract (`A-B`), Multiply, Darken (Min),
   Lighten (Max), Mix (Normal), or Screen. Scalar/scalar inputs return a scalar; mixed/color inputs return color.
   Scalars broadcast to the color operand's valid channels. The base defines output channels; undefined blend

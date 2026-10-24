@@ -412,6 +412,12 @@ nodes pick it up.
   collision profile, object type, and a trace-channel response. Collision criteria combine with AND.
   The inherited **Ignore PCG Generated Components** option defaults off here so non-debug generated ISMs
   remain available; enable it to exclude all PCG-generated components.
+- **Get ISM Data** — reads instanced static mesh components (ISM and HISM) back into PCG: one
+  `PCGPointArrayData` per component, one world-space point per instance, with the mesh's bounds. The mesh
+  (`Mesh`, per point) and optional material (`@Data.Material`, once per data set) land in the domain their
+  name picks. See [Docs/PCGUtils/ISMDataAndCopySockets.md](Docs/PCGUtils/ISMDataAndCopySockets.md).
+- **Utils | Copy Sockets** — treats each point as an instance of its mesh and replaces it with one point per
+  selected socket (by name list, by tag, or all), keeping the point's attributes.
 - **Get Override Graph Sets** — routes data according to serialized override-graph metadata.
 - **Capture / Restore** aliases for Density, Position Z and Bounds — stash a point property, do something to
   the points, put it back.
