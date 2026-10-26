@@ -96,7 +96,8 @@ namespace PCGUtilsPaletteSearchContract
 
 			const FString Package = Class->GetOutermost()->GetName();
 			if (!Packages.Contains(Package) && Class->GetName() != TEXT("PCGDecomposeClosedPathSettings") &&
-				Class->GetName() != TEXT("PCGSwizzleBoundsSettings"))
+				Class->GetName() != TEXT("PCGSwizzleBoundsSettings") &&
+				Class->GetName() != TEXT("PCGGetMPCValuesSettings"))
 			{
 				continue;
 			}
@@ -163,6 +164,7 @@ bool FPCGUtilsPaletteSearchContractTest::RunTest(const FString&)
 	bool bFoundRealizeBuilders = false;
 	bool bFoundPathDecomposition = false;
 	bool bFoundSwizzleBounds = false;
+	bool bFoundGetMPCValues = false;
 	bool bFoundSpawnComponent = false;
 
 	for (const FEntry& Entry : Entries)
@@ -177,6 +179,14 @@ bool FPCGUtilsPaletteSearchContractTest::RunTest(const FString&)
 			TestEqual(TEXT("Point category"), Entry.Category, FString(TEXT("PCGUtils|Points")));
 			TestEqual(TEXT("Swizzle Bounds palette label"), Entry.Label, FString(TEXT("Point | Swizzle Bounds")));
 			TestTrue(TEXT("Point search finds Swizzle Bounds"), Matches(Entry.SearchText, TEXT("Point Swizzle")));
+			continue;
+		}
+		if (Entry.ClassName == TEXT("PCGGetMPCValuesSettings"))
+		{
+			bFoundGetMPCValues = true;
+			TestEqual(TEXT("Params category"), Entry.Category, FString(TEXT("PCGUtils|Params")));
+			TestEqual(TEXT("Get MPC Values palette label"), Entry.Label, FString(TEXT("Param | Get MPC Values")));
+			TestTrue(TEXT("Search finds Get MPC Values by its full name"), Matches(Entry.SearchText, TEXT("material parameter collection")));
 			continue;
 		}
 		if (Entry.ClassName == TEXT("PCGDecomposeClosedPathSettings"))
@@ -320,6 +330,7 @@ bool FPCGUtilsPaletteSearchContractTest::RunTest(const FString&)
 	TestEqual(TEXT("Every fracture factory is present"), FractureFactoryCount, 6);
 	TestTrue(TEXT("Path decomposition is registered"), bFoundPathDecomposition);
 	TestTrue(TEXT("Swizzle Bounds is registered"), bFoundSwizzleBounds);
+	TestTrue(TEXT("Get MPC Values is registered"), bFoundGetMPCValues);
 	return true;
 }
 
