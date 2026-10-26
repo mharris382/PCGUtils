@@ -418,6 +418,10 @@ nodes pick it up.
   `PCGPointArrayData` per component, one world-space point per instance, with the mesh's bounds. The mesh
   (`Mesh`, per point) and optional material (`@Data.Material`, once per data set) land in the domain their
   name picks. See [Docs/PCGUtils/ISMDataAndCopySockets.md](Docs/PCGUtils/ISMDataAndCopySockets.md).
+- **Param | Get MPC Values** — reads parameters of a Material Parameter Collection into a one-entry attribute
+  set, one named attribute per listed parameter, from the asset's defaults or the world's live values. Vectors
+  can be written as Vector4, Vector, Vector2 or a single channel. See
+  [Docs/PCGUtils/GetMPCValues.md](Docs/PCGUtils/GetMPCValues.md).
 - **Utils | Copy Sockets** — treats each point as an instance of its mesh and replaces it with one point per
   selected socket (by name list, by tag, or all), keeping the point's attributes.
 - **Get Override Graph Sets** — routes data according to serialized override-graph metadata.
