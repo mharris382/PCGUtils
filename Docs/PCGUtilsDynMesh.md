@@ -422,6 +422,26 @@ The triangulation is the engine's `FTriangulateCurvesOp`, with the engine node's
 extrusion vector). Open-curve offset settings are omitted because open input is rejected. Coverage:
 `PCGUtils.DynMesh.PathToMesh.*`.
 
+## Separating meshes
+
+**DynMesh | Separate Islands** splits each mesh into its connected islands and emits each island as its own DynMesh
+on **Islands**, like Blender's Separate by Loose Parts. Islands are numbered by their lowest triangle ID.
+
+| Setting | Meaning |
+|---------|---------|
+| Connectivity | Shared Vertices (default, as Blender) joins triangles that share a vertex. Shared Edges needs a shared edge, so a bowtie becomes two islands. Proximity also joins vertices within Connect Distance, for parts that touch but were never welded |
+| Island Index Attribute | Optional, on by default. `@Data` int32 named `IslandIndex` that receives the island's number, counted per input mesh |
+| Island Count Attribute | Optional, off by default. `@Data` int32 named `IslandCount` that receives the input mesh's island count |
+| Output Properties | The DynMesh &#124; Properties outputs, written to each island |
+
+Every island keeps the input's metadata (`@Data` included), tags and target actor, plus every per-element value:
+UVs, normals, colors, material IDs, polygroup IDs (not renumbered) and weight layers.
+
+With a selection or a Selector, only the selected triangles are split, and they connect only through each other:
+two selected patches joined by unselected faces are two islands. The rest of the mesh comes out whole on
+**Unselected**, which is empty without a selection. **DynMesh | Separate Selection** is the two-way split by
+selection. Coverage: `PCGUtils.DynMesh.SeparateIslands`.
+
 ## Simplification
 
 **DynMesh | Simplify Planar** defaults to Geometry Script's planar simplifier and also exposes Polygroup
@@ -556,6 +576,16 @@ Materials are the Static Mesh asset's slot materials, not the brush's visualisat
 geometric edges each have more than two face users. Because `FDynamicMesh3` cannot store a topological edge with
 three incident triangles, coincident split vertices are clustered by the configured tolerance before face users
 are counted.
+
+**Select | By Mesh Occlusion** is Select | By Self Occlusion with the blockers on a separate **Occluders** pin.
+It fires a ray from each vertex (or triangle centroid) along **Trace Direction** and selects the elements whose ray
+hits one of the occluder meshes (**Result** = Occluded) or reaches **Maximum Distance** clear (Unoccluded; 0 means
+unlimited). Several occluders act together. Each mesh, tested and occluder, is placed by its own target actor
+(**Meshes Are Actor Local**, on by default), so rays and distances are in world space. **Include Self** also lets
+the tested mesh block its own rays. **Normal Offset** and **Direction Offset** move each ray's start off the surface.
+The ray tests live in `PCGUtilsDynMeshOcclusion::FOccluderSet` (`Geometry/PCGUtilsDynMeshOcclusion.h`), which the
+PCGEx point filter **Filter : Mesh Occlusion** in PCGUtilsPCGExInterop shares. Coverage:
+`PCGUtils.DynMesh.MeshOcclusion`.
 
 Every reusable DynMesh selector exposes **Invert Selection**. Inversion is applied by the shared selector
 operation, so it works consistently inside Selection Logic and other nested selector graphs. Selectors with a

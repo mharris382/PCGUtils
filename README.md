@@ -231,7 +231,8 @@ operands, optional per-operand PolyGroup tagging, and a mode that splits the res
 B-derived outputs), `Extrude DynMesh Faces`, `Inset DynMesh Faces`, `Bevel DynMesh Edges`, `Delete DynMesh
 Selection`, `Separate DynMesh Selection`, `Remesh DynMesh` (uniform and adaptive), `Simplify DynMesh` (the full
 Geometry Script simplification library, including Planar), `Decimate` (Blender's Collapse, Un-Subdivide and
-Planar modes, with delimits and selections), and `Merge by Distance`.
+Planar modes, with delimits and selections), `Separate Islands` (one DynMesh per connected island), and
+`Merge by Distance`.
 
 **Deform** — `Smooth DynMesh`, `Warp DynMesh` (bend, twist, flare/squish), `Transform DynMesh`, `Deform DynMesh
 Along Spline`, `ToWorld` / `ToLocal`.

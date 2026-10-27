@@ -7,7 +7,6 @@
 namespace UE::Geometry
 {
 	class FDynamicMesh3;
-	class FDynamicMeshAABBTree3;
 }
 
 /**

@@ -191,8 +191,8 @@ void UPCGSelectMeshOcclusionFactoryData::AddToCrc(FArchiveCrc32& Ar, bool bFullD
 		Ar << Count;
 		for (const UPCGDynamicMeshData* Occluder : OccluderMeshes)
 		{
-			uint32 Crc = Occluder ? Occluder->GetOrComputeCrc(bFullDataCrc).GetValue() : 0;
-			Ar << Crc;
+			uint32 OccluderCrc = Occluder ? Occluder->GetOrComputeCrc(bFullDataCrc).GetValue() : 0;
+			Ar << OccluderCrc;
 		}
 	}
 }
