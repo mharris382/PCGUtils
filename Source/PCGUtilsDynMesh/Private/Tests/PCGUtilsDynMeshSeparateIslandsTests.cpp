@@ -130,6 +130,39 @@ bool FPCGUtilsDynMeshSeparateIslandsFindTest::RunTest(const FString&)
 		TestEqual(TEXT("Proximity keeps parts beyond the distance apart"), CountIslands(Mesh, EPCGDynMeshIslandConnectivity::Proximity, 0.0001), 2);
 	}
 
+	// A trunk (box) with a leaf (triangle) pushed into its side, and a second leaf floating clear of it.
+	{
+		FDynamicMesh3 Mesh;
+		const FVector3d Corners[8] = {
+			{-10, -10, 0}, {10, -10, 0}, {10, 10, 0}, {-10, 10, 0},
+			{-10, -10, 100}, {10, -10, 100}, {10, 10, 100}, {-10, 10, 100} };
+		int32 V[8];
+		for (int32 Index = 0; Index < 8; ++Index)
+		{
+			V[Index] = Mesh.AppendVertex(Corners[Index]);
+		}
+		const int32 Faces[6][4] = { {0, 3, 2, 1}, {4, 5, 6, 7}, {0, 1, 5, 4}, {1, 2, 6, 5}, {2, 3, 7, 6}, {3, 0, 4, 7} };
+		for (const auto& Face : Faces)
+		{
+			Mesh.AppendTriangle(V[Face[0]], V[Face[1]], V[Face[2]]);
+			Mesh.AppendTriangle(V[Face[0]], V[Face[2]], V[Face[3]]);
+		}
+		// Crosses the +X face (x = 10) from inside the trunk out to x = 60.
+		AddTriangle(Mesh, FVector3d(0, 0, 50), FVector3d(60, -20, 50), FVector3d(60, 20, 55));
+		// Clear of the trunk.
+		AddTriangle(Mesh, FVector3d(200, 0, 50), FVector3d(260, -20, 50), FVector3d(260, 20, 55));
+
+		TestEqual(TEXT("Shared vertices keeps trunk and leaves apart"), CountIslands(Mesh, EPCGDynMeshIslandConnectivity::SharedVertices), 3);
+		TestEqual(TEXT("Intersecting joins the leaf crossing the trunk, not the clear one"),
+			CountIslands(Mesh, EPCGDynMeshIslandConnectivity::Intersecting), 2);
+
+		// With a selection of only the leaves, the crossing runs through the unselected trunk, so nothing joins.
+		const TArray<int32> Leaves = { 12, 13 };
+		TArray<TArray<int32>> Islands;
+		PCGDynMeshSeparateIslands::FindIslands(Mesh, EPCGDynMeshIslandConnectivity::Intersecting, 0.0, &Leaves, Islands);
+		TestEqual(TEXT("Intersecting only joins selected triangles"), Islands.Num(), 2);
+	}
+
 	// A strip of six triangles: the first (0) and fifth (4) share no vertex.
 	{
 		FDynamicMesh3 Mesh;

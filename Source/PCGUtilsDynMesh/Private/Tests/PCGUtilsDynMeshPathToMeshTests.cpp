@@ -170,25 +170,88 @@ bool FPCGUtilsDynMeshPathToMeshFillTest::RunTest(const FString&)
 
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(
 	FPCGUtilsDynMeshPathToMeshOpenTest,
-	"PCGUtils.DynMesh.PathToMesh.OpenPathsAreDiscarded",
+	"PCGUtils.DynMesh.PathToMesh.OpenInputsFillLikeTheEngineNode",
 	EAutomationTestFlags::EditorContext | EAutomationTestFlags::ProductFilter)
 
 bool FPCGUtilsDynMeshPathToMeshOpenTest::RunTest(const FString&)
 {
 	using namespace PCGUtilsDynMeshPathToMeshTests;
 
-	AddExpectedMessage(TEXT("the path is open"), EAutomationExpectedErrorFlags::Contains, 1);
-	AddExpectedMessage(TEXT("was not found in the input's @Data domain"), EAutomationExpectedErrorFlags::Contains, 1);
-	AddExpectedMessage(TEXT("the spline is not a closed loop"), EAutomationExpectedErrorFlags::Contains, 1);
-
+	// The engine's Spline To Mesh treats an open curve as closed by default, and asks nothing of @Data.
 	UPCGDynMeshPathToMeshSettings* Settings = NewObject<UPCGDynMeshPathToMeshSettings>();
-	UTEST_EQUAL("A path marked open makes no mesh", Run(Settings, {MakePath(false, false)}).TaggedData.Num(), 0);
-	UTEST_EQUAL("A path with no IsClosed makes no mesh", Run(Settings, {MakePath(false, {})}).TaggedData.Num(), 0);
+	UTEST_EQUAL("A path marked open is filled as closed", Run(Settings, {MakePath(false, false)}).TaggedData.Num(), 1);
+	UTEST_EQUAL("A path with no IsClosed is filled", Run(Settings, {MakePath(false, {})}).TaggedData.Num(), 1);
+	Settings->ClosedAttributeName = NAME_None;
+	UTEST_EQUAL("An empty Closed Attribute Name is not an error", Run(Settings, {MakePath(false, true)}).TaggedData.Num(), 1);
 
 	UPCGDynMeshPathToMeshSettings* SplineSettings = NewObject<UPCGDynMeshPathToMeshSettings>();
 	SplineSettings->bInputSplines = true;
-	UTEST_EQUAL("An open spline makes no mesh", Run(SplineSettings, {MakeSpline(false)}).TaggedData.Num(), 0);
+	UTEST_EQUAL("An open spline is filled as closed", Run(SplineSettings, {MakeSpline(false)}).TaggedData.Num(), 1);
 	UTEST_EQUAL("A closed spline makes a mesh", Run(SplineSettings, {MakeSpline(true)}).TaggedData.Num(), 1);
+
+	// Open Curves = Offset strokes an open input into a band, as in the engine node; a closed one is still filled.
+	SplineSettings->OpenCurves = EOffsetOpenCurvesMethod::Offset;
+	SplineSettings->FlattenMethod = EFlattenCurveMethod::ToBestFitPlane;
+	SplineSettings->CurveOffset = 5.0;
+	const FPCGDataCollection Band = Run(SplineSettings, {MakeSpline(false)});
+	UTEST_EQUAL("An offset open spline makes a mesh", Band.TaggedData.Num(), 1);
+	const UE::Geometry::FDynamicMesh3* BandMesh = MeshOf(Band.TaggedData[0]);
+	UTEST_NOT_NULL("The band is DynMesh data", BandMesh);
+	// The band follows three sides of the square; the fill would cover the whole 100 x 100 square.
+	const UE::Geometry::FAxisAlignedBox3d BandBounds = BandMesh->GetBounds();
+	double BandArea = 0.0;
+	for (const int32 TriangleID : BandMesh->TriangleIndicesItr())
+	{
+		BandArea += BandMesh->GetTriArea(TriangleID);
+	}
+	UTEST_TRUE("The band is far smaller than the filled square", BandArea < 0.5 * 100.0 * 100.0);
+	UTEST_TRUE("The band still spans the square", BandBounds.Width() > 90.0);
+
+	UPCGDynMeshPathToMeshSettings* TwoPointSettings = NewObject<UPCGDynMeshPathToMeshSettings>();
+	UPCGPointArrayData* TwoPoints = MakePath(false, {});
+	TwoPoints->SetNumPoints(2);
+	AddExpectedMessage(TEXT("at least 3 are needed to enclose an area"), EAutomationExpectedErrorFlags::Contains, 1);
+	UTEST_EQUAL("Two points cannot be filled", Run(TwoPointSettings, {TwoPoints}).TaggedData.Num(), 0);
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FPCGUtilsDynMeshPathToMeshInheritedDataTest,
+	"PCGUtils.DynMesh.PathToMesh.InheritedDataAttributesAreCopied",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::ProductFilter)
+
+bool FPCGUtilsDynMeshPathToMeshInheritedDataTest::RunTest(const FString&)
+{
+	using namespace PCGUtilsDynMeshPathToMeshTests;
+
+	// Data made by an upstream node from another data inherits its @Data through a parent, rather than owning it.
+	// That is the usual case in a real graph, and the engine's domain copy refused it ("Invalid parenting").
+	UPCGSplineData* SourceSpline = MakeSpline(true);
+	UPCGSplineData* ChildSpline = Cast<UPCGSplineData>(SourceSpline->DuplicateData(/*Context=*/nullptr, /*bInitializeMetadata=*/true));
+	UTEST_NOT_NULL("The spline duplicates", ChildSpline);
+
+	UPCGPointArrayData* SourcePath = MakePath(false, true);
+	UPCGPointArrayData* ChildPath = NewObject<UPCGPointArrayData>();
+	ChildPath->InitializeFromData(SourcePath);
+	ChildPath->SetNumPoints(SourcePath->GetNumPoints());
+	SourcePath->CopyPropertiesTo(ChildPath, 0, 0, SourcePath->GetNumPoints(), EPCGPointNativeProperties::All);
+
+	UPCGDynMeshPathToMeshSettings* SplineSettings = NewObject<UPCGDynMeshPathToMeshSettings>();
+	SplineSettings->bInputSplines = true;
+	UPCGDynMeshPathToMeshSettings* PathSettings = NewObject<UPCGDynMeshPathToMeshSettings>();
+
+	const TPair<UPCGDynMeshPathToMeshSettings*, const UPCGData*> Cases[] = {{SplineSettings, ChildSpline}, {PathSettings, ChildPath}};
+	for (const TPair<UPCGDynMeshPathToMeshSettings*, const UPCGData*>& Case : Cases)
+	{
+		const FPCGDataCollection Output = Run(Case.Key, {Case.Value});
+		UTEST_EQUAL("One mesh", Output.TaggedData.Num(), 1);
+		const FPCGMetadataAttribute<float>* Height = Output.TaggedData[0].Data->ConstMetadata()->GetConstTypedAttribute<float>(
+			FPCGAttributeIdentifier(TEXT("RoomHeight"), PCGMetadataDomainID::Data));
+		UTEST_NOT_NULL("The inherited @Data attribute is copied", Height);
+		UTEST_EQUAL("The inherited value survives", Height->GetValueFromItemKey(PCGFirstEntryKey), 250.0f);
+		FTransform Frame;
+		UTEST_TRUE("MeshTransform is still written", ReadMeshTransform(Output.TaggedData[0], Frame));
+	}
 	return true;
 }
 
@@ -284,7 +347,7 @@ bool FPCGUtilsDynMeshPathToMeshDataUpTest::RunTest(const FString&)
 	UTEST_TRUE("MeshTransform is written", ReadMeshTransform(Output.TaggedData[0], Frame));
 	UTEST_TRUE("@Data.Normal drives the facing", AllFacesToward(*MeshOf(Output.TaggedData[0]), Frame, FVector::DownVector));
 
-	AddExpectedMessage(TEXT("Up Direction (input 0)"), EAutomationExpectedErrorFlags::Contains, 1);
+	AddExpectedMessage(TEXT("Up Direction (input 0)"), EAutomationExpectedErrorFlags::Contains, 1, /*bIsRegex=*/false);
 	UTEST_EQUAL("A path without @Data.Normal fails in @Data mode", Run(Settings, {MakePath(false, true)}).TaggedData.Num(), 0);
 	return true;
 }

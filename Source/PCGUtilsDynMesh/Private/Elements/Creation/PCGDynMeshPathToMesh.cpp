@@ -2,6 +2,7 @@
 
 #include "Elements/Creation/PCGDynMeshPathToMesh.h"
 
+#include "Helpers/PCGUtilsDataDomainHelpers.h"
 #include "Algo/Transform.h"
 #include "Data/PCGBasePointData.h"
 #include "Data/PCGDynamicMeshData.h"
@@ -12,6 +13,7 @@
 #include "Metadata/Accessors/PCGAttributeAccessorHelpers.h"
 #include "Metadata/Accessors/PCGAttributeAccessorKeys.h"
 #include "Metadata/PCGMetadata.h"
+#include "Metadata/PCGMetadataAttributeTpl.h"
 #include "Metadata/PCGMetadataDomain.h"
 #include "Operations/ExtrudeMesh.h"
 #include "PCGContext.h"
@@ -38,6 +40,8 @@ namespace
 		/** Points the centroid is averaged over: path points, spline control points, polygon outer vertices. */
 		TArray<FVector> CentroidPoints;
 		bool bIsPolygon = false;
+		/** False for an open path or spline, which Open Curves decides what to do with. */
+		bool bClosed = true;
 	};
 
 	FName StripPathToMeshDataPrefix(FName Name)
@@ -59,26 +63,32 @@ namespace
 		return FText::Format(LOCTEXT("InputPrefix", "Path To Mesh (input {0})"), FText::AsNumber(InputIndex));
 	}
 
-	/** Reads a path's points. Fails, with the exact reason, when the path is not a closed path that encloses an area. */
+	/** True when the input's @Data domain has an attribute of this name. */
+	bool HasPathToMeshDataAttribute(const UPCGData* Data, FName Name)
+	{
+		const UPCGMetadata* Metadata = Data ? Data->ConstMetadata() : nullptr;
+		const FPCGMetadataDomain* Domain = Metadata ? Metadata->GetConstMetadataDomain(PCGMetadataDomainID::Data) : nullptr;
+		return Domain && Domain->HasAttribute(Name);
+	}
+
+	/**
+	 * Reads a path's points and whether it is closed. The closed flag is optional: a path without it counts as
+	 * closed. Fails, with the exact reason, only when the flag is there but unreadable or the path is too short.
+	 */
 	bool GatherPathToMeshPath(const UPCGBasePointData* PointData, FName ClosedAttributeName, int32 InputIndex,
 		FPathToMeshOutline& OutOutline, FText& OutReason)
 	{
 		const FName ClosedName = StripPathToMeshDataPrefix(ClosedAttributeName);
-		bool bClosed = false;
-		FText ReadError;
-		if (!PCGUtilsInputShorthands::ReadDataDomainValue(PointData, MakePathToMeshDataSelector(ClosedName), bClosed, ReadError))
+		if (!ClosedName.IsNone() && HasPathToMeshDataAttribute(PointData, ClosedName))
 		{
-			OutReason = FText::Format(LOCTEXT("ClosedUnreadable",
-				"{0}: cannot tell whether the path is closed, so it was discarded: {1}"),
-				PathToMeshInputText(InputIndex), ReadError);
-			return false;
-		}
-		if (!bClosed)
-		{
-			OutReason = FText::Format(LOCTEXT("PathOpen",
-				"{0}: the path is open (@Data.{1} is false); only closed paths enclose an area to fill, so it was discarded."),
-				PathToMeshInputText(InputIndex), FText::FromName(ClosedName));
-			return false;
+			FText ReadError;
+			if (!PCGUtilsInputShorthands::ReadDataDomainValue(PointData, MakePathToMeshDataSelector(ClosedName), OutOutline.bClosed, ReadError))
+			{
+				OutReason = FText::Format(LOCTEXT("ClosedUnreadable",
+					"{0}: @Data.{1} is there but cannot be read as a Boolean, so it was discarded: {2}"),
+					PathToMeshInputText(InputIndex), FText::FromName(ClosedName), ReadError);
+				return false;
+			}
 		}
 
 		const TConstPCGValueRange<FTransform> Transforms = PointData->GetConstTransformValueRange();
@@ -87,10 +97,10 @@ namespace
 		{
 			OutOutline.Outer.Add(Transform.GetLocation());
 		}
-		if (OutOutline.Outer.Num() < 3)
+		if (OutOutline.Outer.Num() < 2)
 		{
 			OutReason = FText::Format(LOCTEXT("PathTooShort",
-				"{0}: the path has {1} points; a closed path needs at least 3 to enclose an area, so it was discarded."),
+				"{0}: the path has {1} points; at least 2 are needed, so it was discarded."),
 				PathToMeshInputText(InputIndex), FText::AsNumber(OutOutline.Outer.Num()));
 			return false;
 		}
@@ -101,20 +111,14 @@ namespace
 	bool GatherPathToMeshSpline(const UPCGSplineData* SplineData, double ErrorTolerance, int32 InputIndex,
 		FPathToMeshOutline& OutOutline, FText& OutReason)
 	{
-		if (!SplineData->IsClosed())
-		{
-			OutReason = FText::Format(LOCTEXT("SplineOpen",
-				"{0}: the spline is not a closed loop; only closed splines enclose an area to fill, so it was discarded."),
-				PathToMeshInputText(InputIndex));
-			return false;
-		}
+		OutOutline.bClosed = SplineData->IsClosed();
 
 		// Same sampling call as the engine's Spline To Mesh, so the two produce the same outline.
 		SplineData->SplineStruct.ConvertSplineToPolyLine(ESplineCoordinateSpace::World, ErrorTolerance, OutOutline.Outer);
-		if (OutOutline.Outer.Num() < 3)
+		if (OutOutline.Outer.Num() < 2)
 		{
 			OutReason = FText::Format(LOCTEXT("SplineTooShort",
-				"{0}: the spline sampled to {1} points; at least 3 are needed to enclose an area, so it was discarded."),
+				"{0}: the spline sampled to {1} points; at least 2 are needed, so it was discarded."),
 				PathToMeshInputText(InputIndex), FText::AsNumber(OutOutline.Outer.Num()));
 			return false;
 		}
@@ -220,24 +224,6 @@ namespace
 		}
 		return Sum;
 	}
-
-	/** Writes one @Data value, replacing an attribute of the same name (for example one copied from the input). */
-	template <typename T>
-	void WritePathToMeshDataValue(FPCGMetadataDomain& Domain, FName Name, const T& Value)
-	{
-		if (Domain.HasAttribute(Name))
-		{
-			Domain.DeleteAttribute(Name);
-		}
-		FPCGMetadataAttribute<T>* Attribute = Domain.CreateAttribute<T>(Name, Value,
-			/*bAllowsInterpolation=*/false, /*bOverrideParent=*/true);
-		if (!Attribute)
-		{
-			return;
-		}
-		const PCGMetadataEntryKey Key = Domain.GetItemCountForChild() > 0 ? PCGFirstEntryKey : Domain.AddEntry();
-		Attribute->SetValue(Key, Value);
-	}
 }
 
 UPCGDynMeshPathToMeshSettings::UPCGDynMeshPathToMeshSettings()
@@ -265,8 +251,8 @@ FText UPCGDynMeshPathToMeshSettings::GetDefaultNodeTitle() const
 FText UPCGDynMeshPathToMeshSettings::GetNodeTooltipText() const
 {
 	return LOCTEXT("NodeTooltip",
-		"Fills each closed path (or, with Input Splines on, each closed spline or 2D polygon) with a triangulated "
-		"DynMesh, optionally extruded into a solid. Open inputs are discarded with a warning. The input's @Data "
+		"Fills each path (or, with Input Splines on, each spline or 2D polygon) with a triangulated DynMesh, "
+		"optionally extruded into a solid. Open inputs follow Open Curves, as in the engine node. The input's @Data "
 		"attributes are copied onto the mesh, the mesh is framed at the path centroid or at a @Data transform, and "
 		"the faces can be turned toward an up direction. The frame is written to @Data.MeshTransform, as the "
 		"engine's Spline To Mesh does.");
@@ -276,9 +262,9 @@ TArray<FPCGPreConfiguredSettingsInfo> UPCGDynMeshPathToMeshSettings::GetPreconfi
 {
 	return {
 		{PathToMeshPathsAlias, LOCTEXT("PathAlias", "DynMesh | Path To Mesh"),
-			LOCTEXT("PathAliasTooltip", "Fills closed paths (point data marked closed in @Data) with a DynMesh.")},
+			LOCTEXT("PathAliasTooltip", "Fills paths (point data in path order) with a DynMesh, keeping their @Data attributes.")},
 		{PathToMeshSplinesAlias, LOCTEXT("SplineAlias", "DynMesh | Spline To Mesh"),
-			LOCTEXT("SplineAliasTooltip", "Fills closed splines and 2D polygons with a DynMesh, keeping their @Data attributes.")}
+			LOCTEXT("SplineAliasTooltip", "Fills splines and 2D polygons with a DynMesh, keeping their @Data attributes.")}
 	};
 }
 
@@ -312,12 +298,12 @@ TArray<FPCGPinProperties> UPCGDynMeshPathToMeshSettings::InputPinProperties() co
 	if (bInputSplines)
 	{
 		Pins.Emplace_GetRef(PCGPinConstants::DefaultInputLabel, EPCGDataType::Spline | EPCGDataType::Polygon2D, true, true,
-			LOCTEXT("SplinesPinTooltip", "Closed splines or 2D polygons. One mesh per input.")).SetRequiredPin();
+			LOCTEXT("SplinesPinTooltip", "Splines or 2D polygons. One mesh per input.")).SetRequiredPin();
 	}
 	else
 	{
 		Pins.Emplace_GetRef(PCGPinConstants::DefaultInputLabel, EPCGDataType::Point, true, true,
-			LOCTEXT("PathsPinTooltip", "Closed paths: point data with points in path order and a @Data Boolean marking it closed. One mesh per path."))
+			LOCTEXT("PathsPinTooltip", "Paths: point data with points in path order. An optional @Data Boolean (Closed Attribute Name) marks a path open. One mesh per path."))
 			.SetRequiredPin();
 	}
 	return Pins;
@@ -343,12 +329,6 @@ bool FPCGDynMeshPathToMeshElement::ExecuteInternal(FPCGContext* Context) const
 	const UPCGDynMeshPathToMeshSettings* Settings = Context->GetInputSettings<UPCGDynMeshPathToMeshSettings>();
 	check(Settings);
 
-	if (!Settings->bInputSplines && StripPathToMeshDataPrefix(Settings->ClosedAttributeName).IsNone())
-	{
-		PCGLog::LogErrorOnGraph(LOCTEXT("NoClosedAttribute",
-			"Path To Mesh: Closed Attribute Name is empty. Name the @Data Boolean that marks a path closed (usually IsClosed)."), Context);
-		return true;
-	}
 	if (StripPathToMeshDataPrefix(Settings->MeshTransformAttributeName).IsNone())
 	{
 		PCGLog::LogWarningOnGraph(LOCTEXT("NoMeshTransformName",
@@ -469,14 +449,26 @@ bool FPCGDynMeshPathToMeshElement::ExecuteInternal(FPCGContext* Context) const
 		TriangulateOp.bFlipResult = Settings->bFlipResult && !Settings->bFaceUpDirection;
 		TriangulateOp.FlattenMethod = Settings->FlattenMethod;
 		TriangulateOp.CurveOffset = Settings->CurveOffset;
-		TriangulateOp.OffsetOpenMethod = EOffsetOpenCurvesMethod::TreatAsClosed;
+		TriangulateOp.OffsetOpenMethod = Settings->OpenCurves;
+		TriangulateOp.OpenEndShape = Settings->EndShapes;
 		TriangulateOp.OffsetJoinMethod = Settings->JoinMethod;
 		TriangulateOp.MiterLimit = Settings->MiterLimit;
 		TriangulateOp.OffsetClosedMethod = Settings->CurveOffset == 0.0
 			? EOffsetClosedCurvesMethod::DoNotOffset
 			: Settings->OffsetClosedCurves;
 
-		TriangulateOp.AddWorldCurve(Outline.Outer, /*bClosed=*/true, Frame);
+		// An open curve is only stroked when it can be (flattened, with an offset); otherwise it is filled as closed.
+		const bool bCanStrokeOpen = Settings->OpenCurves == EOffsetOpenCurvesMethod::Offset
+			&& Settings->FlattenMethod != EFlattenCurveMethod::DoNotFlatten && Settings->CurveOffset != 0.0;
+		const bool bTreatAsClosed = Outline.bClosed || !bCanStrokeOpen;
+		if (bTreatAsClosed && Outline.Outer.Num() < 3)
+		{
+			PCGLog::LogWarningOnGraph(FText::Format(LOCTEXT("TooShortToFill",
+				"{0}: the outline has {1} points; at least 3 are needed to enclose an area, so it was discarded. To make a band along it, set Open Curves to Offset with a Flatten Method and a Curve Offset."),
+				PathToMeshInputText(InputIndex), FText::AsNumber(Outline.Outer.Num())), Context);
+			continue;
+		}
+		TriangulateOp.AddWorldCurve(Outline.Outer, /*bClosed=*/bTreatAsClosed, Frame);
 		for (const TArray<FVector>& Hole : Outline.Holes)
 		{
 			TriangulateOp.AddWorldCurve(Hole, /*bClosed=*/true, Frame);
@@ -551,22 +543,12 @@ bool FPCGDynMeshPathToMeshElement::ExecuteInternal(FPCGContext* Context) const
 		{
 			if (Settings->bCopyDataAttributes)
 			{
-				const UPCGMetadata* SourceMetadata = Input.Data->ConstMetadata();
-				if (const FPCGMetadataDomain* SourceDomain = SourceMetadata
-					? SourceMetadata->GetConstMetadataDomain(PCGMetadataDomainID::Data) : nullptr)
-				{
-					FPCGMetadataDomainInitializeParams Params(SourceDomain);
-					if (!Settings->bInputSplines && !Settings->bCopyClosedAttribute)
-					{
-						Params.FilteredAttributes = TSet<FName>{ClosedName};
-						Params.FilterMode = EPCGMetadataFilterMode::ExcludeAttributes;
-					}
-					OutputDomain->InitializeAsCopy(Params);
-				}
+				const FName Excluded = !Settings->bInputSplines && !Settings->bCopyClosedAttribute ? ClosedName : NAME_None;
+				PCGUtilsDataDomain::CopyDataAttributes(Input.Data, *OutputDomain, {Excluded});
 			}
 			if (!MeshTransformName.IsNone())
 			{
-				WritePathToMeshDataValue<FTransform>(*OutputDomain, MeshTransformName, MeshFrame);
+				PCGUtilsDataDomain::WriteValue<FTransform>(*OutputDomain, MeshTransformName, MeshFrame);
 			}
 		}
 

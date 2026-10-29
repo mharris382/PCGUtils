@@ -1,6 +1,7 @@
 // Copyright Max Harris
 
 #include "Elements/Painters/PCGDynMeshConstantPainter.h"
+#include "Data/PCGDynamicMeshData.h"
 
 #include "Elements/Painters/PCGUtilsPainterShorthandHelpers.h"
 #include "PCGContext.h"

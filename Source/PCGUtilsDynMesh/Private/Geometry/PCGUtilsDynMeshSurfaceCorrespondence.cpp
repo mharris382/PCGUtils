@@ -24,7 +24,7 @@ namespace PCGUtilsDynMeshSurfaceCorrespondence
 		/** Closest-point query for one already-transformed (source-space) point. */
 		FMeshSurfaceProjection ProjectOne(
 			const FDynamicMeshAABBTree3& SourceTree, const FDynamicMesh3& SourceMesh,
-			const FVector3d& SourcePoint, double MaxDistance)
+			const FVector3d& SourcePoint, double MaxDistance, TConstArrayView<int32> SourceTriangleGroups, int32 Group)
 		{
 			FMeshSurfaceProjection Out;
 			if (!IsFinite(SourcePoint))
@@ -34,6 +34,13 @@ namespace PCGUtilsDynMeshSurfaceCorrespondence
 
 			IMeshSpatial::FQueryOptions QueryOptions;
 			QueryOptions.MaxDistance = MaxDistance;
+			if (Group != INDEX_NONE)
+			{
+				QueryOptions.TriangleFilterF = [SourceTriangleGroups, Group](int32 TriangleID)
+				{
+					return SourceTriangleGroups.IsValidIndex(TriangleID) && SourceTriangleGroups[TriangleID] == Group;
+				};
+			}
 
 			double NearestDistSqr = TNumericLimits<double>::Max();
 			const int32 TriangleID = SourceTree.FindNearestTriangle(SourcePoint, NearestDistSqr, QueryOptions);
@@ -85,7 +92,9 @@ namespace PCGUtilsDynMeshSurfaceCorrespondence
 				{
 					return;
 				}
-				Result.Projections[Index] = ProjectOne(SourceTree, *SourceMesh, GetSourceSpacePoint(Index), MaxDistance);
+				const int32 Group = Options.DestinationGroups.IsValidIndex(Index) ? Options.DestinationGroups[Index] : INDEX_NONE;
+				Result.Projections[Index] = ProjectOne(SourceTree, *SourceMesh, GetSourceSpacePoint(Index), MaxDistance,
+					Options.SourceTriangleGroups, Group);
 			};
 
 			if (Options.bParallel && Count > 256)

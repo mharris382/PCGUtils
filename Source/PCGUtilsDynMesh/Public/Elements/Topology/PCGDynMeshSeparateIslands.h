@@ -34,7 +34,15 @@ enum class EPCGDynMeshIslandConnectivity : uint8
 	 * Triangles whose vertices lie within Connect Distance of each other are one island, even when the mesh does
 	 * not join them. Use for meshes whose parts touch but were never welded.
 	 */
-	Proximity
+	Proximity,
+
+	/**
+	 * Parts joined by shared vertices are also one island with every part their triangles cross: leaves pushed into
+	 * a trunk, a handle sunk into a mug. Connect Distance, when above 0, also joins vertices within it, as Proximity
+	 * does. Parts that only lie flat against each other (coplanar overlap) or sit fully inside another without
+	 * crossing its surface are not joined.
+	 */
+	Intersecting
 };
 
 namespace PCGDynMeshSeparateIslands
@@ -73,9 +81,12 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Settings", meta=(PCG_Overridable))
 	EPCGDynMeshIslandConnectivity Connectivity = EPCGDynMeshIslandConnectivity::SharedVertices;
 
-	/** Proximity only: vertices closer than this, in the mesh's own units, join their triangles into one island. */
+	/**
+	 * Proximity and Intersecting: vertices closer than this, in the mesh's own units, join their triangles into one
+	 * island. Proximity needs it above 0; Intersecting ignores it at 0.
+	 */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Settings", meta=(PCG_Overridable, ClampMin="0.0", Units="cm",
-		EditCondition="Connectivity == EPCGDynMeshIslandConnectivity::Proximity", EditConditionHides))
+		EditCondition="Connectivity == EPCGDynMeshIslandConnectivity::Proximity || Connectivity == EPCGDynMeshIslandConnectivity::Intersecting", EditConditionHides))
 	double ConnectDistance = 0.01;
 
 	/** Write each island's number (0, 1, 2... in order of the island's lowest triangle ID) to @Data. */

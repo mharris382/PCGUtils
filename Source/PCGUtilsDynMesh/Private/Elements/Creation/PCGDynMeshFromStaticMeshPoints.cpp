@@ -9,6 +9,7 @@
 #include "DynamicMesh/MeshTransforms.h"
 #include "DynamicMeshEditor.h"
 #include "Elements/PCGUtilsDynMeshSpaceHelpers.h"
+#include "Helpers/PCGUtilsDataDomainHelpers.h"
 #include "Engine/StaticMesh.h"
 #include "GeometryScript/MeshAssetFunctions.h"
 #include "Materials/MaterialInterface.h"
@@ -140,16 +141,15 @@ namespace PCGDynMeshFromStaticMeshPointsPrivate
 		}
 	}
 
-	/** A mesh has no points, so of the point data's metadata only the dataset-wide @Data domain carries over. */
+	/**
+	 * A mesh has no points, so of the point data's metadata only the dataset-wide @Data domain carries over. Copied
+	 * value by value: the engine's domain copy refuses @Data inherited from upstream data ("Invalid parenting").
+	 */
 	void InheritDataDomain(UPCGDynamicMeshData* OutputData, const UPCGBasePointData* PointData)
 	{
-		const FPCGMetadataDomain* SourceDomain = PointData->ConstMetadata()
-			? PointData->ConstMetadata()->GetConstMetadataDomain(PCGMetadataDomainID::Data) : nullptr;
-		FPCGMetadataDomain* OutputDomain = OutputData->MutableMetadata()
-			? OutputData->MutableMetadata()->GetMetadataDomain(PCGMetadataDomainID::Data) : nullptr;
-		if (SourceDomain && OutputDomain)
+		if (FPCGMetadataDomain* OutputDomain = PCGUtilsDataDomain::GetMutableDataDomain(OutputData))
 		{
-			OutputDomain->Initialize(FPCGMetadataDomainInitializeParams(SourceDomain));
+			PCGUtilsDataDomain::CopyDataAttributes(PointData, *OutputDomain);
 		}
 	}
 }

@@ -1,6 +1,7 @@
 // Copyright Max Harris
 
 #include "Elements/Painters/PCGDynMeshBlurPainter.h"
+#include "Data/PCGDynamicMeshData.h"
 
 #include "Async/ParallelFor.h"
 #include "DynamicMesh/DynamicMesh3.h"

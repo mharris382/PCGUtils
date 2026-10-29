@@ -235,6 +235,34 @@ The Painter consumers:
   and writes the final color once. A scalar is broadcast to all requested channels; a color preserves unrequested
   or undefined channels.
 
+### LOD groups
+
+`Paint LODs From Highest Detail` (off by default) on **Paint DynMesh Vertex Color** paints a mesh's LODs as one.
+Painted separately, each LOD gets its own result: Random Value by Mesh Island keys an island by its lowest vertex
+ID and its position, and a simplified island has neither in common with its LOD 0 original, so a leaf's tint jumps
+when the LOD switches. With the option on:
+
+1. Inputs are grouped by the `@Data` value named by `LOD Source Attribute` (default `SourceMesh`; a soft object
+   path, string, name or integer) and ranked by `LOD Attribute` (default `LOD`, int32 or int64). DynMesh | From
+   Static Mesh writes both. The lowest LOD of a group is painted, as an ordinary input; between equal LODs the
+   first input is painted and the others are copied.
+2. Every other member takes LOD 0's colors through `PCGUtilsPainterLODTransfer` (Painter module), which projects
+   each vertex onto the painted surface (`PCGUtilsDynMeshSurfaceCorrespondence`) and interpolates. Only the Write
+   Channels are copied; the rest follow Base Color Mode, as painting would. A member's own selection or Selector
+   limits which of its vertices are written.
+3. `Keep Islands Together` (on): each island of a lower LOD first votes, with its vertices' unrestricted
+   projections, for the painted island it lies on, and then projects only onto that island. A leaf tip that
+   reaches closer to the next leaf than to its own original keeps its own leaf's color. Off, every vertex takes
+   the nearest painted surface. The restriction is the correspondence utility's `SourceTriangleGroups` /
+   `DestinationGroups` option, usable by any caller.
+
+Inputs reach the node in pin order, so a lower LOD can come before its LOD 0. The node then paints LOD 0 on a
+working copy at once, prepared exactly as its own turn would prepare it, and reuses that result when its turn
+comes; LOD 0 is painted once either way. An input missing either attribute, or holding the wrong type or an empty
+value, is painted on its own with a warning naming the input and attribute. A lower LOD whose LOD 0 failed to
+paint is an error naming both. Both meshes are compared in their own local space, as the LODs of one asset share
+it. Coverage: `PCGUtils.Painter.LODGroup.*`.
+
 `Paint DynMesh Vertex Color` uses the module's actor-local DynMesh convention by default. It resolves the PCG target
 actor transform once per mesh, populates both local and world sample fields, and therefore compares Paint from
 Points' world-space brush centers against world-space mesh samples without mixing coordinate systems. Disable

@@ -21,7 +21,8 @@
  *   - frames the mesh at the path centroid, or at a transform the input carries in @Data;
  *   - can make the faces point toward an up direction whatever way the path winds.
  *
- * Open paths and open splines are discarded with a warning: there is no area to fill.
+ * It asks nothing of its input that the engine node does not: an open path or spline is treated as closed by
+ * default (Open Curves, as in the engine node), and the @Data closed flag on a path is optional.
  *
  * Coordinate space matches the engine node: vertices are stored relative to the mesh frame, and the frame
  * (a world transform) is written to the @Data Mesh Transform attribute. This is a creation node; it has no
@@ -67,9 +68,9 @@ public:
 	bool bInputSplines = false;
 
 	/**
-	 * Required, paths only. The @Data Boolean attribute that marks a path as closed (the PCGEx convention). A path
-	 * whose value is false, or that does not carry the attribute, is open and is discarded with a warning. The
-	 * @Data. prefix is optional. Splines report their own closed state.
+	 * Optional, paths only. A @Data Boolean that marks a path as closed or open (the PCGEx convention). A path
+	 * without it, or with this name empty, counts as closed. An open path follows Open Curves. The @Data. prefix
+	 * is optional. Splines report their own closed state.
 	 */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Input",
 		meta = (PCG_Overridable, EditCondition = "!bInputSplines", EditConditionHides))
@@ -95,6 +96,19 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Triangulation",
 		meta = (PCG_Overridable, EditCondition = "FlattenMethod != EFlattenCurveMethod::DoNotFlatten && CurveOffset != 0", EditConditionHides))
 	EOffsetClosedCurvesMethod OffsetClosedCurves = EOffsetClosedCurvesMethod::OffsetOuterSide;
+
+	/**
+	 * What to do with an open path or spline. Treat As Closed (the default, as in the engine node) joins its ends
+	 * and fills it. Offset makes a band of Curve Offset width along it instead, and needs a Flatten Method and a
+	 * Curve Offset; without them the input is treated as closed.
+	 */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Triangulation", meta = (PCG_Overridable))
+	EOffsetOpenCurvesMethod OpenCurves = EOffsetOpenCurvesMethod::TreatAsClosed;
+
+	/** The shape of the ends of an offset open curve. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Triangulation",
+		meta = (PCG_Overridable, EditCondition = "FlattenMethod != EFlattenCurveMethod::DoNotFlatten && OpenCurves != EOffsetOpenCurvesMethod::TreatAsClosed && CurveOffset != 0", EditConditionHides))
+	EOpenCurveEndShapes EndShapes = EOpenCurveEndShapes::Square;
 
 	/** The shape of the corners of an offset outline. */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Triangulation",

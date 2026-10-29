@@ -396,18 +396,22 @@ each path's data attributes onto its loop. A target with no loop within `Max Ave
 When welding a loft to its mesh, keep the merge distance far below the loft's own vertex spacing (0.01, not 1).
 The seam vertices are coincident, but the loft's inner rail is dense and a loose weld collapses it.
 
-## Filling closed paths
+## Filling paths
 
-`DynMesh | Path To Mesh` fills each closed path with a triangulated mesh, optionally extruded into a solid. It
+`DynMesh | Path To Mesh` fills each path with a triangulated mesh, optionally extruded into a solid. It
 replaces the chain `PCGEx | Create Spline` -> engine `Spline To Mesh` -> `Copy Attributes` (from the path with
 `IsClosed` deleted). `DynMesh | Spline To Mesh` is the same class with `Input Splines` on: the `In` pin takes
 splines and 2D polygons exactly like the engine node, so it can replace that node too. The pin label is `In` in
 both, matching the engine node.
 
-- **Closed only.** A path is closed when its `@Data` Boolean `Closed Attribute Name` (default `IsClosed`) is true.
-  A path that is open, lacks the attribute, or has fewer than 3 points is discarded with a warning naming which.
-  Open splines are discarded the same way; 2D polygons are always closed.
-- **@Data carries over.** `Copy Data Attributes` (on) copies the input's whole `@Data` domain onto the mesh.
+- **No input requirements beyond the engine node's.** The `@Data` Boolean `Closed Attribute Name` (default
+  `IsClosed`) is optional: a path without it counts as closed, and one with it false is open. An open path or spline
+  follows `Open Curves`, as in the engine node: `Treat As Closed` (default) joins its ends and fills it; `Offset`
+  makes a band of `Curve Offset` width along it with `End Shapes`, and needs a Flatten Method and a Curve Offset.
+  Filling needs at least 3 points; a band needs 2. 2D polygons are always closed.
+- **@Data carries over.** `Copy Data Attributes` (on) copies the input's whole `@Data` domain onto the mesh, value
+  by value. Inherited `@Data` (an input made from other data by an upstream node) copies the same as its own; the
+  engine's domain copy refused it with "Invalid parenting on the domain 'Data'", which this replaced.
   `Copy Closed Attribute` (off) decides whether `IsClosed` comes along.
 - **Frame.** Vertices are stored relative to a frame that is written, in world space, to `@Data.MeshTransform`
   (name exposed), as the engine node does. The frame is the first of: the input's `@Data` Transform
@@ -419,7 +423,7 @@ both, matching the engine node.
   shorthand) always grows the solid toward the faces.
 
 The triangulation is the engine's `FTriangulateCurvesOp`, with the engine node's settings (flatten, offset,
-extrusion vector). Open-curve offset settings are omitted because open input is rejected. Coverage:
+extrusion vector, open curves). Coverage:
 `PCGUtils.DynMesh.PathToMesh.*`.
 
 ## Separating meshes
@@ -429,7 +433,7 @@ on **Islands**, like Blender's Separate by Loose Parts. Islands are numbered by 
 
 | Setting | Meaning |
 |---------|---------|
-| Connectivity | Shared Vertices (default, as Blender) joins triangles that share a vertex. Shared Edges needs a shared edge, so a bowtie becomes two islands. Proximity also joins vertices within Connect Distance, for parts that touch but were never welded |
+| Connectivity | Shared Vertices (default, as Blender) joins triangles that share a vertex. Shared Edges needs a shared edge, so a bowtie becomes two islands. Proximity also joins vertices within Connect Distance, for parts that touch but were never welded. Intersecting also joins parts whose triangles cross each other (leaves pushed into a trunk), plus vertices within Connect Distance when it is above 0; parts that only overlap flat (coplanar) or sit wholly inside another without crossing its surface stay apart |
 | Island Index Attribute | Optional, on by default. `@Data` int32 named `IslandIndex` that receives the island's number, counted per input mesh |
 | Island Count Attribute | Optional, off by default. `@Data` int32 named `IslandCount` that receives the input mesh's island count |
 | Output Properties | The DynMesh &#124; Properties outputs, written to each island |
@@ -441,6 +445,73 @@ With a selection or a Selector, only the selected triangles are split, and they 
 two selected patches joined by unselected faces are two islands. The rest of the mesh comes out whole on
 **Unselected**, which is empty without a selection. **DynMesh | Separate Selection** is the two-way split by
 selection. Coverage: `PCGUtils.DynMesh.SeparateIslands`.
+
+## Baking meshes to assets
+
+Three nodes take a set of meshes from assets, through processing, back to assets in one graph, with no loop
+subgraph. The engine's Mesh To Dynamic Mesh reads one mesh from a setting, and its Save Dynamic Mesh To Asset
+saves only the first mesh it is given.
+
+```
+asset list -> DynMesh | From Static Mesh -> (processing) -> Get Asset Save Parameters (Input Data) -> DynMesh | Save Static Mesh
+```
+
+**DynMesh | From Static Mesh** makes one DynMesh per mesh its input names. `Mesh Attribute` (a selector,
+default `@Last`) is a soft object path or string to a static or skeletal mesh, read on every element of the domain
+it selects: each attribute set entry or point gives one DynMesh, and `@Data.<Name>` gives one per input. Each
+DynMesh keeps its input's tags and `@Data` (`Copy Data Attributes`), and with `Copy Element Attributes` (on) the
+attributes of the entry that named it become `@Data`, Mesh Attribute included, so a mesh still knows which asset
+it came from. The read settings (materials, override materials, LOD, synchronous load) are the engine node's, and
+the meshes read are dynamically tracked so the graph regenerates when one changes. An empty entry warns and is
+skipped; a missing attribute, an asset that will not load or is not a mesh, and an override-material count
+mismatch are errors naming the input and element. **DynMesh | From Static Mesh Points** remains the way to place
+meshes by point transforms and append them.
+
+**Get Asset Save Parameters**, in `Input Data` mode, runs once per input instead of once per node. `Asset
+Attribute` (a selector, default `@Last`) must hold exactly one soft object path or string per input, normally a
+`@Data` attribute. Each input comes out as a copy with the save name and folder written to its `@Data`; the output
+pin takes the input's type. `Asset Name Attribute Name` and `Asset Path Attribute Name` (defaults `AssetName`,
+`AssetPath`) name the attributes written, in every mode.
+
+**DynMesh | Save Static Mesh** saves every DynMesh on `In`, with the engine node's options (materials from the
+DynMesh, Copy Mesh To Asset Options, Mesh Write LOD, save on export). `Asset Name` and `Asset Path` are String
+shorthands, constant or `@Data` (defaults `@Data.AssetName`, `@Data.AssetPath`), so either can come from each
+mesh. A constant `Asset Name` given more than one mesh appends the mesh's index on the pin: `Rock_0`, `Rock_1`; a
+single mesh is saved under the name as given, as the engine node does. Names are all checked before anything is
+written: an empty name or folder, a missing `@Data` value, and two meshes that would be saved as the same asset
+are each an error naming the input. `Open Save Dialog` is off by default and is ignored, with a warning, for more
+than one mesh. `OutAssetPath` gives one attribute set per saved mesh, in input order, with the asset in
+`Output Asset Attribute Name` (default `AssetPath`, the engine's) and the mesh's tags and `@Data`. Editor only.
+
+### LODs
+
+The chain carries a whole LOD chain when asked:
+
+```
+asset list -> From Static Mesh (All LODs) -> Paint Vertex Color (Paint LODs From Highest Detail)
+           -> Get Asset Save Parameters (Input Data, Asset Attribute @Data.SourceMesh) -> Save Static Mesh (Save LODs From Attribute)
+```
+
+- **From Static Mesh** writes `@Data.LOD` (int32, the LOD read, 0 the most detailed) and `@Data.SourceMesh` (soft
+  object path, the asset read) on every DynMesh, by default; both names are settings with toggles. With `All
+  LODs` each mesh gives one DynMesh per LOD, LOD 0 first, and `Requested LOD Index` is unused. Source Model reads
+  every stored source LOD, Render Data every render LOD, and Max Available a source LOD where the asset stores one
+  and the render LOD where the LOD is auto-generated (it has no source mesh). Hi-Res Source Model has one LOD. A
+  LOD that cannot be read is an error naming its LOD; the others are still made.
+- **Paint Vertex Color**'s `Paint LODs From Highest Detail` paints each mesh's LOD 0 only and copies its colors
+  onto the other LODs. See `PCGUtilsPainter.md`, "LOD groups".
+- **Save Static Mesh**'s `Save LODs From Attribute` turns meshes that would save to the same asset into its LODs,
+  each written to the LOD its `LOD Attribute` (default `LOD`, int32 or int64) names, instead of an error. A
+  constant Asset Name is then not numbered. One asset's LODs must run 0, 1, 2... : a gap, two meshes for one
+  LOD, a missing or non-integer LOD attribute, and a negative LOD are each an error naming the inputs, and that
+  asset is not saved. LOD 0 sets the material slots; the asset is rebuilt once after every LOD is written, and
+  LODs an existing asset had past the last one written are removed. `Mesh Write LOD` is unused in this mode.
+  Outputs stay one per mesh, in input order. Coverage: `PCGUtils.DynMesh.SaveStaticMesh.LODsRoundTrip`.
+
+All three copy `@Data` value by value through `PCGUtilsDataDomain` (PCGUtilsCore), as Path To Mesh does, so inputs
+whose `@Data` is inherited from upstream data work. **From Static Mesh Points** uses it too; it used the engine's
+domain copy before, which can fail the same way. Coverage: `PCGUtils.DynMesh.FromStaticMesh`,
+`PCGUtils.AssetManagement.GetAssetSaveParameters`, `PCGUtils.DynMesh.SaveStaticMesh`.
 
 ## Simplification
 

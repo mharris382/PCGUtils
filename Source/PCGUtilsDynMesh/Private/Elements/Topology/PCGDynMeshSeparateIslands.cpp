@@ -6,6 +6,7 @@
 #include "Data/PCGDynamicMeshData.h"
 #include "Data/PCGDynamicMeshSelectionData.h"
 #include "DynamicMesh/DynamicMesh3.h"
+#include "DynamicMesh/DynamicMeshAABBTree3.h"
 #include "DynamicMesh/DynamicMeshAttributeSet.h"
 #include "DynamicSubmesh3.h"
 #include "GeometryScript/GeometryScriptSelectionTypes.h"
@@ -184,7 +185,9 @@ void PCGDynMeshSeparateIslands::FindIslands(const UE::Geometry::FDynamicMesh3& M
 			UsedVertex[Tri.C] = true;
 		}
 
-		if (Connectivity == EPCGDynMeshIslandConnectivity::Proximity && ConnectDistance > 0.0)
+		const bool bUsesDistance = Connectivity == EPCGDynMeshIslandConnectivity::Proximity
+			|| Connectivity == EPCGDynMeshIslandConnectivity::Intersecting;
+		if (bUsesDistance && ConnectDistance > 0.0)
 		{
 			TPointHashGrid3d<int32> Grid(ConnectDistance, IndexConstants::InvalidID);
 			for (TConstSetBitIterator<> It(UsedVertex); It; ++It)
@@ -203,6 +206,35 @@ void PCGDynMeshSeparateIslands::FindIslands(const UE::Geometry::FDynamicMesh3& M
 				{
 					Sets->Union(VertexID, Other);
 				}
+			}
+		}
+
+		if (Connectivity == EPCGDynMeshIslandConnectivity::Intersecting)
+		{
+			// Every pair of crossing triangles joins their parts. Pairs sharing a vertex are already joined, so the
+			// query skips them; the filter keeps a selection's connectivity inside the selection.
+			FDynamicMeshAABBTree3 Tree(&Mesh, /*bAutoBuild=*/true);
+			IMeshSpatial::FQueryOptions Options;
+			if (TriangleFilter)
+			{
+				Options.TriangleFilterF = [&InSet](int32 TriangleID) { return InSet.IsValidIndex(TriangleID) && InSet[TriangleID]; };
+			}
+			const MeshIntersection::FIntersectionsQueryResult Crossings = Tree.FindAllSelfIntersections(/*bIgnoreTopoConnected=*/true, Options);
+			auto Join = [&Sets, &Mesh](const int32 (&TriangleIDs)[2])
+			{
+				Sets->Union(Mesh.GetTriangle(TriangleIDs[0]).A, Mesh.GetTriangle(TriangleIDs[1]).A);
+			};
+			for (const MeshIntersection::FPointIntersection& Crossing : Crossings.Points)
+			{
+				Join(Crossing.TriangleID);
+			}
+			for (const MeshIntersection::FSegmentIntersection& Crossing : Crossings.Segments)
+			{
+				Join(Crossing.TriangleID);
+			}
+			for (const MeshIntersection::FPolygonIntersection& Crossing : Crossings.Polygons)
+			{
+				Join(Crossing.TriangleID);
 			}
 		}
 		KeyOf = [&Sets, &Mesh](int32 TriangleID) { return Sets->Find(Mesh.GetTriangle(TriangleID).A); };
@@ -322,6 +354,13 @@ bool FPCGDynMeshSeparateIslandsElement::ExecuteInternal(FPCGContext* Context) co
 	{
 		PCGLog::LogErrorOnGraph(FText::Format(LOCTEXT("BadConnectDistance",
 			"Separate Islands: Connect Distance = {0}; Proximity needs a distance greater than 0."),
+			FText::AsNumber(Settings->ConnectDistance)), Context);
+		return true;
+	}
+	if (Settings->Connectivity == EPCGDynMeshIslandConnectivity::Intersecting && Settings->ConnectDistance < 0.0)
+	{
+		PCGLog::LogErrorOnGraph(FText::Format(LOCTEXT("NegativeConnectDistance",
+			"Separate Islands: Connect Distance = {0}; Intersecting needs 0 (off) or more."),
 			FText::AsNumber(Settings->ConnectDistance)), Context);
 		return true;
 	}
