@@ -820,6 +820,9 @@ When adding an operation:
 
 The current base can be improved further:
 
+- Run several inputs at once. Today every input is processed one after another on the game thread; see
+  [Processing several meshes at once](PCGUtilsDynMesh/ParallelInputs.md) for the investigation and staged plan.
+
 - Replace the Boolean `RequiresSelection()` with an explicit policy enum: `Optional`, `Required`, or `Unsupported`.
   `Unsupported` would document rare whole-object semantic operations such as coordinate-space conversion.
 - Separate selection input/selector policy from mutation-output policy so query/conversion nodes do not inherit an

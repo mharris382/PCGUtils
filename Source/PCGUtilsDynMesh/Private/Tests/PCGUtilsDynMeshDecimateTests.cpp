@@ -12,6 +12,8 @@
 #include "Geometry/PCGUtilsDynMeshDecimate.h"
 #include "GeometryScript/MeshPrimitiveFunctions.h"
 #include "GeometryScript/MeshSimplifyFunctions.h"
+#include "Metadata/PCGMetadata.h"
+#include "Metadata/PCGMetadataDomain.h"
 #include "MeshQueries.h"
 #include "UDynamicMesh.h"
 
@@ -246,13 +248,13 @@ bool FPCGUtilsDecimateNodeTest::RunTest(const FString&)
 	UGeometryScriptLibrary_MeshPrimitiveFunctions::AppendSphereLatLong(Sphere, FGeometryScriptPrimitiveOptions(), FTransform::Identity, 50, 20, 32);
 	const int32 SphereTris = Sphere->GetTriangleCount();
 	Settings->Mode = EPCGUtilsDynMeshDecimateMode::Collapse;
-	Settings->Ratio = 0.25f;
+	Settings->Ratio.Constant = 0.25;
 	const FDynamicMesh3 Collapsed = Run(Sphere->GetMeshRef());
 	TestTrue(TEXT("Collapse 0.25 keeps about a quarter of the triangles"),
 		FMath::Abs(Collapsed.TriangleCount() - SphereTris / 4) <= SphereTris / 50 + 2);
 
-	Settings->bUseWeightMap = true;
-	Settings->WeightMapName = TEXT("NoSuchMap");
+	Settings->bUseWeightMap.Constant = true;
+	Settings->WeightMapName.Constant = TEXT("NoSuchMap");
 	{
 		AddExpectedError(TEXT("no vertex weight map"), EAutomationExpectedErrorFlags::Contains, 0);
 		UPCGDynamicMeshData* Data = NewObject<UPCGDynamicMeshData>();
@@ -262,19 +264,70 @@ bool FPCGUtilsDecimateNodeTest::RunTest(const FString&)
 		FPCGUtilsDynMeshProcessOutcome Outcome;
 		TestFalse(TEXT("A missing weight map fails"), Settings->CreateProcessOperation(nullptr)->Execute(Invocation, Outcome));
 	}
-	Settings->bUseWeightMap = false;
+	Settings->bUseWeightMap.Constant = false;
 
 	Settings->Mode = EPCGUtilsDynMeshDecimateMode::Planar;
-	Settings->bDelimitUVSeams = false;
+	Settings->bDelimitUVSeams.Constant = false;
 	TestEqual(TEXT("Node Planar reduces a subdivided box to 12 triangles"), Run(MakeBox(3)).TriangleCount(), 12);
 
 	Settings->Mode = EPCGUtilsDynMeshDecimateMode::UnSubdivide;
-	Settings->Iterations = 2;
+	Settings->Iterations.Constant = 2;
 	TestEqual(TEXT("Node Un-Subdivide x2 reduces an 8x8 grid to 2x2"), Run(MakeGrid(8)).TriangleCount(), 8);
 	return true;
 }
 
-IMPLEMENT_SIMPLE_AUTOMATION_TEST(FPCGUtilsDecimateCompareTest, "PCGUtils.DynMesh.Decimate.Planar.CompareWithSimplifyPlanar", PCGUtilsDynMeshDecimateTests::Flags)
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FPCGUtilsDecimateDataShorthandTest, "PCGUtils.DynMesh.Decimate.Node.DataShorthand", PCGUtilsDynMeshDecimateTests::Flags)
+bool FPCGUtilsDecimateDataShorthandTest::RunTest(const FString&)
+{
+	using namespace PCGUtilsDynMeshDecimateTests;
+	UPCGDynMeshDecimateSettings* Settings = NewObject<UPCGDynMeshDecimateSettings>();
+	TestTrue(TEXT("Constants support Builders"), Settings->SupportsDeferredBuilderProcessing());
+
+	UDynamicMesh* Sphere = NewObject<UDynamicMesh>();
+	UGeometryScriptLibrary_MeshPrimitiveFunctions::AppendSphereLatLong(Sphere, FGeometryScriptPrimitiveOptions(), FTransform::Identity, 50, 20, 32);
+	const int32 SphereTris = Sphere->GetTriangleCount();
+
+	auto MakeData = [&](bool bWriteRatio)
+	{
+		UPCGDynamicMeshData* Data = NewObject<UPCGDynamicMeshData>();
+		Data->Initialize(FDynamicMesh3(Sphere->GetMeshRef()));
+		if (bWriteRatio)
+		{
+			FPCGMetadataDomain* Domain = Data->MutableMetadata()->GetMetadataDomain(PCGMetadataDomainID::Data);
+			FPCGMetadataAttribute<double>* Attribute = Domain->FindOrCreateAttribute<double>(TEXT("DecimateRatio"), 0.0, false, false, true);
+			Domain->AddEntry();
+			Attribute->SetValue(PCGFirstEntryKey, 0.25);
+		}
+		return Data;
+	};
+
+	Settings->Mode = EPCGUtilsDynMeshDecimateMode::Collapse;
+	Settings->Ratio.Input = EPCGUtilsInputValueType::Attribute;
+	TestFalse(TEXT("@Data mode refuses Builders"), Settings->SupportsDeferredBuilderProcessing());
+
+	{
+		UPCGDynamicMeshData* Data = MakeData(true);
+		FPCGUtilsDynMeshProcessInvocation Invocation;
+		Invocation.MeshData = Data;
+		FPCGUtilsDynMeshProcessOutcome Outcome;
+		TestTrue(TEXT("Ratio read from @Data executes"), Settings->CreateProcessOperation(nullptr)->Execute(Invocation, Outcome));
+		const int32 Triangles = Data->GetDynamicMesh()->GetTriangleCount();
+		TestTrue(TEXT("Ratio 0.25 from @Data keeps about a quarter of the triangles"),
+			FMath::Abs(Triangles - SphereTris / 4) <= SphereTris / 50 + 2);
+	}
+
+	{
+		AddExpectedError(TEXT("DecimateRatio"), EAutomationExpectedErrorFlags::Contains, 0);
+		FPCGUtilsDynMeshProcessInvocation Invocation;
+		Invocation.MeshData = MakeData(false);
+		FPCGUtilsDynMeshProcessOutcome Outcome;
+		TestFalse(TEXT("A missing @Data attribute fails; the constant is no fallback"),
+			Settings->CreateProcessOperation(nullptr)->Execute(Invocation, Outcome));
+	}
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FPCGUtilsDecimateCompareTest,"PCGUtils.DynMesh.Decimate.Planar.CompareWithSimplifyPlanar", PCGUtilsDynMeshDecimateTests::Flags)
 bool FPCGUtilsDecimateCompareTest::RunTest(const FString&)
 {
 	using namespace PCGUtilsDynMeshDecimateTests;
