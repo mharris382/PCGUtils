@@ -79,6 +79,19 @@ namespace PCGUtilsDynMeshSurfaceCorrespondence
 
 		/** Run the closest-point queries with ParallelFor. Safe: the source tree is only read. */
 		bool bParallel = true;
+
+		/**
+		 * Optional, with DestinationGroups: the group (for example the island) of each source triangle, indexed by
+		 * source triangle ID. Must cover the source mesh's MaxTriangleID when DestinationGroups is set.
+		 */
+		TConstArrayView<int32> SourceTriangleGroups;
+
+		/**
+		 * Optional, index-aligned with the destination samples (vertex IDs for ProjectMeshVertices). A sample whose
+		 * group is not INDEX_NONE projects only onto source triangles of the same group; INDEX_NONE (or a sample
+		 * past the end of the view) projects onto the whole surface.
+		 */
+		TConstArrayView<int32> DestinationGroups;
 	};
 
 	/**

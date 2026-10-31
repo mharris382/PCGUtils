@@ -1,6 +1,12 @@
 #include "PCGUtilsDataCacheExporter.h"
 
 #include "PCGDataAsset.h"
+#include "PCGUtilsDataCacheAsset.h"
+
+TSubclassOf<UPCGDataAsset> UPCGUtilsDataCacheExporter::GetAssetType() const
+{
+	return UPCGUtilsDataCacheAsset::StaticClass();
+}
 
 bool UPCGUtilsDataCacheExporter::ExportAsset(const FString& PackageName, UPCGDataAsset* Asset)
 {

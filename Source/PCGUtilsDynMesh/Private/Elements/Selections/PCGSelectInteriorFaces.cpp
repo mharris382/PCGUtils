@@ -1,6 +1,7 @@
 // Copyright Max Harris
 
 #include "Elements/Selections/PCGSelectInteriorFaces.h"
+#include "Helpers/PCGUtilsParallelInputs.h"
 
 #include "DynamicMesh/DynamicMesh3.h"
 #include "PCGContext.h"
@@ -179,7 +180,7 @@ UPCGUtilsDynMeshFactoryData* UPCGSelectInteriorFacesSettings::CreateFactory(
 {
 	UPCGSelectInteriorFacesFactoryData* Factory = InFactory
 		? Cast<UPCGSelectInteriorFacesFactoryData>(InFactory)
-		: FPCGContext::NewObject_AnyThread<UPCGSelectInteriorFacesFactoryData>(InContext);
+		: PCGUtilsAsyncObjects::NewObject<UPCGSelectInteriorFacesFactoryData>(InContext);
 	if (!Factory) { return nullptr; }
 	Factory->Priority = Priority;
 	Factory->CoincidentVertexTolerance = CoincidentVertexTolerance;

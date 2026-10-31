@@ -7,6 +7,7 @@
 #include "PCGUtilsSettingsCategories.h"
 #include "Templates/Function.h"
 
+#include "PCGUtilsDynMeshNodeColor.h"
 #include "PCGDynMeshRealizeBuilders.generated.h"
 
 class UPCGUtilsDynMeshBuilderFactoryData;
@@ -62,7 +63,7 @@ public:
 	virtual FName GetDefaultNodeName() const override { return TEXT("RealizeBuilders"); }
 	virtual FText GetDefaultNodeTitle() const override;
 	virtual FText GetNodeTooltipText() const override;
-	virtual FLinearColor GetNodeTitleColor() const override { return FLinearColor(0.413f, 0.25f, 1.0f, 1.0f); }
+	virtual FLinearColor GetNodeTitleColor() const override { return PCGUtilsDynMeshNodeColor::Title; }
 	virtual EPCGSettingsType GetType() const override
 	{
 		return PCGUtilsSettingsCategories::AsSettingsType(PCGUtilsSettingsCategories::EValue::DynMeshCreation);

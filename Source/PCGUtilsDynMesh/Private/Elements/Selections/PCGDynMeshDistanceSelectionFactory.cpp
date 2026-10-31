@@ -2,6 +2,7 @@
 // Distance filter concepts adapted from PCGExtendedToolkit, Copyright 2026 Timothe Lapetite and contributors (MIT).
 
 #include "Elements/Selections/PCGDynMeshDistanceSelectionFactory.h"
+#include "Helpers/PCGUtilsParallelInputs.h"
 
 #include "Data/PCGBasePointData.h"
 #include "DynamicMesh/DynamicMesh3.h"
@@ -313,7 +314,7 @@ UPCGUtilsDynMeshFactoryData* UPCGDynMeshDistanceSelectionFactoryProviderSettings
 
 	UPCGDynMeshDistanceSelectionFactoryData* Factory = InFactory
 		? Cast<UPCGDynMeshDistanceSelectionFactoryData>(InFactory)
-		: FPCGContext::NewObject_AnyThread<UPCGDynMeshDistanceSelectionFactoryData>(InContext);
+		: PCGUtilsAsyncObjects::NewObject<UPCGDynMeshDistanceSelectionFactoryData>(InContext);
 	if (!Factory)
 	{
 		return nullptr;

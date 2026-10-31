@@ -4,6 +4,7 @@
 
 #include "CoreMinimal.h"
 #include "Factories/PCGUtilsDynMeshDomainSelectionFactory.h"
+#include "Factories/PCGUtilsDynMeshDotComparison.h"
 
 #include "PCGDynMeshNormalSelectionFactory.generated.h"
 
@@ -19,7 +20,7 @@ public:
 	FVector ReferenceDirection = FVector::UpVector;
 
 	UPROPERTY()
-	float DotThreshold = 0.9f;
+	FPCGUtilsDynMeshDotComparison Comparison;
 
 protected:
 	virtual UE::Geometry::EGeometryElementType GetNativeElementTypeInternal() const override
@@ -55,9 +56,19 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Selection", meta=(PCG_Overridable))
 	FVector ReferenceDirection = FVector::UpVector;
 
-	/** Minimum Dot(ElementNormal, ReferenceDirection) for an element to pass. */
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Selection", meta=(PCG_Overridable, ClampMin="-1.0", ClampMax="1.0"))
-	float DotThreshold = 0.9f;
+	/**
+	 * How closely an element's normal must agree with Reference Direction to pass. By default the dot product of
+	 * the two must be at least 0.9. A threshold attribute is read from the mesh the selector is evaluated on, so
+	 * it must be a Data-domain attribute (@Data.Name).
+	 */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Selection", meta=(PCG_Overridable))
+	FPCGUtilsDynMeshDotComparison Comparison;
+
+	/** The threshold this node had before Comparison existed. Moved into Comparison when the node is loaded. */
+	UPROPERTY(meta=(DeprecatedProperty, DeprecationMessage="Use Comparison."))
+	float DotThreshold_DEPRECATED = UnsetLegacyDotThreshold;
+
+	virtual void PostLoad() override;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Selection", AdvancedDisplay, meta=(PCG_Overridable))
 	int32 Priority = 0;
@@ -67,4 +78,8 @@ public:
 
 protected:
 	virtual const FPCGDataTypeBaseId& GetFactoryTypeId() const override;
+
+private:
+	/** Outside the range a dot product can take, so a saved legacy threshold can be told from none. */
+	static constexpr float UnsetLegacyDotThreshold = -2.0f;
 };

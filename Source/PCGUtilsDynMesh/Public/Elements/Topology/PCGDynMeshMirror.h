@@ -7,6 +7,8 @@
 #include "Elements/PCGUtilsDynMeshProcessBase.h"
 #include "GeometryScript/MeshBooleanFunctions.h"
 
+#include "Geometry/PCGUtilsDynMeshProperties.h"
+#include "PCGUtilsDynMeshNodeColor.h"
 #include "PCGDynMeshMirror.generated.h"
 
 /**
@@ -22,11 +24,18 @@ class PCGUTILSDYNMESH_API UPCGDynMeshMirrorSettings : public UPCGUtilsDynMeshPro
 	GENERATED_BODY()
 
 public:
+	/** Mesh properties written to @Data after this node runs, as DynMesh | Properties writes them. All off by default. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Output Properties", meta=(PCG_Overridable, ShowOnlyInnerProperties))
+	FPCGUtilsDynMeshFreeProperties OutputProperties;
+
+	virtual const FPCGUtilsDynMeshFreeProperties* GetInlineFreeProperties() const override { return &OutputProperties; }
+
+public:
 #if WITH_EDITOR
 	virtual FName GetDefaultNodeName() const override { return TEXT("DynMeshMirror"); }
 	virtual FText GetDefaultNodeTitle() const override;
 	virtual FText GetNodeTooltipText() const override;
-	virtual FLinearColor GetNodeTitleColor() const override { return FLinearColor(0.413f, 0.25f, 1.0f, 1.0f); }
+	virtual FLinearColor GetNodeTitleColor() const override { return PCGUtilsDynMeshNodeColor::Title; }
 #endif
 
 	/** Plane origin and orientation. The plane normal is the transform's local Z axis. */

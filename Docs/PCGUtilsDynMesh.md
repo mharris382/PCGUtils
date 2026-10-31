@@ -87,6 +87,11 @@ meshes that lack its named layer. One descriptor serves all outputs and all Buil
 The **Result** pin is always declared and keeps its Selector type when `Out` becomes a Builder pin, so
 property overrides may enable it. It emits data only when enabled and a primary output was produced.
 
+**Output pin type.** By default a process node's `Out` pin shows the type it will emit: purple Dynamic Mesh,
+or DynMesh Selection when **Output Selection Data** is on, and a Builder pin when a Builder is wired in. This
+applies even when nothing is connected and on nodes that cannot take Builders. Turn off **Show Concrete DynMesh
+Output Pin Types** (Project Settings > Plugins > PCG Utils DynMesh) to get the old grey union pin back.
+
 This is a mesh-attribute region, not an arbitrary topology-history system. Surviving membership follows the
 engine's attribute propagation through subsequent edits. Deleting faces removes them; operations that discard
 or regenerate PolyGroup layers can lose the region. Automatic names change if the node/asset path changes.
@@ -96,12 +101,54 @@ named region. Each retained region adds one extended integer PolyGroup layer.
 ### Extrude, Inset and Bevel
 
 - **DynMesh | Extrude Faces** uses Geometry Script's underlying linear-extrude operation and options. Its result
-  defaults to the extruded cap faces. Choose side faces or cap and border faces when needed.
+  defaults to the extruded cap faces. Choose side faces or cap and border faces when needed. `Distance` is an
+  input shorthand: a constant, or one value per input read from `@Data` (a path's `PathHeight`, say). In `@Data`
+  mode Builder inputs are refused. See `PCGUtilsInputShorthands.md`.
+  `Direction Mode` is `Fixed Direction` (default), `Average Face Normal` (one area-weighted normal per
+  extruded area), or `Per Face Normal`: each face moves Distance along its own normal while the area stays
+  connected, using the engine's shell offset (`SelectionTriNormalsAngleWeightedAdjusted`), so a box's top and
+  side go up and out by the same amount and stay parallel. `Max Corner Stretch` (advanced, default 4) caps how far
+  a vertex at a sharp fold may be pushed to keep that; past it those faces end up nearer than Distance. For
+  separate prisms instead of a connected shell, use `Average Face Normal` with `Area Mode` Per Triangle or Per
+  Polygroup. Direction Mode used to be Geometry Script's two-value enum; nodes saved before
+  `FPCGUtilsCustomVersion::ExtrudePerFaceNormal` are migrated in PostLoad, under the same override-pin label.
 - **DynMesh | Inset Faces** uses the corresponding inset/outset operation, with inner faces as its default result.
   Border-only and combined results are also available. Negative distance outsets. UV Scale applies to the border.
+  `Distance` is an input shorthand (default attribute `InsetDistance`); its old Geometry Script options struct is
+  flattened into separate settings, as Extrude's was.
+- **DynMesh | Extrude To Paths** separates the selected faces and joins them back with a strip, as the two nodes
+  above do, but puts the separated rim on paths you supply instead of moving it along a direction or by a
+  distance. Whether the result is an inset or an extrude depends only on where the paths are. `Matching` picks
+  how rim and paths correspond:
+  - **By Shape** (default) treats each path input as one closed outline: any point count, start, order or
+    winding, and no attributes. Each rim loop of the selection (an area with a hole has two) takes the outline
+    nearest it in shape (mean distance both ways), closest pairs first; `Max Match Distance` (0 = any) bounds
+    that. Rim and outline are then walked round together: each rim vertex pairs with an outline corner, never
+    going backwards, minimising total distance, with a cost of one average outline edge for two rim vertices
+    sharing a corner. A few start corners are tried, because the corner nearest the rim's first vertex is not
+    always its partner. The strip joins each rim edge to the run of corners between its ends, each corner
+    fanning from the nearer rim vertex. Every outline corner becomes a vertex, so the result has exactly the
+    outline's shape; this is what makes Clipper2 offsets and booleans usable as targets.
+    `Inner Faces` decides what the selected faces become. **Keep Faces** keeps them: their rim vertices move onto
+    the outline (vertices sharing a corner are spread along the outline beside it) and the other corners are
+    split into the rim edges, so interior vertices, UVs and a shaped surface survive. **Refill From Path** cuts
+    them out and fills the outlines flat (constrained Delaunay, even-odd so holes stay open); clean for a flat
+    top, but there are no interior vertices. If the outlines cannot be triangulated (they cross), that area falls
+    back to Keep Faces with a warning. Unmatched rim loops stay where they are; unused paths are logged.
+    The geometry is in `Geometry/PCGUtilsDynMeshRimToPath.h` (no PCG dependency), covered by
+    `PCGUtils.DynMesh.ExtrudeToPaths.ByShape.*`.
+  - **By Vertex ID** is the original one-for-one mode: points are matched to rim vertices by vertex ID
+    (`Vertex Index Attribute`), so the round trip is `DynMesh | Selection To Paths` with `Output Vertex Index`
+    on, any path nodes, then this node. A rim vertex no point names stays in place; points that name no rim
+    vertex are ignored. Both are logged with counts. Nodes saved before By Shape existed
+    (`FPCGUtilsCustomVersion::ExtrudeToPathsByShape`) load in this mode.
+
+  `Interior Vertices` (Keep Faces and By Vertex ID) chooses whether vertices inside the rim stay (inset) or follow
+  the rim's average move (extrude).
 - **DynMesh | Bevel Edges** now reports the newly created bevel faces through the same base, replacing invalidated edge IDs.
   Its existing bare-mesh behavior (bevel every edge) is retained. It now supports result Selection data and a
-  reusable Selector on its **Result** pin.
+  reusable Selector on its **Result** pin. `Bevel Distance` is a non-negative input shorthand (default attribute
+  `BevelDistance`); a negative `@Data` value is an error, not clamped.
 
 Extrude and Inset enable **Require Selection** by default; Bevel leaves it off for compatibility. All three accept
 DynMesh, Selection and Builder inputs and the optional Selector. The shared resolver converts input selection
@@ -210,6 +257,23 @@ processing.
   it, and welds it back with `RestoreRegion` — unselected triangles keep their groups. With no selection the
   whole layer is cleared.
 
+## Materials by selection
+
+**DynMesh | Set Material** assigns a material to a whole mesh, or to a selection of it (a Selection input or a
+connected Selector).
+
+With a selection, only the selected triangles change:
+
+- They move to the slot that already holds the material. A slot is added, at the end of the list, only when no
+  slot holds it. Running the node again with the same material never grows the list.
+- Every other triangle keeps its slot and every existing material stays where it is.
+- A mesh that arrives with no material list is given **Default Material** for the triangles outside the
+  selection, not the selection's material.
+- A mesh whose triangles use slots its material list does not have is not an error. The list is extended to
+  cover them, with empty slots.
+
+With no selection the whole mesh is set to the one material.
+
 ## Shared geometry utilities
 
 `Geometry/PCGUtilsDynMeshSurfaceCorrespondence.h` is a standalone GeometryCore-only helper (no PCG element,
@@ -268,6 +332,219 @@ helper with no PCG dependency, like `PCGUtilsDynMeshSurfaceCorrespondence.h`, wh
 by poking every anchor into that copy up front; the Geometry Script wrapper deep-copies the whole mesh on every
 call. `TraceSurfacePath()` drives `FMeshGeodesicSurfaceTracer` against a const mesh and copies nothing.
 
+## Projecting points
+
+**DynMesh | Project Points** (Query) casts a ray from every point and moves it onto the first DynMesh surface hit.
+It is the directional counterpart of the closest-point projection the surface-pathing nodes use. Pins follow the
+mutation rule: `In` (the points, emitted mutated on `Out`) first, then `Mesh`, then the optional `Selector`.
+
+- **Direction** is a constant or a per-point Vector selector (`$Rotation.Up` by default). **Direction In Point
+  Space** rotates it by each point's rotation, and **Invert Direction** flips it. **Max Distance** is `0` for
+  unlimited and is measured in the points' space. **Bidirectional** also casts backwards and keeps the nearer hit,
+  reporting it with a negative distance. **Ignore Back Faces** skips triangles reached from behind.
+- **Several mesh inputs act as one scene**: each ray keeps the nearest hit across all of them. A Selection or
+  Selector limits the surface to the selected triangles. Reported triangle IDs are always the source mesh's, and
+  per-corner data (normals, UVs, colors) is read from the source mesh too.
+- **Apply.** **Project Position** writes the hit back on the axes in **Position Axes** (X, Y and Z by default;
+  clear X and Y to only drop points vertically), lifted by **Surface Offset** along the normal. **Project
+  Rotation** turns **Align Axis** onto the hit normal by the smallest rotation, so heading around the normal
+  survives. **Prune Misses** removes points that hit nothing; otherwise they pass through unmoved.
+- **Attributes.** Each is opt-in with its own name: hit flag, signed distance, hit location, hit normal
+  (interpolated shading normal or face normal, per **Normal Source**), back face, triangle ID, barycentrics, UV
+  (per channel), vertex color, PolyGroup ID (default groups or a named layer), material ID, material, and which
+  mesh input was hit.
+
+The output is the input point data, mutated: it is initialized from the input, so every attribute in every domain,
+every tag and the target actor survive, and pruning keeps each surviving point's own metadata entry.
+
+## Structured surface generation
+
+`DynMesh | Loft Paths` builds a quad grid between two paths: one column per path point and a set number of rows
+across, with each row's height following a profile (`Linear`, `Smooth`, `Level at A`, `Level at B`, or a custom
+curve). The second rail is either an offset of Path A or a path supplied on the `Path B` pin.
+
+It exists because Remesh is the wrong tool for a slope. Remesh is isotropic, so its edges point in arbitrary
+directions; on a curved or creased surface that shows up as faceting. A loft's edges follow the rails and the
+profile by construction.
+
+Path points are used exactly as given. That is the seam contract: a loft whose path was read off a mesh boundary
+(`DynMesh | Selection To Paths`) lands its edge vertices on that boundary's vertices, so the two meshes can be
+appended and welded with no boolean. Only `Path B` under `Arc Length` correspondence is resampled; use `Index`
+correspondence when both edges must weld.
+
+The geometry lives in `Geometry/PCGUtilsDynMeshLoft.h` with no PCG dependency (`BuildLoft`, `OffsetRail`,
+`AlignRail`, `ResampleByArcLength`) and is covered by `PCGUtils.DynMesh.Loft.*`. The node is a creation node with
+no DynMesh input, so it derives from `UPCGSettings` directly and has no Selector pin.
+
+Per-path settings: Offset Distance, Offset Height and Rows can each be read from a `@Data` attribute on Path A
+(one flag and one exposed attribute name each), so a single node lofts many paths with different shapes.
+
+`Cap Rail B` fills a closed loft's far rail with a flat polygon that reuses the loft's own vertices, in its own
+PolyGroup. An inward loft plus a cap is a plateau or bowl with one seam instead of two.
+
+`Offset Smoothing` averages each point's offset direction along the path, over that multiple of the offset
+distance. A rail read off a remeshed boundary is dense, and a mitered offset reverses any segment shorter than the
+corner beside it can absorb; smoothing is what stops that. 0 restores mitered corners, which only suits sparse
+paths. If segments still fold, the node warns with the path index, segment count and first point.
+
+`DynMesh | Match Loops To Paths` is the companion node. A path that cut a hole no longer shares its points with the
+hole, so the loop has to be read back off the mesh and then identified among every other loop. For each Target
+path it emits the closest Loop; both outputs are ordered by Target, so an N:N Copy Attributes downstream carries
+each path's data attributes onto its loop. A target with no loop within `Max Average Distance` goes to
+`Unmatched Targets` with a warning naming the target and the distance.
+
+When welding a loft to its mesh, keep the merge distance far below the loft's own vertex spacing (0.01, not 1).
+The seam vertices are coincident, but the loft's inner rail is dense and a loose weld collapses it.
+
+## Filling paths
+
+`DynMesh | Path To Mesh` fills each path with a triangulated mesh, optionally extruded into a solid. It
+replaces the chain `PCGEx | Create Spline` -> engine `Spline To Mesh` -> `Copy Attributes` (from the path with
+`IsClosed` deleted). `DynMesh | Spline To Mesh` is the same class with `Input Splines` on: the `In` pin takes
+splines and 2D polygons exactly like the engine node, so it can replace that node too. The pin label is `In` in
+both, matching the engine node.
+
+- **No input requirements beyond the engine node's.** The `@Data` Boolean `Closed Attribute Name` (default
+  `IsClosed`) is optional: a path without it counts as closed, and one with it false is open. An open path or spline
+  follows `Open Curves`, as in the engine node: `Treat As Closed` (default) joins its ends and fills it; `Offset`
+  makes a band of `Curve Offset` width along it with `End Shapes`, and needs a Flatten Method and a Curve Offset.
+  Filling needs at least 3 points; a band needs 2. 2D polygons are always closed.
+- **@Data carries over.** `Copy Data Attributes` (on) copies the input's whole `@Data` domain onto the mesh, value
+  by value. Inherited `@Data` (an input made from other data by an upstream node) copies the same as its own; the
+  engine's domain copy refused it with "Invalid parenting on the domain 'Data'", which this replaced.
+  `Copy Closed Attribute` (off) decides whether `IsClosed` comes along.
+- **Frame.** Vertices are stored relative to a frame that is written, in world space, to `@Data.MeshTransform`
+  (name exposed), as the engine node does. The frame is the first of: the input's `@Data` Transform
+  `Transform Attribute Name` (default `RelativeTransform`, as written by Get Component Data) when present; the
+  path centroid (`Use Centroid`, on); the spline/polygon's own transform, or the world origin for a path.
+- **Facing.** The triangulation faces the way the path winds. `Face Up Direction` (on) turns each mesh so its
+  area-weighted normal points toward `Up Direction` - a Vector shorthand, constant `(0,0,1)` or `@Data.Normal`.
+  `Flip Result` then reverses the result. Facing is settled before extrusion, so `Thickness` (a DoubleAbs
+  shorthand) always grows the solid toward the faces.
+
+The triangulation is the engine's `FTriangulateCurvesOp`, with the engine node's settings (flatten, offset,
+extrusion vector, open curves). Coverage:
+`PCGUtils.DynMesh.PathToMesh.*`.
+
+## Separating meshes
+
+**DynMesh | Separate Islands** splits each mesh into its connected islands and emits each island as its own DynMesh
+on **Islands**, like Blender's Separate by Loose Parts. Islands are numbered by their lowest triangle ID.
+
+| Setting | Meaning |
+|---------|---------|
+| Connectivity | Shared Vertices (default, as Blender) joins triangles that share a vertex. Shared Edges needs a shared edge, so a bowtie becomes two islands. Proximity also joins vertices within Connect Distance, for parts that touch but were never welded. Intersecting also joins parts whose triangles cross each other (leaves pushed into a trunk), plus vertices within Connect Distance when it is above 0; parts that only overlap flat (coplanar) or sit wholly inside another without crossing its surface stay apart |
+| Island Index Attribute | Optional, on by default. `@Data` int32 named `IslandIndex` that receives the island's number, counted per input mesh |
+| Island Count Attribute | Optional, off by default. `@Data` int32 named `IslandCount` that receives the input mesh's island count |
+| Output Properties | The DynMesh &#124; Properties outputs, written to each island |
+
+Every island keeps the input's metadata (`@Data` included), tags and target actor, plus every per-element value:
+UVs, normals, colors, material IDs, polygroup IDs (not renumbered) and weight layers.
+
+With a selection or a Selector, only the selected triangles are split, and they connect only through each other:
+two selected patches joined by unselected faces are two islands. The rest of the mesh comes out whole on
+**Unselected**, which is empty without a selection. **DynMesh | Separate Selection** is the two-way split by
+selection. Coverage: `PCGUtils.DynMesh.SeparateIslands`.
+
+## Baking meshes to assets
+
+Three nodes take a set of meshes from assets, through processing, back to assets in one graph, with no loop
+subgraph. The engine's Mesh To Dynamic Mesh reads one mesh from a setting, and its Save Dynamic Mesh To Asset
+saves only the first mesh it is given.
+
+```
+asset list -> DynMesh | From Static Mesh -> (processing) -> Get Asset Save Parameters (Input Data) -> DynMesh | Save Static Mesh
+```
+
+**DynMesh | From Static Mesh** makes one DynMesh per mesh its input names. `Mesh Attribute` (a selector,
+default `@Last`) is a soft object path or string to a static or skeletal mesh, read on every element of the domain
+it selects: each attribute set entry or point gives one DynMesh, and `@Data.<Name>` gives one per input. Each
+DynMesh keeps its input's tags and `@Data` (`Copy Data Attributes`), and with `Copy Element Attributes` (on) the
+attributes of the entry that named it become `@Data`, Mesh Attribute included, so a mesh still knows which asset
+it came from. The read settings (materials, override materials, LOD, synchronous load) are the engine node's, and
+the meshes read are dynamically tracked so the graph regenerates when one changes. An empty entry warns and is
+skipped; a missing attribute, an asset that will not load or is not a mesh, and an override-material count
+mismatch are errors naming the input and element. **DynMesh | From Static Mesh Points** remains the way to place
+meshes by point transforms and append them.
+
+**Get Asset Save Parameters**, in `Input Data` mode, runs once per input instead of once per node. `Asset
+Attribute` (a selector, default `@Last`) must hold exactly one soft object path or string per input, normally a
+`@Data` attribute. Each input comes out as a copy with the save name and folder written to its `@Data`; the output
+pin takes the input's type. `Asset Name Attribute Name` and `Asset Path Attribute Name` (defaults `AssetName`,
+`AssetPath`) name the attributes written, in every mode.
+
+**DynMesh | Save Static Mesh** saves every DynMesh on `In`, with the engine node's options (materials from the
+DynMesh, Copy Mesh To Asset Options, Mesh Write LOD, save on export). `Asset Name` and `Asset Path` are String
+shorthands, constant or `@Data` (defaults `@Data.AssetName`, `@Data.AssetPath`), so either can come from each
+mesh. A constant `Asset Name` given more than one mesh appends the mesh's index on the pin: `Rock_0`, `Rock_1`; a
+single mesh is saved under the name as given, as the engine node does. Names are all checked before anything is
+written: an empty name or folder, a missing `@Data` value, and two meshes that would be saved as the same asset
+are each an error naming the input. `Open Save Dialog` is off by default and is ignored, with a warning, for more
+than one mesh. `OutAssetPath` gives one attribute set per saved mesh, in input order, with the asset in
+`Output Asset Attribute Name` (default `AssetPath`, the engine's) and the mesh's tags and `@Data`. Editor only.
+
+### LODs
+
+The chain carries a whole LOD chain when asked:
+
+```
+asset list -> From Static Mesh (All LODs) -> Paint Vertex Color (Paint LODs From Highest Detail)
+           -> Get Asset Save Parameters (Input Data, Asset Attribute @Data.SourceMesh) -> Save Static Mesh (Save LODs From Attribute)
+```
+
+- **From Static Mesh** writes `@Data.LOD` (int32, the LOD read, 0 the most detailed) and `@Data.SourceMesh` (soft
+  object path, the asset read) on every DynMesh, by default; both names are settings with toggles. With `All
+  LODs` each mesh gives one DynMesh per LOD, LOD 0 first, and `Requested LOD Index` is unused. Source Model reads
+  every stored source LOD, Render Data every render LOD, and Max Available a source LOD where the asset stores one
+  and the render LOD where the LOD is auto-generated (it has no source mesh). Hi-Res Source Model has one LOD. A
+  LOD that cannot be read is an error naming its LOD; the others are still made.
+- **Paint Vertex Color**'s `Paint LODs From Highest Detail` paints each mesh's LOD 0 only and copies its colors
+  onto the other LODs. See `PCGUtilsPainter.md`, "LOD groups".
+- **Save Static Mesh**'s `Save LODs From Attribute` turns meshes that would save to the same asset into its LODs,
+  each written to the LOD its `LOD Attribute` (default `LOD`, int32 or int64) names, instead of an error. A
+  constant Asset Name is then not numbered. One asset's LODs must run 0, 1, 2... : a gap, two meshes for one
+  LOD, a missing or non-integer LOD attribute, and a negative LOD are each an error naming the inputs, and that
+  asset is not saved. LOD 0 sets the material slots; the asset is rebuilt once after every LOD is written, and
+  LODs an existing asset had past the last one written are removed. `Mesh Write LOD` is unused in this mode.
+  Outputs stay one per mesh, in input order. Coverage: `PCGUtils.DynMesh.SaveStaticMesh.LODsRoundTrip`.
+  **Save High Quality Source From Attribute** (on by default, inside Save LODs From Attribute): a mesh whose
+  `High Quality Source Attribute` (default `IsHighQualitySource`, bool, optional per mesh) is true is written to its
+  asset's Hi-Res Source Model, the high-detail mesh Nanite builds from, and its LOD attribute is not read. A mesh
+  without the attribute is a LOD; one with another type is an error. Each asset takes one source (two is an error
+  naming both inputs) and still needs a LOD 0 (a source alone is an error). It is written after the LODs without
+  replacing materials, which the engine refuses for the Hi-Res Source, so it indexes LOD 0's slots. An asset given
+  no source keeps the Hi-Res Source it had. Engine Save Dynamic Mesh To Asset writes one mesh to one LOD or the
+  source per call. Coverage: `PCGUtils.DynMesh.SaveStaticMesh.HighQualitySource`.
+- **Generate LODs** makes the chain from one high-detail mesh instead of reading it from an asset:
+
+  ```
+  high-detail DynMesh -> Generate LODs -> Paint Vertex Color (Paint LODs From Highest Detail) -> Save Static Mesh (Save LODs From Attribute)
+  ```
+
+  Each input gives one decimated copy per LOD, LOD 0 first, each the input reduced (tags, `@Data`, materials and
+  target actor kept), with `@Data.LOD` (int32) written. Every LOD is decimated from the source with Geometry
+  Script's quadric simplifier (`Simplify Options`, advanced), never from the LOD before, so each value means what
+  it says; LOD 0 may be reduced too. **List** mode has one entry per LOD, read as a `Metric`: Decimation Ratio
+  (fraction of triangles *removed*, 0 to 1: the inverse of Decimate's `Ratio`, which is the fraction kept), Max
+  Triangle Count, or Tolerance (cm, Geometry Script's Simplify To Tolerance). Defaults: three entries, 0 / 0.5 /
+  0.8, `@Data` attributes `LOD0Ratio` / `LOD1Ratio` / `LOD2Ratio`; an entry added in the Details panel names
+  `LOD<n>Ratio`. **Automatic** mode takes `LOD Count`, LOD 0's reduction as a decimation ratio or a max triangle
+  count (the ratio then worked out from each source's triangle count), and `Reduction Per LOD`: each later LOD
+  removes that fraction of the previous LOD's triangles. All of these are input shorthands. `Group Attribute`
+  (default `SourceMesh`, optional) groups each input's LODs for Paint Vertex Color: an input that already has it
+  keeps its value, otherwise it gets its index on In. `Output High Quality Source Mesh` adds the unchanged input
+  before its LODs with `@Data.LOD` -1 and `@Data.IsHighQualitySource` true (false on every LOD). Save Static
+  Mesh writes it to the asset's Hi-Res Source Model in the same call (below), so the whole set needs no branching. Settings are checked one by one (empty or equal
+  attribute names, empty list); a bad per-input value is an error naming the input and entry, and that input
+  gives no outputs. A LOD with more triangles than the one before is a warning. Every LOD of every input
+  decimates in parallel (`Disable Parallel`, advanced, and `pcgutils.ParallelInputs` force serial). Coverage:
+  `PCGUtils.DynMesh.GenerateLODs`.
+
+All three copy `@Data` value by value through `PCGUtilsDataDomain` (PCGUtilsCore), as Path To Mesh does, so inputs
+whose `@Data` is inherited from upstream data work. **From Static Mesh Points** uses it too; it used the engine's
+domain copy before, which can fail the same way. Coverage: `PCGUtils.DynMesh.FromStaticMesh`,
+`PCGUtils.AssetManagement.GetAssetSaveParameters`, `PCGUtils.DynMesh.SaveStaticMesh`.
+
 ## Simplification
 
 **DynMesh | Simplify Planar** defaults to Geometry Script's planar simplifier and also exposes Polygroup
@@ -279,6 +556,147 @@ deferred Builder chains. Selection regions are restored before optional ID compa
 only vertices resolved by a DynMesh Selection/Selector, and quietly discards duplicate triangles created as a
 normal consequence of welding rather than turning successful execution into a warning.
 
+**DynMesh | Decimate** offers Blender's three Decimate modifier modes on the standard DynMesh/Selection input
+and Selector, with Builder support:
+
+- **Collapse** reduces to a fraction (`Ratio`) of the triangles with Geometry Script's quadric simplifier. The
+  optional `WeightMapName` names a vertex weight map that steers where detail is kept, like Blender's vertex group,
+  scaled by `WeightFactor` (negative inverts it). A missing map is an error naming the map. Selections run on an
+  extracted region that is welded back. Blender's Symmetry and Triangulate options are not implemented.
+- **Un-Subdivide** reverses grid subdivision: each pass merges every 2x2 block of quads into one quad. It pairs
+  triangles into quads, labels each vertex as an original vertex, an edge midpoint or a face center, and removes
+  the face centers and edge midpoints. Labels are vertex classes, not grid directions, because the two grid
+  directions swap around a pole such as a cube corner. Each connected patch tries all four labelings and keeps the
+  one that puts poles on original vertices. A face center needs four nearly coplanar quads, so creases survive.
+- **Planar** merges faces whose normals differ by less than `AngleLimit` into regions, removes every vertex inside a
+  region and every outline vertex whose bend is under the limit, then flips edges toward a Delaunay triangulation.
+  Delimit by Material (on), Polygroup, UV Seams (on) and Normal Seams. `bAllBoundaries` drops all removable outline
+  vertices regardless of angle.
+
+Un-Subdivide and Planar live in `PCGUtilsDynMeshDecimate` (`Geometry/PCGUtilsDynMeshDecimate.h`). They are written
+from Blender's documented behaviour, not translated from its GPL source, so they ship under the plugin's MIT
+license. Every change goes through `FDynamicMesh3` collapses and flips, so UVs, normals, colors, material IDs and
+polygroups stay consistent. Unselected triangles are locked. When a straight-outline vertex cannot collapse
+because its triangle fan reaches other vertices on the same line, flips inside the region reduce its fan first.
+
+On the test meshes, Planar at 5 degrees gives the same triangle count and smallest angle as Geometry Script's
+Simplify Planar (box 432 to 12, grid 288 to 2, capped cylinder 384 to 92). The differences are the extras: delimits,
+selections, `bAllBoundaries`, and an angle limit that also merges curved surfaces at large angles. Coverage:
+`PCGUtils.DynMesh.Decimate`.
+
+**Dark triangles after Simplify** usually come from earlier in the chain. In the tidepool Builder
+(`Builder_Box_Tidepool`: Box with 2/2/6 steps, then Bevel 21, Taubin Smooth, Simplify Planar), the Bevel is wider
+than half the step spacing. Neighbouring bevels overlap and fold, giving about 110 triangles that face inward
+before Simplify runs. Simplify adds none. Keep a bevel under half the smallest step spacing, or simplify before
+bevelling. The Properties node's inverted-normal count shows the fold.
+
+The simplification itself lives in `FPCGDynMeshSimplifyParameters` / `PCGUtilsDynMeshSimplify::ApplySimplify()`
+(`Geometry/PCGUtilsDynMeshSimplifyParameters.h`), so code outside a graph, such as the Static Mesh Brush cache,
+runs exactly the same simplifier as the node.
+
+## UVs
+
+Every UV node derives from `UPCGDynamicMeshUVProcessBaseSettings`: standard DynMesh/Selection input and Selector,
+a `UV Layer` to write (created if missing, other layers untouched), and the selection preserved, since only the
+overlay changes. A selection limits a node to its triangles. The shared helpers in `Geometry/PCGUtilsDynMeshUVRegion.h`
+make that safe: `Gather` copies a region's UVs out keeping which corners share a UV, the node edits them, and
+`WriteBack` puts them in again. A whole-mesh region rebuilds the overlay; a partial one gets new elements, so a UV
+shared with an unselected triangle is split rather than dragged along. `RunOnRegion` runs a whole-mesh Geometry Script
+function on a submesh of the region (or a copy of the mesh) and writes its UVs back, which is how whole-mesh-only
+methods honour a selection.
+
+| Node | What it does |
+| --- | --- |
+| **Auto UV** | One node for Geometry Script's automatic unwraps; `Method` is first and shows under the title: Patch Builder, XAtlas, or per-island Conformal / Spectral Conformal / Exponential Map (Recompute UVs, islands from polygroups or existing UV islands, packed afterwards with the Blender-style packer unless Pack Islands is off). A selection is unwrapped on its own, into its own unit square. |
+| **Project UVs From Bounds** | Maps a box exactly onto UV 0 to 1, Planar along X, Y or Z, or Box (each triangle along its dominant normal axis, the three mappings overlapping). The box: Each Input, All Inputs (one shared texture), the optional Bounds pin (bounds of any spatial data: sample a box placed in the level), or Custom; then Padding (cm) and Square (short side grown about the centre). World space by default (target actor transform applied). The box used is written to `@Data.UVProjectionMin` / `UVProjectionMax` (Vector, names are settings), so `Position = Min + UV * (Max - Min)` on the projected axes: the texture-to-world mapping a render target, distance-field bake or compute pass needs. |
+| **Project UVs** | (Existing) planar projection from projector points, scale in UV per cm; with several projectors each triangle picks the one it faces most. |
+| **Pack UV Islands** | After Blender's Pack Islands, Bounding Box shape method (`Geometry/PCGUtilsDynMeshUVPack.h`): Average Island Scale, Scale (fill the square or keep size), Rotation (None, Cardinal, Axis Aligned = turn to the smallest-area box, Any = both), Margin Method Scaled / Add / Fraction as Blender defines them, half a margin at the square's edges. Packing is bottom-left skyline, largest first, with the largest fitting scale found by bisection. Or Geometry Script Repack. Concave/Convex shapes are not implemented. |
+| **Transform UVs** | Scale, rotate (degrees, counter-clockwise), then translate about the UV origin, the region centre, each island's centre or a custom pivot. All three are input shorthands (`UVTranslation`, `UVRotation`, `UVScale`). |
+| **UV Channels** | Copy From Layer (follows the selection), Clear (follows the selection), Set Layer Count (whole mesh, 1 to 8). Settings are checked before the target layer is created, so an error leaves the mesh untouched. |
+| **Texel Density** | Scales islands so Texture Resolution pixels give Texel Density px/m (both shorthands): Each Island about its centre, or Whole Region by one factor keeping the layout. Area is in mesh units (cm), ignoring actor scale. |
+
+Lightmap channel: UV Channels (Copy UV0 to UV1) or Auto UV on layer 1, then Pack UV Islands on layer 1 with
+Fraction margin about 2 / lightmap resolution. Coverage: `PCGUtils.DynMesh.UV`.
+
+## Mesh properties
+
+**DynMesh | Properties** writes facts about each mesh to its `@Data` domain and passes the mesh through. The
+properties are split by cost, and each has its own `bOutput<Thing>` flag and `<Thing>AttributeName`:
+
+- **Free** (`FPCGUtilsDynMeshFreeProperties`, constant time): triangle, vertex and edge counts, Euler
+  characteristic (V − E + T; 2 per closed piece without handles), whether IDs are compact, material slot count and
+  slot materials, UV channel count, whether normals / vertex colors / default PolyGroups exist, and the extended
+  PolyGroup layer count. Triangle and vertex count are on by default on this node.
+- **Computed** (`FPCGUtilsDynMeshComputedProperties`, one pass): bounds min/max, surface area, volume, closed,
+  open edge count, connected pieces, distinct PolyGroup count, and quality checks: degenerate triangles (area at
+  or below a threshold), smallest triangle angle, triangles whose winding disagrees with their stored normals
+  (*inverted normal* triangles — the dark facets left by a fold-over or stale normals), hard (normal seam) edges,
+  and bowtie vertices. Only enabled properties are computed, and properties sharing a pass share it.
+
+Properties always describe the whole mesh; a selection input passes through and does not narrow them.
+
+**Inline writes.** The reading and writing live in `PCGUtilsDynMeshProperties` (`Geometry/PCGUtilsDynMeshProperties.h`),
+not on the node. A process node exposes a `FPCGUtilsDynMeshFreeProperties` UPROPERTY and returns it from
+`GetInlineFreeProperties()`; the process base validates the names once and writes after each successful input.
+Simplify, Remesh, Self Union, Merge by Distance, Delete, Planar Cut, Mirror, Array, Separate (both outputs) and
+every topology-base node (Extrude, Extrude to Paths, Inset, Bevel) offer this under *Output Properties*, all off by
+default. Default names match the Properties node, so a renamed write before an operation (`PrevTriCount`) and a
+default-named write after it can be subtracted. Builder results are the exception: realizing a Builder keeps the
+mesh but not intermediate `@Data`, so a node given a Builder with inline writes on logs a note instead. Boolean
+uses its own operand executor and does not offer inline writes yet. Coverage: `PCGUtils.DynMesh.Properties`.
+
+## Node colors
+
+Every DynMesh-family node draws in `PCGUtilsDynMeshNodeColor::Title` (`PCGUtilsCore`). PCGUtils nodes report
+PCGUtils category types, which the PCG editor has no color for, so a node without an override is colorless. The
+process base and the Selector/Builder/Painter provider base return the color; other nodes return it directly.
+`PCGUtils.DynMesh.NodeColor` checks every node class in the DynMesh and Painter modules.
+
+## Static Mesh Brushes and the brush cache
+
+Hand-placed `UStaticMeshBrushComponent`s are editor-only Static Meshes that feed PCG as DynMesh data. Processing
+a brush (reading an LOD, baking scale, simplifying) and merging brushes (self union) only needs redoing when its
+inputs change, so it happens outside the graph and is cached. **DynMesh | Get Static Mesh Brush Data** then only
+copies and places the cached result.
+
+**Per brush.** Each component has `Processing`: the source LOD, and an optional simplification. The cached mesh is
+the Static Mesh with the component's world scale baked in, then simplified, so simplify lengths and tolerances
+are world units. Moving or rotating a brush does not invalidate it; placement is applied when the node reads it.
+
+**Per actor.** A `UStaticMeshBrushCombinerComponent` (an actor component, not a scene component) appends every
+brush on its actor, self-unions the result with its `SelfUnionOptions`, and can simplify the union. The combined
+mesh is stored in the actor's rigid frame (rotation and location, no scale), so moving the whole actor keeps it;
+moving, rescaling, re-meshing, adding or removing a brush, or changing any brush's `Processing`, rebuilds it. Brush
+order does not matter. With `Recombine When Brushes Change` on (the default), the combiner rebuilds on the next
+editor tick after a brush finishes moving, after a property commit, and after a brush's Static Mesh is edited.
+With it off, it rebuilds only when the node asks and finds the cached result out of date. Adding or removing a
+brush is always picked up on the next request.
+
+**The cache.** `FStaticMeshBrushCache` is keyed by content, not by component: the asset, the world scale and the
+exported `Processing` text for a brush; every brush key plus its placement in the actor frame plus the combine
+settings for a combined mesh. That matters because Blueprint construction scripts re-create SCS components on
+every move; a re-created component with the same inputs finds the same entry. Entries are dropped when their
+Static Mesh broadcasts `OnMeshChanged` (reimport, mesh editor edits, Geometry Script writes), evicted
+least-recently-used past `pcgutils.StaticMeshBrushCache.MaxEntries` (256 of each kind), and never saved to disk:
+the first read in an editor session builds them. `pcgutils.StaticMeshBrushCache.Clear` drops everything. The
+brush's `Rebuild Processed Mesh` and the combiner's `Recombine Now` buttons force a rebuild.
+
+**The node.** `Source` picks the meshes per actor:
+
+| Source | Actor with a combiner | Actor without one |
+| --- | --- | --- |
+| Automatic (default) | combined mesh | each brush |
+| Combined | combined mesh | warning, actor skipped |
+| Individual | each brush | each brush |
+
+Automatic never emits both for one actor. Combined meshes get the `Combined Tag` (default `Combined`), meaning
+they are already one self-unioned solid, so a graph can skip DynMesh | Self Union for them. Every output carries
+the actor's tags plus the brush's (or combiner's) component tags. The inherited component filter applies to
+separate brushes only; a combined mesh always holds every brush on its actor. `Convert World To Actor Local`
+(on by default) puts the result in the PCG target actor's space, matching the module's local-space convention.
+Materials are the Static Mesh asset's slot materials, not the brush's visualisation override material. Coverage:
+`PCGUtils.DynMesh.StaticMeshBrush.Cache`.
+
 ## Selection modifiers
 
 **Select | Interior Faces** exposes the first Blender Select by Trait predicate. It selects faces whose three
@@ -286,11 +704,64 @@ geometric edges each have more than two face users. Because `FDynamicMesh3` cann
 three incident triangles, coincident split vertices are clustered by the configured tolerance before face users
 are counted.
 
+**Select | By Mesh Occlusion** is Select | By Self Occlusion with the blockers on a separate **Occluders** pin.
+It fires a ray from each vertex (or triangle centroid) along **Trace Direction** and selects the elements whose ray
+hits one of the occluder meshes (**Result** = Occluded) or reaches **Maximum Distance** clear (Unoccluded; 0 means
+unlimited). Several occluders act together. Each mesh, tested and occluder, is placed by its own target actor
+(**Meshes Are Actor Local**, on by default), so rays and distances are in world space. **Include Self** also lets
+the tested mesh block its own rays. **Normal Offset** and **Direction Offset** move each ray's start off the surface.
+The ray tests live in `PCGUtilsDynMeshOcclusion::FOccluderSet` (`Geometry/PCGUtilsDynMeshOcclusion.h`), which the
+PCGEx point filter **Filter : Mesh Occlusion** in PCGUtilsPCGExInterop shares. Coverage:
+`PCGUtils.DynMesh.MeshOcclusion`.
+
 Every reusable DynMesh selector exposes **Invert Selection**. Inversion is applied by the shared selector
 operation, so it works consistently inside Selection Logic and other nested selector graphs. Selectors with a
 native domain are automatically adapted to the consumer's vertex, edge, or face domain. **Select | By Normal**
 still evaluates vertex normals directly for vertex consumers and face normals for face consumers; an edge-only
 consumer such as Realize Builders receives the converted face result without a domain error.
+
+### Direction comparisons
+
+**Select | By Normal** and the normal comparison of **Select | In Bounds** share one group of settings for how
+closely two directions must agree. The settings and their Details panel preview are adapted from
+PCGExtendedToolkit's dot comparison.
+
+| Setting | Meaning |
+|---------|---------|
+| Domain | Whether thresholds are dot products (1 same, 0 perpendicular, -1 opposite) or angles in degrees (0 same, 90 perpendicular, 180 opposite) |
+| Comparison | The operator. The default, greater or equal, passes directions at least as close as the threshold |
+| Unsigned Comparison | Compare magnitudes, so a direction and its opposite count as the same |
+| Threshold Input | Constant, or read from an attribute |
+| Threshold (Attr) | The attribute, a number read in the chosen domain. Required when Threshold Input is Attribute |
+| Scalar / Degrees | The constant threshold. Default 0.9 |
+| Tolerance | For the Nearly Equal comparisons only |
+
+The preview arc above the settings shows which directions pass. A threshold attribute holding a value outside
+its domain is an error naming the attribute, the value and the index.
+
+Where a threshold attribute is read from depends on the node. **Select | By Normal** has no points, so it reads
+a Data-domain attribute (`@Data.Name`) of the mesh it is evaluated on. **Select | In Bounds** reads it from its
+Points input, one value per point.
+
+A **Select | By Normal** node saved with the single `Dot Threshold` setting keeps that threshold: it is moved
+into the comparison settings when the node loads. Its `Dot Threshold` override pin no longer exists.
+
+### Normals inside bounds
+
+**Select | In Bounds** has **Compare Normal**. When on, an element is selected only if it lies in a point's
+bounds *and* its normal agrees with a direction that point supplies. The reason this is one node, and not
+Select In Bounds combined with Select By Normal through Selection Logic, is that each point brings its own
+direction: one node can select the faces facing one way under one point and the faces facing another way under
+the next.
+
+| Setting | Meaning |
+|---------|---------|
+| Normal Direction Attribute | Attribute or property of the Points input giving the direction, in world space. Any vector-convertible value; must not be zero. Defaults to `$Rotation.Forward` |
+| Normal Comparison | The direction comparison above. A threshold attribute is read per point |
+| Normal Overlap Mode | For an element lying in several points' bounds: `Any` selects it if it passes for one of them, `All` only if it passes for every one. An element in no bounds is never selected |
+
+A face is judged by its face normal and a vertex by its vertex normal. An edge is judged by the faces on it and
+agrees with a direction if either of them does.
 
 ### PolyGroup Selector
 
@@ -310,6 +781,22 @@ node's optional `Selector` input, including processes in deferred Builder chains
 - Face membership converts automatically to vertex or edge selections. **Allow Partial Inclusion** defaults to
   true (any incident selected face); disable it to require all incident faces. Existing incoming selections are
   intersected by the standard process resolver.
+
+### Inside Mesh Selector
+
+**Select | Inside Mesh** selects the vertices, edges or triangles of the tested mesh that lie inside the volume
+enclosed by the DynMeshes on its `Volume` pin. **Invert Selection** selects what lies outside instead.
+
+- Inside is the generalized winding number (`TFastWindingTree`) above **Winding Threshold** (0.5, advanced),
+  so volumes with small holes or overlapping parts still have a sensible inside. Each element is tested at its
+  center (vertex, edge midpoint, triangle centroid). Several Volume meshes act as their union.
+- **Offset** grows (positive) or shrinks (negative) the volume by a distance from its surface, measured in the
+  volume mesh's units. A small positive Offset counts elements lying on the surface as inside. A negative Offset
+  keeps only elements deeper than that. Run on a boolean result against the original operand, this picks out
+  the faces the boolean carved into the operand and leaves the operand's own surface out.
+- **Meshes Are Actor Local** (advanced, default on) places the tested mesh and each Volume mesh by its own PCG
+  target actor before testing. Disable it when they already share one space.
+- A Volume input with no triangles is ignored with a warning; no usable volume is an error.
 
 ### Selection operations
 
@@ -383,11 +870,20 @@ When adding an operation:
 7. Confirm the graph exposes a DynMesh-or-Selection input and a functional optional Selector pin, unless
    the exception is documented.
 8. Use `DynMesh` in PCGUtils-owned display names and make normal settings PCG-overrideable.
-9. Build the module and visually inspect the node's pins and overrides.
+9. Assume the operation runs on several inputs in parallel (see [Processing several meshes at once](PCGUtilsDynMesh/ParallelInputs.md)).
+   Inside `Execute`, allocate with `PCGUtilsAsyncObjects::NewObject`, never `FPCGContext::NewObject_AnyThread`; log with
+   an explicit context; keep no state shared across invocations. Read pins, settings and assets in
+   `CreateProcessOperation`. If the operation can't run in parallel, override `SupportsParallelExecute()` (it depends
+   on the settings) or the settings' `SupportsParallelInputs()` (the whole node), with a comment saying why.
+10. Build the module and visually inspect the node's pins and overrides.
 
 ## Recommended base-class evolution
 
 The current base can be improved further:
+
+- Run several inputs at once. Stage 1 (operations on the process base run in parallel, still on the game
+  thread) is written; own-loop executors and running off the game thread are next. See
+  [Processing several meshes at once](PCGUtilsDynMesh/ParallelInputs.md).
 
 - Replace the Boolean `RequiresSelection()` with an explicit policy enum: `Optional`, `Required`, or `Unsupported`.
   `Unsupported` would document rare whole-object semantic operations such as coordinate-space conversion.

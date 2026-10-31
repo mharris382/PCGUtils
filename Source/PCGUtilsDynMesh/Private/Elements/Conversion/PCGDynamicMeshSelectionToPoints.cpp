@@ -1,4 +1,5 @@
 #include "Elements/Conversion/PCGDynamicMeshSelectionToPoints.h"
+#include "Helpers/PCGUtilsParallelInputs.h"
 
 #include "Data/PCGBasePointData.h"
 #include "Data/PCGDynamicMeshData.h"
@@ -158,7 +159,7 @@ bool FPCGDynamicMeshSelectionToPointsElement::ExecuteInternal(FPCGContext* Conte
 			? Mesh->Attributes()->PrimaryNormals() : nullptr;
 		const UE::Geometry::FDynamicMeshColorOverlay* Colors = Mesh->HasAttributes()
 			? Mesh->Attributes()->PrimaryColors() : nullptr;
-		UPCGPointArrayData* OutputData = FPCGContext::NewObject_AnyThread<UPCGPointArrayData>(Context);
+		UPCGPointArrayData* OutputData = PCGUtilsAsyncObjects::NewObject<UPCGPointArrayData>(Context);
 		OutputData->SetNumPoints(SelectedVertices.Num(), false);
 		auto Transforms = OutputData->GetTransformValueRange();
 		auto PointColors = OutputData->GetColorValueRange();

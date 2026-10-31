@@ -1,4 +1,5 @@
 #include "Elements/Selections/PCGDynamicMeshSelectionFilterBase.h"
+#include "Helpers/PCGUtilsParallelInputs.h"
 
 #include "Data/PCGDynamicMeshData.h"
 #include "Data/PCGDynamicMeshSelectionData.h"
@@ -73,7 +74,7 @@ bool FPCGDynamicMeshSelectionFilterBaseElement::ExecuteInternal(FPCGContext* Con
 			FinalSelection = MoveTemp(MatchSelection);
 		}
 
-		UPCGDynamicMeshSelectionData* OutputData = FPCGContext::NewObject_AnyThread<UPCGDynamicMeshSelectionData>(Context);
+		UPCGDynamicMeshSelectionData* OutputData = PCGUtilsAsyncObjects::NewObject<UPCGDynamicMeshSelectionData>(Context);
 		OutputData->Initialize(MeshData, MoveTemp(FinalSelection));
 		FPCGTaggedData& Output = Context->OutputData.TaggedData.Emplace_GetRef(Input);
 		Output.Data = OutputData;

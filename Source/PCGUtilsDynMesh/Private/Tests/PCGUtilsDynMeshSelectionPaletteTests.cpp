@@ -18,6 +18,7 @@
 #include "Elements/Selections/PCGSelectionFromSpline.h"
 #include "Elements/Selections/PCGSelectByNormal.h"
 #include "Elements/Selections/PCGSelectInPointBounds.h"
+#include "Elements/Selections/PCGSelectMeshOcclusion.h"
 #include "Elements/Selections/PCGSelectSelfOcclusion.h"
 
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(FPCGDynMeshSelectionPaletteContractTest,
@@ -37,7 +38,8 @@ bool FPCGDynMeshSelectionPaletteContractTest::RunTest(const FString&)
 		NewObject<UPCGDynMeshVertexColorSelectionFactoryProviderSettings>(),
 		NewObject<UPCGSelectionBoundaryEdgesSettings>(),
 		NewObject<UPCGSelectionFromSplineSettings>(),
-		NewObject<UPCGSelectSelfOcclusionSettings>()
+		NewObject<UPCGSelectSelfOcclusionSettings>(),
+		NewObject<UPCGSelectMeshOcclusionSettings>()
 	};
 
 	for (const UPCGSettings* Settings : PublicSettings)

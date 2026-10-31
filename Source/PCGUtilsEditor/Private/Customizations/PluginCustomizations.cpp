@@ -1,6 +1,8 @@
 #include "Customizations/PluginCustomizations.h"
 #include "Customizations/PCGOverrideGraphCustomization.h"
 #include "Customizations/PCGUtilsGraphBatchDetails.h"
+#include "Customizations/PCGUtilsDotComparisonCustomization.h"
+#include "Customizations/PCGUtilsInputShorthandCustomization.h"
 #include "Customizations/Enums/PCGUtilsInlineEnumCustomization.h"
 #include "PropertyEditorModule.h"
 #include "AssetToolsModule.h"
@@ -43,6 +45,9 @@ namespace
 
 namespace PluginCustomizations
 {
+	/** Input shorthand struct names registered at startup, so shutdown unregisters exactly those. */
+	TArray<FName> RegisteredInputShorthands;
+
 	// Fitting/alignment enums rendered as inline icon-button rows, ported from PCGExtendedToolkit.
 	// The customization is registered by enum type name; UHT-reflected enum names are the string keys.
 #define PCGUTILS_FOREACH_INLINE_FITTING_ENUM(MACRO) \
@@ -58,6 +63,8 @@ namespace PluginCustomizations
 		FPropertyEditorModule& PropEd = FModuleManager::LoadModuleChecked<FPropertyEditorModule>("PropertyEditor");
 
 		PropEd.RegisterCustomPropertyTypeLayout("PCGOverrideGraph",FOnGetPropertyTypeCustomizationInstance::CreateStatic(&FPCGOverrideGraphCustomization::MakeInstance));
+		PropEd.RegisterCustomPropertyTypeLayout("PCGUtilsDynMeshDotComparison", FOnGetPropertyTypeCustomizationInstance::CreateStatic(&FPCGUtilsDotComparisonCustomization::MakeInstance));
+		RegisteredInputShorthands = FPCGUtilsInputShorthandCustomization::RegisterAll(PropEd);
 
 #define PCGUTILS_REGISTER_INLINE_FITTING_ENUM(_ENUM) \
 		class FPCGUtilsInline##_ENUM final : public FPCGUtilsInlineEnumCustomization \
@@ -87,6 +94,12 @@ namespace PluginCustomizations
 		{
 			FPropertyEditorModule& PropertyEditor = FModuleManager::GetModuleChecked<FPropertyEditorModule>("PropertyEditor");
 			PropertyEditor.UnregisterCustomPropertyTypeLayout("PCGOverrideGraph");
+			PropertyEditor.UnregisterCustomPropertyTypeLayout("PCGUtilsDynMeshDotComparison");
+			for (const FName StructName : RegisteredInputShorthands)
+			{
+				PropertyEditor.UnregisterCustomPropertyTypeLayout(StructName);
+			}
+			RegisteredInputShorthands.Reset();
 
 #define PCGUTILS_UNREGISTER_INLINE_FITTING_ENUM(_ENUM) PropertyEditor.UnregisterCustomPropertyTypeLayout(TEXT(#_ENUM));
 			PCGUTILS_FOREACH_INLINE_FITTING_ENUM(PCGUTILS_UNREGISTER_INLINE_FITTING_ENUM)

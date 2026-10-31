@@ -35,8 +35,11 @@ protected:
 
 /**
  * A topology-dependent Painter: during preparation it finds the connected vertex components of the whole
- * canonical Dynamic Mesh, gives each one a deterministic random value hashed from the seed and a per-island
- * key, and returns that value per vertex during evaluation.
+ * canonical Dynamic Mesh, gives each one a deterministic random value hashed from the seed, the island's key
+ * vertex (its smallest vertex ID) and that vertex's world position, and returns that value per vertex during
+ * evaluation. The world position is what separates meshes from each other: a single-island mesh always has key
+ * vertex 0, so without it every single-island target would draw the same value. Moving a target changes its
+ * values.
  *
  * Islands are the connected components of the canonical mesh's base topology, so UV / normal / color-overlay
  * seams and material boundaries never split one. Works on Dynamic Mesh and Static Mesh Component targets alike
@@ -57,7 +60,7 @@ public:
 	virtual FText GetNodeTooltipText() const override;
 #endif
 
-	/** The inherited `Seed` (Settings category) is the determinism control: same Seed + topology + vertex IDs -> same per-island values. */
+	/** The inherited `Seed` (Settings category) is the determinism control: same Seed + topology + vertex IDs + placement -> same per-island values. */
 	virtual bool UseSeed() const override { return true; }
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Painter", meta=(PCG_Overridable))

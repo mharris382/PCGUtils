@@ -5,6 +5,7 @@
 #include "CoreMinimal.h"
 #include "Elements/PCGUtilsDynMeshProcessBase.h"
 
+#include "PCGUtilsDynMeshNodeColor.h"
 #include "PCGRoutePathOnDynMesh.generated.h"
 
 namespace PCGRoutePathOnDynMeshConstants
@@ -60,6 +61,9 @@ class PCGUTILSDYNMESH_API UPCGRoutePathOnDynMeshSettings : public UPCGUtilsDynMe
 	GENERATED_BODY()
 
 public:
+	/** Own executor: its loop does not go through the process base, so the parallel path does not apply (yet: ParallelInputs.md Stage 2). */
+	virtual bool SupportsParallelInputs() const override { return false; }
+
 	/** Routing runs across triangles, so any incoming vertex/edge selection converts to its incident faces. */
 	virtual bool GetRequiredSelectionDomain(UE::Geometry::EGeometryElementType& OutElementType) const override
 	{
@@ -71,7 +75,7 @@ public:
 	virtual FName GetDefaultNodeName() const override { return TEXT("RoutePathOnDynMesh"); }
 	virtual FText GetDefaultNodeTitle() const override;
 	virtual FText GetNodeTooltipText() const override;
-	virtual FLinearColor GetNodeTitleColor() const override { return FLinearColor(0.413f, 0.25f, 1.0f, 1.0f); }
+	virtual FLinearColor GetNodeTitleColor() const override { return PCGUtilsDynMeshNodeColor::Title; }
 #endif
 
 	/**

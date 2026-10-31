@@ -1,6 +1,7 @@
 // Copyright Max Harris
 
 #include "Elements/PCGUtilsDynMeshOperandProcessBase.h"
+#include "Helpers/PCGUtilsParallelInputs.h"
 
 #include "Data/PCGDynamicMeshData.h"
 #include "Factories/PCGUtilsDynMeshOperandProcessBuilderFactory.h"
@@ -9,6 +10,7 @@
 #include "PCGNode.h"
 #include "PCGPin.h"
 #include "Serialization/ArchiveCrc32.h"
+#include "Settings/PCGUtilsDynMeshSettings.h"
 #include "Utils/PCGLogErrors.h"
 
 #define LOCTEXT_NAMESPACE "PCGUtilsDynMeshOperandProcessBase"
@@ -87,7 +89,16 @@ FPCGDataTypeIdentifier UPCGUtilsDynMeshOperandProcessBaseSettings::GetCurrentPin
 	if (InPin && (InPin->Properties.Label == GetMainInputPinLabel() ||
 		InPin->Properties.Label == GetOperandInputPinLabel() || InPin->Properties.Label == GetMainOutputPinLabel()))
 	{
-		return GetOperandProcessDataTypes();
+		const FPCGDataTypeIdentifier Types = GetOperandProcessDataTypes();
+		const FPCGDataTypeIdentifier MeshType(EPCGDataType::DynamicMesh);
+		// Nothing decided the type yet: the inputs must stay open to Builders, but the output can show the
+		// DynMesh it emits for concrete data.
+		if (InPin->IsOutputPin() && GetDefault<UPCGUtilsDynMeshSettings>()->bShowConcreteOutputPinTypes
+			&& Types.Intersects(MeshType) && !Types.IsSameType(MeshType))
+		{
+			return MeshType;
+		}
+		return Types;
 	}
 	return Super::GetCurrentPinTypesID(InPin);
 }
@@ -211,7 +222,7 @@ bool FPCGUtilsDynMeshOperandProcessBaseElement::ExecuteInternal(FPCGContext* Con
 		{
 			if (bBuilders)
 			{
-				auto* Builder = FPCGContext::NewObject_AnyThread<UPCGUtilsDynMeshOperandProcessBuilderFactoryData>(Context);
+				auto* Builder = PCGUtilsAsyncObjects::NewObject<UPCGUtilsDynMeshOperandProcessBuilderFactoryData>(Context);
 				Builder->PrimaryBuilder = CastChecked<UPCGUtilsDynMeshBuilderFactoryData>(Output.Data);
 				Builder->OperandBuilder = CastChecked<UPCGUtilsDynMeshBuilderFactoryData>(Operands[BIndex].Data);
 				Builder->Operation = Operation;

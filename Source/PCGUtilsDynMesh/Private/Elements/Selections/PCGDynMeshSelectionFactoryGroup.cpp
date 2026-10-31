@@ -1,6 +1,7 @@
 // Copyright Max Harris
 
 #include "Elements/Selections/PCGDynMeshSelectionFactoryGroup.h"
+#include "Helpers/PCGUtilsParallelInputs.h"
 
 #include "Factories/PCGUtilsDynMeshFactories.h"
 #include "PCGContext.h"
@@ -234,7 +235,7 @@ UPCGUtilsDynMeshFactoryData* UPCGDynMeshSelectionFactoryGroupProviderSettings::C
 
 	UPCGDynMeshSelectionFactoryGroupData* Factory = InFactory
 		? Cast<UPCGDynMeshSelectionFactoryGroupData>(InFactory)
-		: FPCGContext::NewObject_AnyThread<UPCGDynMeshSelectionFactoryGroupData>(InContext);
+		: PCGUtilsAsyncObjects::NewObject<UPCGDynMeshSelectionFactoryGroupData>(InContext);
 	if (!Factory)
 	{
 		return nullptr;

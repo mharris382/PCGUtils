@@ -120,7 +120,47 @@ The Painter providers:
   `$Steepness`, or a constant power. Max/Min/Add/Multiply overlap reduction is followed by the explicit `Clamp
   Value` option, which clamps the final result to `[0,1]`.
 - **Axis Gradient Painter**: evaluates a clamped projection between Start and End along a normalized axis, in
-  either DynMesh-local or world space, with optional inversion.
+  either DynMesh-local or world space, with optional inversion. Two options measure from the mesh instead of
+  from typed numbers:
+  - **Origin Mode = Bounds Relative**: Origin Alignment picks, per axis, a point of the mesh's bounding box (the
+    same alignment controls as Planar Cut's Bounds Relative mode; defaults are centered X/Y, bottom Z). Origin then
+    becomes an offset from that point. An axis whose alignment is off stays at 0.
+  - **Distances Relative To Bounds**: Start and End become multiples of the *span*, the distance a ray from the
+    origin along Axis travels before it leaves the bounding box through the far side. Origin at the bottom and
+    Axis up gives 0 = bottom and 1 = top, the usual ground gradient, with no Bounds From Mesh or math nodes. The
+    span is measured from the origin, so an origin below the box spans to the top, and one in the middle spans half.
+    If the line through the origin misses the box, the origin slides sideways (perpendicular to Axis) onto the
+    nearest parallel line that touches the box. The span is then measured along that line, still from the origin's
+    position along Axis. If the box is wholly behind the origin, the box's thickness along the axis is used. A mesh
+    with no extent along the axis turns the gradient into a step at the origin.
+
+  The bounding box is the whole mesh's (not the selection's), in the gradient's Coordinate Space. In World space it
+  is the exact world-aligned box of the transformed vertices, not a transformed local box. Both options are
+  computed once per mesh in `Prepare()`. `PCGUtilsAxisGradientBounds::Measure` is the span calculation; it finds the
+  nearest touching line exactly by solving the box-constrained distance problem.
+  Tests: `PCGUtils.DynMesh.Painter.AxisGradient.*`.
+- **Distance Painter** (`Painter | Distance`): paints each vertex by its world-space distance to the PCG points
+  on its Points pin. The distance settings mirror PCGEx's Filter : Distance:
+  - **Target**: Center, Sphere Bounds (radius = length of the scaled extents) or Box Bounds (the oriented bounds
+    box; a vertex inside is at 0). **Type**: Euclidean, Manhattan or Chebyshev. **Overlap Is Zero** (Sphere
+    Bounds only): a vertex inside the sphere is at 0; off, it is measured to the surface from inside. There is no
+    Source setting, because a vertex has no bounds.
+  - **Min Radius / Max Radius** (0 / 200): a point is in range up to Max Radius. Between the radii the value
+    blends from **Value At Min Radius** (1) to **Value At Max Radius** (0). **Inside Min Radius** is either Solid
+    Core (Value At Min Radius) or Out Of Range. Equal radii make a step.
+  - **Out Of Range Value** (0) is what a vertex with no point in range gets. It is separate from the in-range
+    values: 1 to 0 is a soft dot with no edge, 0 to 1 a ring, 0.5 to 1 a soft dot on a raised base, 1 to 1 a hard dot.
+  - **Falloff**: Linear, Smooth, Power (`t^Exponent`), Exponential (decay with Steepness, normalized to land
+    exactly on the end value at Max Radius), or Curve (inline or external float curve; X is 0 at Min Radius and 1
+    at Max Radius, Y is the blend from the start value to the end value).
+  - **Overlapping Points**: Nearest (only the nearest point in range, the default), Max, Min, Average, Add or
+    Multiply. **Clamp Value** clamps the result to `[0,1]`.
+
+  The points go into a uniform grid. Each point covers its shape's bounding box grown by Max Radius, which no
+  metric can reach past, and the cell size is the mean of those boxes. A vertex tests only the points in its own
+  cell. A point that would cover more than 4096 cells is tested by every vertex instead. `Prepare()` evaluates every
+  vertex in a `ParallelFor`, so `Evaluate` is a lookup; a sample that is not a vertex is evaluated on the spot.
+  Tests: `PCGUtils.DynMesh.Painter.Distance.*`, including a grid against brute-force comparison.
 - **Painter Blend**: blends base `A` with blend `B` using Add, Subtract (`A-B`), Multiply, Darken (Min),
   Lighten (Max), Mix (Normal), or Screen. Scalar/scalar inputs return a scalar; mixed/color inputs return color.
   Scalars broadcast to the color operand's valid channels. The base defines output channels; undefined blend
@@ -141,12 +181,36 @@ The Painter providers:
 - **Random Value by Mesh Island**: a topology-dependent scalar Painter. Its `Prepare()` pass finds the
   connected vertex components of the whole canonical mesh (`FMeshConnectedComponents::FindConnectedVertices`,
   edge connectivity) and gives each one a deterministic value in `[Min Value, Max Value]`, hashed from the
-  node `Seed` and the component's smallest canonical vertex ID (so inserting geometry elsewhere does not shift
-  other islands). `Evaluate` returns the cached per-vertex value. Islands are canonical base-topology
+  node `Seed`, the component's smallest canonical vertex ID (so inserting geometry elsewhere does not shift
+  other islands) and that vertex's world position. The position is what tells meshes apart: a single-island
+  mesh always has key vertex 0, so without it every single-island target drew the same value. Separate meshes
+  and separate placements of one mesh get separate values; moving a target changes its values.
+  `Evaluate` returns the cached per-vertex value. Islands are canonical base-topology
   components: UV / normal / colour-overlay seams and material boundaries never split one, and the outer paint
   Write Selection never redefines them. Empty meshes and sparse IDs are safe; an edge-isolated loose vertex
   becomes its own single-vertex island keyed by its own ID (a real per-island value, never a silent floor).
   Topology rebuilding or vertex-ID reassignment can change which value an island gets.
+- **Painter | Constant**: one value over the whole target, a scalar or a color defining the enabled `Color
+  Channels`. `Value` (scalar) and `Color` (Vector4) are input shorthands: a constant, or one value read per
+  target mesh from that mesh's own `@Data` domain during `Prepare()`. One Painter therefore gives every mesh
+  its own value — `Value = @Data.PathColor.R` paints each mesh with the red channel of the path color it was
+  built from (the `@Data.` prefix is optional on DynMesh data; extractors such as `.R` apply). Attribute mode
+  is strict: a target without the attribute fails with an error naming it and is not painted. Static Mesh
+  Component targets carry no `@Data`, so attribute mode is DynMesh-only in practice.
+- **Painter decorators** wrap exactly one Painter (required `Painter` input pin) and change its field. The
+  shared base (`PCGUtilsPainterDecorator.h`) creates, initializes and prepares the wrapped Painter, and a
+  decorator returns the same value type as the Painter it wraps.
+  - **Painter | Blur**: evaluates the wrapped Painter once per canonical vertex during `Prepare()` (through
+    `FPCGUtilsPainterSampleBuilder`, the same sample definition the paint traversal uses), then gives each
+    vertex the weighted average over every vertex within `Radius`, straight-line distance, found with a
+    point hash grid. `Falloff` is Uniform (box), Linear, or Gaussian (Radius = 3σ). `Space` measures Radius in
+    world centimetres (default) or DynMesh-local units. `Radius` is an input shorthand (constant, or per-target
+    `@Data`, default attribute `BlurRadius`; negative values are errors) and 0 is a pass-through. Colors
+    average per channel over only the neighbours defining that channel. `Keep Islands Separate` restricts the
+    average to the vertex's own connected component, so touching pieces never bleed. The Write Selection
+    limits writes only; every vertex still contributes to its neighbours. Cost grows with vertices per
+    radius, so very large radii on dense meshes are slow, and the straight-line distance blurs through thin
+    walls.
 - **Selection Painter Switch** / **Selection to Painter**: two presentations of one binary Painter
   multiplexer. A **Value Selection** (any DynMesh Selector, including composite Selection Logic) classifies
   every canonical-mesh vertex during `Prepare()` — evaluated once, in the vertex domain, with the Selector
@@ -170,6 +234,34 @@ The Painter consumers:
   primary vertex traversal, resolves the Painter result against the requested channels once per geometric vertex,
   and writes the final color once. A scalar is broadcast to all requested channels; a color preserves unrequested
   or undefined channels.
+
+### LOD groups
+
+`Paint LODs From Highest Detail` (off by default) on **Paint DynMesh Vertex Color** paints a mesh's LODs as one.
+Painted separately, each LOD gets its own result: Random Value by Mesh Island keys an island by its lowest vertex
+ID and its position, and a simplified island has neither in common with its LOD 0 original, so a leaf's tint jumps
+when the LOD switches. With the option on:
+
+1. Inputs are grouped by the `@Data` value named by `LOD Source Attribute` (default `SourceMesh`; a soft object
+   path, string, name or integer) and ranked by `LOD Attribute` (default `LOD`, int32 or int64). DynMesh | From
+   Static Mesh writes both. The lowest LOD of a group is painted, as an ordinary input; between equal LODs the
+   first input is painted and the others are copied.
+2. Every other member takes LOD 0's colors through `PCGUtilsPainterLODTransfer` (Painter module), which projects
+   each vertex onto the painted surface (`PCGUtilsDynMeshSurfaceCorrespondence`) and interpolates. Only the Write
+   Channels are copied; the rest follow Base Color Mode, as painting would. A member's own selection or Selector
+   limits which of its vertices are written.
+3. `Keep Islands Together` (on): each island of a lower LOD first votes, with its vertices' unrestricted
+   projections, for the painted island it lies on, and then projects only onto that island. A leaf tip that
+   reaches closer to the next leaf than to its own original keeps its own leaf's color. Off, every vertex takes
+   the nearest painted surface. The restriction is the correspondence utility's `SourceTriangleGroups` /
+   `DestinationGroups` option, usable by any caller.
+
+Inputs reach the node in pin order, so a lower LOD can come before its LOD 0. The node then paints LOD 0 on a
+working copy at once, prepared exactly as its own turn would prepare it, and reuses that result when its turn
+comes; LOD 0 is painted once either way. An input missing either attribute, or holding the wrong type or an empty
+value, is painted on its own with a warning naming the input and attribute. A lower LOD whose LOD 0 failed to
+paint is an error naming both. Both meshes are compared in their own local space, as the LODs of one asset share
+it. Coverage: `PCGUtils.Painter.LODGroup.*`.
 
 `Paint DynMesh Vertex Color` uses the module's actor-local DynMesh convention by default. It resolves the PCG target
 actor transform once per mesh, populates both local and world sample fields, and therefore compares Paint from

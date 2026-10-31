@@ -1,6 +1,7 @@
 // Copyright Max Harris
 
 #include "Elements/Topology/PCGDynMeshBoolean.h"
+#include "Helpers/PCGUtilsParallelInputs.h"
 
 #include "Data/PCGDynamicMeshData.h"
 #include "DynamicMesh/DynamicMesh3.h"
@@ -170,7 +171,7 @@ namespace
 			UDynamicMesh* Operand = const_cast<UDynamicMesh*>(SourceOperand);
 			if (bGroupOperand || bSelfUnionOperand)
 			{
-				Operand = FPCGContext::NewObject_AnyThread<UDynamicMesh>(Invocation.Context);
+				Operand = PCGUtilsAsyncObjects::NewObject<UDynamicMesh>(Invocation.Context);
 				Operand->SetMesh(UE::Geometry::FDynamicMesh3(*SourceOperand->GetMeshPtr()));
 				if (bSelfUnionOperand)
 				{
@@ -238,7 +239,9 @@ namespace
 				{
 					Materials.Add(Material);
 				}
-				UPCGDynamicMeshData* BData = FPCGContext::NewObject_AnyThread<UPCGDynamicMeshData>(Invocation.Context);
+				// Out B is what is left of InB: it keeps InB's metadata (every domain, @Data included) and target actor.
+				UPCGDynamicMeshData* BData = PCGUtilsAsyncObjects::NewObject<UPCGDynamicMeshData>(Invocation.Context);
+				BData->InitializeFromData(Invocation.OperandMeshData);
 				BData->Initialize(MoveTemp(MeshB), Materials);
 				OutOutcome.AuxiliaryMeshOutputs.Add({ ContributionPinB, BData });
 			}

@@ -1,6 +1,7 @@
 // Copyright Max Harris
 
 #include "Elements/Creation/PrimitiveBuilder/PCGPrimitiveBuilderFactory.h"
+#include "Helpers/PCGUtilsParallelInputs.h"
 
 #include "Data/PCGDynamicMeshData.h"
 #include "DynamicMesh/DynamicMesh3.h"
@@ -58,7 +59,7 @@ namespace
 			const FPCGUtilsDynMeshBuildContext& BuildContext, FPCGUtilsDynMeshBuildResult& OutResult) const override
 		{
 			FPCGContext* EvaluationContext = BuildContext.Context ? BuildContext.Context : Context;
-			UDynamicMesh* LeafMesh = FPCGContext::NewObject_AnyThread<UDynamicMesh>(EvaluationContext);
+			UDynamicMesh* LeafMesh = PCGUtilsAsyncObjects::NewObject<UDynamicMesh>(EvaluationContext);
 			if (!Factory || !Factory->Primitive)
 			{
 				PCGLog::LogErrorOnGraph(
@@ -82,7 +83,7 @@ namespace
 			Factory->Primitive->AppendPrimitive(LeafMesh, PlacementTransform);
 
 			// The leaf owns this mesh outright; every decorator above is free to mutate it in place.
-			UPCGDynamicMeshData* MeshData = FPCGContext::NewObject_AnyThread<UPCGDynamicMeshData>(EvaluationContext);
+			UPCGDynamicMeshData* MeshData = PCGUtilsAsyncObjects::NewObject<UPCGDynamicMeshData>(EvaluationContext);
 			MeshData->Initialize(LeafMesh, /*bCanTakeOwnership=*/true, TArray<UMaterialInterface*>{});
 			OutResult.SetMeshData(MeshData);
 
@@ -98,7 +99,7 @@ namespace
 		{
 			if (!ReferenceMesh)
 			{
-				ReferenceMesh = FPCGContext::NewObject_AnyThread<UDynamicMesh>(EvaluationContext);
+				ReferenceMesh = PCGUtilsAsyncObjects::NewObject<UDynamicMesh>(EvaluationContext);
 				Factory->Primitive->AppendPrimitive(ReferenceMesh, FTransform::Identity);
 			}
 			if (const UE::Geometry::FDynamicMesh3* MeshPtr = ReferenceMesh->GetMeshPtr())
@@ -162,7 +163,7 @@ UPCGUtilsDynMeshFactoryData* UPCGPrimitiveBuilderProviderSettingsBase::CreateFac
 
 	UPCGPrimitiveBuilderFactoryData* Factory = InFactory
 		? Cast<UPCGPrimitiveBuilderFactoryData>(InFactory)
-		: FPCGContext::NewObject_AnyThread<UPCGPrimitiveBuilderFactoryData>(InContext);
+		: PCGUtilsAsyncObjects::NewObject<UPCGPrimitiveBuilderFactoryData>(InContext);
 	if (!Factory)
 	{
 		return nullptr;

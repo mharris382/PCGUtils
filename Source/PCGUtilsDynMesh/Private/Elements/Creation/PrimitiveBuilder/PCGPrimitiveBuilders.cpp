@@ -1,6 +1,7 @@
 // Copyright Max Harris
 
 #include "Elements/Creation/PrimitiveBuilder/PCGPrimitiveBuilders.h"
+#include "Helpers/PCGUtilsParallelInputs.h"
 
 #include "PCGContext.h"
 
@@ -18,7 +19,7 @@ namespace
 	PrimitiveSettingsType* MakePrimitiveSettings(
 		FPCGContext* InContext, const FGeometryScriptPrimitiveOptions& PrimitiveOptions)
 	{
-		PrimitiveSettingsType* Result = FPCGContext::NewObject_AnyThread<PrimitiveSettingsType>(InContext);
+		PrimitiveSettingsType* Result = PCGUtilsAsyncObjects::NewObject<PrimitiveSettingsType>(InContext);
 		if (Result)
 		{
 			Result->PrimitiveOptions = PrimitiveOptions;

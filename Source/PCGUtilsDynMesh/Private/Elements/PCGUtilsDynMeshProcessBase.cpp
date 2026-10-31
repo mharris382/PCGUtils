@@ -1,8 +1,14 @@
 #include "Elements/PCGUtilsDynMeshProcessBase.h"
 
+#include "Geometry/PCGUtilsDynMeshProperties.h"
+#include "Helpers/PCGUtilsParallelInputs.h"
+#include "PCGUtilsDynMesh.h"
+
 #include "Data/PCGDynamicMeshData.h"
 #include "Data/PCGDynamicMeshSelectionData.h"
+#include "Details/PCGUtilsInputShorthands.h"
 #include "DynamicMesh/DynamicMesh3.h"
+#include "PCGUtilsCustomVersion.h"
 #include "Factories/PCGUtilsDynMeshBuilderFactory.h"
 #include "Factories/PCGUtilsDynMeshDomainSelectionFactory.h"
 #include "Factories/PCGUtilsDynMeshFactories.h"
@@ -13,6 +19,7 @@
 #include "PCGPin.h"
 #include "PCGNode.h"
 #include "Serialization/ArchiveCrc32.h"
+#include "Settings/PCGUtilsDynMeshSettings.h"
 #include "UDynamicMesh.h"
 #include "Utils/PCGLogErrors.h"
 
@@ -29,7 +36,27 @@ void UPCGUtilsDynMeshProcessBaseSettings::ApplyDeprecationBeforeUpdatePins(
 		InOutNode->RenameInputPin(TEXT("Selection Factory"), PCGUtilsDynMeshProcessConstants::SelectionFactoryInputPin);
 	}
 }
+
+TArray<FPCGSettingsOverridableParam> UPCGUtilsDynMeshProcessBaseSettings::GatherOverridableParams() const
+{
+	TArray<FPCGSettingsOverridableParam> Params = Super::GatherOverridableParams();
+	PCGUtilsInputShorthands::ApplyOverrideLabels(Params);
+	return Params;
+}
 #endif
+
+void UPCGUtilsDynMeshProcessBaseSettings::Serialize(FArchive& Ar)
+{
+	Ar.UsingCustomVersion(FPCGUtilsCustomVersion::GUID);
+	Super::Serialize(Ar);
+}
+
+void UPCGUtilsDynMeshProcessBaseSettings::PostInitProperties()
+{
+	Super::PostInitProperties();
+	// SupportsParallelInputs() is per class, so it can be read once here (virtual calls are safe by now).
+	bShowDisableParallelInputs = SupportsParallelInputs();
+}
 
 namespace
 {
@@ -123,11 +150,21 @@ TArray<FPCGPinProperties> UPCGUtilsDynMeshProcessBaseSettings::OutputPinProperti
 	return {FPCGPinProperties(GetMainOutputPinLabel(), GetProcessDataTypes(), true, true)};
 }
 
+bool UPCGUtilsDynMeshProcessBaseSettings::HasDynamicPins() const
+{
+	// The concrete-output-type option needs the pins refreshed whenever a setting changes (Output Selection
+	// Data, or a shorthand switching to @Data and so refusing Builders), which is what dynamic pins give us.
+	return SupportsDeferredBuilderProcessing() || GetDefault<UPCGUtilsDynMeshSettings>()->bShowConcreteOutputPinTypes;
+}
+
 FPCGDataTypeIdentifier UPCGUtilsDynMeshProcessBaseSettings::GetCurrentPinTypesID(const UPCGPin* InPin) const
 {
-	// Only a migrated node narrows its pins dynamically; everything else keeps the engine's default behaviour
-	// so no unmigrated process can accidentally advertise a type its executor cannot honour.
-	if (!InPin || !InPin->IsOutputPin() || !SupportsDeferredBuilderProcessing())
+	const bool bShowConcrete = GetDefault<UPCGUtilsDynMeshSettings>()->bShowConcreteOutputPinTypes;
+
+	// Only a migrated node narrows its pins by what is connected, so no unmigrated process can advertise a
+	// Builder its executor cannot honour. The concrete-type option is the exception: it only ever narrows to
+	// the type the immediate executor emits.
+	if (!InPin || !InPin->IsOutputPin() || (!SupportsDeferredBuilderProcessing() && !bShowConcrete))
 	{
 		return Super::GetCurrentPinTypesID(InPin);
 	}
@@ -138,11 +175,24 @@ FPCGDataTypeIdentifier UPCGUtilsDynMeshProcessBaseSettings::GetCurrentPinTypesID
 		return InPin->Properties.AllowedTypes;
 	}
 
+	// What the immediate executor emits on the main pin.
+	const FPCGDataTypeIdentifier ConcreteType = bOutputSelectionData
+		? FPCGDataTypeIdentifier(UPCGDynamicMeshSelectionData::StaticClass())
+		: FPCGDataTypeIdentifier(EPCGDataType::DynamicMesh);
+	// A derived node that declared a different main output (points, say) is left alone.
+	const bool bCanShowConcrete = bShowConcrete && InPin->Properties.AllowedTypes.Intersects(ConcreteType);
+
+	if (!SupportsDeferredBuilderProcessing())
+	{
+		// Not Super: with dynamic pins on, it would copy the input type onto this pin.
+		return bCanShowConcrete ? ConcreteType : InPin->Properties.AllowedTypes;
+	}
+
 	const FPCGDataTypeIdentifier ConnectedTypes = GetTypeUnionIDOfIncidentEdges(GetMainInputPinLabel());
 	if (!ConnectedTypes.IsValid())
 	{
-		// Nothing wired in yet: show the full contract this node can accept.
-		return InPin->Properties.AllowedTypes;
+		// Nothing wired in yet: show the full contract this node can accept, unless asked for the concrete type.
+		return bCanShowConcrete ? ConcreteType : InPin->Properties.AllowedTypes;
 	}
 
 	const FPCGDataTypeIdentifier BuilderType(FPCGUtilsDynMeshBuilderFactoryDataTypeInfo::AsId());
@@ -154,9 +204,7 @@ FPCGDataTypeIdentifier UPCGUtilsDynMeshProcessBaseSettings::GetCurrentPinTypesID
 
 	// Concrete data in: the output kind is decided by this node's own output semantics, exactly as the
 	// immediate executor emits it below.
-	return bOutputSelectionData
-		? FPCGDataTypeIdentifier(UPCGDynamicMeshSelectionData::StaticClass())
-		: FPCGDataTypeIdentifier(EPCGDataType::DynamicMesh);
+	return ConcreteType;
 }
 
 const UPCGData* FPCGUtilsDynMeshResolvedInput::GetData() const
@@ -284,7 +332,7 @@ FPCGUtilsDynMeshResolvedInput FPCGUtilsDynMeshProcessFunctions::ResolveInput(
 	if (bHasSelection)
 	{
 		UPCGDynamicMeshSelectionData* ResolvedSelection =
-			FPCGContext::NewObject_AnyThread<UPCGDynamicMeshSelectionData>(Context);
+			PCGUtilsAsyncObjects::NewObject<UPCGDynamicMeshSelectionData>(Context);
 		ResolvedSelection->Initialize(Result.MeshData, MoveTemp(WorkingSelection));
 		Result.SelectionData = ResolvedSelection;
 	}
@@ -346,7 +394,7 @@ int32 FPCGUtilsDynMeshProcessBaseElement::EmitDeferredBuilders(
 		}
 
 		UPCGUtilsDynMeshProcessBuilderFactoryData* Decorator =
-			FPCGContext::NewObject_AnyThread<UPCGUtilsDynMeshProcessBuilderFactoryData>(Context);
+			PCGUtilsAsyncObjects::NewObject<UPCGUtilsDynMeshProcessBuilderFactoryData>(Context);
 		Decorator->ChildBuilder = ChildBuilder;
 		Decorator->Selector = Selector;
 		Decorator->Operation = Operation;
@@ -398,10 +446,28 @@ bool FPCGUtilsDynMeshProcessBaseElement::ExecuteInternal(FPCGContext* Context) c
 	// Resolved once, while this node executes - never rediscovered per input, and never from another context.
 	const TSharedPtr<const FPCGUtilsDynMeshProcessOperation> Operation = Settings->CreateProcessOperation(Context);
 
+	// Inline property writes: validate the names once, not per input.
+	const FPCGUtilsDynMeshFreeProperties* FreeProperties = Settings->GetInlineFreeProperties();
+	const FPCGUtilsDynMeshComputedProperties* ComputedProperties = Settings->GetInlineComputedProperties();
+	if (FreeProperties && (!FreeProperties->AnyEnabled() || !PCGUtilsDynMeshProperties::Validate(*FreeProperties, Context)))
+	{
+		FreeProperties = nullptr;
+	}
+	if (ComputedProperties && (!ComputedProperties->AnyEnabled() || !PCGUtilsDynMeshProperties::Validate(*ComputedProperties, Context)))
+	{
+		ComputedProperties = nullptr;
+	}
+
 	if (Settings->SupportsDeferredBuilderProcessing())
 	{
 		// Builder inputs are wrapped, never evaluated. Concrete inputs on the same pin still run immediately.
-		EmitDeferredBuilders(Context, Settings, SelectionFactory);
+		const int32 BuilderCount = EmitDeferredBuilders(Context, Settings, SelectionFactory);
+		if (BuilderCount > 0 && (FreeProperties || ComputedProperties))
+		{
+			PCGLog::LogWarningOnGraph(LOCTEXT("PropertiesOnBuilder",
+				"Output properties are not written to Builder results: realizing a Builder keeps the mesh, not "
+				"intermediate @Data. Add DynMesh | Properties after Realize Builders to read them."), Context);
+		}
 	}
 
 	const TArray<FPCGTaggedData>& ProcessInputs =
@@ -412,11 +478,36 @@ bool FPCGUtilsDynMeshProcessBaseElement::ExecuteInternal(FPCGContext* Context) c
 		ConcreteInputCount += !Input.Data ||
 			!Input.Data->IsA<UPCGUtilsDynMeshBuilderFactoryData>() ? 1 : 0;
 	}
+	// Three passes, so the operations can run in parallel without changing what the node outputs:
+	//   1. Prepare (in order): copy each input, rebase and resolve its selection. Allocates and logs as before.
+	//   2. Execute: run the operation for every prepared input, in parallel when allowed. Each owns its mesh.
+	//   3. Emit (in input order): properties, selection outputs, auxiliary outputs. Output order never changes.
+	// See Docs/PCGUtilsDynMesh/ParallelInputs.md.
+	struct FPreparedInput
+	{
+		const FPCGTaggedData* Input = nullptr;
+		int32 InvocationInputIndex = 0;
+		const UPCGDynamicMeshData* SourceData = nullptr;
+		UPCGDynamicMeshData* OutputData = nullptr;
+		const UPCGDynamicMeshSelectionData* ProcessSelectionData = nullptr;
+		bool bProcessed = false;
+		FPCGUtilsDynMeshProcessOutcome Outcome;
+	};
+	TArray<FPreparedInput> Prepared;
+	Prepared.Reserve(ConcreteInputCount);
+
 	int32 ConcreteInputIndex = 0;
 	for (const FPCGTaggedData& Input : ProcessInputs)
 	{
 		if (Input.Data && Input.Data->IsA<UPCGUtilsDynMeshBuilderFactoryData>())
 		{
+			if (!Settings->SupportsDeferredBuilderProcessing())
+			{
+				const FText Reason = Settings->GetBuilderInputRejectionReason();
+				PCGLog::LogErrorOnGraph(Reason.IsEmpty()
+					? LOCTEXT("BuilderRejected", "A Builder input was skipped: this node does not accept Builders in its current configuration. Realize the Builder first.")
+					: FText::Format(LOCTEXT("BuilderRejectedReason", "A Builder input was skipped: {0}"), Reason), Context);
+			}
 			continue;
 		}
 		const int32 InvocationInputIndex = ConcreteInputIndex++;
@@ -439,8 +530,12 @@ bool FPCGUtilsDynMeshProcessBaseElement::ExecuteInternal(FPCGContext* Context) c
 			Materials.Add(Material);
 		}
 
-		// Immediate mode never mutates upstream data: the process always operates on its own copy.
-		UPCGDynamicMeshData* OutputData = FPCGContext::NewObject_AnyThread<UPCGDynamicMeshData>(Context);
+		// Immediate mode never mutates upstream data: the process always operates on its own copy. The copy is
+		// still the input, modified: it starts from the input's metadata (every domain, @Data included) and target
+		// actor, and only the mesh is replaced. A bare new data here silently drops every attribute upstream nodes
+		// wrote, for every process node at once.
+		UPCGDynamicMeshData* OutputData = PCGUtilsAsyncObjects::NewObject<UPCGDynamicMeshData>(Context);
+		OutputData->InitializeFromData(SourceData);
 		OutputData->Initialize(UE::Geometry::FDynamicMesh3(*SourceMesh), MoveTemp(Materials));
 
 		// Rebind the input onto the freshly copied mesh, then run the same explicit resolver the deferred path
@@ -449,7 +544,7 @@ bool FPCGUtilsDynMeshProcessBaseElement::ExecuteInternal(FPCGContext* Context) c
 		if (SelectionData)
 		{
 			UPCGDynamicMeshSelectionData* RebasedSelection =
-				FPCGContext::NewObject_AnyThread<UPCGDynamicMeshSelectionData>(Context);
+				PCGUtilsAsyncObjects::NewObject<UPCGDynamicMeshSelectionData>(Context);
 			RebasedSelection->Initialize(OutputData, SelectionData->GetSelection());
 			RebasedInput = RebasedSelection;
 		}
@@ -461,32 +556,85 @@ bool FPCGUtilsDynMeshProcessBaseElement::ExecuteInternal(FPCGContext* Context) c
 			continue;
 		}
 
-		const UPCGDynamicMeshSelectionData* ProcessSelectionData = Resolved.SelectionData;
+		FPreparedInput& Slot = Prepared.AddDefaulted_GetRef();
+		Slot.Input = &Input;
+		Slot.InvocationInputIndex = InvocationInputIndex;
+		Slot.SourceData = SourceData;
+		Slot.OutputData = OutputData;
+		Slot.ProcessSelectionData = Resolved.SelectionData;
+	}
 
-		bool bProcessed = false;
-		FPCGUtilsDynMeshProcessOutcome Outcome;
-		if (Operation)
+	if (Operation)
+	{
+		// Each gate is checked on its own so the Verbose line can name the one that kept this node serial.
+		const TCHAR* SerialReason = nullptr;
+		if (!Settings->SupportsParallelInputs())
 		{
+			SerialReason = TEXT("this node opts out");
+		}
+		else if (Settings->bDisableParallelInputs)
+		{
+			SerialReason = TEXT("Disable Parallel is set");
+		}
+		else if (!Operation->SupportsParallelExecute())
+		{
+			SerialReason = TEXT("the operation opts out in its current settings");
+		}
+		else if (!PCGUtilsParallelInputs::IsEnabledGlobally())
+		{
+			SerialReason = TEXT("pcgutils.ParallelInputs is 0");
+		}
+		if (SerialReason && Prepared.Num() >= 2)
+		{
+			UE_LOG(LogPCGUtilsDynMesh, Verbose, TEXT("%s: parallel inputs off (%s); processing %d inputs one at a time."),
+				*Settings->GetClass()->GetName(), SerialReason, Prepared.Num());
+		}
+
+		PCGUtilsParallelInputs::ForEach(Context, Prepared.Num(), SerialReason == nullptr,
+			[&Prepared, &Operation, Context, ConcreteInputCount](int32 SlotIndex)
+		{
+			FPreparedInput& Slot = Prepared[SlotIndex];
 			FPCGUtilsDynMeshProcessInvocation Invocation;
 			Invocation.Context = Context;
-			Invocation.MeshData = OutputData;
-			Invocation.SelectionData = ProcessSelectionData;
+			Invocation.MeshData = Slot.OutputData;
+			Invocation.SelectionData = Slot.ProcessSelectionData;
 			// Immediate mode still has the untouched upstream data around; hand it to the operation for
 			// anything the working copy does not carry (Data-domain attributes and the like).
-			Invocation.SourceMeshData = SourceData;
-			Invocation.InputIndex = InvocationInputIndex;
+			Invocation.SourceMeshData = Slot.SourceData;
+			Invocation.InputIndex = Slot.InvocationInputIndex;
 			Invocation.InputCount = ConcreteInputCount;
 
-			bProcessed = Operation->Execute(Invocation, Outcome);
-		}
-		else
+			Slot.bProcessed = Operation->Execute(Invocation, Slot.Outcome);
+		});
+	}
+	else
+	{
+		// Unmigrated processes run through ProcessMesh, which may reach anything on the context: always serial.
+		for (FPreparedInput& Slot : Prepared)
 		{
-			bProcessed = ProcessMesh(OutputData, ProcessSelectionData, Context);
+			Slot.bProcessed = ProcessMesh(Slot.OutputData, Slot.ProcessSelectionData, Context);
 		}
+	}
 
-		if (!bProcessed)
+	for (FPreparedInput& Slot : Prepared)
+	{
+		if (!Slot.bProcessed)
 		{
 			continue;
+		}
+
+		const FPCGTaggedData& Input = *Slot.Input;
+		UPCGDynamicMeshData* OutputData = Slot.OutputData;
+		const UPCGDynamicMeshSelectionData* ProcessSelectionData = Slot.ProcessSelectionData;
+		const FPCGUtilsDynMeshProcessOutcome& Outcome = Slot.Outcome;
+
+		if (FreeProperties)
+		{
+			PCGUtilsDynMeshProperties::Write(*OutputData, *FreeProperties);
+		}
+		if (ComputedProperties)
+		{
+			PCGUtilsDynMeshProperties::Write(*OutputData, *ComputedProperties);
 		}
 
 		// Immediate output follows the same selection contract as the deferred Builder decorator.
@@ -522,6 +670,8 @@ bool FPCGUtilsDynMeshProcessBaseElement::ExecuteInternal(FPCGContext* Context) c
 					PCGLog::LogErrorOnGraph(
 						LOCTEXT("CompleteSelectionOutputFailed", "DynMesh processor could not create its full-mesh selection output."),
 						Context);
+					// The output entry was already added; drop it again so nothing half-made is emitted.
+					Context->OutputData.TaggedData.Pop();
 					continue;
 				}
 			}
@@ -532,7 +682,7 @@ bool FPCGUtilsDynMeshProcessBaseElement::ExecuteInternal(FPCGContext* Context) c
 					UE::Geometry::EGeometryTopologyType::Triangle);
 			}
 			UPCGDynamicMeshSelectionData* OutputSelectionData =
-				FPCGContext::NewObject_AnyThread<UPCGDynamicMeshSelectionData>(Context);
+				PCGUtilsAsyncObjects::NewObject<UPCGDynamicMeshSelectionData>(Context);
 			OutputSelectionData->Initialize(OutputData, MoveTemp(OutputSelection));
 			Output.Data = OutputSelectionData;
 		}

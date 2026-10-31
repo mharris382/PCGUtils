@@ -5,6 +5,7 @@
 #include "Elements/PCGMeshSampler.h"
 #include "GeometryScript/MeshSamplingFunctions.h"
 
+#include "PCGUtilsDynMeshNodeColor.h"
 #include "PCGDynMeshSample.generated.h"
 
 /**
@@ -24,11 +25,14 @@ class PCGUTILSDYNMESH_API UPCGDynMeshSampleSettings : public UPCGUtilsDynMeshPro
 	GENERATED_BODY()
 
 public:
+	/** Own executor: its loop does not go through the process base, so the parallel path does not apply (yet: ParallelInputs.md Stage 2). */
+	virtual bool SupportsParallelInputs() const override { return false; }
+
 #if WITH_EDITOR
 	virtual FName GetDefaultNodeName() const override { return TEXT("DynMesh|Sample"); }
 	virtual FText GetDefaultNodeTitle() const override;
 	virtual FText GetNodeTooltipText() const override;
-	virtual FLinearColor GetNodeTitleColor() const override { return FLinearColor(0.413f, 0.25f, 1.0f, 1.0f); }
+	virtual FLinearColor GetNodeTitleColor() const override { return PCGUtilsDynMeshNodeColor::Title; }
 
 	// Native "Add Node" categorization only offers the fixed EPCGSettingsType buckets (no free-form category
 	// string is available to a native C++ element) - DynamicMesh is the closest match to "Utils DynMesh|Sampling".

@@ -26,4 +26,19 @@ public:
 
 	UFUNCTION(BlueprintNativeEvent, BlueprintCallable, Category = "PCG|Path")
 	FPathComponentData GetPathData() const;
+
+	/**
+	 * How many separate paths this provider supplies, for providers with several (an Image Path's contours).
+	 * 0, the default, means one path, read through GetPCGPathPoints.
+	 */
+	UFUNCTION(BlueprintNativeEvent, BlueprintCallable, Category = "PCG|Path")
+	int32 GetPCGPathCount() const;
+
+	/** One of the GetPCGPathCount paths. bIsHole marks a path bounding a hole inside another. */
+	UFUNCTION(BlueprintNativeEvent, BlueprintCallable, Category = "PCG|Path")
+	TArray<FPCGPathPoint> GetPCGPathPointsAt(int32 PathIndex, bool& bIsLocalSpace, bool& bIsLinearPath, bool& bIsClosedLoop, bool& bIsHole) const;
+
+	virtual int32 GetPCGPathCount_Implementation() const { return 0; }
+	virtual TArray<FPCGPathPoint> GetPCGPathPointsAt_Implementation(
+		int32 PathIndex, bool& bIsLocalSpace, bool& bIsLinearPath, bool& bIsClosedLoop, bool& bIsHole) const;
 };

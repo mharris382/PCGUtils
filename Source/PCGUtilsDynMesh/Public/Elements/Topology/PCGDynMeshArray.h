@@ -7,6 +7,8 @@
 #include "Elements/Deform/PCGTransformDynMesh.h"
 #include "Elements/PCGUtilsDynMeshProcessBase.h"
 
+#include "Geometry/PCGUtilsDynMeshProperties.h"
+#include "PCGUtilsDynMeshNodeColor.h"
 #include "PCGDynMeshArray.generated.h"
 
 namespace PCGDynMeshArrayConstants
@@ -51,11 +53,18 @@ class PCGUTILSDYNMESH_API UPCGDynMeshArraySettings : public UPCGUtilsDynMeshProc
 	GENERATED_BODY()
 
 public:
+	/** Mesh properties written to @Data after this node runs, as DynMesh | Properties writes them. All off by default. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Output Properties", meta=(PCG_Overridable, ShowOnlyInnerProperties))
+	FPCGUtilsDynMeshFreeProperties OutputProperties;
+
+	virtual const FPCGUtilsDynMeshFreeProperties* GetInlineFreeProperties() const override { return &OutputProperties; }
+
+public:
 #if WITH_EDITOR
 	virtual FName GetDefaultNodeName() const override { return TEXT("DynMeshArray"); }
 	virtual FText GetDefaultNodeTitle() const override;
 	virtual FText GetNodeTooltipText() const override;
-	virtual FLinearColor GetNodeTitleColor() const override { return FLinearColor(0.413f, 0.25f, 1.0f, 1.0f); }
+	virtual FLinearColor GetNodeTitleColor() const override { return PCGUtilsDynMeshNodeColor::Title; }
 	virtual FString GetAdditionalTitleInformation() const override;
 #endif
 

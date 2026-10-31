@@ -3,6 +3,7 @@
 #include "CoreMinimal.h"
 #include "Factories/PCGUtilsDynMeshDomainSelectionFactory.h"
 
+#include "PCGUtilsDynMeshNodeColor.h"
 #include "PCGSelectionFromSpline.generated.h"
 
 namespace PCGSelectionFromSplineConstants
@@ -67,7 +68,7 @@ public:
 	virtual FName GetDefaultNodeName() const override { return TEXT("SelectionFromSpline"); }
 	virtual FText GetDefaultNodeTitle() const override;
 	virtual FText GetNodeTooltipText() const override;
-	virtual FLinearColor GetNodeTitleColor() const override { return FLinearColor(0.413f, 0.25f, 1.0f, 1.0f); }
+	virtual FLinearColor GetNodeTitleColor() const override { return PCGUtilsDynMeshNodeColor::Title; }
 #endif
 
 	/** Vertices within this distance of the spline centerline are selected. */

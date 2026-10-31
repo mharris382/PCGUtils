@@ -1,0 +1,82 @@
+// Copyright Max Harris
+
+#include "/Engine/Public/Platform.ush"
+
+// --- Sample pass: resample the source, reduce to one channel, levels, invert -------------------------------------
+
+Texture2D SourceTexture;
+SamplerState SourceSampler;
+RWTexture2D<float> OutputTexture;
+uint2 OutputSize;
+float4 ChannelWeights;
+uint bMaxOfRGB;
+uint bEncodeSRGB;
+float BlackPoint;
+float WhitePoint;
+uint bInvert;
+
+float LinearToSRGBChannel(float Value)
+{
+	Value = saturate(Value);
+	return Value <= 0.0031308 ? Value * 12.92 : 1.055 * pow(Value, 1.0 / 2.4) - 0.055;
+}
+
+[numthreads(8, 8, 1)]
+void SampleCS(uint3 DispatchThreadId : SV_DispatchThreadID)
+{
+	if (any(DispatchThreadId.xy >= OutputSize))
+	{
+		return;
+	}
+
+	const float2 UV = (float2(DispatchThreadId.xy) + 0.5) / float2(OutputSize);
+	float4 Sampled = SourceTexture.SampleLevel(SourceSampler, UV, 0);
+	if (bEncodeSRGB != 0)
+	{
+		Sampled.r = LinearToSRGBChannel(Sampled.r);
+		Sampled.g = LinearToSRGBChannel(Sampled.g);
+		Sampled.b = LinearToSRGBChannel(Sampled.b);
+	}
+
+	float Value = bMaxOfRGB != 0 ? max(Sampled.r, max(Sampled.g, Sampled.b)) : dot(Sampled, ChannelWeights);
+	const float Range = max(WhitePoint - BlackPoint, 1e-6);
+	Value = saturate((Value - BlackPoint) / Range);
+	if (bInvert != 0)
+	{
+		Value = 1.0 - Value;
+	}
+	OutputTexture[DispatchThreadId.xy] = Value;
+}
+
+// --- Blur pass: one axis of a separable Gaussian ---------------------------------------------------------------
+
+Texture2D<float> BlurInput;
+RWTexture2D<float> BlurOutput;
+uint2 BlurSize;
+int2 BlurAxis;
+int BlurRadiusPixels;
+float BlurSigma;
+
+[numthreads(8, 8, 1)]
+void BlurCS(uint3 DispatchThreadId : SV_DispatchThreadID)
+{
+	if (any(DispatchThreadId.xy >= BlurSize))
+	{
+		return;
+	}
+
+	const int2 Center = int2(DispatchThreadId.xy);
+	const int2 MaxCoord = int2(BlurSize) - 1;
+	const float InvTwoSigmaSq = 1.0 / (2.0 * BlurSigma * BlurSigma);
+
+	float Sum = 0.0;
+	float WeightSum = 0.0;
+	for (int Offset = -BlurRadiusPixels; Offset <= BlurRadiusPixels; ++Offset)
+	{
+		const int2 Coord = clamp(Center + BlurAxis * Offset, int2(0, 0), MaxCoord);
+		const float Weight = exp(-float(Offset * Offset) * InvTwoSigmaSq);
+		Sum += BlurInput[Coord] * Weight;
+		WeightSum += Weight;
+	}
+	BlurOutput[DispatchThreadId.xy] = Sum / WeightSum;
+}

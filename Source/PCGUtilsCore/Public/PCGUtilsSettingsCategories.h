@@ -29,6 +29,9 @@ namespace PCGUtilsSettingsCategories
 		GeometryCollectionEdit,
 		GeometryCollectionConversion,
 		GeometryCollectionDataflow,
+		Paths,
+		Points,
+		Params,
 	};
 
 	inline EPCGSettingsType AsSettingsType(EValue Value)

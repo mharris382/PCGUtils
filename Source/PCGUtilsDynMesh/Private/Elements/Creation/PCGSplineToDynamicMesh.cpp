@@ -1,4 +1,5 @@
 #include "Elements/Creation/PCGSplineToDynamicMesh.h"
+#include "Helpers/PCGUtilsParallelInputs.h"
 
 #include "Data/PCGDynamicMeshData.h"
 #include "Data/PCGSplineData.h"
@@ -222,7 +223,7 @@ bool FPCGSplineToDynamicMeshElement::ExecuteInternal(FPCGContext* Context) const
 			}
 			else
 			{
-				UPCGDynamicMeshData* OutputData = FPCGContext::NewObject_AnyThread<UPCGDynamicMeshData>(Context);
+				UPCGDynamicMeshData* OutputData = PCGUtilsAsyncObjects::NewObject<UPCGDynamicMeshData>(Context);
 				OutputData->Initialize(SegmentMesh, true, Materials);
 				FPCGTaggedData& Output = Context->OutputData.TaggedData.Emplace_GetRef(Input);
 				Output.Data = OutputData;
@@ -232,7 +233,7 @@ bool FPCGSplineToDynamicMeshElement::ExecuteInternal(FPCGContext* Context) const
 
 		if (Settings->bUnionSegments && CombinedMesh)
 		{
-			UPCGDynamicMeshData* OutputData = FPCGContext::NewObject_AnyThread<UPCGDynamicMeshData>(Context);
+			UPCGDynamicMeshData* OutputData = PCGUtilsAsyncObjects::NewObject<UPCGDynamicMeshData>(Context);
 			OutputData->Initialize(CombinedMesh, true, Materials);
 			FPCGTaggedData& Output = Context->OutputData.TaggedData.Emplace_GetRef(Input);
 			Output.Data = OutputData;

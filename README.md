@@ -197,7 +197,7 @@ Builder support is opt-in per operation, and currently covers the families where
 
 | Supports Builders | Does not |
 |---|---|
-| Topology — Extrude, Inset, Bevel, Boolean, Delete Selection, Remesh, Simplify, Merge by Distance | Painter consumers (Builder integration is deferred by design) |
+| Topology — Extrude, Inset, Bevel, Boolean, Delete Selection, Remesh, Simplify, Decimate, Merge by Distance | Painter consumers (Builder integration is deferred by design) |
 | Deform — Smooth, Warp, Transform, Deform Along Spline | Conversion and query nodes |
 | Attributes — Set Material, Set Vertex Colors, Set/Clear PolyGroup, Project UVs | Write DynMesh LODs |
 
@@ -230,7 +230,9 @@ Component geometry from actors in the level).
 operands, optional per-operand PolyGroup tagging, and a mode that splits the result into separate A-derived and
 B-derived outputs), `Extrude DynMesh Faces`, `Inset DynMesh Faces`, `Bevel DynMesh Edges`, `Delete DynMesh
 Selection`, `Separate DynMesh Selection`, `Remesh DynMesh` (uniform and adaptive), `Simplify DynMesh` (the full
-Geometry Script simplification library, including Planar), and `Merge by Distance`.
+Geometry Script simplification library, including Planar), `Decimate` (Blender's Collapse, Un-Subdivide and
+Planar modes, with delimits and selections), `Separate Islands` (one DynMesh per connected island), and
+`Merge by Distance`.
 
 **Deform** — `Smooth DynMesh`, `Warp DynMesh` (bend, twist, flare/squish), `Transform DynMesh`, `Deform DynMesh
 Along Spline`, `ToWorld` / `ToLocal`.
@@ -273,6 +275,7 @@ or a color with explicit valid channels; the consuming node decides where the re
 |---|---|
 | **Axis Gradient Painter** | A clamped projection between Start and End along a normalized axis, in mesh-local or world space, optionally inverted |
 | **Bounds Brush Painter** | PCG points as independently sized world-space brushes — oriented ellipsoids fitted to point bounds, or a uniform radius from an attribute — with an optional solid inner core, Hard/Linear/Smooth falloff, and Max/Min/Add/Multiply overlap reduction |
+| **Distance Painter** | Distance from each vertex to the PCG points in range (center, bounds sphere or bounds box; Euclidean, Manhattan or Chebyshev), blended between Min and Max Radius with Linear/Smooth/Power/Exponential/Curve falloff, a separate out-of-range value, and Nearest/Max/Min/Average/Add/Multiply for overlapping points |
 | **Painter by Vertex ID** | Explicit point → vertex correspondence, reading values from an attribute. Not projection, not falloff |
 | **Random Value by Mesh Island** | A deterministic value per connected component of the mesh, seeded stably so adding geometry elsewhere does not reshuffle existing islands |
 | **Selection Painter Switch** / **Selection to Painter** | A DynMesh Selector classifies every vertex, and each branch is a constant or another Painter |
@@ -412,6 +415,16 @@ nodes pick it up.
   collision profile, object type, and a trace-channel response. Collision criteria combine with AND.
   The inherited **Ignore PCG Generated Components** option defaults off here so non-debug generated ISMs
   remain available; enable it to exclude all PCG-generated components.
+- **Get ISM Data** — reads instanced static mesh components (ISM and HISM) back into PCG: one
+  `PCGPointArrayData` per component, one world-space point per instance, with the mesh's bounds. The mesh
+  (`Mesh`, per point) and optional material (`@Data.Material`, once per data set) land in the domain their
+  name picks. See [Docs/PCGUtils/ISMDataAndCopySockets.md](Docs/PCGUtils/ISMDataAndCopySockets.md).
+- **Param | Get MPC Values** — reads parameters of a Material Parameter Collection into a one-entry attribute
+  set, one named attribute per listed parameter, from the asset's defaults or the world's live values. Vectors
+  can be written as Vector4, Vector, Vector2 or a single channel. See
+  [Docs/PCGUtils/GetMPCValues.md](Docs/PCGUtils/GetMPCValues.md).
+- **Utils | Copy Sockets** — treats each point as an instance of its mesh and replaces it with one point per
+  selected socket (by name list, by tag, or all), keeping the point's attributes.
 - **Get Override Graph Sets** — routes data according to serialized override-graph metadata.
 - **Capture / Restore** aliases for Density, Position Z and Bounds — stash a point property, do something to
   the points, put it back.

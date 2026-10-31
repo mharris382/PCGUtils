@@ -23,4 +23,13 @@ public:
 #endif
 	UPROPERTY(Config, EditAnywhere, Category="Brushes", meta=(DisplayName = "Default Mesh Brush Override Material", AllowedClasses="/Script/Engine.MaterialInterface"))
 	TSoftObjectPtr<UMaterialInterface> StaticMeshBrushMaterial;
+
+	/**
+	 * Show a DynMesh node's main output pin as the type it will actually emit (purple Dynamic Mesh, or DynMesh
+	 * Selection when Output Selection Data is on) instead of the grey union of every type the node can handle.
+	 * A Builder input still turns the pin into a Builder pin. Open graphs refresh their pins when a node changes
+	 * or the graph is reopened.
+	 */
+	UPROPERTY(Config, EditAnywhere, Category="Graph Editor", meta=(DisplayName="Show Concrete DynMesh Output Pin Types"))
+	bool bShowConcreteOutputPinTypes = true;
 };

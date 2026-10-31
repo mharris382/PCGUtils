@@ -1,4 +1,5 @@
 #include "Elements/Selections/PCGDynamicMeshSelectionBase.h"
+#include "Helpers/PCGUtilsParallelInputs.h"
 
 #include "Data/PCGDynamicMeshData.h"
 #include "Data/PCGDynamicMeshSelectionData.h"
@@ -152,7 +153,7 @@ bool FPCGDynamicMeshSelectionBaseElement::ExecuteInternal(FPCGContext* Context) 
 			Selection.Selection = ConvertedCandidates.Selection.Intersect(Selection.Selection);
 		}
 
-		UPCGDynamicMeshSelectionData* OutputData = FPCGContext::NewObject_AnyThread<UPCGDynamicMeshSelectionData>(Context);
+		UPCGDynamicMeshSelectionData* OutputData = PCGUtilsAsyncObjects::NewObject<UPCGDynamicMeshSelectionData>(Context);
 		OutputData->Initialize(MeshData, MoveTemp(Selection));
 		FPCGTaggedData& Output = Context->OutputData.TaggedData.Emplace_GetRef(Input);
 		Output.Data = OutputData;

@@ -1,6 +1,7 @@
 // Copyright Max Harris
 
 #include "Elements/Painters/PCGDynMeshRandomValueByIslandPainter.h"
+#include "Helpers/PCGUtilsParallelInputs.h"
 
 #include "DynamicMesh/DynamicMesh3.h"
 #include "Helpers/PCGHelpers.h"
@@ -50,13 +51,19 @@ namespace
 				return true;
 			}
 
-			auto IslandValueForKey = [this](int32 IslandKey) -> float
+			// The key vertex ID alone only identifies an island within one mesh: every single-island mesh has key 0,
+			// so separate meshes (and separate copies of one mesh) would all draw the same value. Hashing the key
+			// vertex's world position as well gives each placed island its own value.
+			const FTransform& LocalToWorld = InPainterContext.LocalToWorld;
+			auto IslandValueForKey = [this, &Mesh, &LocalToWorld](int32 IslandKey) -> float
 			{
 				if (FMath::IsNearlyEqual(MinValue, MaxValue))
 				{
 					return MinValue;
 				}
-				const FRandomStream Stream(PCGHelpers::ComputeSeed(Factory->Seed, IslandKey));
+				const FVector KeyWorldPosition = LocalToWorld.TransformPosition(FVector(Mesh.GetVertex(IslandKey)));
+				const FRandomStream Stream(PCGHelpers::ComputeSeed(
+					Factory->Seed, PCGHelpers::ComputeSeedFromPosition(KeyWorldPosition), IslandKey));
 				return static_cast<float>(Stream.FRandRange(MinValue, MaxValue));
 			};
 
@@ -153,8 +160,9 @@ FText UPCGDynMeshRandomValueByIslandPainterProviderSettings::GetDefaultNodeTitle
 FText UPCGDynMeshRandomValueByIslandPainterProviderSettings::GetNodeTooltipText() const
 {
 	return LOCTEXT("Tooltip",
-		"Assigns one deterministic random scalar to every connected vertex component of the target mesh. Islands "
-		"are the canonical base-topology components, so UV / normal / colour seams never split one. The outer "
+		"Assigns one deterministic random scalar to every connected vertex component of the target mesh, including a "
+		"mesh that is a single island. The value is hashed from Seed and the island's world placement, so separate "
+		"meshes and separate copies of one mesh get different values. Islands are the canonical base-topology components, so UV / normal / colour seams never split one. The outer "
 		"Write Selection can limit which vertices are written but does not redefine islands.");
 }
 #endif
@@ -174,7 +182,7 @@ UPCGUtilsDynMeshFactoryData* UPCGDynMeshRandomValueByIslandPainterProviderSettin
 {
 	UPCGDynMeshRandomValueByIslandPainterFactoryData* Factory = InFactory
 		? Cast<UPCGDynMeshRandomValueByIslandPainterFactoryData>(InFactory)
-		: FPCGContext::NewObject_AnyThread<UPCGDynMeshRandomValueByIslandPainterFactoryData>(InContext);
+		: PCGUtilsAsyncObjects::NewObject<UPCGDynMeshRandomValueByIslandPainterFactoryData>(InContext);
 	if (!Factory)
 	{
 		return nullptr;

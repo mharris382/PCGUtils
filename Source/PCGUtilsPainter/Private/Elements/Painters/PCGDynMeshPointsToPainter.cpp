@@ -1,6 +1,7 @@
 // Copyright Max Harris
 
 #include "Elements/Painters/PCGDynMeshPointsToPainter.h"
+#include "Helpers/PCGUtilsParallelInputs.h"
 
 #include "Data/PCGBasePointData.h"
 #include "DynamicMesh/DynamicMesh3.h"
@@ -278,7 +279,7 @@ UPCGUtilsDynMeshFactoryData* UPCGDynMeshPointsToPainterProviderSettings::CreateF
 
 	UPCGDynMeshPointsToPainterFactoryData* Factory = InFactory
 		? Cast<UPCGDynMeshPointsToPainterFactoryData>(InFactory)
-		: FPCGContext::NewObject_AnyThread<UPCGDynMeshPointsToPainterFactoryData>(InContext);
+		: PCGUtilsAsyncObjects::NewObject<UPCGDynMeshPointsToPainterFactoryData>(InContext);
 	if (!Factory)
 	{
 		return nullptr;

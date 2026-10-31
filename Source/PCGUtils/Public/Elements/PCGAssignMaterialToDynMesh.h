@@ -58,6 +58,18 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Material", meta=(PCG_Overridable))
 	TSoftObjectPtr<UMaterialInterface> Material;
 
+	/** The slot the material is put in. */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Material", meta=(PCG_Overridable, ClampMin = "0"))
+	int32 MaterialSlot = 0;
+
+	/**
+	 * On: every triangle is moved to Material Slot and the mesh is left with that one material, which is what a mesh
+	 * with a single surface wants. Off: triangles keep the slots they have and only the material in Material Slot is
+	 * replaced, so a mesh whose regions already carry different surfaces keeps them.
+	 */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Material", meta=(PCG_Overridable))
+	bool bAssignToAllTriangles = true;
+
 	///**
 	// * Faces within this angle of world up are classified as flat (slot 0).
 	// * Default is intentionally tiny — only near-perfectly horizontal faces get flat material.

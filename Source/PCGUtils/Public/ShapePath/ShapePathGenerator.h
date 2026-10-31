@@ -87,6 +87,10 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Arc")
 	bool bIsClosedLoop = false;
 
+	/** Closes the arc through the circle's centre, making a pie slice instead of a chord across the ends. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Arc", meta=(EditCondition="bIsClosedLoop", EditConditionHides))
+	bool bPieSlice = false;
+
 	virtual void GeneratePoints(TArray<FVector>& OutPoints) const override;
 	virtual bool IsClosedLoop() const override { return bIsClosedLoop; }
 };

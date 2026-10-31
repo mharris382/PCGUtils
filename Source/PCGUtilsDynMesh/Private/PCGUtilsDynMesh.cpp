@@ -8,6 +8,7 @@
 #include "Data/PCGDynamicMeshSelectionData.h"
 #include "Factories/PCGUtilsDynMeshBuilderFactory.h"
 #include "Factories/PCGUtilsDynMeshSelectionFactory.h"
+#include "Geometry/PCGUtilsStaticMeshBrushCache.h"
 #include "Misc/CoreDelegates.h"
 #include "Modules/ModuleManager.h"
 #endif
@@ -93,6 +94,9 @@ void FPCGUtilsDynMeshModule::OnModulesChanged(FName ModuleName, EModuleChangeRea
 
 void FPCGUtilsDynMeshModule::OnPreExit()
 {
+	// Unbind the cache's Static Mesh change watchers while those assets still exist.
+	FStaticMeshBrushCache::Get().Clear();
+
 	if (!bPinColorsRegistered || !FPCGModule::IsPCGModuleLoaded())
 	{
 		return;

@@ -3,7 +3,7 @@
 #include "CoreMinimal.h"
 #include "Elements/PCGDynamicMeshBaseElement.h"
 #include "Elements/PCGUtilsDynMeshProcessOperation.h"
-#include "PCGUtilsSettingsCategories.h"
+#include "PCGUtilsDynMeshNodeColor.h"
 #include "PCGUtilsSettingsCategories.h"
 #include "Selections/GeometrySelection.h"
 
@@ -13,6 +13,8 @@ class UPCGDynamicMeshData;
 class UPCGDynamicMeshSelectionData;
 class UPCGUtilsDynMeshSelectionFactoryData;
 class UPCGData;
+struct FPCGUtilsDynMeshFreeProperties;
+struct FPCGUtilsDynMeshComputedProperties;
 
 namespace PCGUtilsDynMeshProcessConstants
 {
@@ -40,6 +42,8 @@ public:
 	{
 		return PCGUtilsSettingsCategories::DynMeshCategoryForClass(GetClass());
 	}
+	/** Every DynMesh process shares the family color; see PCGUtilsDynMeshNodeColor. */
+	virtual FLinearColor GetNodeTitleColor() const override { return PCGUtilsDynMeshNodeColor::Title; }
 #endif
 
 	/**
@@ -92,6 +96,29 @@ public:
 	 */
 	virtual bool SupportsDeferredBuilderProcessing() const { return false; }
 
+	/**
+	 * Why a Builder on the main input is refused when SupportsDeferredBuilderProcessing() is false for this
+	 * configuration (an @Data-driven setting, say). Empty uses a generic message. Reported as a graph error per
+	 * refused input, so a Builder is never dropped silently.
+	 */
+	virtual FText GetBuilderInputRejectionReason() const { return FText::GetEmpty(); }
+
+	/**
+	 * Mesh properties this node writes to each result's @Data domain after it runs (see PCGUtilsDynMeshProperties),
+	 * or null when it offers none. A node exposes a FPCGUtilsDynMeshFreeProperties UPROPERTY and returns it here;
+	 * the executor validates the names once and writes after every successful input. Immediate results only: a
+	 * realized Builder chain keeps the mesh but not intermediate @Data, so a Builder input gets a graph note instead.
+	 */
+	virtual const FPCGUtilsDynMeshFreeProperties* GetInlineFreeProperties() const { return nullptr; }
+
+	/** As GetInlineFreeProperties(), for properties that need a pass over the mesh. */
+	virtual const FPCGUtilsDynMeshComputedProperties* GetInlineComputedProperties() const { return nullptr; }
+
+	//~Begin UObject interface
+	/** Records FPCGUtilsCustomVersion so derived PostLoad migrations can tell old assets from new ones. */
+	virtual void Serialize(FArchive& Ar) override;
+	//~End UObject interface
+
 	/** Evaluation domain for the optional Selector when the derived process does not require a domain. */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Selector", meta=(PCG_Overridable))
 	EPCGUtilsDynMeshProcessSelectionEvaluationDomain SelectionFactoryEvaluationDomain =
@@ -105,11 +132,40 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Selector", meta=(PCG_Overridable))
 	bool bOutputSelectionData = false;
 
+	/**
+	 * Node opt-out from processing inputs in parallel. The base runs every input's operation in parallel when a
+	 * node has two or more concrete inputs; a node class that must not returns false here, with a comment saying
+	 * why. Its Disable Parallel row is then hidden. For an opt-out that depends on this node's settings, override
+	 * FPCGUtilsDynMeshProcessOperation::SupportsParallelExecute() instead. See Docs/PCGUtilsDynMesh/ParallelInputs.md.
+	 */
+	virtual bool SupportsParallelInputs() const { return true; }
+
+	/**
+	 * Process this node's inputs one at a time instead of in parallel. A debugging switch: if a node misbehaves,
+	 * tick this and regenerate to see whether the parallel path is the cause. The result should be identical
+	 * either way. pcgutils.ParallelInputs 0 does the same for every node at once.
+	 * Not overridable: it describes how the node runs, not data a graph should drive.
+	 */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Advanced", AdvancedDisplay,
+		meta=(DisplayName="Disable Parallel", EditCondition="bShowDisableParallelInputs", EditConditionHides, HideEditConditionToggle))
+	bool bDisableParallelInputs = false;
+
+	/** True when the parallel path applies to this node at all. Set from SupportsParallelInputs(); drives the row's visibility. */
+	UPROPERTY(Transient, DuplicateTransient, NonPIEDuplicateTransient)
+	bool bShowDisableParallelInputs = true;
+
+	/** Whether this node may process its inputs in parallel, from its own gates (not the input count or the console variable). */
+	bool AllowsParallelInputs() const { return SupportsParallelInputs() && !bDisableParallelInputs; }
+
+	//~Begin UObject interface
+	virtual void PostInitProperties() override;
+	//~End UObject interface
+
 	/** Captures the generic selection behaviour a deferred evaluation cannot rediscover from another context. */
 	FPCGUtilsDynMeshProcessSelectionPolicy CaptureSelectionPolicy() const;
 
 	//~Begin UPCGSettings interface
-	virtual bool HasDynamicPins() const override { return SupportsDeferredBuilderProcessing(); }
+	virtual bool HasDynamicPins() const override;
 	virtual FPCGDataTypeIdentifier GetCurrentPinTypesID(const UPCGPin* InPin) const override;
 	//~End UPCGSettings interface
 
@@ -140,6 +196,9 @@ protected:
 	virtual void ApplyDeprecationBeforeUpdatePins(
 		UPCGNode* InOutNode, TArray<TObjectPtr<UPCGPin>>& InputPins,
 		TArray<TObjectPtr<UPCGPin>>& OutputPins) override;
+
+	/** Gives input-shorthand members their plain override labels (Distance, DistanceAttribute). */
+	virtual TArray<FPCGSettingsOverridableParam> GatherOverridableParams() const override;
 #endif
 	virtual TArray<FPCGPinProperties> InputPinProperties() const override;
 	virtual TArray<FPCGPinProperties> OutputPinProperties() const override;

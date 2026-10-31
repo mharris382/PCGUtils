@@ -42,6 +42,16 @@
             "LoadingPhase": "PreDefault"
         },
         {
+            "Name": "PCGUtilsTexturesShaders",
+            "Type": "Runtime",
+            "LoadingPhase": "PostConfigInit"
+        },
+        {
+            "Name": "PCGUtilsTextures",
+            "Type": "Runtime",
+            "LoadingPhase": "Default"
+        },
+        {
             "Name": "PCGUtilsFracture",
             "Type": "Runtime",
             "LoadingPhase": "PreDefault"
@@ -71,7 +81,9 @@
         {
             "Name": "GeometryCollectionPlugin",
             "Enabled": true,
-            "TargetAllowList": [ "Editor" ]
+            "TargetAllowList": [
+                "Editor"
+            ]
         },
         {
             "Name": "PCG",

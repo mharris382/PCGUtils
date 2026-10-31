@@ -1,6 +1,7 @@
 // Copyright Max Harris
 
 #include "Elements/Selections/PCGDynMeshSelectionBoundaryFactory.h"
+#include "Helpers/PCGUtilsParallelInputs.h"
 
 #include "Data/PCGDynamicMeshData.h"
 #include "DynamicMesh/DynamicMesh3.h"
@@ -154,7 +155,7 @@ UPCGSelectionBoundaryEdgesSettings::CreateDecoratorFactory(
 		return nullptr;
 	}
 	UPCGDynMeshSelectionBoundaryFactoryData* Factory =
-		FPCGContext::NewObject_AnyThread<UPCGDynMeshSelectionBoundaryFactoryData>(InContext);
+		PCGUtilsAsyncObjects::NewObject<UPCGDynMeshSelectionBoundaryFactoryData>(InContext);
 
 	Factory->Priority = Priority;
 	Factory->RegionFactory = ChildSelector;

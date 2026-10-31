@@ -17,6 +17,9 @@
 #include "Elements/Topology/PCGDynMeshExtrude.h"
 #include "Elements/Topology/PCGDynMeshInset.h"
 #include "Factories/PCGUtilsDynMeshProcessBuilderFactory.h"
+#include "Generators/GridBoxMeshGenerator.h"
+#include "OrientedBoxTypes.h"
+#include "Selections/GeometrySelection.h"
 #include "PCGContext.h"
 #include "PCGNode.h"
 #include "PCGPin.h"
@@ -144,7 +147,7 @@ bool FPCGDynMeshExtrudeResultTest::RunTest(const FString&)
 	if (!TestTrue(TEXT("Primitive builds"), Source.IsValid())) { return false; }
 	auto* Up = NewObject<UPCGDynMeshNormalSelectionFactoryData>();
 	auto* Settings = NewObject<UPCGDynMeshExtrudeSettings>();
-	Settings->Options.Distance = 20;
+	Settings->Distance.Constant = 20;
 	Settings->bOutputSelectionData = true;
 	Settings->bOutputResultSelector = true; // forces group assignment without bAssignResultPolygroup
 	Settings->ResultPolygroupName = TEXT("ExtrudedFace");
@@ -202,15 +205,15 @@ bool FPCGDynMeshTopologyChainTest::RunTest(const FString&)
 	auto Source = Build(Leaf);
 	auto* Up = NewObject<UPCGDynMeshNormalSelectionFactoryData>();
 	auto* Extrude = NewObject<UPCGDynMeshExtrudeSettings>();
-	Extrude->Options.Distance = 20;
+	Extrude->Distance.Constant = 20;
 	Extrude->bOutputResultSelector = true;
 	Extrude->ResultPolygroupName = TEXT("FirstExtrude");
 	auto* Inset = NewObject<UPCGDynMeshInsetSettings>();
-	Inset->Options.Distance = 10;
+	Inset->Distance.Constant = 10;
 	Inset->bOutputResultSelector = true;
 	Inset->ResultPolygroupName = TEXT("InsetFace");
 	auto* Last = NewObject<UPCGDynMeshExtrudeSettings>();
-	Last->Options.Distance = 30;
+	Last->Distance.Constant = 30;
 	Last->bOutputResultSelector = true;
 	Last->ResultPolygroupName = TEXT("LastExtrude");
 	const auto Immediate1 = Run(Extrude, { Source.MeshData }, Up);
@@ -235,7 +238,8 @@ bool FPCGDynMeshTopologyChainTest::RunTest(const FString&)
 	// No explicit Selector needed here: the Builder carries Inset's replacement selection internally.
 	const auto Deferred3 = Run(Last, { Main(Deferred2) });
 	if (!TestNotNull(TEXT("Deferred node emits a Selector before building any geometry"), Selector(Deferred3))) { return false; }
-	Extrude->Options.Distance = Inset->Options.Distance = Last->Options.Distance = 999;
+	Extrude->Distance.Constant = Last->Distance.Constant = 999;
+	Inset->Distance.Constant = 999;
 	Last->ResultPolygroupName = TEXT("ChangedAfterCapture");
 	const auto Built = Build(Main(Deferred3));
 	if (!TestTrue(TEXT("Deferred chain builds from captured settings"), Built.IsValid())) { return false; }
@@ -320,7 +324,7 @@ bool FPCGDynMeshTopologyIdentityTest::RunTest(const FString&)
 	TestTrue(TEXT("Companion pin stays Selector when primary output becomes Builder"),
 		Node->GetOutputPin(TEXT("Result"))->GetCurrentTypesID() == FPCGDataTypeIdentifier(FPCGUtilsDynMeshSelectionFactoryDataTypeInfo::AsId()));
 	Settings->bOutputResultSelector = true;
-	Settings->Options.Distance = 20;
+	Settings->Distance.Constant = 20;
 	auto A = Build(BoxBuilder());
 	auto B = Build(BoxBuilder());
 	B.MeshData->GetMutableDynamicMesh()->EditMesh([](UE::Geometry::FDynamicMesh3& Edit)
@@ -366,6 +370,77 @@ bool FPCGDynMeshBevelResultTest::RunTest(const FString&)
 	if (!TestTrue(TEXT("Deferred bevel builds"), Built.IsValid())) { return false; }
 	TestTrue(TEXT("Deferred bevel matches immediate"), SameGeometry(Result->GetSourceMeshData(), Built.MeshData));
 	TestTrue(TEXT("Builder retains the new bevel selection"), Built.HasSelection() && Built.SelectionData->GetSelection().Selection.Num() == Selected.Selection.Num());
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FPCGDynMeshExtrudePerFaceNormalTest,
+	"PCGUtils.DynMesh.TopologyResult.ExtrudePerFaceNormalMovesEachFaceAlongItsOwnNormal", EAutomationTestFlags::EditorContext | EAutomationTestFlags::ProductFilter)
+
+bool FPCGDynMeshExtrudePerFaceNormalTest::RunTest(const FString&)
+{
+	using namespace PCGUtilsDynMeshTopologyResultTests;
+
+	// A 100 cube with its top and +X side selected: one connected area folded through 90 degrees.
+	UE::Geometry::FGridBoxMeshGenerator Generator;
+	Generator.Box = UE::Geometry::FOrientedBox3d(FVector3d::Zero(), FVector3d(50, 50, 50));
+	Generator.EdgeVertices = UE::Geometry::FIndex3i(2, 2, 2);
+	UE::Geometry::FDynamicMesh3 Cube(&Generator.Generate());
+	UE::Geometry::FGeometrySelection TopAndSide;
+	TopAndSide.InitializeTypes(UE::Geometry::EGeometryElementType::Face, UE::Geometry::EGeometryTopologyType::Triangle);
+	for (const int32 TriangleID : Cube.TriangleIndicesItr())
+	{
+		const FVector3d Normal = Cube.GetTriNormal(TriangleID);
+		if (Normal.Z > 0.9 || Normal.X > 0.9) { TopAndSide.Selection.Add(UE::Geometry::FGeoSelectionID::MeshTriangle(TriangleID).Encoded()); }
+	}
+	auto* CubeData = NewObject<UPCGDynamicMeshData>();
+	CubeData->Initialize(MoveTemp(Cube));
+	auto* SelectionData = NewObject<UPCGDynamicMeshSelectionData>();
+	SelectionData->Initialize(CubeData, MoveTemp(TopAndSide));
+
+	auto* Settings = NewObject<UPCGDynMeshExtrudeSettings>();
+	Settings->Distance.Constant = 10;
+	Settings->bOutputSelectionData = true;
+	Settings->ExtrudeDirection = EPCGUtilsDynMeshExtrudeDirection::FaceNormals;
+
+	// Where the moved top and side faces end up, by the faces' own normals.
+	auto CapPlanes = [this](const UPCGData* Output, double& OutTopZ, double& OutSideX, int32& OutNumCap)
+	{
+		OutTopZ = OutSideX = 0.0;
+		OutNumCap = 0;
+		const auto* Result = Cast<UPCGDynamicMeshSelectionData>(Output);
+		if (!TestNotNull(TEXT("The node outputs result Selection data"), Result)) { return false; }
+		const UE::Geometry::FDynamicMesh3& After = Mesh(Result->GetSourceMeshData());
+		for (uint64 EncodedID : Result->GetSelection().Selection)
+		{
+			const int32 TriangleID = UE::Geometry::FGeoSelectionID(EncodedID).GeometryID;
+			const FVector3d Normal = After.GetTriNormal(TriangleID);
+			const FVector3d Centroid = After.GetTriCentroid(TriangleID);
+			if (Normal.Z > 0.99) { OutTopZ = Centroid.Z; }
+			if (Normal.X > 0.99) { OutSideX = Centroid.X; }
+			++OutNumCap;
+		}
+		int32 Open = 0;
+		for (const int32 EdgeID : After.EdgeIndicesItr()) { Open += After.IsBoundaryEdge(EdgeID) ? 1 : 0; }
+		TestEqual(TEXT("The extruded cube is still closed"), Open, 0);
+		return true;
+	};
+
+	double TopZ, SideX;
+	int32 NumCap;
+	if (!CapPlanes(Main(Run(Settings, { SelectionData })), TopZ, SideX, NumCap)) { return false; }
+	TestEqual(TEXT("Per Face Normal: the result is the 4 moved faces"), NumCap, 4);
+	TestTrue(TEXT("Per Face Normal: the top moved 10 straight up"), FMath::IsNearlyEqual(TopZ, 60.0, 1.e-3));
+	TestTrue(TEXT("Per Face Normal: the side moved 10 straight out"), FMath::IsNearlyEqual(SideX, 60.0, 1.e-3));
+
+	// The contrast: one average normal for the area pushes both faces diagonally, 10 / sqrt(2) each way.
+	Settings->ExtrudeDirection = EPCGUtilsDynMeshExtrudeDirection::AverageFaceNormal;
+	if (!CapPlanes(Main(Run(Settings, { SelectionData })), TopZ, SideX, NumCap)) { return false; }
+	TestTrue(TEXT("Average Face Normal: the top moved diagonally"), FMath::IsNearlyEqual(TopZ, 50.0 + 10.0 / UE_DOUBLE_SQRT_2, 1.e-3));
+	TestTrue(TEXT("Average Face Normal: the side moved diagonally"), FMath::IsNearlyEqual(SideX, 50.0 + 10.0 / UE_DOUBLE_SQRT_2, 1.e-3));
+
+	// A new node starts on Fixed Direction, as before.
+	TestTrue(TEXT("New nodes default to Fixed Direction"),
+		NewObject<UPCGDynMeshExtrudeSettings>()->ExtrudeDirection == EPCGUtilsDynMeshExtrudeDirection::FixedDirection);
 	return true;
 }
 

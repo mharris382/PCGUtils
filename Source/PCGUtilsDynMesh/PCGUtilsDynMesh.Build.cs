@@ -19,6 +19,8 @@ public class PCGUtilsDynMesh : ModuleRules
                 "GeometryFramework",
                 "GeometryCore",
                 "GeometryScriptingCore",
+                // Path To Mesh exposes the curve-triangulation enums (EFlattenCurveMethod, ...) as settings.
+                "ModelingOperators",
                 "PCG",
                 "PCGGeometryScriptInterop",
                 "PCGUtils",

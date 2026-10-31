@@ -1,6 +1,7 @@
 // Copyright Max Harris
 
 #include "Elements/PCGUtilsDynMeshTopologyProcessBase.h"
+#include "Helpers/PCGUtilsParallelInputs.h"
 
 #include "Data/PCGDynamicMeshData.h"
 #include "Data/PCGDynamicMeshSelectionData.h"
@@ -72,7 +73,7 @@ bool FPCGUtilsDynMeshTopologyOperation::Execute(const FPCGUtilsDynMeshProcessInv
 		PCGLog::LogWarningOnGraph(LOCTEXT("TopologyFailed", "DynMesh topology operation failed; this input was skipped."), Invocation.Context);
 		return false;
 	}
-	auto* ResultData = FPCGContext::NewObject_AnyThread<UPCGDynamicMeshSelectionData>(Invocation.Context);
+	auto* ResultData = PCGUtilsAsyncObjects::NewObject<UPCGDynamicMeshSelectionData>(Invocation.Context);
 	ResultData->Initialize(Invocation.MeshData, MoveTemp(Result));
 	OutOutcome.SelectionOutcome = EPCGUtilsDynMeshProcessSelectionOutcome::Replace;
 	OutOutcome.NewSelectionData = ResultData;
@@ -140,7 +141,7 @@ TArray<FPCGPinProperties> UPCGUtilsDynMeshTopologyProcessBaseSettings::OutputPin
 void UPCGUtilsDynMeshTopologyProcessBaseSettings::EmitAdditionalOutputs(FPCGContext* Context) const
 {
 	if (!bOutputResultSelector || Context->OutputData.GetInputsByPin(GetMainOutputPinLabel()).IsEmpty()) { return; }
-	auto* Selector = FPCGContext::NewObject_AnyThread<UPCGDynMeshPolygroupSelectionFactoryData>(Context);
+	auto* Selector = PCGUtilsAsyncObjects::NewObject<UPCGDynMeshPolygroupSelectionFactoryData>(Context);
 	Selector->GroupLayerName = GetResultPolygroupName();
 	Selector->GroupIDs = { 1 };
 	Selector->bAllowMissingNamedLayer = true;

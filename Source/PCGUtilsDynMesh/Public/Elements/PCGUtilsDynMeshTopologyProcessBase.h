@@ -4,6 +4,7 @@
 
 #include "Elements/PCGUtilsDynMeshProcessBase.h"
 
+#include "Geometry/PCGUtilsDynMeshProperties.h"
 #include "PCGUtilsDynMeshTopologyProcessBase.generated.h"
 
 namespace UE::Geometry { class FDynamicMesh3; }
@@ -40,7 +41,7 @@ public:
 	FPCGUtilsDynMeshTopologyResultOptions ResultOptions;
 
 	virtual bool Execute(const FPCGUtilsDynMeshProcessInvocation& Invocation,
-		FPCGUtilsDynMeshProcessOutcome& OutOutcome) const final override;
+		FPCGUtilsDynMeshProcessOutcome& OutOutcome) const override;
 
 protected:
 	/** Mesh is private to the invocation. Null Selection means whole mesh; an empty selection is skipped by the base. */
@@ -56,6 +57,13 @@ UCLASS(Abstract, BlueprintType, ClassGroup=(Procedural), Category="PCGUtils|DynM
 class PCGUTILSDYNMESH_API UPCGUtilsDynMeshTopologyProcessBaseSettings : public UPCGUtilsDynMeshProcessBaseSettings
 {
 	GENERATED_BODY()
+
+public:
+	/** Mesh properties written to @Data after this node runs, as DynMesh | Properties writes them. All off by default. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Output Properties", meta=(PCG_Overridable, ShowOnlyInnerProperties))
+	FPCGUtilsDynMeshFreeProperties OutputProperties;
+
+	virtual const FPCGUtilsDynMeshFreeProperties* GetInlineFreeProperties() const override { return &OutputProperties; }
 
 public:
 	UPCGUtilsDynMeshTopologyProcessBaseSettings();
@@ -78,7 +86,7 @@ public:
 	FName ResultPolygroupName = NAME_None;
 
 	FName GetResultPolygroupName() const;
-	virtual bool SupportsDeferredBuilderProcessing() const final override { return true; }
+	virtual bool SupportsDeferredBuilderProcessing() const override { return true; }
 	virtual TSharedPtr<const FPCGUtilsDynMeshProcessOperation> CreateProcessOperation(FPCGContext* Context) const final override;
 
 protected:

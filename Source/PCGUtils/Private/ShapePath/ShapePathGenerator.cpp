@@ -63,6 +63,11 @@ void UArcGenerator::GeneratePoints(TArray<FVector>& OutPoints) const
 		const float Angle = StartRad + Step * i;
 		OutPoints.Add(FVector(Radius * FMath::Cos(Angle), Radius * FMath::Sin(Angle), 0.f));
 	}
+	if (bIsClosedLoop && bPieSlice)
+	{
+		// The closing segment then runs arc end -> centre -> arc start.
+		OutPoints.Add(FVector::ZeroVector);
+	}
 }
 
 void UStarGenerator::GeneratePoints(TArray<FVector>& OutPoints) const

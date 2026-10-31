@@ -5,6 +5,7 @@
 
 #include "CoreMinimal.h"
 #include "PCGSettings.h"
+#include "PCGUtilsDynMeshNodeColor.h"
 
 #include "PCGUtilsDynMeshFactoryProvider.generated.h"
 
@@ -20,7 +21,7 @@ class PCGUTILSCORE_API UPCGUtilsDynMeshFactoryProviderSettings : public UPCGSett
 public:
 #if WITH_EDITOR
 	virtual EPCGSettingsType GetType() const override { return EPCGSettingsType::DynamicMesh; }
-	virtual FLinearColor GetNodeTitleColor() const override { return FLinearColor(0.36f, 0.18f, 0.72f, 1.0f); }
+	virtual FLinearColor GetNodeTitleColor() const override { return PCGUtilsDynMeshNodeColor::Title; }
 #endif
 
 	virtual FName GetMainOutputPin() const;

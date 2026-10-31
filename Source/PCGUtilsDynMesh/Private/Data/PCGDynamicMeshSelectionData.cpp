@@ -1,4 +1,5 @@
 #include "Data/PCGDynamicMeshSelectionData.h"
+#include "Helpers/PCGUtilsParallelInputs.h"
 
 #include "Data/PCGDynamicMeshData.h"
 #include "PCGContext.h"
@@ -26,7 +27,7 @@ void UPCGDynamicMeshSelectionData::VisitDataNetwork(TFunctionRef<void(const UPCG
 
 UPCGData* UPCGDynamicMeshSelectionData::DuplicateData(FPCGContext* Context, bool bInitializeMetadata) const
 {
-	UPCGDynamicMeshSelectionData* Copy = FPCGContext::NewObject_AnyThread<UPCGDynamicMeshSelectionData>(Context);
+	UPCGDynamicMeshSelectionData* Copy = PCGUtilsAsyncObjects::NewObject<UPCGDynamicMeshSelectionData>(Context);
 	Copy->SourceMeshData = SourceMeshData;
 	Copy->Selection = Selection;
 	return Copy;

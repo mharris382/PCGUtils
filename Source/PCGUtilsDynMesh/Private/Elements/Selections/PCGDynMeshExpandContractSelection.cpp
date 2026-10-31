@@ -1,6 +1,7 @@
 // Copyright Max Harris
 
 #include "Elements/Selections/PCGDynMeshExpandContractSelection.h"
+#include "Helpers/PCGUtilsParallelInputs.h"
 
 #include "Data/PCGDynamicMeshData.h"
 #include "Data/PCGDynamicMeshSelectionData.h"
@@ -279,7 +280,7 @@ UPCGDynMeshExpandContractSelectionSettings::CreateDecoratorFactory(
 		return nullptr;
 	}
 	UPCGDynMeshExpandContractSelectionFactoryData* Factory =
-		FPCGContext::NewObject_AnyThread<UPCGDynMeshExpandContractSelectionFactoryData>(InContext);
+		PCGUtilsAsyncObjects::NewObject<UPCGDynMeshExpandContractSelectionFactoryData>(InContext);
 	Factory->Priority = Priority;
 	Factory->SeedFactory = ChildSelector;
 	Factory->Iterations = Iterations;

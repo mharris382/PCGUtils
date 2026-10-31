@@ -1,6 +1,7 @@
 // Copyright Max Harris
 
 #include "Elements/Conversion/PCGUtilsDynMeshSurfacePathCommon.h"
+#include "Helpers/PCGUtilsParallelInputs.h"
 
 #include "Data/PCGBasePointData.h"
 #include "Data/PCGDynamicMeshData.h"
@@ -164,7 +165,7 @@ namespace PCGUtilsDynMeshSurfacePathCommon
 			SourceData = nullptr;
 		}
 
-		UPCGPointArrayData* OutputData = FPCGContext::NewObject_AnyThread<UPCGPointArrayData>(Context);
+		UPCGPointArrayData* OutputData = PCGUtilsAsyncObjects::NewObject<UPCGPointArrayData>(Context);
 		if (!OutputData)
 		{
 			return nullptr;

@@ -1,4 +1,5 @@
 #include "Elements/Conversion/PCGDynamicMeshSelectionToPaths.h"
+#include "Helpers/PCGUtilsParallelInputs.h"
 
 #include "Data/PCGBasePointData.h"
 #include "Data/PCGDynamicMeshData.h"
@@ -8,6 +9,8 @@
 #include "GeometryScript/GeometryScriptSelectionTypes.h"
 #include "GeometryScript/MeshSelectionQueryFunctions.h"
 #include "Metadata/PCGMetadata.h"
+#include "Metadata/PCGMetadataAttributeTpl.h"
+#include "Metadata/PCGMetadataDomain.h"
 #include "MeshTarget/PCGUtilsMeshTargetFunctions.h"
 #include "PCGContext.h"
 #include "PCGPin.h"
@@ -20,7 +23,6 @@ namespace
 {
 	const FName SelectionToPathsInputPin = TEXT("Selection");
 	const FName SelectionToPathsOutputPin = TEXT("Paths");
-	const FName IsClosedAttributeName = TEXT("IsClosed");
 
 	bool IsNegativeProjectedWinding(const TArray<FVector>& Positions, const FVector& ProjectionAxis)
 	{
@@ -44,20 +46,38 @@ namespace
 		return SignedTwiceArea < 0.0;
 	}
 
-	void SetClosedLoopDataAttribute(UPCGPointArrayData* PointData)
+	/**
+	 * A boundary path describes the selected mesh, not its vertices, so of the source mesh's metadata only the
+	 * dataset-wide @Data domain carries over. A selection holds no metadata of its own; its source mesh does.
+	 */
+	void InheritDataDomain(UPCGPointArrayData* OutputData, const UPCGDynamicMeshData* MeshData)
 	{
-		if (!PointData)
+		const FPCGMetadataDomain* SourceDomain = MeshData && MeshData->ConstMetadata()
+			? MeshData->ConstMetadata()->GetConstMetadataDomain(PCGMetadataDomainID::Data) : nullptr;
+		FPCGMetadataDomain* OutputDomain = OutputData && OutputData->MutableMetadata()
+			? OutputData->MutableMetadata()->GetMetadataDomain(PCGMetadataDomainID::Data) : nullptr;
+		if (SourceDomain && OutputDomain)
+		{
+			OutputDomain->Initialize(FPCGMetadataDomainInitializeParams(SourceDomain));
+		}
+	}
+
+	void SetClosedLoopDataAttribute(UPCGPointArrayData* PointData, FName IsClosedAttributeName)
+	{
+		if (!PointData || IsClosedAttributeName.IsNone())
 		{
 			return;
 		}
 
 		if (UPCGMetadata* Metadata = PointData->MutableMetadata())
 		{
+			// bOverrideParent is required: the source mesh's @Data may already carry this attribute, and this
+			// node's answer for the boundary path is the correct one.
 			if (FPCGMetadataAttribute<bool>* IsClosedAttribute = Metadata->FindOrCreateAttribute<bool>(
 				FPCGAttributeIdentifier(IsClosedAttributeName, PCGMetadataDomainID::Data),
 				true,
 				/*bAllowsInterpolation=*/false,
-				/*bOverrideParent=*/false,
+				/*bOverrideParent=*/true,
 				/*bOverwriteIfTypeMismatch=*/true))
 			{
 				IsClosedAttribute->SetValue(PCGInvalidEntryKey, true);
@@ -76,7 +96,8 @@ FText UPCGDynamicMeshSelectionToPathsSettings::GetNodeTooltipText() const
 {
 	return LOCTEXT("Tooltip",
 		"Outputs one closed, ordered point-data path for each boundary loop of the selection's implied triangle region. "
-		"Vertex and edge selections expand to incident triangles. Optional hole tagging uses projected winding and the PCGEx convention.");
+		"Vertex and edge selections expand to incident triangles. Each path keeps the source mesh's @Data attributes. "
+		"Optional hole tagging uses projected winding and the PCGEx convention.");
 }
 #endif
 
@@ -165,8 +186,16 @@ bool FPCGDynamicMeshSelectionToPathsElement::ExecuteInternal(FPCGContext* Contex
 			}
 		}
 
-		for (const FGeometryScriptPolyPath& PathLoop : PathLoops)
+		if (Settings->bOutputVertexIndex && Settings->VertexIndexAttribute.IsNone())
 		{
+			PCGLog::LogWarningOnGraph(
+				LOCTEXT("EmptyVertexIndexAttribute", "Dynamic Mesh Selection To Paths cannot output an unnamed Vertex Index attribute."),
+				Context);
+		}
+
+		for (int32 LoopIndex = 0; LoopIndex < PathLoops.Num(); ++LoopIndex)
+		{
+			const FGeometryScriptPolyPath& PathLoop = PathLoops[LoopIndex];
 			if (!PathLoop.Path.IsValid() || PathLoop.Path->Num() < 3)
 			{
 				PCGLog::LogWarningOnGraph(
@@ -182,7 +211,8 @@ bool FPCGDynamicMeshSelectionToPathsElement::ExecuteInternal(FPCGContext* Contex
 				OutputPositions.Add(MeshToOutput.TransformPosition(MeshPosition));
 			}
 
-			UPCGPointArrayData* OutputData = FPCGContext::NewObject_AnyThread<UPCGPointArrayData>(Context);
+			UPCGPointArrayData* OutputData = PCGUtilsAsyncObjects::NewObject<UPCGPointArrayData>(Context);
+			InheritDataDomain(OutputData, MeshData);
 			OutputData->SetNumPoints(OutputPositions.Num(), false);
 			auto Transforms = OutputData->GetTransformValueRange();
 			auto PointColors = OutputData->GetColorValueRange();
@@ -197,7 +227,38 @@ bool FPCGDynamicMeshSelectionToPathsElement::ExecuteInternal(FPCGContext* Contex
 				BoundsMin[PointIndex] = FVector::ZeroVector;
 				BoundsMax[PointIndex] = FVector::ZeroVector;
 			}
-			SetClosedLoopDataAttribute(OutputData);
+			SetClosedLoopDataAttribute(OutputData, Settings->IsClosedAttribute);
+
+			if (Settings->bOutputVertexIndex && !Settings->VertexIndexAttribute.IsNone())
+			{
+				// The loops come back twice, as vertex IDs and as positions, in the same order.
+				const TArray<int32>* VertexIDs = IndexLoops.IsValidIndex(LoopIndex) && IndexLoops[LoopIndex].List.IsValid()
+					? IndexLoops[LoopIndex].List.Get() : nullptr;
+				if (!VertexIDs || VertexIDs->Num() != OutputPositions.Num())
+				{
+					PCGLog::LogWarningOnGraph(FText::Format(
+						LOCTEXT("VertexIndexCountMismatch", "Dynamic Mesh Selection To Paths: boundary loop {0} has {1} points but {2} vertex IDs; its points were given no '{3}' attribute."),
+						FText::AsNumber(LoopIndex), FText::AsNumber(OutputPositions.Num()), FText::AsNumber(VertexIDs ? VertexIDs->Num() : 0),
+						FText::FromName(Settings->VertexIndexAttribute)), Context);
+				}
+				else if (UPCGMetadata* Metadata = OutputData->MutableMetadata())
+				{
+					FPCGMetadataDomain* ElementsDomain = Metadata->GetMetadataDomain(PCGMetadataDomainID::Elements);
+					FPCGMetadataAttribute<int32>* VertexIndexAttribute = ElementsDomain
+						? ElementsDomain->FindOrCreateAttribute<int32>(Settings->VertexIndexAttribute, INDEX_NONE, false, true)
+						: nullptr;
+					if (VertexIndexAttribute)
+					{
+						auto MetadataEntries = OutputData->GetMetadataEntryValueRange();
+						for (int32 PointIndex = 0; PointIndex < OutputPositions.Num(); ++PointIndex)
+						{
+							MetadataEntries[PointIndex] = PCGInvalidEntryKey;
+							ElementsDomain->InitializeOnSet(MetadataEntries[PointIndex]);
+							VertexIndexAttribute->SetValue(MetadataEntries[PointIndex], (*VertexIDs)[PointIndex]);
+						}
+					}
+				}
+			}
 
 			FPCGTaggedData& Output = Context->OutputData.TaggedData.Emplace_GetRef(Input);
 			Output.Data = OutputData;

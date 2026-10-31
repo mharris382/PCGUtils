@@ -170,6 +170,10 @@ void FPCGUtilsEditorStyle::RegisterActionIcons(const TSharedRef<FSlateStyleSet>&
 	PCGUTILS_ADD_ACTION_ICON(To_Pivot, AIS_Med)
 	PCGUTILS_ADD_ACTION_ICON(To_Custom, AIS_Med)
 
+	// EPCGUtilsInputValueType (input shorthands): Constant vs @Data.
+	PCGUTILS_ADD_ACTION_ICON(Constant, AIS_Med)
+	PCGUTILS_ADD_ACTION_ICON(DataAttribute, AIS_Med)
+
 #undef PCGUTILS_ADD_ACTION_ICON
 
 	// Flat, subtly-tinted button chrome shared by every inline action-icon button, derived from the

@@ -3,6 +3,7 @@
 #include "CoreMinimal.h"
 #include "Elements/PCGUtilsDynMeshProcessBase.h"
 
+#include "PCGUtilsDynMeshNodeColor.h"
 #include "PCGDynamicMeshSelectionToPaths.generated.h"
 
 /**
@@ -15,6 +16,9 @@ class PCGUTILSDYNMESH_API UPCGDynamicMeshSelectionToPathsSettings : public UPCGU
 	GENERATED_BODY()
 
 public:
+	/** Own executor: its loop does not go through the process base, so the parallel path does not apply (yet: ParallelInputs.md Stage 2). */
+	virtual bool SupportsParallelInputs() const override { return false; }
+
 	virtual bool RequiresSelection() const override { return true; }
 	virtual bool GetRequiredSelectionDomain(UE::Geometry::EGeometryElementType& OutElementType) const override
 	{
@@ -26,12 +30,31 @@ public:
 	virtual FName GetDefaultNodeName() const override { return TEXT("DynMeshSelectionToPaths"); }
 	virtual FText GetDefaultNodeTitle() const override;
 	virtual FText GetNodeTooltipText() const override;
-	virtual FLinearColor GetNodeTitleColor() const override { return FLinearColor(0.413f, 0.25f, 1.0f, 1.0f); }
+	virtual FLinearColor GetNodeTitleColor() const override { return PCGUtilsDynMeshNodeColor::Title; }
 #endif
 
 	/** Transform mesh-local boundary positions into the PCG target actor's world space. */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Settings", meta=(PCG_Overridable))
 	bool bOutputToWorldSpace = true;
+
+	/**
+	 * Add the source dynamic-mesh vertex ID to every path point, as DynMesh | Selection To Points does. With it,
+	 * DynMesh | Apply Points By Vertex ID can move the boundary vertices to wherever path nodes put the points.
+	 */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Settings", meta=(PCG_Overridable))
+	bool bOutputVertexIndex = false;
+
+	/** Point attribute (int32) that receives the source dynamic-mesh vertex ID. Only written when Output Vertex Index is on. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Settings", meta=(PCG_Overridable, EditCondition="bOutputVertexIndex"))
+	FName VertexIndexAttribute = TEXT("VertexIndex");
+
+	/**
+	 * Optional @Data attribute (bool) written true on every output path, marking it closed for PCGEx and the
+	 * path nodes downstream. Overrides an attribute of the same name inherited from the source mesh's @Data.
+	 * None writes nothing.
+	 */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Settings", meta=(PCG_Overridable))
+	FName IsClosedAttribute = TEXT("IsClosed");
 
 	/** Tag projected negative-winding loops as holes, matching the PCGEx/Clipper2 path convention. */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Settings|Tagging", meta=(PCG_Overridable, InlineEditConditionToggle))

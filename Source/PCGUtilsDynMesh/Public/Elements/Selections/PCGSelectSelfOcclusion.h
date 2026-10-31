@@ -3,6 +3,7 @@
 #include "CoreMinimal.h"
 #include "Factories/PCGUtilsDynMeshDomainSelectionFactory.h"
 
+#include "PCGUtilsDynMeshNodeColor.h"
 #include "PCGSelectSelfOcclusion.generated.h"
 
 UENUM(BlueprintType)
@@ -92,7 +93,7 @@ public:
 	virtual FName GetDefaultNodeName() const override { return TEXT("SelectSelfOcclusion"); }
 	virtual FText GetDefaultNodeTitle() const override;
 	virtual FText GetNodeTooltipText() const override;
-	virtual FLinearColor GetNodeTitleColor() const override { return FLinearColor(0.413f, 0.25f, 1.0f, 1.0f); }
+	virtual FLinearColor GetNodeTitleColor() const override { return PCGUtilsDynMeshNodeColor::Title; }
 #endif
 
 	/** Native mesh element sampled at its position (vertex) or centroid (triangle). */

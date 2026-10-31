@@ -90,6 +90,17 @@ Processes derived from `UPCGUtilsDynMeshProcessBaseSettings` opt into the same b
 
 This is a user-facing graph contract: selection wires communicate mesh-element membership, not a hidden compatibility requirement. Domain conversion is an implementation detail and must not produce mysterious empty results or runtime-only domain errors.
 
+## Operations Run In Parallel
+
+The process base runs every input's operation in parallel when a node has two or more concrete inputs
+(`Docs/PCGUtilsDynMesh/ParallelInputs.md`). Code reachable from `FPCGUtilsDynMeshProcessOperation::Execute` must
+allocate with `PCGUtilsAsyncObjects::NewObject<T>(Context, ...)` (`Helpers/PCGUtilsParallelInputs.h`), never
+`FPCGContext::NewObject_AnyThread`, which is unsafe from several workers at once. Log with an explicit context, and
+keep no state shared across invocations. An operation that can't run in parallel says so with
+`SupportsParallelExecute()`; a whole node with the settings' `SupportsParallelInputs()`, always with the reason in a
+comment. Users can force one node serial with its Advanced > Disable Parallel setting, or every node with
+`pcgutils.ParallelInputs 0`.
+
 ## Coordinate-Space Contract
 
 PCG-authored points, splines, and bounds are world-space by default; DynMesh geometry is target-actor-local by

@@ -1,4 +1,5 @@
 #include "Elements/Creation/PCGGetSplineMeshData.h"
+#include "Helpers/PCGUtilsParallelInputs.h"
 
 #include "Components/SplineMeshComponent.h"
 #include "Data/PCGDynamicMeshData.h"
@@ -184,7 +185,7 @@ void FPCGGetSplineMeshDataElement::ProcessActors(FPCGContext* InContext, const U
 		// Default mode: each SplineMeshComponent independently produces its own UPCGDynamicMeshData.
 		for (const FCollectedSplineMesh& Item : Collected)
 		{
-			UPCGDynamicMeshData* OutputData = FPCGContext::NewObject_AnyThread<UPCGDynamicMeshData>(InContext);
+			UPCGDynamicMeshData* OutputData = PCGUtilsAsyncObjects::NewObject<UPCGDynamicMeshData>(InContext);
 			OutputData->Initialize(Item.Mesh, true, Item.Materials);
 			FPCGTaggedData& Output = InContext->OutputData.TaggedData.Emplace_GetRef();
 			Output.Data = OutputData;
@@ -200,7 +201,7 @@ void FPCGGetSplineMeshDataElement::ProcessActors(FPCGContext* InContext, const U
 	TArray<UMaterialInterface*> FinalMaterials;
 	UDynamicMesh* CombinedMesh = nullptr;
 	bool bAnyBooleanFailed = false;
-	UGeometryScriptDebug* BooleanDebug = FPCGContext::NewObject_AnyThread<UGeometryScriptDebug>(InContext);
+	UGeometryScriptDebug* BooleanDebug = PCGUtilsAsyncObjects::NewObject<UGeometryScriptDebug>(InContext);
 
 	for (const FCollectedSplineMesh& Item : Collected)
 	{
@@ -244,7 +245,7 @@ void FPCGGetSplineMeshDataElement::ProcessActors(FPCGContext* InContext, const U
 
 	if (CombinedMesh)
 	{
-		UPCGDynamicMeshData* OutputData = FPCGContext::NewObject_AnyThread<UPCGDynamicMeshData>(InContext);
+		UPCGDynamicMeshData* OutputData = PCGUtilsAsyncObjects::NewObject<UPCGDynamicMeshData>(InContext);
 		OutputData->Initialize(CombinedMesh, true, FinalMaterials);
 		FPCGTaggedData& Output = InContext->OutputData.TaggedData.Emplace_GetRef();
 		Output.Data = OutputData;

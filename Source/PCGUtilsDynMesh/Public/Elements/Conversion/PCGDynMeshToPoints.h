@@ -7,6 +7,7 @@
 #include "Elements/PCGDynamicMeshBaseElement.h"
 #include "PCGUtilsSettingsCategories.h"
 
+#include "PCGUtilsDynMeshNodeColor.h"
 #include "PCGDynMeshToPoints.generated.h"
 
 namespace PCGDynMeshToPointsConstants
@@ -25,7 +26,7 @@ public:
 	{
 		return PCGUtilsSettingsCategories::AsSettingsType(PCGUtilsSettingsCategories::EValue::DynMeshConversion);
 	}
-	virtual FLinearColor GetNodeTitleColor() const override { return FLinearColor(0.413f, 0.25f ,1.0f, 1.0f);	}
+	virtual FLinearColor GetNodeTitleColor() const override { return PCGUtilsDynMeshNodeColor::Title;	}
 	virtual bool ShouldDrawNodeCompact() const override { return true; }
 	virtual bool GetCompactNodeIcon(FName& OutCompactNodeIcon) const override
 	{

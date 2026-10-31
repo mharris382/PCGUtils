@@ -6,8 +6,8 @@
 
 #include "DynamicMesh/DynamicMesh3.h"
 #include "DynamicMesh/DynamicMeshAttributeSet.h"
-#include "DynamicMesh/MeshNormals.h"
 #include "DynamicMesh/PCGUtilsDynMeshAttributeHelpers.h"
+#include "Target/PCGUtilsPainterSampling.h"
 #include "Utils/PCGLogErrors.h"
 
 #define LOCTEXT_NAMESPACE "PCGUtilsPainterTarget"
@@ -71,20 +71,8 @@ namespace PCGUtilsPainter
 			return false;
 		}
 
-		// Per-vertex normals for the Painter sample. Prefer averaged overlay normals (populated on the Static
-		// Mesh canonical mesh and on typical DynMesh inputs); fall back to baked per-vertex normals, then up.
-		FMeshNormals VertexNormals(Mesh);
-		const bool bHaveOverlayNormals = Mesh->HasAttributes()
-			&& Mesh->Attributes()->PrimaryNormals()
-			&& Mesh->Attributes()->PrimaryNormals()->ElementCount() > 0;
-		if (bHaveOverlayNormals)
-		{
-			VertexNormals.GetVertexNormalsFromOverlayNormals(FMeshNormals::ECombineSplitNormalsMethod::Average);
-		}
-
-		// Correct normal transform under non-uniform target scale (inverse-transpose). For a rotation-only
-		// transform this is exactly TransformVectorNoScale, so DynMesh targets are unaffected.
-		const FMatrix NormalToWorld = LocalToWorld.ToMatrixWithScale().Inverse().GetTransposed();
+		// One sample definition shared with Painters that evaluate their input elsewhere (Painter | Blur).
+		const FPCGUtilsPainterSampleBuilder SampleBuilder(*Mesh, LocalToWorld);
 
 		const EPCGUtilsDynMeshPainterColorChannel RequestedChannels = Evaluation.WriteChannels;
 		const TSet<int32>* Selected = Evaluation.SelectedVertexIDs;
@@ -96,23 +84,7 @@ namespace PCGUtilsPainter
 				continue;
 			}
 
-			FPCGUtilsDynMeshPainterSample Sample;
-			Sample.VertexID = VertexID;
-			Sample.LocalPosition = FVector(Mesh->GetVertex(VertexID));
-			Sample.WorldPosition = LocalToWorld.TransformPosition(Sample.LocalPosition);
-
-			FVector LocalNormal = FVector::ZeroVector;
-			if (bHaveOverlayNormals && VertexNormals.GetNormals().IsValidIndex(VertexID))
-			{
-				LocalNormal = FVector(VertexNormals.GetNormals()[VertexID]);
-			}
-			if (LocalNormal.IsNearlyZero() && Mesh->HasVertexNormals())
-			{
-				LocalNormal = FVector(Mesh->GetVertexNormal(VertexID));
-			}
-			Sample.LocalNormal = LocalNormal.GetSafeNormal(UE_SMALL_NUMBER, FVector::UpVector);
-			Sample.WorldNormal = FVector(NormalToWorld.TransformVector(Sample.LocalNormal))
-				.GetSafeNormal(UE_SMALL_NUMBER, FVector::UpVector);
+			const FPCGUtilsDynMeshPainterSample Sample = SampleBuilder.MakeSample(VertexID);
 
 			FVector4f Color = (Evaluation.BaseColorSource == EPCGUtilsPainterBaseColorSource::CanonicalExisting)
 				? PCGUtilsDynMeshAttributeHelpers::GetVertexColor(*Mesh, *ColorOverlay, VertexID, Evaluation.ConstantBaseColor)

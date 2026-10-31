@@ -6,6 +6,7 @@
 #include "Elements/Selections/PCGDynamicMeshSelectionBase.h"
 #include "Elements/Selections/PCGUtilsDynMeshSelectionTypes.h"
 
+#include "PCGUtilsDynMeshNodeColor.h"
 #include "PCGBuildDynMeshSelection.generated.h"
 
 /** Evaluates a tree of selection factories against a DynMesh and emits existing materialized selection data. */
@@ -20,7 +21,7 @@ public:
 	virtual FName GetDefaultNodeName() const override { return TEXT("BuildDynMeshSelection"); }
 	virtual FText GetDefaultNodeTitle() const override;
 	virtual FText GetNodeTooltipText() const override;
-	virtual FLinearColor GetNodeTitleColor() const override { return FLinearColor(0.413f, 0.25f, 1.0f, 1.0f); }
+	virtual FLinearColor GetNodeTitleColor() const override { return PCGUtilsDynMeshNodeColor::Title; }
 #endif
 
 	/** Element domain tested by every factory in the input tree. */

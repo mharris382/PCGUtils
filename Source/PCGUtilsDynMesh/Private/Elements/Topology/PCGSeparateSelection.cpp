@@ -1,4 +1,5 @@
 #include "Elements/Topology/PCGSeparateSelection.h"
+#include "Helpers/PCGUtilsParallelInputs.h"
 
 #include "Data/PCGDynamicMeshData.h"
 #include "Data/PCGDynamicMeshSelectionData.h"
@@ -46,7 +47,8 @@ namespace
 		}
 	}
 
-	void SeparateOne(FPCGContext* Context, const UPCGSeparateSelectionSettings* Settings, const FPCGTaggedData& Input)
+	void SeparateOne(FPCGContext* Context, const UPCGSeparateSelectionSettings* Settings, const FPCGTaggedData& Input,
+		const FPCGUtilsDynMeshFreeProperties* OutputProperties)
 	{
 		const FPCGUtilsDynMeshResolvedInput ResolvedInput =
 			FPCGUtilsDynMeshProcessFunctions::ResolveInput(Input.Data, Settings, Context);
@@ -73,7 +75,10 @@ namespace
 
 		// Unselected: deep-copy the source and delete exactly what was selected.
 		UE::Geometry::FDynamicMesh3 UnselectedMesh(*SourceMesh);
-		UPCGDynamicMeshData* UnselectedData = FPCGContext::NewObject_AnyThread<UPCGDynamicMeshData>(Context);
+		// Both halves are the input with part of it removed: each keeps the input's metadata (every domain, @Data
+		// included) and target actor.
+		UPCGDynamicMeshData* UnselectedData = PCGUtilsAsyncObjects::NewObject<UPCGDynamicMeshData>(Context);
+		UnselectedData->InitializeFromData(SourceData);
 		UnselectedData->Initialize(MoveTemp(UnselectedMesh), Materials);
 		UDynamicMesh* UnselectedTarget = UnselectedData->GetMutableDynamicMesh();
 
@@ -82,7 +87,8 @@ namespace
 
 		// Selected: deep-copy the source and delete the inverse of the selection.
 		UE::Geometry::FDynamicMesh3 SelectedMesh(*SourceMesh);
-		UPCGDynamicMeshData* SelectedData = FPCGContext::NewObject_AnyThread<UPCGDynamicMeshData>(Context);
+		UPCGDynamicMeshData* SelectedData = PCGUtilsAsyncObjects::NewObject<UPCGDynamicMeshData>(Context);
+		SelectedData->InitializeFromData(SourceData);
 		SelectedData->Initialize(MoveTemp(SelectedMesh), Materials);
 		UDynamicMesh* SelectedTarget = SelectedData->GetMutableDynamicMesh();
 
@@ -96,6 +102,12 @@ namespace
 		if (UnselectedNumDeleted < UnselectedNumRequested || SelectedNumDeleted < SelectedNumRequested)
 		{
 			PCGLog::LogWarningOnGraph(LOCTEXT("InvalidSelectionIDs", "Separate Selection ignored invalid or stale selection element(s) while splitting."), Context);
+		}
+
+		if (OutputProperties)
+		{
+			PCGUtilsDynMeshProperties::Write(*SelectedData, *OutputProperties);
+			PCGUtilsDynMeshProperties::Write(*UnselectedData, *OutputProperties);
 		}
 
 		FPCGTaggedData& SelectedOutput = Context->OutputData.TaggedData.Emplace_GetRef(Input);
@@ -148,9 +160,14 @@ bool FPCGSeparateSelectionElement::ExecuteInternal(FPCGContext* Context) const
 	const UPCGSeparateSelectionSettings* Settings = Context->GetInputSettings<UPCGSeparateSelectionSettings>();
 	check(Settings);
 
+	// Validated once; written to both the Selected and the Unselected result.
+	const FPCGUtilsDynMeshFreeProperties* OutputProperties =
+		Settings->OutputProperties.AnyEnabled() && PCGUtilsDynMeshProperties::Validate(Settings->OutputProperties, Context)
+			? &Settings->OutputProperties : nullptr;
+
 	for (const FPCGTaggedData& Input : Context->InputData.GetInputsByPin(SeparateSelectionInputPin))
 	{
-		SeparateOne(Context, Settings, Input);
+		SeparateOne(Context, Settings, Input, OutputProperties);
 	}
 
 	return true;

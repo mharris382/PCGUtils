@@ -7,6 +7,7 @@
 #include "PCGUtilsSettingsCategories.h"
 #include "UObject/SoftObjectPtr.h"
 
+#include "PCGUtilsDynMeshNodeColor.h"
 #include "PCGWriteDynMeshLODs.generated.h"
 
 class UStaticMesh;
@@ -59,7 +60,7 @@ public:
 	virtual FName GetDefaultNodeName() const override { return FName(TEXT("WriteDynMeshLODs")); }
 	virtual FText GetDefaultNodeTitle() const override;
 	virtual FText GetNodeTooltipText() const override;
-	virtual FLinearColor GetNodeTitleColor() const override { return FLinearColor(0.413f, 0.25f, 1.0f, 1.0f); }
+	virtual FLinearColor GetNodeTitleColor() const override { return PCGUtilsDynMeshNodeColor::Title; }
 #endif
 
 	virtual TArray<FPCGPinProperties> InputPinProperties() const override;
