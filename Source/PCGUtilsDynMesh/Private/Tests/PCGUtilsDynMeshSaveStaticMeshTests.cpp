@@ -13,6 +13,7 @@
 #include "Elements/AssetManagement/PCGGetAssetSaveParameters.h"
 #include "Elements/Conversion/PCGDynMeshSaveStaticMesh.h"
 #include "Elements/Creation/PCGDynMeshFromStaticMesh.h"
+#include "Elements/Topology/PCGDynMeshGenerateLODs.h"
 #include "Engine/StaticMesh.h"
 #include "GeometryScript/MeshAssetFunctions.h"
 #include "Helpers/PCGUtilsDataDomainHelpers.h"
@@ -400,6 +401,69 @@ bool FPCGDynMeshSaveStaticMeshLODsTest::RunTest(const FString&)
 	UPCGDynamicMeshData* NoLOD = NewObject<UPCGDynamicMeshData>();
 	NoLOD->Initialize(UE::Geometry::FDynamicMesh3(Cast<const UPCGDynamicMeshData>(Meshes[1].Data)->GetDynamicMesh()->GetMeshRef()));
 	TestEqual(TEXT("A mesh without a LOD is not saved"), Run(Settings, { OnIn(NoLOD) }).Num(), 0);
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FPCGDynMeshSaveStaticMeshHighQualitySourceTest,
+	"PCGUtils.DynMesh.SaveStaticMesh.HighQualitySource",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::ProductFilter)
+
+bool FPCGDynMeshSaveStaticMeshHighQualitySourceTest::RunTest(const FString&)
+{
+	using namespace PCGUtilsDynMeshSaveStaticMeshTests;
+	UPCGDynMeshFromStaticMeshSettings* FromSettings = NewObject<UPCGDynMeshFromStaticMeshSettings>();
+	FromSettings->MeshAttribute.Update(TEXT("Mesh"));
+	FromSettings->bSynchronousLoad = true;
+	const TCHAR* const OneMesh[] = { Sphere };
+	const TArray<FPCGTaggedData> Meshes = Run(FromSettings, { OnIn(AssetList(OneMesh, 1)) });
+	UTEST_EQUAL(TEXT("One mesh to make LODs of"), Meshes.Num(), 1);
+	const int32 SourceTriangles = TriangleCount(Meshes[0].Data);
+
+	// Generate LODs with the source output: four meshes, all naming one asset, saved in one call.
+	UPCGDynMeshGenerateLODsSettings* LODSettings = NewObject<UPCGDynMeshGenerateLODsSettings>();
+	LODSettings->bOutputHighQualitySource = true;
+	LODSettings->LODs[0].Value.Constant = 0.25;
+	const TArray<FPCGTaggedData> Generated = Run(LODSettings, { OnIn(Meshes[0].Data) });
+	UTEST_EQUAL(TEXT("Source and three LODs"), Generated.Num(), 4);
+	TArray<FPCGTaggedData> ToSave;
+	for (const FPCGTaggedData& Mesh : Generated)
+	{
+		ToSave.Add(OnIn(Mesh.Data));
+	}
+
+	TArray<FString> Saved;
+	ON_SCOPE_EXIT { DiscardSaved(Saved); };
+	UPCGDynMeshSaveStaticMeshSettings* Settings = SaveSettings();
+	Settings->AssetName.Constant = TEXT("HQChain");
+	Settings->bSaveLODsFromAttribute = true;
+	TestTrue(TEXT("Save High Quality Source From Attribute is on by default"), Settings->bSaveHighQualitySourceFromAttribute);
+	const TArray<FPCGTaggedData> Outputs = Run(Settings, ToSave);
+	Saved.Add(ObjectPath(TEXT("HQChain")));
+	UStaticMesh* Chain = FindObject<UStaticMesh>(nullptr, *ObjectPath(TEXT("HQChain")));
+	UTEST_NOT_NULL(TEXT("One asset is saved"), Chain);
+	TestEqual(TEXT("It has the three LODs"), Chain->GetNumSourceModels(), 3);
+	TestTrue(TEXT("It has a Hi-Res Source"), Chain->IsHiResMeshDescriptionValid());
+	TestEqual(TEXT("One output per mesh, the source included"), Outputs.Num(), 4);
+
+	UDynamicMesh* ReadBack = NewObject<UDynamicMesh>();
+	EGeometryScriptOutcomePins Outcome = EGeometryScriptOutcomePins::Failure;
+	FGeometryScriptMeshReadLOD HiRes;
+	HiRes.LODType = EGeometryScriptLODType::HiResSourceModel;
+	UGeometryScriptLibrary_StaticMeshFunctions::CopyMeshFromStaticMeshV2(Chain, ReadBack, FGeometryScriptCopyMeshFromAssetOptions(), HiRes, Outcome);
+	TestTrue(TEXT("The Hi-Res Source reads back"), Outcome == EGeometryScriptOutcomePins::Success);
+	TestEqual(TEXT("The Hi-Res Source is the unreduced mesh"), ReadBack->GetMeshRef().TriangleCount(), SourceTriangles);
+	TestTrue(TEXT("LOD 0 is the reduced one"), SavedTriangleCount(ObjectPath(TEXT("HQChain"))) < SourceTriangles);
+
+	AddExpectedError(TEXT("inputs 0 and 1 are both the High Quality Source of"), EAutomationExpectedErrorFlags::Contains, 1);
+	TestEqual(TEXT("Two sources for one asset save nothing"), Run(Settings, { ToSave[0], ToSave[0], ToSave[1] }).Num(), 0);
+
+	AddExpectedError(TEXT("has a High Quality Source (input 0) but no LOD 0"), EAutomationExpectedErrorFlags::Contains, 1);
+	TestEqual(TEXT("A source with no LODs saves nothing"), Run(Settings, { ToSave[0] }).Num(), 0);
+
+	// With the option off, the source is read as a LOD, and its -1 is rejected as before.
+	Settings->bSaveHighQualitySourceFromAttribute = false;
+	AddExpectedError(TEXT("(LOD Attribute) is -1"), EAutomationExpectedErrorFlags::Contains, 1);
+	TestEqual(TEXT("Option off: the LODs still save, the source does not"), Run(Settings, ToSave).Num(), 3);
 	return true;
 }
 

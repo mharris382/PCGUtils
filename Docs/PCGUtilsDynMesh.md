@@ -507,6 +507,14 @@ asset list -> From Static Mesh (All LODs) -> Paint Vertex Color (Paint LODs From
   asset is not saved. LOD 0 sets the material slots; the asset is rebuilt once after every LOD is written, and
   LODs an existing asset had past the last one written are removed. `Mesh Write LOD` is unused in this mode.
   Outputs stay one per mesh, in input order. Coverage: `PCGUtils.DynMesh.SaveStaticMesh.LODsRoundTrip`.
+  **Save High Quality Source From Attribute** (on by default, inside Save LODs From Attribute): a mesh whose
+  `High Quality Source Attribute` (default `IsHighQualitySource`, bool, optional per mesh) is true is written to its
+  asset's Hi-Res Source Model, the high-detail mesh Nanite builds from, and its LOD attribute is not read. A mesh
+  without the attribute is a LOD; one with another type is an error. Each asset takes one source (two is an error
+  naming both inputs) and still needs a LOD 0 (a source alone is an error). It is written after the LODs without
+  replacing materials, which the engine refuses for the Hi-Res Source, so it indexes LOD 0's slots. An asset given
+  no source keeps the Hi-Res Source it had. Engine Save Dynamic Mesh To Asset writes one mesh to one LOD or the
+  source per call. Coverage: `PCGUtils.DynMesh.SaveStaticMesh.HighQualitySource`.
 - **Generate LODs** makes the chain from one high-detail mesh instead of reading it from an asset:
 
   ```
@@ -525,8 +533,8 @@ asset list -> From Static Mesh (All LODs) -> Paint Vertex Color (Paint LODs From
   removes that fraction of the previous LOD's triangles. All of these are input shorthands. `Group Attribute`
   (default `SourceMesh`, optional) groups each input's LODs for Paint Vertex Color: an input that already has it
   keeps its value, otherwise it gets its index on In. `Output High Quality Source Mesh` adds the unchanged input
-  before its LODs with `@Data.LOD` -1 and `@Data.IsHighQualitySource` true (false on every LOD); filter it out
-  before Save LODs From Attribute, which rejects a negative LOD. Settings are checked one by one (empty or equal
+  before its LODs with `@Data.LOD` -1 and `@Data.IsHighQualitySource` true (false on every LOD). Save Static
+  Mesh writes it to the asset's Hi-Res Source Model in the same call (below), so the whole set needs no branching. Settings are checked one by one (empty or equal
   attribute names, empty list); a bad per-input value is an error naming the input and entry, and that input
   gives no outputs. A LOD with more triangles than the one before is a warning. Every LOD of every input
   decimates in parallel (`Disable Parallel`, advanced, and `pcgutils.ParallelInputs` force serial). Coverage:

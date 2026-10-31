@@ -112,6 +112,25 @@ public:
 	FName LODAttribute = TEXT("LOD");
 
 	/**
+	 * With Save LODs From Attribute: a mesh whose High Quality Source Attribute is true is written to its asset's
+	 * Hi-Res Source Model (the high-detail mesh Nanite builds from) instead of a LOD, and its LOD Attribute is not
+	 * read. So DynMesh | Generate LODs with Output High Quality Source Mesh saves source and LODs in one call. One
+	 * source per asset, and the asset still needs a LOD 0. An asset given no source keeps the Hi-Res Source it had.
+	 */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "LODs", meta = (PCG_Overridable, DisplayName = "Save High Quality Source From Attribute",
+		EditCondition = "bSaveLODsFromAttribute"))
+	bool bSaveHighQualitySourceFromAttribute = true;
+
+	/**
+	 * Optional per mesh, with Save High Quality Source From Attribute. @Data attribute (bool) marking the mesh to write
+	 * as its asset's Hi-Res Source. A mesh without it is a LOD; one with it but of another type is an error. DynMesh |
+	 * Generate LODs writes it.
+	 */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "LODs", meta = (PCG_Overridable,
+		EditCondition = "bSaveLODsFromAttribute && bSaveHighQualitySourceFromAttribute"))
+	FName HighQualitySourceAttribute = TEXT("IsHighQualitySource");
+
+	/**
 	 * Soft object path attribute written on each OutAssetPath attribute set, naming the asset saved. Always written,
 	 * as the engine node does: it is what the output is for. Default AssetPath, the engine node's name.
 	 */

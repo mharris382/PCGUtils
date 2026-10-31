@@ -32,15 +32,43 @@ namespace PCGDynMeshSaveStaticMeshPrivate
 		FString AssetName;
 		FString AssetPath;
 		int32 LOD = 0;
+		/** Written to the asset's Hi-Res Source Model instead of a LOD. */
+		bool bHiResSource = false;
 	};
 
-	/** One asset to write: a single mesh, or with Save LODs From Attribute, its LODs in order. */
+	/** One asset to write: a single mesh, or with Save LODs From Attribute, its LODs in order and its Hi-Res Source. */
 	struct FSaveAsset
 	{
 		FString PackageName;
 		TArray<FSaveJob> LODs;
+		TOptional<FSaveJob> HiResSource;
 		bool bValid = true;
 	};
+
+	/**
+	 * Reads the optional bool @Data attribute marking a Hi-Res Source. A missing attribute reads as false (the mesh
+	 * is a LOD); one of another type fails with OutError.
+	 */
+	bool ReadIsHiResSource(const UPCGData* Data, FName Name, int32 InputIndex, bool& bOutIsSource, FText& OutError)
+	{
+		bOutIsSource = false;
+		const UPCGMetadata* Metadata = Data ? Data->ConstMetadata() : nullptr;
+		const FPCGMetadataAttributeBase* Attribute = Metadata
+			? Metadata->GetConstAttribute(FPCGAttributeIdentifier(Name, PCGMetadataDomainID::Data)) : nullptr;
+		if (!Attribute)
+		{
+			return true;
+		}
+		if (Attribute->GetTypeId() != PCG::Private::MetadataTypes<bool>::Id)
+		{
+			OutError = FText::Format(LOCTEXT("HiResType",
+				"DynMesh | Save Static Mesh: input {0}: @Data attribute '{1}' (High Quality Source Attribute) is not a Boolean; not saved."),
+				FText::AsNumber(InputIndex), FText::FromName(Name));
+			return false;
+		}
+		bOutIsSource = static_cast<const FPCGMetadataAttribute<bool>*>(Attribute)->GetValueFromItemKey(PCGFirstEntryKey);
+		return true;
+	}
 
 	/** Reads an integer @Data attribute. False with OutError naming the failed condition. */
 	bool ReadLOD(const UPCGData* Data, FName Name, int32 InputIndex, int32& OutLOD, FText& OutError)
@@ -162,6 +190,20 @@ bool FPCGDynMeshSaveStaticMeshElement::ExecuteInternal(FPCGContext* Context) con
 			"DynMesh | Save Static Mesh: LOD Attribute is None while Save LODs From Attribute is on; it names the @Data attribute holding each mesh's LOD. Nothing was saved."), Context);
 		return true;
 	}
+	const bool bHiResSources = bLODs && Settings->bSaveHighQualitySourceFromAttribute;
+	if (bHiResSources && Settings->HighQualitySourceAttribute.IsNone())
+	{
+		PCGLog::LogErrorOnGraph(LOCTEXT("NoHiResName",
+			"DynMesh | Save Static Mesh: High Quality Source Attribute is None while Save High Quality Source From Attribute is on; name the @Data attribute, or turn the option off. Nothing was saved."), Context);
+		return true;
+	}
+	if (bHiResSources && Settings->HighQualitySourceAttribute == Settings->LODAttribute)
+	{
+		PCGLog::LogErrorOnGraph(FText::Format(LOCTEXT("HiResIsLOD",
+			"DynMesh | Save Static Mesh: High Quality Source Attribute and LOD Attribute are both '{0}'; they must differ. Nothing was saved."),
+			FText::FromName(Settings->LODAttribute)), Context);
+		return true;
+	}
 
 	// Work out and check every name first, so a clash between two meshes is reported before either is written.
 	// With LODs, meshes sharing a name are one asset's LODs, so a constant name is not numbered.
@@ -192,7 +234,13 @@ bool FPCGDynMeshSaveStaticMeshElement::ExecuteInternal(FPCGContext* Context) con
 			PCGLog::LogErrorOnGraph(ReadError, Context);
 			continue;
 		}
-		if (bLODs && !ReadLOD(MeshData, Settings->LODAttribute, InputIndex, Job.LOD, ReadError))
+		if (bHiResSources && !ReadIsHiResSource(MeshData, Settings->HighQualitySourceAttribute, InputIndex, Job.bHiResSource, ReadError))
+		{
+			PCGLog::LogErrorOnGraph(ReadError, Context);
+			continue;
+		}
+		// A Hi-Res Source is not a LOD, so its LOD Attribute (Generate LODs writes -1) is not read.
+		if (bLODs && !Job.bHiResSource && !ReadLOD(MeshData, Settings->LODAttribute, InputIndex, Job.LOD, ReadError))
 		{
 			PCGLog::LogErrorOnGraph(ReadError, Context);
 			continue;
@@ -217,6 +265,27 @@ bool FPCGDynMeshSaveStaticMeshElement::ExecuteInternal(FPCGContext* Context) con
 		}
 
 		const FString PackageName = FPaths::Combine(Job.AssetPath, Job.AssetName);
+		if (Job.bHiResSource)
+		{
+			const int32* Existing = AssetOfPackage.Find(PackageName);
+			const int32 AssetIndex = Existing ? *Existing : Assets.Num();
+			if (!Existing)
+			{
+				AssetOfPackage.Add(PackageName, AssetIndex);
+				Assets.AddDefaulted_GetRef().PackageName = PackageName;
+			}
+			FSaveAsset& Asset = Assets[AssetIndex];
+			if (Asset.HiResSource.IsSet())
+			{
+				PCGLog::LogErrorOnGraph(FText::Format(LOCTEXT("TwoHiRes",
+					"DynMesh | Save Static Mesh: inputs {0} and {1} are both the High Quality Source of '{2}'; an asset has one; '{2}' not saved."),
+					FText::AsNumber(Asset.HiResSource->InputIndex), FText::AsNumber(InputIndex), FText::FromString(PackageName)), Context);
+				Asset.bValid = false;
+				continue;
+			}
+			Asset.HiResSource = MoveTemp(Job);
+			continue;
+		}
 		if (const int32* Existing = AssetOfPackage.Find(PackageName))
 		{
 			FSaveAsset& Asset = Assets[*Existing];
@@ -248,6 +317,14 @@ bool FPCGDynMeshSaveStaticMeshElement::ExecuteInternal(FPCGContext* Context) con
 	{
 		for (FSaveAsset& Asset : Assets)
 		{
+			if (Asset.bValid && Asset.LODs.IsEmpty())
+			{
+				PCGLog::LogErrorOnGraph(FText::Format(LOCTEXT("HiResOnly",
+					"DynMesh | Save Static Mesh: '{0}' has a High Quality Source (input {1}) but no LOD 0; an asset needs a LOD 0 to save; not saved."),
+					FText::FromString(Asset.PackageName), FText::AsNumber(Asset.HiResSource.IsSet() ? Asset.HiResSource->InputIndex : INDEX_NONE)), Context);
+				Asset.bValid = false;
+				continue;
+			}
 			Asset.LODs.Sort([](const FSaveJob& A, const FSaveJob& B) { return A.LOD < B.LOD; });
 			for (int32 Expected = 0; Asset.bValid && Expected < Asset.LODs.Num(); ++Expected)
 			{
@@ -331,6 +408,28 @@ bool FPCGDynMeshSaveStaticMeshElement::ExecuteInternal(FPCGContext* Context) con
 						return false;
 					}
 				}
+				if (Asset.HiResSource.IsSet())
+				{
+					// After LOD 0, whose material slots the Hi-Res Source indexes. The engine refuses to replace
+					// materials while writing it.
+					const FSaveJob& Source = Asset.HiResSource.GetValue();
+					FGeometryScriptCopyMeshToAssetOptions AssetOptions = Settings->CopyMeshToAssetOptions;
+					AssetOptions.bEmitTransaction = false;
+					AssetOptions.bDeferMeshPostEditChange = true;
+					AssetOptions.bReplaceMaterials = false;
+					FGeometryScriptMeshWriteLOD WriteLOD;
+					WriteLOD.bWriteHiResSource = true;
+					EGeometryScriptOutcomePins Outcome = EGeometryScriptOutcomePins::Failure;
+					UGeometryScriptLibrary_StaticMeshFunctions::CopyMeshToStaticMesh(const_cast<UDynamicMesh*>(Source.MeshData->GetDynamicMesh()),
+						StaticMesh, AssetOptions, WriteLOD, Outcome);
+					if (Outcome == EGeometryScriptOutcomePins::Failure)
+					{
+						PCGLog::LogErrorOnGraph(FText::Format(LOCTEXT("HiResCopyFailed",
+							"DynMesh | Save Static Mesh: input {0}: the mesh could not be written to the Hi-Res Source Model of '{1}'."),
+							FText::AsNumber(Source.InputIndex), FText::FromString(Object->GetPathName())), Context);
+						return false;
+					}
+				}
 				if (bLODs)
 				{
 					// An existing asset keeps the LODs it had past the last one written unless they are removed.
@@ -349,8 +448,18 @@ bool FPCGDynMeshSaveStaticMeshElement::ExecuteInternal(FPCGContext* Context) con
 			continue;
 		}
 
+		TArray<const FSaveJob*> Saved;
 		for (const FSaveJob& Job : Asset.LODs)
 		{
+			Saved.Add(&Job);
+		}
+		if (Asset.HiResSource.IsSet())
+		{
+			Saved.Add(&Asset.HiResSource.GetValue());
+		}
+		for (const FSaveJob* JobPtr : Saved)
+		{
+			const FSaveJob& Job = *JobPtr;
 			UPCGParamData* OutputData = PCGUtilsAsyncObjects::NewObject<UPCGParamData>(Context);
 			OutputData->Metadata->CreateAttribute<FSoftObjectPath>(Settings->OutputAssetAttributeName, FSoftObjectPath(SavedAsset),
 				/*bAllowsInterpolation=*/false, /*bOverrideParent=*/false);

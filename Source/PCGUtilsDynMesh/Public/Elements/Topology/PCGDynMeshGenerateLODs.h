@@ -181,8 +181,9 @@ public:
 
 	/**
 	 * Also output each input unchanged, before its LODs, so each input gives one more output than there are LODs.
-	 * Its LOD Attribute is -1, which Save LODs From Attribute rejects: filter it out by High Quality Source Attribute
-	 * before saving.
+	 * Its LOD Attribute is -1 and its High Quality Source Attribute true. Save Static Mesh (Save LODs From Attribute,
+	 * Save High Quality Source From Attribute) writes it to the asset's Hi-Res Source Model in the same call as the
+	 * LODs.
 	 */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Output", meta=(PCG_Overridable, DisplayName="Output High Quality Source Mesh"))
 	bool bOutputHighQualitySource = false;
