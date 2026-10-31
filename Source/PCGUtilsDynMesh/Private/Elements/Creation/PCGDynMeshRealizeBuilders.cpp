@@ -1,6 +1,7 @@
 // Copyright Max Harris
 
 #include "Elements/Creation/PCGDynMeshRealizeBuilders.h"
+#include "Helpers/PCGUtilsParallelInputs.h"
 
 #include "Data/PCGBasePointData.h"
 #include "Data/PCGDynamicMeshData.h"
@@ -119,7 +120,7 @@ bool PCGUtilsDynMeshBuilderRealization::Realize(
 	auto EmitMesh = [Context](UDynamicMesh* Mesh, const TArray<UMaterialInterface*>& Materials,
 		const FPCGTaggedData* SourceSeedInput, const UPCGSpatialData* SeedMetadataSource)
 	{
-		UPCGDynamicMeshData* OutputData = FPCGContext::NewObject_AnyThread<UPCGDynamicMeshData>(Context);
+		UPCGDynamicMeshData* OutputData = PCGUtilsAsyncObjects::NewObject<UPCGDynamicMeshData>(Context);
 		OutputData->Initialize(Mesh, /*bCanTakeOwnership=*/true, Materials);
 		InheritSeedDataDomain(OutputData, SeedMetadataSource);
 		FPCGTaggedData& Output = SourceSeedInput
@@ -149,14 +150,14 @@ bool PCGUtilsDynMeshBuilderRealization::Realize(
 
 	// Accumulators for the modes that span seeds.
 	UDynamicMesh* SingleTarget = (OutputMode == EPCGUtilsDynMeshBuilderOutputMode::Single)
-		? FPCGContext::NewObject_AnyThread<UDynamicMesh>(Context) : nullptr;
+		? PCGUtilsAsyncObjects::NewObject<UDynamicMesh>(Context) : nullptr;
 	TArray<UDynamicMesh*> PerBuilderTargets;
 	if (OutputMode == EPCGUtilsDynMeshBuilderOutputMode::PerBuilder)
 	{
 		PerBuilderTargets.Reserve(Operations.Num());
 		for (int32 Index = 0; Index < Operations.Num(); ++Index)
 		{
-			PerBuilderTargets.Add(FPCGContext::NewObject_AnyThread<UDynamicMesh>(Context));
+			PerBuilderTargets.Add(PCGUtilsAsyncObjects::NewObject<UDynamicMesh>(Context));
 		}
 	}
 
@@ -203,7 +204,7 @@ bool PCGUtilsDynMeshBuilderRealization::Realize(
 			++SeedCount;
 
 			UDynamicMesh* SeedTarget = (OutputMode == EPCGUtilsDynMeshBuilderOutputMode::PerSeed)
-				? FPCGContext::NewObject_AnyThread<UDynamicMesh>(Context) : nullptr;
+				? PCGUtilsAsyncObjects::NewObject<UDynamicMesh>(Context) : nullptr;
 
 			bool bAnyBuilderSelected = false;
 

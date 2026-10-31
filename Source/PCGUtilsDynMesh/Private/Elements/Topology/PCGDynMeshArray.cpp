@@ -1,6 +1,7 @@
 // Copyright Max Harris
 
 #include "Elements/Topology/PCGDynMeshArray.h"
+#include "Helpers/PCGUtilsParallelInputs.h"
 
 #include "Data/PCGBasePointData.h"
 #include "Data/PCGDynamicMeshData.h"
@@ -459,7 +460,7 @@ bool FPCGUtilsDynMeshArrayOperation::Execute(
 		return false;
 	}
 
-	UDynamicMesh* TemplateMesh = FPCGContext::NewObject_AnyThread<UDynamicMesh>(Invocation.Context);
+	UDynamicMesh* TemplateMesh = PCGUtilsAsyncObjects::NewObject<UDynamicMesh>(Invocation.Context);
 	TemplateMesh->SetMesh(*SourceMesh);
 	const FTransform ArrayFrame = ResolveArraySpaceFrame(Invocation, Space, *SourceMesh);
 	const FBox ArrayBounds = ComputeBoundsInFrame(*SourceMesh, ArrayFrame);

@@ -1,6 +1,7 @@
 // Copyright Max Harris
 
 #include "Elements/Creation/PCGDynMeshFromStaticMesh.h"
+#include "Helpers/PCGUtilsParallelInputs.h"
 
 #include "Data/PCGDynamicMeshData.h"
 #include "Data/PCGSpatialData.h"
@@ -162,7 +163,7 @@ namespace PCGDynMeshFromStaticMeshPrivate
 		Read.LOD = GetRecordedLOD(MeshReadLOD);
 
 		// The engine node's read, unchanged.
-		UDynamicMesh* Converted = FPCGContext::NewObject_AnyThread<UDynamicMesh>(Context);
+		UDynamicMesh* Converted = PCGUtilsAsyncObjects::NewObject<UDynamicMesh>(Context);
 		FGeometryScriptCopyMeshFromAssetOptions Options{};
 		EGeometryScriptOutcomePins Outcome = EGeometryScriptOutcomePins::Failure;
 		TArray<FName> SlotNames;
@@ -430,7 +431,7 @@ bool FPCGDynMeshFromStaticMeshElement::ExecuteInternal(FPCGContext* Context) con
 					continue;
 				}
 
-				UPCGDynamicMeshData* OutputData = FPCGContext::NewObject_AnyThread<UPCGDynamicMeshData>(Context);
+				UPCGDynamicMeshData* OutputData = PCGUtilsAsyncObjects::NewObject<UPCGDynamicMeshData>(Context);
 				UE::Geometry::FDynamicMesh3 Mesh = Read.Mesh;
 				OutputData->Initialize(MoveTemp(Mesh), !Settings->bExtractMaterials ? TArray<UMaterialInterface*>()
 					: !OverrideMaterials.IsEmpty() ? OverrideMaterials : Read.Materials);

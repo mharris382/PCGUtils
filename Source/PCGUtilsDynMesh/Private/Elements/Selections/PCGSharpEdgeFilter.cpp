@@ -1,4 +1,5 @@
 #include "Elements/Selections/PCGSharpEdgeFilter.h"
+#include "Helpers/PCGUtilsParallelInputs.h"
 
 #include "Data/PCGDynamicMeshData.h"
 #include "DynamicMesh/DynamicMesh3.h"
@@ -75,7 +76,7 @@ UPCGUtilsDynMeshFactoryData* UPCGSharpEdgeFilterSettings::CreateFactory(
 {
 	UPCGSharpEdgeSelectionFactoryData* Factory = InFactory
 		? Cast<UPCGSharpEdgeSelectionFactoryData>(InFactory)
-		: FPCGContext::NewObject_AnyThread<UPCGSharpEdgeSelectionFactoryData>(InContext);
+		: PCGUtilsAsyncObjects::NewObject<UPCGSharpEdgeSelectionFactoryData>(InContext);
 	if (!Factory) return nullptr;
 	Factory->Priority = Priority;
 	Factory->MinimumSharpAngleDegrees = MinimumSharpAngleDegrees;

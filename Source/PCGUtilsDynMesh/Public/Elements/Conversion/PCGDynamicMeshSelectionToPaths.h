@@ -16,6 +16,9 @@ class PCGUTILSDYNMESH_API UPCGDynamicMeshSelectionToPathsSettings : public UPCGU
 	GENERATED_BODY()
 
 public:
+	/** Own executor: its loop does not go through the process base, so the parallel path does not apply (yet: ParallelInputs.md Stage 2). */
+	virtual bool SupportsParallelInputs() const override { return false; }
+
 	virtual bool RequiresSelection() const override { return true; }
 	virtual bool GetRequiredSelectionDomain(UE::Geometry::EGeometryElementType& OutElementType) const override
 	{

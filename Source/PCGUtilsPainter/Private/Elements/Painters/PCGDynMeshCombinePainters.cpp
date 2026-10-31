@@ -1,6 +1,7 @@
 // Copyright Max Harris
 
 #include "Elements/Painters/PCGDynMeshCombinePainters.h"
+#include "Helpers/PCGUtilsParallelInputs.h"
 
 #include "PCGContext.h"
 #include "PCGPin.h"
@@ -177,7 +178,7 @@ UPCGUtilsDynMeshFactoryData* UPCGDynMeshCombinePaintersProviderSettings::CreateF
 
 	UPCGDynMeshCombinePaintersFactoryData* Factory = InFactory
 		? Cast<UPCGDynMeshCombinePaintersFactoryData>(InFactory)
-		: FPCGContext::NewObject_AnyThread<UPCGDynMeshCombinePaintersFactoryData>(InContext);
+		: PCGUtilsAsyncObjects::NewObject<UPCGDynMeshCombinePaintersFactoryData>(InContext);
 	if (!Factory)
 	{
 		return nullptr;

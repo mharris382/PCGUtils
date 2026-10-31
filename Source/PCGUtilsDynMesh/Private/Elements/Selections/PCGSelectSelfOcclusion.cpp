@@ -1,4 +1,5 @@
 #include "Elements/Selections/PCGSelectSelfOcclusion.h"
+#include "Helpers/PCGUtilsParallelInputs.h"
 
 #include "Data/PCGDynamicMeshData.h"
 #include "DynamicMesh/DynamicMesh3.h"
@@ -172,7 +173,7 @@ UPCGUtilsDynMeshFactoryData* UPCGSelectSelfOcclusionSettings::CreateFactory(
 {
 	UPCGSelectSelfOcclusionFactoryData* Factory = InFactory
 		? Cast<UPCGSelectSelfOcclusionFactoryData>(InFactory)
-		: FPCGContext::NewObject_AnyThread<UPCGSelectSelfOcclusionFactoryData>(InContext);
+		: PCGUtilsAsyncObjects::NewObject<UPCGSelectSelfOcclusionFactoryData>(InContext);
 	if (!Factory)
 	{
 		return nullptr;

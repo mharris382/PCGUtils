@@ -1,6 +1,7 @@
 // Copyright Max Harris
 
 #include "Elements/Topology/PCGDynMeshSeparateIslands.h"
+#include "Helpers/PCGUtilsParallelInputs.h"
 
 #include "Algo/Unique.h"
 #include "Data/PCGDynamicMeshData.h"
@@ -102,7 +103,7 @@ namespace
 			Materials.Add(Material);
 		}
 		// Each output is part of the input: it keeps the input's metadata (every domain, @Data included) and target actor.
-		UPCGDynamicMeshData* Output = FPCGContext::NewObject_AnyThread<UPCGDynamicMeshData>(Context);
+		UPCGDynamicMeshData* Output = PCGUtilsAsyncObjects::NewObject<UPCGDynamicMeshData>(Context);
 		Output->InitializeFromData(SourceData);
 		Output->Initialize(MoveTemp(Mesh), Materials);
 		return Output;

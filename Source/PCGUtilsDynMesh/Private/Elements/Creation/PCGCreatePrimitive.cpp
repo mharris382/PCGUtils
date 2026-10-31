@@ -1,4 +1,5 @@
 #include "Elements/Creation/PCGCreatePrimitive.h"
+#include "Helpers/PCGUtilsParallelInputs.h"
 
 #include "Data/PCGBasePointData.h"
 #include "Data/PCGDynamicMeshData.h"
@@ -202,7 +203,7 @@ bool FPCGCreatePrimitiveElement::ExecuteLegacy(FPCGContext* Context, const UPCGC
 
 	// Generate the primitive once at the identity transform; this both serves as the entire output when seed
 	// points are disabled, and as the reusable "stamp" appended per-seed (with a resolved transform) otherwise.
-	UDynamicMesh* ReferenceMesh = FPCGContext::NewObject_AnyThread<UDynamicMesh>(Context);
+	UDynamicMesh* ReferenceMesh = PCGUtilsAsyncObjects::NewObject<UDynamicMesh>(Context);
 	if (PrimitiveSettings)
 	{
 		PrimitiveSettings->AppendPrimitive(ReferenceMesh, FTransform::Identity);
@@ -216,7 +217,7 @@ bool FPCGCreatePrimitiveElement::ExecuteLegacy(FPCGContext* Context, const UPCGC
 
 	if (Settings->bUseSeedPoints && PrimitiveSettings)
 	{
-		OutputMesh = FPCGContext::NewObject_AnyThread<UDynamicMesh>(Context);
+		OutputMesh = PCGUtilsAsyncObjects::NewObject<UDynamicMesh>(Context);
 
 		const FTransform ActorTransform = ResolveSeedActorTransform(Context, Settings->bConvertSeedsToLocalSpace);
 
@@ -272,7 +273,7 @@ bool FPCGCreatePrimitiveElement::ExecuteLegacy(FPCGContext* Context, const UPCGC
 		}
 	}
 
-	UPCGDynamicMeshData* OutputData = FPCGContext::NewObject_AnyThread<UPCGDynamicMeshData>(Context);
+	UPCGDynamicMeshData* OutputData = PCGUtilsAsyncObjects::NewObject<UPCGDynamicMeshData>(Context);
 	OutputData->Initialize(OutputMesh, /*bCanTakeOwnership=*/true, TArray<UMaterialInterface*>{});
 	FPCGTaggedData& Output = Context->OutputData.TaggedData.Emplace_GetRef();
 	Output.Data = OutputData;

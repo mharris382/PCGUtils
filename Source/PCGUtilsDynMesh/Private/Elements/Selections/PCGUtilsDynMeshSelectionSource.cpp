@@ -1,6 +1,7 @@
 // Copyright Max Harris
 
 #include "Elements/Selections/PCGUtilsDynMeshSelectionSource.h"
+#include "Helpers/PCGUtilsParallelInputs.h"
 
 #include "Data/PCGDynamicMeshData.h"
 #include "Data/PCGDynamicMeshSelectionData.h"
@@ -246,7 +247,7 @@ bool FPCGUtilsDynMeshSelectionSourceElement::ExecuteInternal(FPCGContext* Contex
 		}
 
 		UPCGDynamicMeshSelectionData* OutputData =
-			FPCGContext::NewObject_AnyThread<UPCGDynamicMeshSelectionData>(Context);
+			PCGUtilsAsyncObjects::NewObject<UPCGDynamicMeshSelectionData>(Context);
 		OutputData->Initialize(MeshData, MoveTemp(ResultSelection));
 		FPCGTaggedData& Output = Context->OutputData.TaggedData.Emplace_GetRef(Input);
 		Output.Data = OutputData;

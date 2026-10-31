@@ -1,6 +1,7 @@
 // Copyright Max Harris
 
 #include "Elements/Creation/PCGDynMeshPathToMesh.h"
+#include "Helpers/PCGUtilsParallelInputs.h"
 
 #include "Helpers/PCGUtilsDataDomainHelpers.h"
 #include "Algo/Transform.h"
@@ -534,7 +535,7 @@ bool FPCGDynMeshPathToMeshElement::ExecuteInternal(FPCGContext* Context) const
 		}
 
 		// ── Output ────────────────────────────────────────────────────────────
-		UPCGDynamicMeshData* OutputData = FPCGContext::NewObject_AnyThread<UPCGDynamicMeshData>(Context);
+		UPCGDynamicMeshData* OutputData = PCGUtilsAsyncObjects::NewObject<UPCGDynamicMeshData>(Context);
 		OutputData->Initialize(MoveTemp(*Mesh));
 
 		FPCGMetadataDomain* OutputDomain = OutputData->MutableMetadata()

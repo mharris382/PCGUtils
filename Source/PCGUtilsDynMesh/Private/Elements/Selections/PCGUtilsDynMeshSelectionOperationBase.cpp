@@ -1,6 +1,7 @@
 // Copyright Max Harris
 
 #include "Elements/Selections/PCGUtilsDynMeshSelectionOperationBase.h"
+#include "Helpers/PCGUtilsParallelInputs.h"
 
 #include "Data/PCGDynamicMeshData.h"
 #include "Data/PCGDynamicMeshSelectionData.h"
@@ -227,7 +228,7 @@ bool FPCGUtilsDynMeshSelectionOperationElement::ExecuteInternal(FPCGContext* Con
 		}
 
 		UPCGUtilsDynMeshLiteralSelectionFactoryData* LiteralSelector =
-			FPCGContext::NewObject_AnyThread<UPCGUtilsDynMeshLiteralSelectionFactoryData>(Context);
+			PCGUtilsAsyncObjects::NewObject<UPCGUtilsDynMeshLiteralSelectionFactoryData>(Context);
 		LiteralSelector->SelectionData = SelectionData;
 		LiteralSelector->bAllowPartialInclusion = Settings->bAllowPartialInclusion;
 
@@ -254,7 +255,7 @@ bool FPCGUtilsDynMeshSelectionOperationElement::ExecuteInternal(FPCGContext* Con
 		}
 
 		UPCGDynamicMeshSelectionData* OutputData =
-			FPCGContext::NewObject_AnyThread<UPCGDynamicMeshSelectionData>(Context);
+			PCGUtilsAsyncObjects::NewObject<UPCGDynamicMeshSelectionData>(Context);
 		OutputData->Initialize(SelectionData->GetSourceMeshData(), MoveTemp(ResultSelection));
 		FPCGTaggedData& Output = Context->OutputData.TaggedData.Emplace_GetRef(Input);
 		Output.Data = OutputData;

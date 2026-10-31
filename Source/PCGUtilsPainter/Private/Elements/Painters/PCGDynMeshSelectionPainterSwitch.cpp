@@ -1,6 +1,7 @@
 // Copyright Max Harris
 
 #include "Elements/Painters/PCGDynMeshSelectionPainterSwitch.h"
+#include "Helpers/PCGUtilsParallelInputs.h"
 
 #include "Elements/Painters/PCGUtilsPainterConstantOperation.h"
 #include "Factories/PCGUtilsDynMeshFactories.h"
@@ -223,7 +224,7 @@ UPCGUtilsDynMeshFactoryData* UPCGDynMeshSelectionPainterSwitchProviderSettingsBa
 
 	UPCGDynMeshSelectionPainterSwitchFactoryData* Factory = InFactory
 		? Cast<UPCGDynMeshSelectionPainterSwitchFactoryData>(InFactory)
-		: FPCGContext::NewObject_AnyThread<UPCGDynMeshSelectionPainterSwitchFactoryData>(InContext);
+		: PCGUtilsAsyncObjects::NewObject<UPCGDynMeshSelectionPainterSwitchFactoryData>(InContext);
 	if (!Factory)
 	{
 		return nullptr;

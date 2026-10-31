@@ -132,6 +132,35 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Selector", meta=(PCG_Overridable))
 	bool bOutputSelectionData = false;
 
+	/**
+	 * Node opt-out from processing inputs in parallel. The base runs every input's operation in parallel when a
+	 * node has two or more concrete inputs; a node class that must not returns false here, with a comment saying
+	 * why. Its Disable Parallel row is then hidden. For an opt-out that depends on this node's settings, override
+	 * FPCGUtilsDynMeshProcessOperation::SupportsParallelExecute() instead. See Docs/PCGUtilsDynMesh/ParallelInputs.md.
+	 */
+	virtual bool SupportsParallelInputs() const { return true; }
+
+	/**
+	 * Process this node's inputs one at a time instead of in parallel. A debugging switch: if a node misbehaves,
+	 * tick this and regenerate to see whether the parallel path is the cause. The result should be identical
+	 * either way. pcgutils.ParallelInputs 0 does the same for every node at once.
+	 * Not overridable: it describes how the node runs, not data a graph should drive.
+	 */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Advanced", AdvancedDisplay,
+		meta=(DisplayName="Disable Parallel", EditCondition="bShowDisableParallelInputs", EditConditionHides, HideEditConditionToggle))
+	bool bDisableParallelInputs = false;
+
+	/** True when the parallel path applies to this node at all. Set from SupportsParallelInputs(); drives the row's visibility. */
+	UPROPERTY(Transient, DuplicateTransient, NonPIEDuplicateTransient)
+	bool bShowDisableParallelInputs = true;
+
+	/** Whether this node may process its inputs in parallel, from its own gates (not the input count or the console variable). */
+	bool AllowsParallelInputs() const { return SupportsParallelInputs() && !bDisableParallelInputs; }
+
+	//~Begin UObject interface
+	virtual void PostInitProperties() override;
+	//~End UObject interface
+
 	/** Captures the generic selection behaviour a deferred evaluation cannot rediscover from another context. */
 	FPCGUtilsDynMeshProcessSelectionPolicy CaptureSelectionPolicy() const;
 

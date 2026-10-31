@@ -1,6 +1,7 @@
 // Copyright Max Harris
 
 #include "Elements/Selections/PCGDynMeshConstantSelectionFactory.h"
+#include "Helpers/PCGUtilsParallelInputs.h"
 
 #include "PCGContext.h"
 #include "Serialization/ArchiveCrc32.h"
@@ -97,7 +98,7 @@ UPCGUtilsDynMeshFactoryData* UPCGDynMeshConstantSelectionFactoryProviderSettings
 	FPCGContext* InContext, UPCGUtilsDynMeshFactoryData* InFactory) const
 {
 	auto* Factory = InFactory ? Cast<UPCGDynMeshConstantSelectionFactoryData>(InFactory)
-		: FPCGContext::NewObject_AnyThread<UPCGDynMeshConstantSelectionFactoryData>(InContext);
+		: PCGUtilsAsyncObjects::NewObject<UPCGDynMeshConstantSelectionFactoryData>(InContext);
 	if (!Factory)
 	{
 		return nullptr;

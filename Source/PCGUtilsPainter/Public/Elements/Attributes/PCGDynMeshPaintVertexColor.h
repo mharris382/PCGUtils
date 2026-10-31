@@ -135,6 +135,13 @@ public:
 	const UPCGUtilsDynMeshSelectionFactoryData* Selector = nullptr;
 	FPCGUtilsDynMeshProcessSelectionPolicy SelectionPolicy;
 
+	/**
+	 * Paint LODs From Highest Detail shares painted primaries across inputs (the mutable cache below), so it stays
+	 * serial until it is split into two parallel waves (ParallelInputs.md Stage 2b). The plan is only filled in
+	 * that mode.
+	 */
+	virtual bool SupportsParallelExecute() const override { return LODPlan.PrimaryOfInput.IsEmpty(); }
+
 	virtual bool Execute(
 		const FPCGUtilsDynMeshProcessInvocation& Invocation,
 		FPCGUtilsDynMeshProcessOutcome& OutOutcome) const override;

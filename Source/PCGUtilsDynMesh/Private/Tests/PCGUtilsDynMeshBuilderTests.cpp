@@ -1,6 +1,7 @@
 // Copyright Max Harris
 
 #include "Misc/AutomationTest.h"
+#include "Helpers/PCGUtilsParallelInputs.h"
 #include "Elements/Creation/PCGDynMeshRefitBuilder.h"
 #include "Elements/Topology/PCGDynMeshBoolean.h"
 #include "Factories/PCGUtilsDynMeshOperandProcessBuilderFactory.h"
@@ -74,7 +75,7 @@ namespace PCGUtilsDynMeshBuilderTests
 			}
 
 			UPCGDynamicMeshSelectionData* SelectionData =
-				FPCGContext::NewObject_AnyThread<UPCGDynamicMeshSelectionData>(Invocation.Context);
+				PCGUtilsAsyncObjects::NewObject<UPCGDynamicMeshSelectionData>(Invocation.Context);
 			SelectionData->Initialize(Invocation.MeshData, MoveTemp(Selection));
 
 			OutOutcome.SelectionOutcome = EPCGUtilsDynMeshProcessSelectionOutcome::Replace;

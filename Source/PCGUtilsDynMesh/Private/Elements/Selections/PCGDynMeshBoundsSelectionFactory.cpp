@@ -1,6 +1,7 @@
 // Copyright Max Harris
 
 #include "Elements/Selections/PCGDynMeshBoundsSelectionFactory.h"
+#include "Helpers/PCGUtilsParallelInputs.h"
 
 #include "Data/PCGBasePointData.h"
 #include "DynamicMesh/DynamicMesh3.h"
@@ -397,7 +398,7 @@ UPCGUtilsDynMeshFactoryData* UPCGDynMeshBoundsSelectionFactoryProviderSettings::
 
 	UPCGDynMeshBoundsSelectionFactoryData* Factory = InFactory
 		? Cast<UPCGDynMeshBoundsSelectionFactoryData>(InFactory)
-		: FPCGContext::NewObject_AnyThread<UPCGDynMeshBoundsSelectionFactoryData>(InContext);
+		: PCGUtilsAsyncObjects::NewObject<UPCGDynMeshBoundsSelectionFactoryData>(InContext);
 	if (!Factory)
 	{
 		return nullptr;

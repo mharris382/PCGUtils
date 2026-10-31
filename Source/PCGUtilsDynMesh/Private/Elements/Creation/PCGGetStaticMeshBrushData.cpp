@@ -1,6 +1,7 @@
 // Copyright Max Harris
 
 #include "Elements/Creation/PCGGetStaticMeshBrushData.h"
+#include "Helpers/PCGUtilsParallelInputs.h"
 
 #include "Algo/Transform.h"
 #include "Components/StaticMeshBrushCombinerComponent.h"
@@ -28,7 +29,7 @@ namespace PCGGetStaticMeshBrushData
 		UE::Geometry::FDynamicMesh3 Mesh = Cached.Mesh;
 		MeshTransforms::ApplyTransform(Mesh, UE::Geometry::FTransformSRT3d(OutputTransform), true);
 
-		UPCGDynamicMeshData* OutputData = FPCGContext::NewObject_AnyThread<UPCGDynamicMeshData>(Context);
+		UPCGDynamicMeshData* OutputData = PCGUtilsAsyncObjects::NewObject<UPCGDynamicMeshData>(Context);
 		OutputData->Initialize(MoveTemp(Mesh), Cached.ResolveMaterials());
 
 		FPCGTaggedData& Output = Context->OutputData.TaggedData.Emplace_GetRef();

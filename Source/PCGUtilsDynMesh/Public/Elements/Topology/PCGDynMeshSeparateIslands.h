@@ -77,6 +77,9 @@ class PCGUTILSDYNMESH_API UPCGDynMeshSeparateIslandsSettings : public UPCGUtilsD
 	GENERATED_BODY()
 
 public:
+	/** Own executor: its loop does not go through the process base, so the parallel path does not apply (yet: ParallelInputs.md Stage 2). */
+	virtual bool SupportsParallelInputs() const override { return false; }
+
 	/** What joins two triangles into the same island. */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Settings", meta=(PCG_Overridable))
 	EPCGDynMeshIslandConnectivity Connectivity = EPCGDynMeshIslandConnectivity::SharedVertices;

@@ -1,4 +1,5 @@
 #include "Elements/Deform/PCGDynMeshActorSpaceTransform.h"
+#include "Helpers/PCGUtilsParallelInputs.h"
 
 #include "Data/PCGDynamicMeshData.h"
 #include "DynamicMesh/DynamicMesh3.h"
@@ -111,7 +112,7 @@ bool FPCGDynMeshActorSpaceTransformElement::ExecuteInternal(FPCGContext* Context
 		for (UMaterialInterface* Material : InputData->GetMaterials()) Materials.Add(Material);
 
 		// The output is the input, moved: keep its metadata (every domain, @Data included) and target actor.
-		UPCGDynamicMeshData* OutputData = FPCGContext::NewObject_AnyThread<UPCGDynamicMeshData>(Context);
+		UPCGDynamicMeshData* OutputData = PCGUtilsAsyncObjects::NewObject<UPCGDynamicMeshData>(Context);
 		OutputData->InitializeFromData(InputData);
 		OutputData->Initialize(MoveTemp(OutputMesh), Materials);
 		FPCGTaggedData& Output = Context->OutputData.TaggedData.Emplace_GetRef(Input);

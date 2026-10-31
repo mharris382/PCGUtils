@@ -1,6 +1,7 @@
 // Copyright Max Harris
 
 #include "Elements/Selections/PCGDynMeshVertexColorSelectionFactory.h"
+#include "Helpers/PCGUtilsParallelInputs.h"
 
 #include "DynamicMesh/DynamicMesh3.h"
 #include "DynamicMesh/DynamicMeshAttributeSet.h"
@@ -274,7 +275,7 @@ UPCGUtilsDynMeshFactoryData* UPCGDynMeshVertexColorSelectionFactoryProviderSetti
 {
 	UPCGDynMeshVertexColorSelectionFactoryData* Factory = InFactory
 		? Cast<UPCGDynMeshVertexColorSelectionFactoryData>(InFactory)
-		: FPCGContext::NewObject_AnyThread<UPCGDynMeshVertexColorSelectionFactoryData>(InContext);
+		: PCGUtilsAsyncObjects::NewObject<UPCGDynMeshVertexColorSelectionFactoryData>(InContext);
 	if (!Factory)
 	{
 		return nullptr;

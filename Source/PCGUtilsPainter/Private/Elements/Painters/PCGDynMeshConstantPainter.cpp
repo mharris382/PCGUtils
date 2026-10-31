@@ -1,6 +1,7 @@
 // Copyright Max Harris
 
 #include "Elements/Painters/PCGDynMeshConstantPainter.h"
+#include "Helpers/PCGUtilsParallelInputs.h"
 #include "Data/PCGDynamicMeshData.h"
 
 #include "Elements/Painters/PCGUtilsPainterShorthandHelpers.h"
@@ -194,7 +195,7 @@ UPCGUtilsDynMeshFactoryData* UPCGDynMeshConstantPainterProviderSettings::CreateF
 {
 	UPCGDynMeshConstantPainterFactoryData* Factory = InFactory
 		? Cast<UPCGDynMeshConstantPainterFactoryData>(InFactory)
-		: FPCGContext::NewObject_AnyThread<UPCGDynMeshConstantPainterFactoryData>(InContext);
+		: PCGUtilsAsyncObjects::NewObject<UPCGDynMeshConstantPainterFactoryData>(InContext);
 	if (!Factory)
 	{
 		return nullptr;

@@ -1,6 +1,7 @@
 // Copyright Max Harris
 
 #include "Elements/Painters/PCGDynMeshDistancePainter.h"
+#include "Helpers/PCGUtilsParallelInputs.h"
 
 #include "Async/ParallelFor.h"
 #include "Data/PCGBasePointData.h"
@@ -517,7 +518,7 @@ UPCGUtilsDynMeshFactoryData* UPCGDynMeshDistancePainterProviderSettings::CreateF
 
 	UPCGDynMeshDistancePainterFactoryData* Factory = InFactory
 		? Cast<UPCGDynMeshDistancePainterFactoryData>(InFactory)
-		: FPCGContext::NewObject_AnyThread<UPCGDynMeshDistancePainterFactoryData>(InContext);
+		: PCGUtilsAsyncObjects::NewObject<UPCGDynMeshDistancePainterFactoryData>(InContext);
 	if (!Factory)
 	{
 		return nullptr;

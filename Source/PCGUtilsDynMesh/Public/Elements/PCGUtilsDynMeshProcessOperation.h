@@ -174,6 +174,15 @@ class PCGUTILSDYNMESH_API FPCGUtilsDynMeshProcessOperation
 public:
 	virtual ~FPCGUtilsDynMeshProcessOperation() = default;
 
+	/**
+	 * Whether several invocations of this operation may run at the same time, on different meshes. True by
+	 * default: an operation is immutable and each invocation owns its mesh. Return false when the operation keeps
+	 * per-execution state shared across inputs, or when its settings make it depend on other inputs. A node whose
+	 * whole class must stay serial overrides UPCGUtilsDynMeshProcessBaseSettings::SupportsParallelInputs() instead.
+	 * Code reachable from Execute must allocate with PCGUtilsAsyncObjects::NewObject (Helpers/PCGUtilsParallelInputs.h).
+	 */
+	virtual bool SupportsParallelExecute() const { return true; }
+
 	/** Runs the algorithm. Returns false (already logged) to discard this input/seed. */
 	virtual bool Execute(
 		const FPCGUtilsDynMeshProcessInvocation& Invocation,

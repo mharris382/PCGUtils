@@ -1,4 +1,5 @@
 #include "MeshTarget/PCGUtilsMeshTargetFunctions.h"
+#include "Helpers/PCGUtilsParallelInputs.h"
 
 #include "Data/PCGDynamicMeshData.h"
 #include "Data/PCGDynamicMeshSelectionData.h"
@@ -141,7 +142,7 @@ FPCGUtilsMeshTargetHandle FPCGUtilsMeshTargetFunctions::CreateFullMeshTarget(
 	UDynamicMesh* WorkingMesh = AdoptedBaseMesh;
 	if (!WorkingMesh)
 	{
-		WorkingMesh = FPCGContext::NewObject_AnyThread<UDynamicMesh>(Context);
+		WorkingMesh = PCGUtilsAsyncObjects::NewObject<UDynamicMesh>(Context);
 		WorkingMesh->SetMesh(*SourceMesh);
 	}
 
@@ -180,7 +181,7 @@ FPCGUtilsMeshTargetHandle FPCGUtilsMeshTargetFunctions::CreateSelectionTarget(
 	UDynamicMesh* WorkingMesh = AdoptedBaseMesh;
 	if (!WorkingMesh)
 	{
-		WorkingMesh = FPCGContext::NewObject_AnyThread<UDynamicMesh>(Context);
+		WorkingMesh = PCGUtilsAsyncObjects::NewObject<UDynamicMesh>(Context);
 		WorkingMesh->SetMesh(*SourceMesh);
 	}
 	Handle.BaseMesh = WorkingMesh;
@@ -197,7 +198,7 @@ FPCGUtilsMeshTargetHandle FPCGUtilsMeshTargetFunctions::CreateSelectionTarget(
 			// Legitimate no-op (eg an upstream filter found nothing this run): the target is trivially safe to
 			// operate on, and Restore leaves BaseMesh (the unchanged working copy) as the final result.
 			Handle.bIsEmptySelectionNoOp = true;
-			Handle.TargetMesh = FPCGContext::NewObject_AnyThread<UDynamicMesh>(Context);
+			Handle.TargetMesh = PCGUtilsAsyncObjects::NewObject<UDynamicMesh>(Context);
 			Handle.bIsValid = true;
 			return Handle;
 		}
@@ -208,7 +209,7 @@ FPCGUtilsMeshTargetHandle FPCGUtilsMeshTargetFunctions::CreateSelectionTarget(
 		Handle.RegionOperator = MakeUnique<FMeshRegionOperator>(WorkingMesh->GetMeshPtr(), SelectedTriangles);
 		PreserveRegionWeightLayers(*SourceMesh, *Handle.RegionOperator);
 
-		UDynamicMesh* SubmeshWrapper = FPCGContext::NewObject_AnyThread<UDynamicMesh>(Context);
+		UDynamicMesh* SubmeshWrapper = PCGUtilsAsyncObjects::NewObject<UDynamicMesh>(Context);
 		SubmeshWrapper->SetMesh(MoveTemp(Handle.RegionOperator->Region.GetSubmesh()));
 		Handle.TargetMesh = SubmeshWrapper;
 		Handle.bIsValid = true;
@@ -233,7 +234,7 @@ FPCGUtilsMeshTargetHandle FPCGUtilsMeshTargetFunctions::CreateSelectionTarget(
 		// clones the internal per-element arrays verbatim, with no compaction/renumbering, so vertex N in the
 		// source is vertex N here too - required for the position-only copy-back in
 		// RestoreVertexPositions to target the correct vertices.
-		UDynamicMesh* FullCopy = FPCGContext::NewObject_AnyThread<UDynamicMesh>(Context);
+		UDynamicMesh* FullCopy = PCGUtilsAsyncObjects::NewObject<UDynamicMesh>(Context);
 		FullCopy->SetMesh(*SourceMesh);
 		Handle.TargetMesh = FullCopy;
 		Handle.bIsValid = true;
@@ -451,7 +452,7 @@ void FPCGUtilsMeshTargetFunctions::EmitOutput(
 	const UPCGDynamicMeshData* SourceData = InputSelection
 		? InputSelection->GetSourceMeshData() : Cast<const UPCGDynamicMeshData>(Input.Data);
 
-	UPCGDynamicMeshData* OutputData = FPCGContext::NewObject_AnyThread<UPCGDynamicMeshData>(Context);
+	UPCGDynamicMeshData* OutputData = PCGUtilsAsyncObjects::NewObject<UPCGDynamicMeshData>(Context);
 	if (SourceData)
 	{
 		OutputData->InitializeFromData(SourceData);

@@ -1,4 +1,5 @@
 #include "Elements/Selections/PCGSelectionFromSpline.h"
+#include "Helpers/PCGUtilsParallelInputs.h"
 
 #include "Data/PCGSplineData.h"
 #include "DynamicMesh/DynamicMesh3.h"
@@ -137,7 +138,7 @@ UPCGUtilsDynMeshFactoryData* UPCGSelectionFromSplineSettings::CreateFactory(
 	}
 	UPCGSelectionFromSplineFactoryData* Factory = InFactory
 		? Cast<UPCGSelectionFromSplineFactoryData>(InFactory)
-		: FPCGContext::NewObject_AnyThread<UPCGSelectionFromSplineFactoryData>(InContext);
+		: PCGUtilsAsyncObjects::NewObject<UPCGSelectionFromSplineFactoryData>(InContext);
 	if (!Factory) return nullptr;
 	Factory->Priority = Priority;
 	Factory->SplineData = SplineData;

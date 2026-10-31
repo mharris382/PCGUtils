@@ -1,6 +1,7 @@
 // Copyright Max Harris
 
 #include "StaticMesh/PCGUtilsPainterStaticMeshTarget.h"
+#include "Helpers/PCGUtilsParallelInputs.h"
 
 #include "PCGUtilsPainter.h"
 #include "Geometry/PCGUtilsDynMeshSurfaceCorrespondence.h"
@@ -329,7 +330,7 @@ bool FPCGUtilsPainterStaticMeshTarget::Prepare(FPCGContext* Context)
 	// DynMesh Geometry Script conversion utilities on a Static Mesh target. Copy is cheap for one LOD0 mesh.
 	if (Context)
 	{
-		CanonicalProxyData = FPCGContext::NewObject_AnyThread<UPCGDynamicMeshData>(Context);
+		CanonicalProxyData = PCGUtilsAsyncObjects::NewObject<UPCGDynamicMeshData>(Context);
 		if (CanonicalProxyData)
 		{
 			CanonicalProxyData->Initialize(FDynamicMesh3(CanonicalMesh));

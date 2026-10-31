@@ -1,6 +1,7 @@
 // Copyright Max Harris
 
 #include "Elements/Selections/PCGDynMeshInsideMeshSelectionFactory.h"
+#include "Helpers/PCGUtilsParallelInputs.h"
 
 #include "Data/PCGDynamicMeshData.h"
 #include "DynamicMesh/DynamicMesh3.h"
@@ -237,7 +238,7 @@ UPCGUtilsDynMeshFactoryData* UPCGDynMeshInsideMeshSelectionFactoryProviderSettin
 
 	UPCGDynMeshInsideMeshSelectionFactoryData* Factory = InFactory
 		? Cast<UPCGDynMeshInsideMeshSelectionFactoryData>(InFactory)
-		: FPCGContext::NewObject_AnyThread<UPCGDynMeshInsideMeshSelectionFactoryData>(InContext);
+		: PCGUtilsAsyncObjects::NewObject<UPCGDynMeshInsideMeshSelectionFactoryData>(InContext);
 	if (!Factory)
 	{
 		return nullptr;

@@ -25,6 +25,9 @@ class PCGUTILSDYNMESH_API UPCGDynMeshSampleSettings : public UPCGUtilsDynMeshPro
 	GENERATED_BODY()
 
 public:
+	/** Own executor: its loop does not go through the process base, so the parallel path does not apply (yet: ParallelInputs.md Stage 2). */
+	virtual bool SupportsParallelInputs() const override { return false; }
+
 #if WITH_EDITOR
 	virtual FName GetDefaultNodeName() const override { return TEXT("DynMesh|Sample"); }
 	virtual FText GetDefaultNodeTitle() const override;

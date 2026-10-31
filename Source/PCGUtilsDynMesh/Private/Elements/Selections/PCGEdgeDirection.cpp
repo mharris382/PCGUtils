@@ -1,4 +1,5 @@
 #include "Elements/Selections/PCGEdgeDirection.h"
+#include "Helpers/PCGUtilsParallelInputs.h"
 
 #include "Data/PCGDynamicMeshData.h"
 #include "DynamicMesh/DynamicMesh3.h"
@@ -117,7 +118,7 @@ UPCGUtilsDynMeshFactoryData* UPCGEdgeDirectionSettings::CreateFactory(
 {
 	UPCGEdgeDirectionFactoryData* Factory = InFactory
 		? Cast<UPCGEdgeDirectionFactoryData>(InFactory)
-		: FPCGContext::NewObject_AnyThread<UPCGEdgeDirectionFactoryData>(InContext);
+		: PCGUtilsAsyncObjects::NewObject<UPCGEdgeDirectionFactoryData>(InContext);
 	if (!Factory) return nullptr;
 	Factory->Priority = Priority;
 	Factory->Axis = Axis;

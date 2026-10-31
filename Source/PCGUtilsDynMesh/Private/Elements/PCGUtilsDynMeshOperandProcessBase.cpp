@@ -1,6 +1,7 @@
 // Copyright Max Harris
 
 #include "Elements/PCGUtilsDynMeshOperandProcessBase.h"
+#include "Helpers/PCGUtilsParallelInputs.h"
 
 #include "Data/PCGDynamicMeshData.h"
 #include "Factories/PCGUtilsDynMeshOperandProcessBuilderFactory.h"
@@ -221,7 +222,7 @@ bool FPCGUtilsDynMeshOperandProcessBaseElement::ExecuteInternal(FPCGContext* Con
 		{
 			if (bBuilders)
 			{
-				auto* Builder = FPCGContext::NewObject_AnyThread<UPCGUtilsDynMeshOperandProcessBuilderFactoryData>(Context);
+				auto* Builder = PCGUtilsAsyncObjects::NewObject<UPCGUtilsDynMeshOperandProcessBuilderFactoryData>(Context);
 				Builder->PrimaryBuilder = CastChecked<UPCGUtilsDynMeshBuilderFactoryData>(Output.Data);
 				Builder->OperandBuilder = CastChecked<UPCGUtilsDynMeshBuilderFactoryData>(Operands[BIndex].Data);
 				Builder->Operation = Operation;

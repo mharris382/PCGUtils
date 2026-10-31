@@ -1,6 +1,7 @@
 // Copyright Max Harris
 
 #include "Elements/Painters/PCGDynMeshBlurPainter.h"
+#include "Helpers/PCGUtilsParallelInputs.h"
 #include "Data/PCGDynamicMeshData.h"
 
 #include "Async/ParallelFor.h"
@@ -287,7 +288,7 @@ UPCGUtilsDynMeshFactoryData* UPCGDynMeshBlurPainterProviderSettings::CreateFacto
 {
 	UPCGDynMeshBlurPainterFactoryData* Factory = InFactory
 		? Cast<UPCGDynMeshBlurPainterFactoryData>(InFactory)
-		: FPCGContext::NewObject_AnyThread<UPCGDynMeshBlurPainterFactoryData>(InContext);
+		: PCGUtilsAsyncObjects::NewObject<UPCGDynMeshBlurPainterFactoryData>(InContext);
 	if (!Factory)
 	{
 		return nullptr;

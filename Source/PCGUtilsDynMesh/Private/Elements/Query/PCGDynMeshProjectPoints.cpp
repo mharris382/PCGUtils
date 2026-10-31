@@ -1,6 +1,7 @@
 // Copyright Max Harris
 
 #include "Elements/Query/PCGDynMeshProjectPoints.h"
+#include "Helpers/PCGUtilsParallelInputs.h"
 
 #include "Async/ParallelFor.h"
 #include <atomic>
@@ -510,7 +511,7 @@ bool FPCGDynMeshProjectPointsElement::ExecuteInternal(FPCGContext* Context) cons
 			}
 		}
 
-		UPCGPointArrayData* OutPoints = FPCGContext::NewObject_AnyThread<UPCGPointArrayData>(Context);
+		UPCGPointArrayData* OutPoints = PCGUtilsAsyncObjects::NewObject<UPCGPointArrayData>(Context);
 		FPCGInitializeFromDataParams InitParams(InPoints);
 		InitParams.bInheritSpatialData = false;
 		OutPoints->InitializeFromDataWithParams(InitParams);

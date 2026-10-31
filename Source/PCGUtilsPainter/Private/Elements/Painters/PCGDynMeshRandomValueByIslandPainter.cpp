@@ -1,6 +1,7 @@
 // Copyright Max Harris
 
 #include "Elements/Painters/PCGDynMeshRandomValueByIslandPainter.h"
+#include "Helpers/PCGUtilsParallelInputs.h"
 
 #include "DynamicMesh/DynamicMesh3.h"
 #include "Helpers/PCGHelpers.h"
@@ -181,7 +182,7 @@ UPCGUtilsDynMeshFactoryData* UPCGDynMeshRandomValueByIslandPainterProviderSettin
 {
 	UPCGDynMeshRandomValueByIslandPainterFactoryData* Factory = InFactory
 		? Cast<UPCGDynMeshRandomValueByIslandPainterFactoryData>(InFactory)
-		: FPCGContext::NewObject_AnyThread<UPCGDynMeshRandomValueByIslandPainterFactoryData>(InContext);
+		: PCGUtilsAsyncObjects::NewObject<UPCGDynMeshRandomValueByIslandPainterFactoryData>(InContext);
 	if (!Factory)
 	{
 		return nullptr;

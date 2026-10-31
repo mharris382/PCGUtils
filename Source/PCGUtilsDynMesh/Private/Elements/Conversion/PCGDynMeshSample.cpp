@@ -1,4 +1,5 @@
 #include "Elements/Conversion/PCGDynMeshSample.h"
+#include "Helpers/PCGUtilsParallelInputs.h"
 
 #include "Data/PCGDynamicMeshData.h"
 #include "Data/PCGDynamicMeshSelectionData.h"
@@ -271,7 +272,7 @@ namespace
 	// triangle-id remapping is intentionally dropped past this point (matches vanilla Mesh Sampler behavior).
 	void ApplyVoxelize(const UPCGDynMeshSampleSettings* Settings, FDynamicMesh3& Mesh, FPCGContext* Context)
 	{
-		UDynamicMesh* Scratch = FPCGContext::NewObject_AnyThread<UDynamicMesh>(Context);
+		UDynamicMesh* Scratch = PCGUtilsAsyncObjects::NewObject<UDynamicMesh>(Context);
 		Scratch->SetMesh(MoveTemp(Mesh));
 
 		FGeometryScriptSolidifyOptions SolidifyOptions{};
@@ -377,7 +378,7 @@ bool FPCGDynMeshSampleElement::ExecuteInternal(FPCGContext* Context) const
 
 			if (SelectedTriangles.IsEmpty())
 			{
-				UPCGPointArrayData* EmptyOutput = FPCGContext::NewObject_AnyThread<UPCGPointArrayData>(Context);
+				UPCGPointArrayData* EmptyOutput = PCGUtilsAsyncObjects::NewObject<UPCGPointArrayData>(Context);
 				EmptyOutput->SetNumPoints(0);
 				FPCGTaggedData& EmptyResult = Context->OutputData.TaggedData.Emplace_GetRef(Input);
 				EmptyResult.Data = EmptyOutput;
@@ -430,7 +431,7 @@ bool FPCGDynMeshSampleElement::ExecuteInternal(FPCGContext* Context) const
 			}
 		}
 
-		UPCGPointArrayData* OutputData = FPCGContext::NewObject_AnyThread<UPCGPointArrayData>(Context);
+		UPCGPointArrayData* OutputData = PCGUtilsAsyncObjects::NewObject<UPCGPointArrayData>(Context);
 		OutputData->SetNumPoints(SampledPoints.Num(), false);
 		OutputData->AllocateProperties(EPCGPointNativeProperties::All);
 		FPCGPointValueRanges OutRanges(OutputData, false);

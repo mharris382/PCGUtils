@@ -1,6 +1,7 @@
 // Copyright Max Harris
 
 #include "Elements/Creation/PCGDynMeshLoftPaths.h"
+#include "Helpers/PCGUtilsParallelInputs.h"
 
 #include "Data/PCGBasePointData.h"
 #include "Data/PCGDynamicMeshData.h"
@@ -339,7 +340,7 @@ bool FPCGDynMeshLoftPathsElement::ExecuteInternal(FPCGContext* Context) const
 			continue;
 		}
 
-		UPCGDynamicMeshData* OutputData = FPCGContext::NewObject_AnyThread<UPCGDynamicMeshData>(Context);
+		UPCGDynamicMeshData* OutputData = PCGUtilsAsyncObjects::NewObject<UPCGDynamicMeshData>(Context);
 		OutputData->Initialize(MoveTemp(Mesh));
 		FPCGTaggedData& Output = Context->OutputData.TaggedData.Emplace_GetRef(PathAInput);
 		Output.Data = OutputData;

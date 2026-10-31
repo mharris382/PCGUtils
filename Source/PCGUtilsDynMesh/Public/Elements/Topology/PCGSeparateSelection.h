@@ -30,6 +30,9 @@ class PCGUTILSDYNMESH_API UPCGSeparateSelectionSettings : public UPCGUtilsDynMes
 	GENERATED_BODY()
 
 public:
+	/** Own executor: its loop does not go through the process base, so the parallel path does not apply (yet: ParallelInputs.md Stage 2). */
+	virtual bool SupportsParallelInputs() const override { return false; }
+
 	/** Mesh properties written to @Data after this node runs, as DynMesh | Properties writes them. All off by default. */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Output Properties", meta=(PCG_Overridable, ShowOnlyInnerProperties))
 	FPCGUtilsDynMeshFreeProperties OutputProperties;

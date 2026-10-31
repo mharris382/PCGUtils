@@ -1,6 +1,7 @@
 // Copyright Max Harris
 
 #include "Elements/Selections/PCGDynMeshPolygroupSelectionFactory.h"
+#include "Helpers/PCGUtilsParallelInputs.h"
 
 #include "DynamicMesh/DynamicMesh3.h"
 #include "DynamicMesh/DynamicMeshAttributeSet.h"
@@ -150,7 +151,7 @@ UPCGUtilsDynMeshFactoryData* UPCGDynMeshPolygroupSelectionFactoryProviderSetting
 	FPCGContext* InContext, UPCGUtilsDynMeshFactoryData* InFactory) const
 {
 	auto* Factory = InFactory ? Cast<UPCGDynMeshPolygroupSelectionFactoryData>(InFactory)
-		: FPCGContext::NewObject_AnyThread<UPCGDynMeshPolygroupSelectionFactoryData>(InContext);
+		: PCGUtilsAsyncObjects::NewObject<UPCGDynMeshPolygroupSelectionFactoryData>(InContext);
 	if (!Factory) { return nullptr; }
 	Factory->Priority = Priority;
 	Factory->GroupLayer = GroupLayer;

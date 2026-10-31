@@ -1,6 +1,7 @@
 // Copyright Max Harris
 
 #include "Elements/Selections/PCGSelectMeshOcclusion.h"
+#include "Helpers/PCGUtilsParallelInputs.h"
 
 #include "Data/PCGDynamicMeshData.h"
 #include "DynamicMesh/DynamicMesh3.h"
@@ -229,7 +230,7 @@ UPCGUtilsDynMeshFactoryData* UPCGSelectMeshOcclusionSettings::CreateFactory(
 
 	UPCGSelectMeshOcclusionFactoryData* Factory = InFactory
 		? Cast<UPCGSelectMeshOcclusionFactoryData>(InFactory)
-		: FPCGContext::NewObject_AnyThread<UPCGSelectMeshOcclusionFactoryData>(InContext);
+		: PCGUtilsAsyncObjects::NewObject<UPCGSelectMeshOcclusionFactoryData>(InContext);
 	if (!Factory)
 	{
 		return nullptr;

@@ -1,6 +1,7 @@
 // Copyright Max Harris
 
 #include "Elements/Selections/PCGDynMeshNormalSelectionFactory.h"
+#include "Helpers/PCGUtilsParallelInputs.h"
 #include "Data/PCGDynamicMeshData.h"
 
 #include "DynamicMesh/DynamicMesh3.h"
@@ -145,7 +146,7 @@ UPCGUtilsDynMeshFactoryData* UPCGDynMeshNormalSelectionFactoryProviderSettings::
 {
 	UPCGDynMeshNormalSelectionFactoryData* Factory = InFactory
 		? Cast<UPCGDynMeshNormalSelectionFactoryData>(InFactory)
-		: FPCGContext::NewObject_AnyThread<UPCGDynMeshNormalSelectionFactoryData>(InContext);
+		: PCGUtilsAsyncObjects::NewObject<UPCGDynMeshNormalSelectionFactoryData>(InContext);
 	if (!Factory)
 	{
 		return nullptr;

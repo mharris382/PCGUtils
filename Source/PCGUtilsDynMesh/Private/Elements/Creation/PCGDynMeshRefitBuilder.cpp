@@ -1,5 +1,6 @@
 // Copyright Max Harris
 #include "Elements/Creation/PCGDynMeshRefitBuilder.h"
+#include "Helpers/PCGUtilsParallelInputs.h"
 #include "Data/PCGDynamicMeshData.h"
 #include "DynamicMesh/DynamicMesh3.h"
 #include "DynamicMesh/MeshTransforms.h"
@@ -210,7 +211,7 @@ UPCGUtilsDynMeshFactoryData *UPCGDynMeshRefitBuilderSettings::CreateFactory(FPCG
 			return nullptr;
 		}
 	}
-	UPCGDynMeshRefitBuilderData *Result = FPCGContext::NewObject_AnyThread<UPCGDynMeshRefitBuilderData>(Context);
+	UPCGDynMeshRefitBuilderData *Result = PCGUtilsAsyncObjects::NewObject<UPCGDynMeshRefitBuilderData>(Context);
 	Result->Source = Sources[0];
 	Result->Target = Targets.IsEmpty() ? nullptr : Targets[0];
 	Result->Fitting = Fitting;

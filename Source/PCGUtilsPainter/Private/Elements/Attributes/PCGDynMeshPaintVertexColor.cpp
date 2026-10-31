@@ -1,6 +1,7 @@
 // Copyright Max Harris
 
 #include "Elements/Attributes/PCGDynMeshPaintVertexColor.h"
+#include "Helpers/PCGUtilsParallelInputs.h"
 
 #include "Data/PCGDynamicMeshData.h"
 #include "Data/PCGDynamicMeshSelectionData.h"
@@ -354,14 +355,14 @@ const UE::Geometry::FDynamicMesh3* FPCGUtilsDynMeshPaintVertexColorOperation::Ge
 	{
 		Materials.Add(Material);
 	}
-	UPCGDynamicMeshData* Working = FPCGContext::NewObject_AnyThread<UPCGDynamicMeshData>(Context);
+	UPCGDynamicMeshData* Working = PCGUtilsAsyncObjects::NewObject<UPCGDynamicMeshData>(Context);
 	Working->InitializeFromData(SourceData);
 	Working->Initialize(UE::Geometry::FDynamicMesh3(*SourceMesh), MoveTemp(Materials));
 
 	const UPCGData* Rebased = Working;
 	if (InputSelection)
 	{
-		UPCGDynamicMeshSelectionData* RebasedSelection = FPCGContext::NewObject_AnyThread<UPCGDynamicMeshSelectionData>(Context);
+		UPCGDynamicMeshSelectionData* RebasedSelection = PCGUtilsAsyncObjects::NewObject<UPCGDynamicMeshSelectionData>(Context);
 		RebasedSelection->Initialize(Working, InputSelection->GetSelection());
 		Rebased = RebasedSelection;
 	}

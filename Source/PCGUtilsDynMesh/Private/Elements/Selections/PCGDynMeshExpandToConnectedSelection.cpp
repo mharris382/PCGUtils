@@ -1,6 +1,7 @@
 // Copyright Max Harris
 
 #include "Elements/Selections/PCGDynMeshExpandToConnectedSelection.h"
+#include "Helpers/PCGUtilsParallelInputs.h"
 
 #include "Data/PCGDynamicMeshData.h"
 #include "Data/PCGDynamicMeshSelectionData.h"
@@ -211,7 +212,7 @@ UPCGDynMeshExpandToConnectedSelectionSettings::CreateDecoratorFactory(
 		return nullptr;
 	}
 	UPCGDynMeshExpandToConnectedSelectionFactoryData* Factory =
-		FPCGContext::NewObject_AnyThread<UPCGDynMeshExpandToConnectedSelectionFactoryData>(InContext);
+		PCGUtilsAsyncObjects::NewObject<UPCGDynMeshExpandToConnectedSelectionFactoryData>(InContext);
 
 	Factory->Priority = Priority;
 	Factory->SeedFactory = ChildSelector;

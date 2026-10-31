@@ -1,6 +1,7 @@
 // Copyright Max Harris
 
 #include "Elements/Conversion/PCGDynMeshSaveStaticMesh.h"
+#include "Helpers/PCGUtilsParallelInputs.h"
 
 #include "Data/PCGDynamicMeshData.h"
 #include "Engine/StaticMesh.h"
@@ -350,7 +351,7 @@ bool FPCGDynMeshSaveStaticMeshElement::ExecuteInternal(FPCGContext* Context) con
 
 		for (const FSaveJob& Job : Asset.LODs)
 		{
-			UPCGParamData* OutputData = FPCGContext::NewObject_AnyThread<UPCGParamData>(Context);
+			UPCGParamData* OutputData = PCGUtilsAsyncObjects::NewObject<UPCGParamData>(Context);
 			OutputData->Metadata->CreateAttribute<FSoftObjectPath>(Settings->OutputAssetAttributeName, FSoftObjectPath(SavedAsset),
 				/*bAllowsInterpolation=*/false, /*bOverrideParent=*/false);
 			OutputData->Metadata->AddEntry();

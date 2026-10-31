@@ -1,6 +1,7 @@
 // Copyright Max Harris
 
 #include "Elements/Creation/PCGDynMeshFromStaticMeshPoints.h"
+#include "Helpers/PCGUtilsParallelInputs.h"
 
 #include "Data/PCGBasePointData.h"
 #include "Data/PCGDynamicMeshData.h"
@@ -45,7 +46,7 @@ namespace PCGDynMeshFromStaticMeshPointsPrivate
 		}
 		FSourceMesh& Source = Cache.Add(StaticMesh);
 
-		UDynamicMesh* Converted = FPCGContext::NewObject_AnyThread<UDynamicMesh>(Context);
+		UDynamicMesh* Converted = PCGUtilsAsyncObjects::NewObject<UDynamicMesh>(Context);
 		FGeometryScriptCopyMeshFromAssetOptions AssetOptions;
 		// The source mesh first: it is closed where the render mesh is split along hard edges and UV seams. It is
 		// not there in a cooked game, so fall back to the render mesh.
@@ -299,7 +300,7 @@ bool FPCGDynMeshFromStaticMeshPointsElement::ExecuteInternal(FPCGContext* Contex
 			continue;
 		}
 
-		UPCGDynamicMeshData* OutputData = FPCGContext::NewObject_AnyThread<UPCGDynamicMeshData>(Context);
+		UPCGDynamicMeshData* OutputData = PCGUtilsAsyncObjects::NewObject<UPCGDynamicMeshData>(Context);
 		OutputData->Initialize(MoveTemp(Combined), Materials);
 		InheritDataDomain(OutputData, PointData);
 		OutputData->TargetActor = PointData->TargetActor;

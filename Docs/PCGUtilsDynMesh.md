@@ -507,6 +507,30 @@ asset list -> From Static Mesh (All LODs) -> Paint Vertex Color (Paint LODs From
   asset is not saved. LOD 0 sets the material slots; the asset is rebuilt once after every LOD is written, and
   LODs an existing asset had past the last one written are removed. `Mesh Write LOD` is unused in this mode.
   Outputs stay one per mesh, in input order. Coverage: `PCGUtils.DynMesh.SaveStaticMesh.LODsRoundTrip`.
+- **Generate LODs** makes the chain from one high-detail mesh instead of reading it from an asset:
+
+  ```
+  high-detail DynMesh -> Generate LODs -> Paint Vertex Color (Paint LODs From Highest Detail) -> Save Static Mesh (Save LODs From Attribute)
+  ```
+
+  Each input gives one decimated copy per LOD, LOD 0 first, each the input reduced (tags, `@Data`, materials and
+  target actor kept), with `@Data.LOD` (int32) written. Every LOD is decimated from the source with Geometry
+  Script's quadric simplifier (`Simplify Options`, advanced), never from the LOD before, so each value means what
+  it says; LOD 0 may be reduced too. **List** mode has one entry per LOD, read as a `Metric`: Decimation Ratio
+  (fraction of triangles *removed*, 0 to 1: the inverse of Decimate's `Ratio`, which is the fraction kept), Max
+  Triangle Count, or Tolerance (cm, Geometry Script's Simplify To Tolerance). Defaults: three entries, 0 / 0.5 /
+  0.8, `@Data` attributes `LOD0Ratio` / `LOD1Ratio` / `LOD2Ratio`; an entry added in the Details panel names
+  `LOD<n>Ratio`. **Automatic** mode takes `LOD Count`, LOD 0's reduction as a decimation ratio or a max triangle
+  count (the ratio then worked out from each source's triangle count), and `Reduction Per LOD`: each later LOD
+  removes that fraction of the previous LOD's triangles. All of these are input shorthands. `Group Attribute`
+  (default `SourceMesh`, optional) groups each input's LODs for Paint Vertex Color: an input that already has it
+  keeps its value, otherwise it gets its index on In. `Output High Quality Source Mesh` adds the unchanged input
+  before its LODs with `@Data.LOD` -1 and `@Data.IsHighQualitySource` true (false on every LOD); filter it out
+  before Save LODs From Attribute, which rejects a negative LOD. Settings are checked one by one (empty or equal
+  attribute names, empty list); a bad per-input value is an error naming the input and entry, and that input
+  gives no outputs. A LOD with more triangles than the one before is a warning. Every LOD of every input
+  decimates in parallel (`Disable Parallel`, advanced, and `pcgutils.ParallelInputs` force serial). Coverage:
+  `PCGUtils.DynMesh.GenerateLODs`.
 
 All three copy `@Data` value by value through `PCGUtilsDataDomain` (PCGUtilsCore), as Path To Mesh does, so inputs
 whose `@Data` is inherited from upstream data work. **From Static Mesh Points** uses it too; it used the engine's
@@ -814,14 +838,20 @@ When adding an operation:
 7. Confirm the graph exposes a DynMesh-or-Selection input and a functional optional Selector pin, unless
    the exception is documented.
 8. Use `DynMesh` in PCGUtils-owned display names and make normal settings PCG-overrideable.
-9. Build the module and visually inspect the node's pins and overrides.
+9. Assume the operation runs on several inputs in parallel (see [Processing several meshes at once](PCGUtilsDynMesh/ParallelInputs.md)).
+   Inside `Execute`, allocate with `PCGUtilsAsyncObjects::NewObject`, never `FPCGContext::NewObject_AnyThread`; log with
+   an explicit context; keep no state shared across invocations. Read pins, settings and assets in
+   `CreateProcessOperation`. If the operation can't run in parallel, override `SupportsParallelExecute()` (it depends
+   on the settings) or the settings' `SupportsParallelInputs()` (the whole node), with a comment saying why.
+10. Build the module and visually inspect the node's pins and overrides.
 
 ## Recommended base-class evolution
 
 The current base can be improved further:
 
-- Run several inputs at once. Today every input is processed one after another on the game thread; see
-  [Processing several meshes at once](PCGUtilsDynMesh/ParallelInputs.md) for the investigation and staged plan.
+- Run several inputs at once. Stage 1 (operations on the process base run in parallel, still on the game
+  thread) is written; own-loop executors and running off the game thread are next. See
+  [Processing several meshes at once](PCGUtilsDynMesh/ParallelInputs.md).
 
 - Replace the Boolean `RequiresSelection()` with an explicit policy enum: `Optional`, `Required`, or `Unsupported`.
   `Unsupported` would document rare whole-object semantic operations such as coordinate-space conversion.

@@ -1,6 +1,7 @@
 // Copyright Max Harris
 
 #include "Elements/Conversion/PCGWriteDynMeshLODs.h"
+#include "Helpers/PCGUtilsParallelInputs.h"
 
 #include "Data/PCGDynamicMeshData.h"
 #include "DynamicMesh/DynamicMesh3.h"
@@ -411,7 +412,7 @@ bool FPCGWriteDynMeshLODsElement::ExecuteInternal(FPCGContext* Context) const
 #endif // WITH_EDITOR
 
 	// Status output ------------------------------------------------------------------------------------------
-	UPCGParamData* StatusData = FPCGContext::NewObject_AnyThread<UPCGParamData>(Context);
+	UPCGParamData* StatusData = PCGUtilsAsyncObjects::NewObject<UPCGParamData>(Context);
 	check(StatusData && StatusData->Metadata);
 	StatusData->Metadata->CreateAttribute<FSoftObjectPath>(
 		PCGWriteDynMeshLODsConstants::StatusTargetAttribute, FSoftObjectPath(),

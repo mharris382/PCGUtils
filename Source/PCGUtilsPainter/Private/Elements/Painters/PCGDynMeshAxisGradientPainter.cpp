@@ -1,6 +1,7 @@
 // Copyright Max Harris
 
 #include "Elements/Painters/PCGDynMeshAxisGradientPainter.h"
+#include "Helpers/PCGUtilsParallelInputs.h"
 
 #include "DynamicMesh/DynamicMesh3.h"
 #include "PCGContext.h"
@@ -393,7 +394,7 @@ UPCGUtilsDynMeshFactoryData* UPCGDynMeshAxisGradientPainterProviderSettings::Cre
 
 	UPCGDynMeshAxisGradientPainterFactoryData* Factory = InFactory
 		? Cast<UPCGDynMeshAxisGradientPainterFactoryData>(InFactory)
-		: FPCGContext::NewObject_AnyThread<UPCGDynMeshAxisGradientPainterFactoryData>(InContext);
+		: PCGUtilsAsyncObjects::NewObject<UPCGDynMeshAxisGradientPainterFactoryData>(InContext);
 	if (!Factory)
 	{
 		return nullptr;

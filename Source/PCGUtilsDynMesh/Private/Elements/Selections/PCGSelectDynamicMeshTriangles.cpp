@@ -1,4 +1,5 @@
 #include "Elements/Selections/PCGSelectDynamicMeshTriangles.h"
+#include "Helpers/PCGUtilsParallelInputs.h"
 
 #include "Data/PCGDynamicMeshData.h"
 #include "DynamicMesh/DynamicMesh3.h"
@@ -120,7 +121,7 @@ UPCGUtilsDynMeshFactoryData* UPCGSelectDynamicMeshTrianglesSettings::CreateFacto
 {
 	UPCGSelectDynamicMeshTrianglesFactoryData* Factory = InFactory
 		? Cast<UPCGSelectDynamicMeshTrianglesFactoryData>(InFactory)
-		: FPCGContext::NewObject_AnyThread<UPCGSelectDynamicMeshTrianglesFactoryData>(InContext);
+		: PCGUtilsAsyncObjects::NewObject<UPCGSelectDynamicMeshTrianglesFactoryData>(InContext);
 	if (!Factory) return nullptr;
 	Factory->Priority = Priority;
 	Factory->Mode = Mode;

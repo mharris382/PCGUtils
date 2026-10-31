@@ -23,6 +23,9 @@ class PCGUTILSDYNMESH_API UPCGDynMeshPropertiesSettings : public UPCGUtilsDynMes
 	GENERATED_BODY()
 
 public:
+	/** Runs through ProcessMesh, not a process operation, so the base always runs it serially; and it is cheap per input. */
+	virtual bool SupportsParallelInputs() const override { return false; }
+
 	UPCGDynMeshPropertiesSettings();
 
 #if WITH_EDITOR

@@ -1,6 +1,7 @@
 # Processing several meshes at once
 
-Status: investigation and plan, 2026-10-30. Nothing here is built yet.
+Status: investigation and plan, 2026-10-30. Stage 1 is written (see Stage 1, "As written") but not yet
+compiled or tested; stages 2 and 3 are not started.
 
 ## Answer
 
@@ -13,7 +14,7 @@ surface correspondence used by the Painter LOD transfer, and the Blur and Distan
 
 | Group | Count | What to do |
 |---|---|---|
-| Nodes on the shared process base (Decimate, Simplify, Remesh, Boolean-free topology, deforms, attributes) | 24 | One change in the base, then a per-node opt-in |
+| Nodes on the shared process base (Decimate, Simplify, Remesh, Boolean-free topology, deforms, attributes) | 24 | One change in the base; on by default, with a per-node opt-out and a Disable Parallel advanced setting |
 | Nodes with their own input loop and real per-input work | 12 executors (the Selection source base covers 6 Selection nodes) | Same pattern, node by node |
 | Cheap per input; parallel would gain little | about 10 | Leave as they are |
 | Real game-thread work (assets, components, actors) | 6 | Must stay serial |
@@ -87,7 +88,7 @@ Notes:
 | Executor | What runs per input | Notes |
 |---|---|---|
 | Boolean (operand base) | One A×B pair, or one sequential fold | The fold over operands stays serial inside one output. Outputs are independent. |
-| Realize Builders | Every Builder for every seed | Probably the biggest win: one seed runs a whole deferred chain. `Build` per (seed, Builder) is independent. Appending, material-offset assignment and emitting are order-dependent and stay serial. Parallel only if every operation in the chain opts in. |
+| Realize Builders | Every Builder for every seed | Probably the biggest win: one seed runs a whole deferred chain. `Build` per (seed, Builder) is independent. Appending, material-offset assignment and emitting are order-dependent and stay serial. Parallel only if no node in the chain opts out or has Disable Parallel set. |
 | Separate Islands | Island search plus one submesh per island | Heavier since the Intersecting mode (self-intersection tree). |
 | Separate Selection | Splitting per input | |
 | Selection source base (6 nodes: Mesh Occlusion, Self Occlusion, Edge Direction, Sharp Edge Filter, Select Triangles, Selection From Spline) | Evaluating the factory per input | Occlusion is raycast-heavy. The Distance, Bounds and Inside Mesh factories read the actor transform, so they need the prefetch too. |
@@ -121,57 +122,85 @@ Split `FPCGUtilsDynMeshProcessBaseElement::ExecuteInternal` into three passes ov
 3. **Emit, serial, in input order.** Build selection outputs (these allocate), the auxiliary outputs, and the
    tagged data, exactly as now.
 
-The parallel path is gated three ways:
-- **A new opt-in on the operation**, `virtual bool SupportsParallelInputs() const { return false; }`, so each node
-  is turned on deliberately after it is checked.
-- **At least two concrete inputs.**
-- **A console variable**, `pcgutils.DynMesh.ParallelInputs` (default 1), to switch it off for debugging and to
-  time serial against parallel. A per-node setting would only add clutter.
+The parallel path runs only when every one of these allows it:
 
-**Allocation helper** (`PCGUtilsCore`, for example `PCGUtilsAsyncObjects::NewObject<T>(Context)`):
-- **On the game thread:** calls `FPCGContext::NewObject_AnyThread`, so nothing changes.
-- **On a worker inside a parallel scope:** takes `FGCScopeGuard`, calls `::NewObject`, and records the object
-  under a lock. When the `ParallelFor` returns, the scope runs on the game thread and clears
-  `EInternalObjectFlags::Async` on each recorded object and its subobjects. The engine does the same in
-  `PCGExecuteBlueprint.cpp` (around line 587). Without this, the objects would never be garbage collected.
-- **On a worker outside any scope** (an element that already runs off the game thread, serially): calls
-  `FPCGContext::NewObject_AnyThread`, as now.
+| Gate | Where | Who sets it | Purpose |
+|---|---|---|---|
+| **Disable Parallel** (`bDisableParallelInputs`, default false) | `UPCGUtilsDynMeshProcessBaseSettings`, `AdvancedDisplay`, category `Advanced` | the user, per node instance | Check whether a problem comes from the parallel path: tick it on the suspect node, regenerate, compare. Not `PCG_Overridable`: it is a debugging switch, not data. |
+| **Node opt-out**, `virtual bool SupportsParallelInputs() const { return true; }` | the settings class | the node's author | A node that must never run its inputs in parallel returns false. Its Disable Parallel row is hidden (`CanEditChange` / a details customization), since ticking it would do nothing. |
+| **Operation opt-out**, `virtual bool SupportsParallelExecute() const { return true; }` | `IPCGUtilsDynMeshProcessOperation` | the operation, from its own settings | For cases that depend on the node's settings: Paint Vertex Color returns `!bPaintLODsFromHighest` until Stage 2b. |
+| **At least two concrete inputs** | the base | — | One input gains nothing. |
+| **Console variable** `pcgutils.ParallelInputs` (default 1) | global | the user | Turns it off for every node at once, and times serial against parallel. |
 
-The scope is a thread-local pointer set by the runner around each body call. Then replace
-`FPCGContext::NewObject_AnyThread` in every path an operation can reach:
-- the Mesh Target functions;
-- Boolean, Array, the topology base and Paint Vertex Color;
-- the Builder materialization paths.
+**Default on, opt out.** The base turns parallel on for every node, and a node opts out with a reason. That
+makes the parallel path the normal path, so problems show up instead of hiding behind flags nobody turned on.
+Each `return false` carries a one-line comment saying why (for example "writes to the target actor's
+components"), so the list of opt-outs explains itself.
 
-Add one line to the extension checklist in `PCGUtilsDynMesh.md`: "Inside an operation, allocate through
-`PCGUtilsAsyncObjects::NewObject`."
+**Logging.** When parallel is skipped for a reason other than input count, the node logs one Verbose line on
+`LogPCGUtilsDynMesh` naming the gate ("Parallel inputs off: Disable Parallel is set"), so a user checking
+whether it ran in parallel can tell.
 
-**Actor-transform prefetch:**
-- Add a resolved actor transform (optional) to `FPCGUtilsDynMeshProcessInvocation`, filled in the prepare pass.
-- Add an overload, `ResolveMeshActorTransform(const FPCGUtilsDynMeshProcessInvocation&, bool bConvertToLocalSpace)`,
-  that reads the prefetched value. It falls back to today's lookup when the value is empty, as in deferred
-  Builder evaluation.
-- Move the 5 operations onto the overload.
+**As written (2026-10-30, not yet compiled or run):**
 
-**Opt in the 19 ready nodes, then the 5 prefetch nodes.** Paint Vertex Color returns
-`!bPaintLODsFromHighest` for now.
+- **Runner and allocation helper**, `PCGUtilsCore/Public/Helpers/PCGUtilsParallelInputs.h`:
+  - `PCGUtilsParallelInputs::ForEach(Context, Num, bParallel, Body)` runs `ParallelFor` (Unbalanced) only when
+    `bParallel`, `Num >= 2` and the caller is on the game thread; otherwise a plain loop. It returns whether it
+    went parallel, and counts parallel runs for tests (`GetParallelRunCount`).
+  - `PCGUtilsAsyncObjects::NewObject<T>(Context, ...)`: on a worker inside a run, `FGCScopeGuard` + `::NewObject`,
+    recorded under a lock; everywhere else exactly `FPCGContext::NewObject_AnyThread`. When the run ends,
+    `FAllocationScope` clears `EInternalObjectFlags::Async` on each recorded object and its subobjects on the
+    game thread, as `PCGGraphExecutor::ClearAsyncFlags` and `PCGExecuteBlueprint.cpp` do.
+  - Console variable `pcgutils.ParallelInputs` (default 1), shared by every PCGUtils module, not DynMesh only.
+- **Every `FPCGContext::NewObject_AnyThread` in PCGUtilsDynMesh and PCGUtilsPainter** (91 calls, 65 files) now
+  goes through the helper. Outside a parallel run it is the same call, so this changes nothing on its own, and it
+  covers paths an operation can reach that nobody has listed.
+- **Process base:** the three passes; the gates as in the table above; the Verbose line naming the gate.
+  Unmigrated nodes (no process operation, `ProcessMesh` instead) always run serially.
+- **Opt-outs:**
+  - Node-level, `SupportsParallelInputs() == false`: the nodes with their own executor (Selection to Paths,
+    Sample, Route Path, Trace Surface Path, Apply Points By Vertex ID, the operand base and so Boolean, Project
+    Points, Separate Islands, Separate Selection) and Properties (runs through `ProcessMesh`). For the own-executor
+    nodes this only hides the row, since their loop never reaches the base; Stage 2 removes those opt-outs.
+  - Operation-level: Paint Vertex Color returns `LODPlan.PrimaryOfInput.IsEmpty()`, so Paint LODs From Highest
+    Detail stays serial.
+- **Behaviour change in the emit pass:** when building the full-mesh selection output fails, the half-made output
+  entry is now removed. Before, it stayed in the output as a copy of the input's tagged data.
+
+**The actor-transform prefetch moved to Stage 3.** Reading the target actor from a worker is safe in Stage 1:
+`FPCGContext::GetTargetActor` is plain reads, and the game thread is blocked inside the `ParallelFor` for the
+whole run, so nothing can move the actor or collect it. It only becomes necessary once the element itself runs
+off the game thread, where the game thread keeps ticking.
+
+**Code reachable from an operation's `Execute`** was checked for other context use: operations read pins,
+settings and load assets only in `CreateProcessOperation`, which runs serially; Paint's selector resolution
+happens only in LOD mode, which is serial.
+
+**First own-loop user: DynMesh | Generate LODs.** It is not on the process base. It allocates every output
+serially, then calls `PCGUtilsParallelInputs::ForEach` once over every (input, LOD) pair, so one input's LODs
+also decimate at once. Its own `Disable Parallel` and the CVar gate it. This is the shape Stage 2 converts the
+other own-loop executors to.
 
 ### Stage 2: own-loop executors
 
 Factor the three passes into a small shared runner, for example
-`PCGUtilsParallelInputs::Run(Context, Num, Prepare, Body, Emit)`. It owns the scope, the console variable and the
-ordering. Then convert the 12 executors in the table, most valuable first: Realize Builders, Boolean, Separate
+`PCGUtilsParallelInputs::Run(Context, Num, bAllowParallel, Prepare, Body, Emit)`. It owns the scope, the console
+variable, the input-count gate and the ordering. The caller passes `bAllowParallel` from its own gates, so
+the process base and the own-loop executors share one implementation. Executors with their own settings class
+get the same **Disable Parallel** advanced setting and `SupportsParallelInputs()` opt-out, in a small shared
+settings mixin or by copying the two members. The rule is the same everywhere: a user can always force serial
+on one node. Then convert the 12 executors in the table, most valuable first: Realize Builders, Boolean, Separate
 Islands, the Selection source base, From Static Mesh, then the rest.
 
 **Realize Builders.**
-- Add `SupportsParallelBuild()` to Builder factories. It is true only when every process operation in the chain
-  supports parallel inputs, so one unconverted node in a chain keeps that chain serial.
+- Add `SupportsParallelBuild()` to Builder factories. It is true only when every node in the chain allows parallel (no opt-out, Disable Parallel off,
+  operation opt-out allows it), so one serial node in a chain keeps that chain serial.
 - The body produces one build result per (seed, Builder).
 - The emit pass appends results and assigns material offsets in today's order, so outputs stay byte-for-byte
   the same.
 
 **Selection factories.** `FPCGUtilsDynMeshSelectionEvaluationContext` gets the prefetched actor transform, so
-the Distance, Bounds and Inside Mesh factories stop reading the actor.
+the Distance, Bounds and Inside Mesh factories stop reading the actor (needed for Stage 3 only).
 
 **Stage 2b: Paint Vertex Color LOD mode in two waves.**
 1. Paint the primaries and the ungrouped inputs in parallel.
@@ -192,6 +221,14 @@ Changes to the process base:
   workers, though its `AsyncObjects` set still needs the helper's lock.
 - **Derived executors** that override `ExecuteInternal` keep their own `CanExecuteOnlyOnMainThread` until each is
   checked.
+- **Actor-transform prefetch** (moved here from Stage 1): an optional resolved actor transform on
+  `FPCGUtilsDynMeshProcessInvocation`, filled in `PrepareData`, and a
+  `ResolveMeshActorTransform(const FPCGUtilsDynMeshProcessInvocation&, bool)` overload that falls back to today's
+  lookup when it is empty (deferred Builder evaluation). Move Transform, Array, Mirror, UV Project and Paint onto
+  it. Off the game thread the game thread keeps ticking, so reading the actor from a worker is no longer safe.
+- **`PCGUtilsParallelInputs::ForEach` refuses to go parallel off the game thread** today, because only the game
+  thread may clear Async flags. Stage 3 needs another way to hand worker-created objects back: for example,
+  allocate the per-input objects in `PrepareData`, or clear the flags in a short game-thread phase after Execute.
 
 Do this only after stages 1 and 2 have shown the parallel bodies are clean. It touches every process node's
 threading at once.
@@ -206,8 +243,11 @@ Both are worth doing later.
 
 All tests run in the scratch host (`C:\PCGUtilsShadow`, DebugGame, non-unity).
 
-- **`PCGUtils.DynMesh.ParallelInputs.MatchesSerial`**, table-driven over every opted-in node:
-  - 8 inputs of different sizes, run with the console variable at 0 and at 1;
+- **`PCGUtils.DynMesh.ParallelInputs.Gates`**: each gate on its own forces the serial path (Disable Parallel,
+  a node opt-out, an operation opt-out, one input, the console variable at 0), and with none set the parallel
+  path runs. Observed via a test hook that counts parallel bodies.
+- **`PCGUtils.DynMesh.ParallelInputs.MatchesSerial`**, table-driven over every node that doesn't opt out:
+  - 8 inputs of different sizes, run with Disable Parallel on and off;
   - compares output order, vertex and triangle counts, positions, @Data, tags, selection outputs and auxiliary
     outputs.
 - **`PCGUtils.DynMesh.ParallelInputs.AsyncFlagsCleared`**: objects made on workers carry no `Async` flag after
@@ -225,7 +265,7 @@ All tests run in the scratch host (`C:\PCGUtilsShadow`, DebugGame, non-unity).
 ## Risks
 
 - **Hidden game-thread work in Geometry Script calls we have not read.** The engine running these functions on
-  workers covers the common ones, and the serial/parallel comparison test covers each opted-in node. A stray
+  workers covers the common ones, and the serial/parallel comparison test covers each node that does not opt out. A stray
   `check(IsInGameThread())` would fail loudly in the DebugGame build.
 - **Peak memory rises.** Temporary meshes (Mesh Target region copies, for example) now exist for several inputs
   at once, at most one set per worker. Outputs were already all held until the node finished.

@@ -1,4 +1,5 @@
 #include "Elements/Conversion/PCGDynamicMeshSelectionToPaths.h"
+#include "Helpers/PCGUtilsParallelInputs.h"
 
 #include "Data/PCGBasePointData.h"
 #include "Data/PCGDynamicMeshData.h"
@@ -210,7 +211,7 @@ bool FPCGDynamicMeshSelectionToPathsElement::ExecuteInternal(FPCGContext* Contex
 				OutputPositions.Add(MeshToOutput.TransformPosition(MeshPosition));
 			}
 
-			UPCGPointArrayData* OutputData = FPCGContext::NewObject_AnyThread<UPCGPointArrayData>(Context);
+			UPCGPointArrayData* OutputData = PCGUtilsAsyncObjects::NewObject<UPCGPointArrayData>(Context);
 			InheritDataDomain(OutputData, MeshData);
 			OutputData->SetNumPoints(OutputPositions.Num(), false);
 			auto Transforms = OutputData->GetTransformValueRange();
