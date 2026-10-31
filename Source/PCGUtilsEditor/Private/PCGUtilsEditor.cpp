@@ -10,10 +10,12 @@
 #include "Factories/PCGUtilsFractureFactory.h"
 #include "Factories/PCGUtilsGeometryCollectionSelectionFactory.h"
 #include "Visualizers/PCGMarkerComponentVisualizer.h"
+#include "Visualizers/PCGVolumeComponentVisualizer.h"
 #include "Visualizers/PCGSplineComponentVisualizer.h"
 #include "Visualizers/PCGChildSplineComponentVisualizer.h"
 #include "Visualizers/ShapePathComponentVisualizer.h"
 #include "Components/PCGMarkerComponent.h"
+#include "Components/PCGVolumeComponent.h"
 #include "Components/PCGSplineComponent.h"
 #include "Components/PCGChildSplineComponent.h"
 #include "ShapePath/ShapePathComponent.h"
@@ -42,6 +44,10 @@ void FPCGUtilsEditor::StartupModule()
 		GUnrealEd->RegisterComponentVisualizer(UPCGMarkerComponent::StaticClass()->GetFName(), MarkerVis);
 		MarkerVis->OnRegister();
 
+		TSharedPtr<FPCGVolumeComponentVisualizer> VolumeVis = MakeShared<FPCGVolumeComponentVisualizer>();
+		GUnrealEd->RegisterComponentVisualizer(UPCGVolumeComponent::StaticClass()->GetFName(), VolumeVis);
+		VolumeVis->OnRegister();
+
 		TSharedPtr<FShapePathComponentVisualizer> ShapeVis = MakeShared<FShapePathComponentVisualizer>();
 		GUnrealEd->RegisterComponentVisualizer(UShapePathComponent::StaticClass()->GetFName(), ShapeVis);
 		ShapeVis->OnRegister();
@@ -55,6 +61,7 @@ void FPCGUtilsEditor::ShutdownModule()
 	if (GUnrealEd)
 	{
 		GUnrealEd->UnregisterComponentVisualizer(UPCGMarkerComponent::StaticClass()->GetFName());
+		GUnrealEd->UnregisterComponentVisualizer(UPCGVolumeComponent::StaticClass()->GetFName());
 		GUnrealEd->UnregisterComponentVisualizer(UPCGSplineComponent::StaticClass()->GetFName());
 		GUnrealEd->UnregisterComponentVisualizer(UPCGChildSplineComponent::StaticClass()->GetFName());
 		GUnrealEd->UnregisterComponentVisualizer(UShapePathComponent::StaticClass()->GetFName());
