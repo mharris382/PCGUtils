@@ -594,6 +594,30 @@ The simplification itself lives in `FPCGDynMeshSimplifyParameters` / `PCGUtilsDy
 (`Geometry/PCGUtilsDynMeshSimplifyParameters.h`), so code outside a graph, such as the Static Mesh Brush cache,
 runs exactly the same simplifier as the node.
 
+## UVs
+
+Every UV node derives from `UPCGDynamicMeshUVProcessBaseSettings`: standard DynMesh/Selection input and Selector,
+a `UV Layer` to write (created if missing, other layers untouched), and the selection preserved, since only the
+overlay changes. A selection limits a node to its triangles. The shared helpers in `Geometry/PCGUtilsDynMeshUVRegion.h`
+make that safe: `Gather` copies a region's UVs out keeping which corners share a UV, the node edits them, and
+`WriteBack` puts them in again. A whole-mesh region rebuilds the overlay; a partial one gets new elements, so a UV
+shared with an unselected triangle is split rather than dragged along. `RunOnRegion` runs a whole-mesh Geometry Script
+function on a submesh of the region (or a copy of the mesh) and writes its UVs back, which is how whole-mesh-only
+methods honour a selection.
+
+| Node | What it does |
+| --- | --- |
+| **Auto UV** | One node for Geometry Script's automatic unwraps; `Method` is first and shows under the title: Patch Builder, XAtlas, or per-island Conformal / Spectral Conformal / Exponential Map (Recompute UVs, islands from polygroups or existing UV islands, packed afterwards with the Blender-style packer unless Pack Islands is off). A selection is unwrapped on its own, into its own unit square. |
+| **Project UVs From Bounds** | Maps a box exactly onto UV 0 to 1, Planar along X, Y or Z, or Box (each triangle along its dominant normal axis, the three mappings overlapping). The box: Each Input, All Inputs (one shared texture), the optional Bounds pin (bounds of any spatial data: sample a box placed in the level), or Custom; then Padding (cm) and Square (short side grown about the centre). World space by default (target actor transform applied). The box used is written to `@Data.UVProjectionMin` / `UVProjectionMax` (Vector, names are settings), so `Position = Min + UV * (Max - Min)` on the projected axes: the texture-to-world mapping a render target, distance-field bake or compute pass needs. |
+| **Project UVs** | (Existing) planar projection from projector points, scale in UV per cm; with several projectors each triangle picks the one it faces most. |
+| **Pack UV Islands** | After Blender's Pack Islands, Bounding Box shape method (`Geometry/PCGUtilsDynMeshUVPack.h`): Average Island Scale, Scale (fill the square or keep size), Rotation (None, Cardinal, Axis Aligned = turn to the smallest-area box, Any = both), Margin Method Scaled / Add / Fraction as Blender defines them, half a margin at the square's edges. Packing is bottom-left skyline, largest first, with the largest fitting scale found by bisection. Or Geometry Script Repack. Concave/Convex shapes are not implemented. |
+| **Transform UVs** | Scale, rotate (degrees, counter-clockwise), then translate about the UV origin, the region centre, each island's centre or a custom pivot. All three are input shorthands (`UVTranslation`, `UVRotation`, `UVScale`). |
+| **UV Channels** | Copy From Layer (follows the selection), Clear (follows the selection), Set Layer Count (whole mesh, 1 to 8). Settings are checked before the target layer is created, so an error leaves the mesh untouched. |
+| **Texel Density** | Scales islands so Texture Resolution pixels give Texel Density px/m (both shorthands): Each Island about its centre, or Whole Region by one factor keeping the layout. Area is in mesh units (cm), ignoring actor scale. |
+
+Lightmap channel: UV Channels (Copy UV0 to UV1) or Auto UV on layer 1, then Pack UV Islands on layer 1 with
+Fraction margin about 2 / lightmap resolution. Coverage: `PCGUtils.DynMesh.UV`.
+
 ## Mesh properties
 
 **DynMesh | Properties** writes facts about each mesh to its `@Data` domain and passes the mesh through. The
