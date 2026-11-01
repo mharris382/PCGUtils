@@ -457,12 +457,12 @@ bool FPCGDynMeshSaveStaticMeshHighQualitySourceTest::RunTest(const FString&)
 	AddExpectedError(TEXT("inputs 0 and 1 are both the High Quality Source of"), EAutomationExpectedErrorFlags::Contains, 1);
 	TestEqual(TEXT("Two sources for one asset save nothing"), Run(Settings, { ToSave[0], ToSave[0], ToSave[1] }).Num(), 0);
 
-	AddExpectedError(TEXT("has a High Quality Source (input 0) but no LOD 0"), EAutomationExpectedErrorFlags::Contains, 1);
+	AddExpectedError(TEXT("has a High Quality Source (input 0) but no LOD 0"), EAutomationExpectedErrorFlags::Contains, 1, /*bIsRegex=*/false);
 	TestEqual(TEXT("A source with no LODs saves nothing"), Run(Settings, { ToSave[0] }).Num(), 0);
 
 	// With the option off, the source is read as a LOD, and its -1 is rejected as before.
 	Settings->bSaveHighQualitySourceFromAttribute = false;
-	AddExpectedError(TEXT("(LOD Attribute) is -1"), EAutomationExpectedErrorFlags::Contains, 1);
+	AddExpectedError(TEXT("(LOD Attribute) is -1"), EAutomationExpectedErrorFlags::Contains, 1, /*bIsRegex=*/false);
 	TestEqual(TEXT("Option off: the LODs still save, the source does not"), Run(Settings, ToSave).Num(), 3);
 	return true;
 }
