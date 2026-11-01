@@ -148,7 +148,8 @@ void FPCGGetVolumeDataElement::ProcessActor(FPCGContext* InContext,
 				if (const AActor* TargetActor = Context->GetTargetActor(nullptr))
 				{
 					// Apply inverse separately, so rotated non-uniform scale is not collapsed into a relative FTransform.
-					UE::Geometry::MeshTransforms::ApplyTransformInverse(Mesh,
+					// UE 5.8: MeshTransforms is a top-level namespace in GeometryCore, not under UE::Geometry.
+					MeshTransforms::ApplyTransformInverse(Mesh,
 						UE::Geometry::FTransformSRT3d(TargetActor->GetActorTransform()), true);
 				}
 				else

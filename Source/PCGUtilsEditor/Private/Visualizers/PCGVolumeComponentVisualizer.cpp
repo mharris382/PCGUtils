@@ -78,8 +78,9 @@ void FPCGVolumeComponentVisualizer::DrawVisualization(const UActorComponent* Com
 	{
 		for (int32 Index = 0; Index < Polygon.Vertices.Num(); ++Index)
 		{
-			PDI->DrawLine(BrushTransform.TransformPosition(Polygon.Vertices[Index]),
-				BrushTransform.TransformPosition(Polygon.Vertices[(Index + 1) % Polygon.Vertices.Num()]),
+			// FPoly vertices are FVector3f; the transform takes doubles.
+			PDI->DrawLine(BrushTransform.TransformPosition(FVector(Polygon.Vertices[Index])),
+				BrushTransform.TransformPosition(FVector(Polygon.Vertices[(Index + 1) % Polygon.Vertices.Num()])),
 				LineColor, SDPG_Foreground, bSelected ? 2.0f : 1.0f);
 		}
 	}
