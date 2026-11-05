@@ -14,6 +14,9 @@
 #include "Engine/StaticMesh.h"
 #include "GeometryScript/MeshAssetFunctions.h"
 #include "Materials/MaterialInterface.h"
+#include "Metadata/Accessors/IPCGAttributeAccessor.h"
+#include "Metadata/Accessors/PCGAttributeAccessorHelpers.h"
+#include "Metadata/Accessors/PCGAttributeAccessorKeys.h"
 #include "Metadata/PCGMetadata.h"
 #include "Metadata/PCGMetadataAttributeTpl.h"
 #include "Metadata/PCGMetadataAttributeTraits.h"
@@ -143,6 +146,127 @@ namespace PCGDynMeshFromStaticMeshPointsPrivate
 	}
 
 	/**
+	 * Paints a mesh one color with one element per vertex (an overlay element belongs to a single vertex, so one
+	 * element cannot be shared by the whole mesh). Replaces whatever colors it had.
+	 */
+	void SetSolidColor(FDynamicMesh3& Mesh, const FVector4f& Color)
+	{
+		if (!Mesh.HasAttributes())
+		{
+			Mesh.EnableAttributes();
+		}
+		if (!Mesh.Attributes()->HasPrimaryColors())
+		{
+			Mesh.Attributes()->EnablePrimaryColors();
+		}
+		UE::Geometry::FDynamicMeshColorOverlay* Colors = Mesh.Attributes()->PrimaryColors();
+		Colors->ClearElements();
+		TArray<int32> ElementOfVertex;
+		ElementOfVertex.Init(INDEX_NONE, Mesh.MaxVertexID());
+		for (const int32 VertexID : Mesh.VertexIndicesItr())
+		{
+			ElementOfVertex[VertexID] = Colors->AppendElement(Color);
+		}
+		for (const int32 TriangleID : Mesh.TriangleIndicesItr())
+		{
+			const UE::Geometry::FIndex3i Tri = Mesh.GetTriangle(TriangleID);
+			Colors->SetTriangle(TriangleID, UE::Geometry::FIndex3i(ElementOfVertex[Tri.A], ElementOfVertex[Tri.B], ElementOfVertex[Tri.C]));
+		}
+	}
+
+	/** Gives a mesh without a color layer a white one, so every placed mesh contributes colors to the append. */
+	void EnsureColors(FDynamicMesh3& Mesh)
+	{
+		if (!Mesh.HasAttributes() || !Mesh.Attributes()->HasPrimaryColors())
+		{
+			SetSolidColor(Mesh, FVector4f(1.0f, 1.0f, 1.0f, 1.0f));
+		}
+	}
+
+	/** Multiplies every color of a mesh, channel by channel. A mesh without colors is treated as white. */
+	void MultiplyColors(FDynamicMesh3& Mesh, const FVector4f& Factor)
+	{
+		EnsureColors(Mesh);
+		UE::Geometry::FDynamicMeshColorOverlay* Colors = Mesh.Attributes()->PrimaryColors();
+		for (const int32 ElementID : Colors->ElementIndicesItr())
+		{
+			const FVector4f Color = Colors->GetElement(ElementID);
+			Colors->SetElement(ElementID, FVector4f(Color.X * Factor.X, Color.Y * Factor.Y, Color.Z * Factor.Z, Color.W * Factor.W));
+		}
+	}
+
+	bool IsScalarType(int16 TypeId)
+	{
+		switch (static_cast<EPCGMetadataTypes>(TypeId))
+		{
+		case EPCGMetadataTypes::Float:
+		case EPCGMetadataTypes::Double:
+		case EPCGMetadataTypes::Integer32:
+		case EPCGMetadataTypes::Integer64:
+		case EPCGMetadataTypes::Boolean:
+			return true;
+		default:
+			return false;
+		}
+	}
+
+	/**
+	 * Reads the per-point value of From Points and Blended modes for one point data. Init logs the exact failure and
+	 * returns false when the selector cannot be read the way the mode needs.
+	 */
+	struct FPointColorReader
+	{
+		TUniquePtr<const IPCGAttributeAccessor> Accessor;
+		TUniquePtr<const IPCGAttributeAccessorKeys> Keys;
+		bool bScalar = false;
+
+		bool Init(FPCGContext* Context, const UPCGBasePointData* PointData, const FPCGAttributePropertyInputSelector& Selector,
+			bool bAllowScalar, const TCHAR* SettingName, const TCHAR* ModeName, int32 InputIndex)
+		{
+			const FPCGAttributePropertyInputSelector Fixed = Selector.CopyAndFixLast(PointData);
+			Accessor = PCGAttributeAccessorHelpers::CreateConstAccessor(PointData, Fixed);
+			Keys = PCGAttributeAccessorHelpers::CreateConstKeys(PointData, Fixed);
+			if (!Accessor || !Keys)
+			{
+				PCGLog::LogErrorOnGraph(FText::Format(
+					LOCTEXT("ColorSourceMissing", "DynMesh | From Points: input {0}: {1} '{2}' does not exist on the points; Vertex Color Source {3} needs it; skipped."),
+					FText::AsNumber(InputIndex), FText::FromString(SettingName), Fixed.GetDisplayText(), FText::FromString(ModeName)), Context);
+				return false;
+			}
+			bScalar = bAllowScalar && IsScalarType(Accessor->GetUnderlyingType());
+			if (bScalar)
+			{
+				return true;
+			}
+			FVector4 Probe;
+			if (Keys->GetNum() > 0 && !Accessor->Get<FVector4>(Probe, 0, *Keys, EPCGAttributeAccessorFlags::AllowBroadcastAndConstructible))
+			{
+				const FText Type = FText::FromString(StaticEnum<EPCGMetadataTypes>()->GetNameStringByValue(Accessor->GetUnderlyingType()));
+				PCGLog::LogErrorOnGraph(FText::Format(bAllowScalar
+					? LOCTEXT("BlendSourceType", "DynMesh | From Points: input {0}: {1} '{2}' is of type {3}; it must be a scalar or a Vector4; skipped.")
+					: LOCTEXT("ColorSourceType", "DynMesh | From Points: input {0}: {1} '{2}' is of type {3}; it must be a Vector4 or convert to one; skipped."),
+					FText::AsNumber(InputIndex), FText::FromString(SettingName), Fixed.GetDisplayText(), Type), Context);
+				return false;
+			}
+			return true;
+		}
+
+		/** The point's value as a color or color multiplier. A scalar scales RGB and keeps alpha at 1. */
+		FVector4f Read(int32 PointIndex) const
+		{
+			if (bScalar)
+			{
+				double Value = 1.0;
+				Accessor->Get<double>(Value, PointIndex, *Keys, EPCGAttributeAccessorFlags::AllowBroadcastAndConstructible);
+				return FVector4f(Value, Value, Value, 1.0f);
+			}
+			FVector4 Value(1.0, 1.0, 1.0, 1.0);
+			Accessor->Get<FVector4>(Value, PointIndex, *Keys, EPCGAttributeAccessorFlags::AllowBroadcastAndConstructible);
+			return FVector4f(Value);
+		}
+	};
+
+	/**
 	 * A mesh has no points, so of the point data's metadata only the dataset-wide @Data domain carries over. Copied
 	 * value by value: the engine's domain copy refuses @Data inherited from upstream data ("Invalid parenting").
 	 */
@@ -155,17 +279,24 @@ namespace PCGDynMeshFromStaticMeshPointsPrivate
 	}
 }
 
+UPCGDynMeshFromStaticMeshPointsSettings::UPCGDynMeshFromStaticMeshPointsSettings()
+{
+	PointColorAttribute.SetPointProperty(EPCGPointProperties::Color);
+	BlendAttribute.SetPointProperty(EPCGPointProperties::Density);
+}
+
 #if WITH_EDITOR
 FText UPCGDynMeshFromStaticMeshPointsSettings::GetDefaultNodeTitle() const
 {
-	return LOCTEXT("Title", "DynMesh | From Static Mesh Points");
+	return LOCTEXT("Title", "DynMesh | From Points");
 }
 
 FText UPCGDynMeshFromStaticMeshPointsSettings::GetNodeTooltipText() const
 {
 	return LOCTEXT("Tooltip",
 		"Makes one DynMesh per input point data. Each point places the static mesh it names by its own transform, "
-		"and the DynMesh keeps the point data's tags and @Data attributes. Connect Get Static Mesh Data to turn "
+		"and the DynMesh keeps the point data's tags and @Data attributes. Vertex Color Source picks where vertex colors "
+		"come from: the static mesh (default), the point's color, the two multiplied, or none. Connect Get Static Mesh Data to turn "
 		"mesh components placed in the level into DynMeshes that still carry what their components were tagged with.");
 }
 #endif
@@ -217,7 +348,7 @@ bool FPCGDynMeshFromStaticMeshPointsElement::ExecuteInternal(FPCGContext* Contex
 		if (!PointData)
 		{
 			PCGLog::LogErrorOnGraph(FText::Format(
-				LOCTEXT("NotPoints", "DynMesh | From Static Mesh Points: input {0} is not point data; skipped."), FText::AsNumber(Index)), Context);
+				LOCTEXT("NotPoints", "DynMesh | From Points: input {0} is not point data; skipped."), FText::AsNumber(Index)), Context);
 			continue;
 		}
 
@@ -226,22 +357,40 @@ bool FPCGDynMeshFromStaticMeshPointsElement::ExecuteInternal(FPCGContext* Contex
 		if (!MeshAttribute)
 		{
 			PCGLog::LogErrorOnGraph(FText::Format(
-				LOCTEXT("NoMeshAttribute", "DynMesh | From Static Mesh Points: input {0} has no '{1}' attribute, so its points name no mesh; skipped."),
+				LOCTEXT("NoMeshAttribute", "DynMesh | From Points: input {0} has no '{1}' attribute, so its points name no mesh; skipped."),
 				FText::AsNumber(Index), FText::FromName(Settings->MeshAttributeName)), Context);
 			continue;
 		}
 		if (MeshAttribute->GetTypeId() != PCG::Private::MetadataTypes<FSoftObjectPath>::Id && MeshAttribute->GetTypeId() != PCG::Private::MetadataTypes<FString>::Id)
 		{
 			PCGLog::LogErrorOnGraph(FText::Format(
-				LOCTEXT("MeshNotPath", "DynMesh | From Static Mesh Points: input {0}: attribute '{1}' is of type {2}; a mesh must be a soft object path or a string; skipped."),
+				LOCTEXT("MeshNotPath", "DynMesh | From Points: input {0}: attribute '{1}' is of type {2}; a mesh must be a soft object path or a string; skipped."),
 				FText::AsNumber(Index), FText::FromName(Settings->MeshAttributeName),
 				FText::FromString(StaticEnum<EPCGMetadataTypes>()->GetNameStringByValue(MeshAttribute->GetTypeId()))), Context);
+			continue;
+		}
+
+		const EPCGDynMeshFromPointsVertexColorSource ColorSource = Settings->VertexColorSource;
+		FPointColorReader ColorReader;
+		if (ColorSource == EPCGDynMeshFromPointsVertexColorSource::FromPoints
+			&& !ColorReader.Init(Context, PointData, Settings->PointColorAttribute, /*bAllowScalar=*/false, TEXT("Point Color Attribute"), TEXT("From Points"), Index))
+		{
+			continue;
+		}
+		if (ColorSource == EPCGDynMeshFromPointsVertexColorSource::Blended
+			&& !ColorReader.Init(Context, PointData, Settings->BlendAttribute, /*bAllowScalar=*/true, TEXT("Blend Attribute"), TEXT("Blended"), Index))
+		{
 			continue;
 		}
 
 		FDynamicMesh3 Combined;
 		Combined.EnableAttributes();
 		Combined.Attributes()->EnableMaterialID();
+		// Appending copies colors only into a mesh that already has a color layer; without this they were dropped.
+		if (ColorSource != EPCGDynMeshFromPointsVertexColorSource::None)
+		{
+			Combined.Attributes()->EnablePrimaryColors();
+		}
 		TArray<UMaterialInterface*> Materials;
 		int32 NumPlaced = 0;
 
@@ -255,7 +404,7 @@ bool FPCGDynMeshFromStaticMeshPointsElement::ExecuteInternal(FPCGContext* Contex
 			if (MeshPath.IsNull())
 			{
 				PCGLog::LogErrorOnGraph(FText::Format(
-					LOCTEXT("MeshPathEmpty", "DynMesh | From Static Mesh Points: input {0}, point {1}: attribute '{2}' is empty; it must name a static mesh; point skipped."),
+					LOCTEXT("MeshPathEmpty", "DynMesh | From Points: input {0}, point {1}: attribute '{2}' is empty; it must name a static mesh; point skipped."),
 					FText::AsNumber(Index), FText::AsNumber(PointIndex), FText::FromName(Settings->MeshAttributeName)), Context);
 				continue;
 			}
@@ -263,7 +412,7 @@ bool FPCGDynMeshFromStaticMeshPointsElement::ExecuteInternal(FPCGContext* Contex
 			if (!Loaded)
 			{
 				PCGLog::LogErrorOnGraph(FText::Format(
-					LOCTEXT("MeshNotLoaded", "DynMesh | From Static Mesh Points: input {0}, point {1}: '{2}' could not be loaded; point skipped."),
+					LOCTEXT("MeshNotLoaded", "DynMesh | From Points: input {0}, point {1}: '{2}' could not be loaded; point skipped."),
 					FText::AsNumber(Index), FText::AsNumber(PointIndex), FText::FromString(MeshPath.ToString())), Context);
 				continue;
 			}
@@ -271,7 +420,7 @@ bool FPCGDynMeshFromStaticMeshPointsElement::ExecuteInternal(FPCGContext* Contex
 			if (!StaticMesh)
 			{
 				PCGLog::LogErrorOnGraph(FText::Format(
-					LOCTEXT("NotStaticMesh", "DynMesh | From Static Mesh Points: input {0}, point {1}: '{2}' is a {3}, not a static mesh; point skipped."),
+					LOCTEXT("NotStaticMesh", "DynMesh | From Points: input {0}, point {1}: '{2}' is a {3}, not a static mesh; point skipped."),
 					FText::AsNumber(Index), FText::AsNumber(PointIndex), FText::FromString(MeshPath.ToString()), FText::FromString(Loaded->GetClass()->GetName())), Context);
 				continue;
 			}
@@ -279,13 +428,20 @@ bool FPCGDynMeshFromStaticMeshPointsElement::ExecuteInternal(FPCGContext* Contex
 			if (!Source.bRead)
 			{
 				PCGLog::LogErrorOnGraph(FText::Format(
-					LOCTEXT("MeshNotRead", "DynMesh | From Static Mesh Points: input {0}, point {1}: the geometry of '{2}' could not be read; point skipped."),
+					LOCTEXT("MeshNotRead", "DynMesh | From Points: input {0}, point {1}: the geometry of '{2}' could not be read; point skipped."),
 					FText::AsNumber(Index), FText::AsNumber(PointIndex), FText::FromString(MeshPath.ToString())), Context);
 				continue;
 			}
 
 			FDynamicMesh3 Placed = Source.Mesh;
 			RemapMaterials(Placed, Source.Materials, Materials);
+			switch (ColorSource)
+			{
+			case EPCGDynMeshFromPointsVertexColorSource::FromPoints: SetSolidColor(Placed, ColorReader.Read(PointIndex)); break;
+			case EPCGDynMeshFromPointsVertexColorSource::FromMesh:   EnsureColors(Placed); break;
+			case EPCGDynMeshFromPointsVertexColorSource::Blended:    MultiplyColors(Placed, ColorReader.Read(PointIndex)); break;
+			case EPCGDynMeshFromPointsVertexColorSource::None:       break;
+			}
 			// A mirrored point turns its mesh inside out; put the faces back the right way round.
 			MeshTransforms::ApplyTransform(Placed,
 				UE::Geometry::FTransformSRT3d(Transforms[PointIndex].GetRelativeTransform(ActorTransform)), /*bReverseOrientationIfNeeded=*/true);

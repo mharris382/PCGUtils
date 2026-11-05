@@ -7,6 +7,7 @@
 #include "ConversionUtils/VolumeToDynamicMesh.h"
 #include "DynamicMesh/DynamicMesh3.h"
 #include "DynamicMeshBuilder.h"
+#include "EditorModes.h"
 #include "EditorViewportClient.h"
 #include "Engine/Engine.h"
 #include "Engine/Polys.h"

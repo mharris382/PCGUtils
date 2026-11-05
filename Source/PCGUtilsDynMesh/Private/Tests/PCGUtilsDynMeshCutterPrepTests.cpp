@@ -1,7 +1,7 @@
 // Copyright Max Harris
 //
 // The two steps that turn static meshes placed in a level into clean solids a Boolean or a cut can use:
-// DynMesh | From Static Mesh Points, then DynMesh | Self Union. (The merge between them needs PCGEx and is tested
+// DynMesh | From Points, then DynMesh | Self Union. (The merge between them needs PCGEx and is tested
 // in the interop plugin.)
 
 #include "Misc/AutomationTest.h"
@@ -12,6 +12,7 @@
 #include "Data/PCGDynamicMeshSelectionData.h"
 #include "Data/PCGPointData.h"
 #include "DynamicMesh/DynamicMesh3.h"
+#include "DynamicMesh/DynamicMeshAttributeSet.h"
 #include "Elements/Creation/PCGDynMeshFromStaticMeshPoints.h"
 #include "Elements/Topology/PCGDynMeshSelfUnion.h"
 #include "GeometryScript/MeshPrimitiveFunctions.h"
@@ -195,6 +196,109 @@ bool FPCGDynMeshFromStaticMeshPointsTest::RunTest(const FString&)
 	const FTransform Origin[] = { FTransform::Identity };
 	TestEqual(TEXT("A mesh that cannot be loaded gives nothing"),
 		Run(Settings, { OnPin(MeshPoints(TEXT("/Engine/BasicShapes/NoSuchMesh.NoSuchMesh"), Origin, 1.0), PCGPinConstants::DefaultInputLabel) }).Num(), 0);
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FPCGDynMeshFromPointsVertexColorTest,
+	"PCGUtils.DynMesh.FromStaticMeshPoints.VertexColorSourceModes",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::ProductFilter)
+
+bool FPCGDynMeshFromPointsVertexColorTest::RunTest(const FString&)
+{
+	using namespace PCGUtilsDynMeshCutterPrepTests;
+	const TCHAR* Cube = TEXT("/Engine/BasicShapes/Cube.Cube");
+
+	UPCGDynMeshFromStaticMeshPointsSettings* Settings = NewObject<UPCGDynMeshFromStaticMeshPointsSettings>();
+	Settings->bConvertToLocalSpace = false;
+	TestEqual(TEXT("Vertex colors come from the mesh by default"), Settings->VertexColorSource, EPCGDynMeshFromPointsVertexColorSource::FromMesh);
+
+	// Two cubes: a red one at half density, a green one at full density.
+	const FTransform Two[] = { FTransform(FVector(-300, 0, 0)), FTransform(FVector(300, 0, 0)) };
+	UPCGPointData* Points = MeshPoints(Cube, Two, 1.0);
+	Points->GetMutablePoints()[0].Color = FVector4(1, 0, 0, 1);
+	Points->GetMutablePoints()[0].Density = 0.5f;
+	Points->GetMutablePoints()[1].Color = FVector4(0, 1, 0, 0.25);
+	Points->GetMutablePoints()[1].Density = 1.0f;
+
+	auto RunMode = [&](EPCGDynMeshFromPointsVertexColorSource Mode) -> const UE::Geometry::FDynamicMesh3*
+	{
+		Settings->VertexColorSource = Mode;
+		const TArray<FPCGTaggedData> Outputs = Run(Settings, { OnPin(Points, PCGPinConstants::DefaultInputLabel) });
+		return Outputs.Num() == 1 ? &MeshOf(Outputs[0]) : nullptr;
+	};
+	// Every color element on the side of the mesh the point at X put there.
+	auto ColorsOnSide = [](const UE::Geometry::FDynamicMesh3& Mesh, double Sign)
+	{
+		TArray<FVector4f> Colors;
+		const UE::Geometry::FDynamicMeshColorOverlay* Overlay = Mesh.Attributes()->PrimaryColors();
+		for (const int32 TriangleID : Mesh.TriangleIndicesItr())
+		{
+			if (Mesh.GetTriCentroid(TriangleID).X * Sign > 0.0 && Overlay->IsSetTriangle(TriangleID))
+			{
+				const UE::Geometry::FIndex3i Tri = Overlay->GetTriangle(TriangleID);
+				Colors.AddUnique(Overlay->GetElement(Tri.A));
+				Colors.AddUnique(Overlay->GetElement(Tri.B));
+				Colors.AddUnique(Overlay->GetElement(Tri.C));
+			}
+		}
+		return Colors;
+	};
+
+	auto Includes = [](const TArray<FVector4f>& All, const TArray<FVector4f>& Part)
+	{
+		for (const FVector4f& Color : Part)
+		{
+			if (!All.ContainsByPredicate([&](const FVector4f& Other) { return Other.Equals(Color, 1e-4f); }))
+			{
+				return false;
+			}
+		}
+		return true;
+	};
+
+	const UE::Geometry::FDynamicMesh3* FromMesh = RunMode(EPCGDynMeshFromPointsVertexColorSource::FromMesh);
+	UTEST_NOT_NULL(TEXT("From Mesh gives a mesh"), FromMesh);
+	UTEST_TRUE(TEXT("From Mesh keeps a color layer"), FromMesh->HasAttributes() && FromMesh->Attributes()->HasPrimaryColors());
+	const TArray<FVector4f> MeshColors = ColorsOnSide(*FromMesh, -1.0);
+	UTEST_TRUE(TEXT("Every triangle of the first cube has colors"), MeshColors.Num() > 0);
+
+	const UE::Geometry::FDynamicMesh3* FromPoints = RunMode(EPCGDynMeshFromPointsVertexColorSource::FromPoints);
+	UTEST_NOT_NULL(TEXT("From Points gives a mesh"), FromPoints);
+	UTEST_TRUE(TEXT("From Points has a color layer"), FromPoints->HasAttributes() && FromPoints->Attributes()->HasPrimaryColors());
+	const TArray<FVector4f> Red = ColorsOnSide(*FromPoints, -1.0);
+	const TArray<FVector4f> Green = ColorsOnSide(*FromPoints, 1.0);
+	TestTrue(TEXT("The first cube is painted its point's red"), Red.Num() == 1 && Red.Contains(FVector4f(1, 0, 0, 1)));
+	TestTrue(TEXT("The second cube is painted its point's green, alpha included"), Green.Num() == 1 && Green.Contains(FVector4f(0, 1, 0, 0.25f)));
+
+	const UE::Geometry::FDynamicMesh3* Blended = RunMode(EPCGDynMeshFromPointsVertexColorSource::Blended);
+	UTEST_NOT_NULL(TEXT("Blended gives a mesh"), Blended);
+	TArray<FVector4f> ExpectedHalf;
+	for (const FVector4f& Color : MeshColors)
+	{
+		ExpectedHalf.AddUnique(FVector4f(Color.X * 0.5f, Color.Y * 0.5f, Color.Z * 0.5f, Color.W));
+	}
+	const TArray<FVector4f> Half = ColorsOnSide(*Blended, -1.0);
+	TestTrue(TEXT("Blended by a scalar Density of 0.5 halves the mesh's RGB and keeps its alpha"),
+		Half.Num() == ExpectedHalf.Num() && Includes(Half, ExpectedHalf));
+	TestTrue(TEXT("Density 1 leaves the second cube's mesh colors as they are"), Includes(ColorsOnSide(*Blended, 1.0), ColorsOnSide(*FromMesh, 1.0)));
+
+	Settings->BlendAttribute.SetPointProperty(EPCGPointProperties::Color);
+	const UE::Geometry::FDynamicMesh3* BlendedByColor = RunMode(EPCGDynMeshFromPointsVertexColorSource::Blended);
+	UTEST_NOT_NULL(TEXT("Blended by $Color gives a mesh"), BlendedByColor);
+	TArray<FVector4f> ExpectedTinted;
+	for (const FVector4f& Color : MeshColors)
+	{
+		ExpectedTinted.AddUnique(FVector4f(Color.X, 0.0f, 0.0f, Color.W));
+	}
+	TestTrue(TEXT("Blended by a Vector4 multiplies channel by channel"), Includes(ColorsOnSide(*BlendedByColor, -1.0), ExpectedTinted));
+
+	const UE::Geometry::FDynamicMesh3* NoColors = RunMode(EPCGDynMeshFromPointsVertexColorSource::None);
+	UTEST_NOT_NULL(TEXT("None gives a mesh"), NoColors);
+	TestFalse(TEXT("None leaves the mesh without a color layer"), NoColors->HasAttributes() && NoColors->Attributes()->HasPrimaryColors());
+
+	AddExpectedError(TEXT("input 0: Blend Attribute 'NoSuchAttribute' does not exist on the points"), EAutomationExpectedErrorFlags::Contains, 1);
+	Settings->BlendAttribute.SetAttributeName(TEXT("NoSuchAttribute"));
+	TestNull(TEXT("A missing Blend Attribute gives nothing"), RunMode(EPCGDynMeshFromPointsVertexColorSource::Blended));
 	return true;
 }
 

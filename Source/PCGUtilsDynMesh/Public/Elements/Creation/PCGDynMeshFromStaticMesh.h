@@ -26,7 +26,7 @@ class UMaterialInterface;
  *
  * With All LODs, each mesh gives one DynMesh per LOD, marked with @Data.LOD and @Data.SourceMesh.
  *
- * DynMesh | From Static Mesh Points is the other way in: it places meshes by point transforms and appends each
+ * DynMesh | From Points is the other way in: it places meshes by point transforms and appends each
  * point data's into one DynMesh.
  */
 UCLASS(BlueprintType, ClassGroup = (Procedural), Category = "PCGUtils|DynMesh",

@@ -96,7 +96,7 @@ Notes:
 | Sample | Sampling per input | |
 | Path to Mesh, Loft Paths | Triangulation per path | |
 | From Static Mesh (execute phase) | Conversion per (mesh, LOD) | Loading stays in `PrepareData`. All LODs multiplies the work. |
-| From Static Mesh Points | One append per point data | |
+| From Points | One append per point data | |
 
 ### Leave serial
 

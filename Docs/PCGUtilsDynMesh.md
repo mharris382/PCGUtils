@@ -464,8 +464,16 @@ attributes of the entry that named it become `@Data`, Mesh Attribute included, s
 it came from. The read settings (materials, override materials, LOD, synchronous load) are the engine node's, and
 the meshes read are dynamically tracked so the graph regenerates when one changes. An empty entry warns and is
 skipped; a missing attribute, an asset that will not load or is not a mesh, and an override-material count
-mismatch are errors naming the input and element. **DynMesh | From Static Mesh Points** remains the way to place
+mismatch are errors naming the input and element. **DynMesh | From Points** remains the way to place
 meshes by point transforms and append them.
+
+**DynMesh | From Points** (titled From Static Mesh Points before 2026-11-05; the class is still
+`UPCGDynMeshFromStaticMeshPointsSettings`) sets the DynMesh's vertex colors by `Vertex Color Source`:
+`From Mesh` (default) keeps each static mesh's own vertex colors, white where a mesh has none; `From Points` paints
+each placed mesh one solid color read by `Point Color Attribute` (default `$Color`, a Vector4); `Blended`
+multiplies the mesh's colors by `Blend Attribute` (default `$Density`), where a scalar scales RGB and keeps alpha
+and a Vector4 multiplies channel by channel; `None` gives the DynMesh no color layer. Before this setting existed
+the node dropped vertex colors entirely: the append only copies colors into a mesh that already has a color layer.
 
 **Get Asset Save Parameters**, in `Input Data` mode, runs once per input instead of once per node. `Asset
 Attribute` (a selector, default `@Last`) must hold exactly one soft object path or string per input, normally a
@@ -541,7 +549,7 @@ asset list -> From Static Mesh (All LODs) -> Paint Vertex Color (Paint LODs From
   `PCGUtils.DynMesh.GenerateLODs`.
 
 All three copy `@Data` value by value through `PCGUtilsDataDomain` (PCGUtilsCore), as Path To Mesh does, so inputs
-whose `@Data` is inherited from upstream data work. **From Static Mesh Points** uses it too; it used the engine's
+whose `@Data` is inherited from upstream data work. **From Points** uses it too; it used the engine's
 domain copy before, which can fail the same way. Coverage: `PCGUtils.DynMesh.FromStaticMesh`,
 `PCGUtils.AssetManagement.GetAssetSaveParameters`, `PCGUtils.DynMesh.SaveStaticMesh`.
 
