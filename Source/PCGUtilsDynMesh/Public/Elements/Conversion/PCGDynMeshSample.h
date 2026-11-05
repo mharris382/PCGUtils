@@ -114,6 +114,13 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Output Space", meta = (PCG_Overridable))
 	bool bTransformToWorldSpace = true;
 
+	/**
+	 * Copies the input's @Data attributes onto the sampled points' @Data. For a Selection input, the source
+	 * DynMesh's @Data is copied first and the Selection's own @Data on top, so a Selection value wins on a clash.
+	 */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Output", meta = (PCG_Overridable))
+	bool bCopyDataAttributes = true;
+
 protected:
 	virtual TArray<FPCGPinProperties> InputPinProperties() const override;
 	virtual TArray<FPCGPinProperties> OutputPinProperties() const override;

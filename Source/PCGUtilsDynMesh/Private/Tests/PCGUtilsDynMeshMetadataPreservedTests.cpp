@@ -10,7 +10,9 @@
 
 #include "Data/PCGDynamicMeshData.h"
 #include "Data/PCGDynamicMeshSelectionData.h"
+#include "Data/PCGBasePointData.h"
 #include "DynamicMesh/DynamicMesh3.h"
+#include "Elements/Conversion/PCGDynMeshSample.h"
 #include "Elements/Topology/PCGDeleteDynamicMeshSelection.h"
 #include "Elements/Topology/PCGDynMeshBoolean.h"
 #include "Elements/Topology/PCGSeparateSelection.h"
@@ -158,6 +160,51 @@ bool FPCGUtilsDynMeshMetadataPreservedTest::RunTest(const FString&)
 		TestEqual(TEXT("Out B does not take InA's @Data attribute"), ReadDataAttribute(OutB->Data, TEXT("FromA")), static_cast<int32>(INDEX_NONE));
 	}
 
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FPCGUtilsDynMeshSampleKeepsDataAttributesTest,
+	"PCGUtils.DynMesh.Sample.PointsKeepTheMeshDataAttributes",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::ProductFilter)
+
+bool FPCGUtilsDynMeshSampleKeepsDataAttributesTest::RunTest(const FString&)
+{
+	using namespace PCGUtilsDynMeshMetadataPreservedTests;
+
+	auto ReadPointsDataAttribute = [](const UPCGData* Data, FName Name) -> int32
+	{
+		const UPCGMetadata* Metadata = Data ? Data->ConstMetadata() : nullptr;
+		const FPCGMetadataAttribute<int32>* Attribute = Metadata && Metadata->GetConstMetadataDomain(PCGMetadataDomainID::Data)
+			? Metadata->GetConstTypedAttribute<int32>(FPCGAttributeIdentifier(Name, PCGMetadataDomainID::Data)) : nullptr;
+		return Attribute ? Attribute->GetValueFromItemKey(PCGFirstEntryKey) : INDEX_NONE;
+	};
+
+	UPCGDynMeshSampleSettings* Settings = NewObject<UPCGDynMeshSampleSettings>();
+	Settings->SamplingMethod = EPCGMeshSamplingMethod::OnePointPerTriangle;
+	Settings->bTransformToWorldSpace = false;
+	const FName InputPin = Settings->AllInputPinProperties()[0].Label;
+	UPCGDynamicMeshData* Box = BoxWithDataAttribute(TEXT("HoleIndex"), 7);
+
+	{
+		const TArray<FPCGTaggedData> Outputs = Run(Settings, { { InputPin, Box } });
+		UTEST_EQUAL(TEXT("Sampling a mesh gives one output"), Outputs.Num(), 1);
+		const UPCGBasePointData* Points = Cast<UPCGBasePointData>(Outputs[0].Data);
+		UTEST_NOT_NULL(TEXT("Sample outputs points"), Points);
+		TestTrue(TEXT("Sample made points"), Points->GetNumPoints() > 0);
+		TestEqual(TEXT("The points keep the mesh's @Data attribute"), ReadPointsDataAttribute(Points, TEXT("HoleIndex")), 7);
+	}
+	{
+		const int32 SelectedTriangles[] = { 0, 1 };
+		const TArray<FPCGTaggedData> Outputs = Run(Settings, { { InputPin, SelectTriangles(Box, SelectedTriangles) } });
+		UTEST_EQUAL(TEXT("Sampling a selection gives one output"), Outputs.Num(), 1);
+		TestEqual(TEXT("Points sampled from a selection keep the mesh's @Data attribute"), ReadPointsDataAttribute(Outputs[0].Data, TEXT("HoleIndex")), 7);
+	}
+	{
+		Settings->bCopyDataAttributes = false;
+		const TArray<FPCGTaggedData> Outputs = Run(Settings, { { InputPin, Box } });
+		UTEST_EQUAL(TEXT("Sampling with the copy off gives one output"), Outputs.Num(), 1);
+		TestEqual(TEXT("With Copy Data Attributes off the points have no @Data attribute"), ReadPointsDataAttribute(Outputs[0].Data, TEXT("HoleIndex")), static_cast<int32>(INDEX_NONE));
+	}
 	return true;
 }
 

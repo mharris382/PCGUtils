@@ -13,6 +13,7 @@
 #include "GeometryScript/MeshRepairFunctions.h"
 #include "GeometryScript/MeshVoxelFunctions.h"
 #include "Helpers/PCGHelpers.h"
+#include "Helpers/PCGUtilsDataDomainHelpers.h"
 #include "Materials/MaterialInterface.h"
 #include "MeshTarget/PCGUtilsMeshTargetFunctions.h"
 #include "Metadata/PCGMetadata.h"
@@ -46,6 +47,24 @@ namespace
 		TOptional<FVector2D> UV;
 		TOptional<int32> MaterialId;
 	};
+
+	/** Carries the input's @Data onto the output points: the mesh's first, then a Selection's own on top. */
+	void InheritDataDomain(UPCGPointArrayData* OutputData, const UPCGDynamicMeshData* MeshData, const UPCGData* InputData)
+	{
+		FPCGMetadataDomain* OutputDomain = PCGUtilsDataDomain::GetMutableDataDomain(OutputData);
+		if (!OutputDomain)
+		{
+			return;
+		}
+		if (MeshData)
+		{
+			PCGUtilsDataDomain::CopyDataAttributes(MeshData, *OutputDomain);
+		}
+		if (InputData && InputData != MeshData)
+		{
+			PCGUtilsDataDomain::CopyDataAttributes(InputData, *OutputDomain);
+		}
+	}
 
 	void SetFrame(FSampledPoint& Point, const FVector& Position, const FVector& Normal)
 	{
@@ -380,6 +399,10 @@ bool FPCGDynMeshSampleElement::ExecuteInternal(FPCGContext* Context) const
 			{
 				UPCGPointArrayData* EmptyOutput = PCGUtilsAsyncObjects::NewObject<UPCGPointArrayData>(Context);
 				EmptyOutput->SetNumPoints(0);
+				if (Settings->bCopyDataAttributes)
+				{
+					InheritDataDomain(EmptyOutput, SourceData, Input.Data);
+				}
 				FPCGTaggedData& EmptyResult = Context->OutputData.TaggedData.Emplace_GetRef(Input);
 				EmptyResult.Data = EmptyOutput;
 				continue;
@@ -487,6 +510,11 @@ bool FPCGDynMeshSampleElement::ExecuteInternal(FPCGContext* Context) const
 			}
 
 			OutRanges.SetFromPoint(Index, OutPoint);
+		}
+
+		if (Settings->bCopyDataAttributes)
+		{
+			InheritDataDomain(OutputData, SourceData, Input.Data);
 		}
 
 		FPCGTaggedData& Output = Context->OutputData.TaggedData.Emplace_GetRef(Input);
