@@ -134,6 +134,7 @@ first cell's values. A test checks it.
 | 1 | `Voxel \| To DynMesh` | The main node (section 3). |
 | 1 | `Voxel \| Compress` | Merges equal neighbouring cells into chunks (section 1.2). |
 | 1 | `Voxel \| Compress Random` | The same node preset to Shape Random: random-size boxes for looks (section 1.2). |
+| 1 | `Voxel \| Shift Seams` | Slides interior seams so boxes become uneven but fill the same space (section 4c). |
 | 1 | `Voxel \| Expand` | Turns chunks back into one point per cell (section 1.2). |
 | 1 | `Voxel \| Pack Points` | Packs loose points into free cells of a voxel grid, fully or part way, without overlaps (section 4). |
 | 1 | `Voxel \| Cell Properties` | Writes per-cell attributes: open sides, surrounded, inside corners, neighbourhood, depth, column and components (section 4b). Replaces the planned `Voxel \| Neighbors`. |
@@ -380,6 +381,42 @@ they are where a negative offset would have to split the box, or a positive offs
 - **Validation:** an enabled output with an empty name, or two enabled outputs with the same name, is an error naming
   the settings involved; nothing is written.
 
+## 4c. Voxel | Shift Seams
+
+Makes the boxes of a voxel set uneven while they still fill exactly the same space: input a clean grid of boxes,
+output non-uniform boxes in the same volume. Typical chain: cells → `Voxel | Compress Random` (decides which seams
+are long and which are short) → `Voxel | Shift Seams` (moves them). Plain cells work too, but then every seam is the
+face between two single cells and the result looks like a jittered grid.
+
+**Seam.** On one grid axis, the faces of some boxes that lie on one plane (the Low boxes, whose high face is there)
+and the faces of the boxes across from them (the High boxes), joined through every unit face they share. Moving a
+seam by d grows the Low boxes by d and shrinks the High boxes by d (or the reverse), so no gap or overlap appears at
+the seam itself. A seam with any unit face on the outside never moves, so the outer shape never changes.
+
+**When a seam may move.** Seams move one at a time, in a seeded random order. A seam moves only when, at that moment,
+its two sides cover exactly the same area of its plane (sum of Low face areas = sum of High face areas = sum of their
+overlaps). Then the slab it sweeps belongs wholly to the boxes it shrinks, and no other box is touched. Moving a seam
+can make a crossing seam's sides stop matching (for example in a 2×2 grid, once one row's X seam moves, the Y seam
+between the rows no longer matches); that seam then stays. In practice 90 to 100% of boxes change (benchmark:
+330k boxes of terrain in about 0.4 s, 8k boxes in 10 ms).
+
+An earlier rule ("a seam is pinned if any edge-adjacent face touches the outside") was safe but froze almost every
+seam of a lumpy shape; the area test replaced it.
+
+| Setting | Default | Meaning |
+|---|---|---|
+| `Shift X / Y / Z` | all on | Which axes' seams move. Bricks: Compress Random with spans N×1×1, then shift X only (or all). |
+| `Strength` | 0.5 | How far a seam may move, as a fraction of half the thinnest box it shrinks (0 to 1). At 1 a box can shrink to nothing; at 0.5 every box keeps at least half its size per move. |
+| `Source` | Random | Random: a value per seam from the node seed and the seam's lowest face cell. Noise: 3D Perlin noise at the seam's centre (world space), so nearby seams move alike. |
+| `Noise Scale` | 400 | Noise only. Feature size in world units; must be > 0 (error naming the value). |
+
+- **Output:** the input point for point (metadata, tags, `@Data`, positions kept); only bounds change. Cells and
+  spans are unchanged, so every other Voxel node still reads it. Bounds are written along each point's local axes,
+  matched to grid axes through the point's rotation (unrotated or 90° steps against the grid).
+- The moved faces are hidden, so `Voxel | To DynMesh` gives the same shell. Its inside-out offset check now looks only
+  at sides that show, so shifted seams never trip it.
+- Running it twice is valid (each pass reads the current bounds).
+
 ## 5. Module and files
 
 - `Source/PCGUtilsVoxel/PCGUtilsVoxel.Build.cs`. Dependencies: Core, CoreUObject, Engine, PCG,
@@ -388,7 +425,7 @@ they are where a negative offset would have to split the box, or a positive offs
 - `.uplugin`: `PCGUtilsVoxel`, Runtime, PreDefault.
 - `Public/Voxel/PCGVoxelGrid.h` holds the contract, validation and cell lookup.
 - `Public/Voxel/PCGVoxelMesher.h` holds the faces → mesh core. It is plain C++, so it can be tested without a graph.
-- `Public/Elements/PCGVoxelToDynMesh.h`, `PCGVoxelPackPoints.h`, `PCGVoxelCompress.h`, `PCGVoxelExpand.h`, `PCGVoxelCellProperties.h`. All derive from `UPCGSettings`, so each overrides
+- `Public/Elements/PCGVoxelToDynMesh.h`, `PCGVoxelPackPoints.h`, `PCGVoxelCompress.h`, `PCGVoxelExpand.h`, `PCGVoxelCellProperties.h`, `PCGVoxelShiftSeams.h`. All derive from `UPCGSettings`, so each overrides
   `GetType()` (or they land in `Generic`). Add the `Voxel` category to the `PCGUtils.Palette.SearchContract` test.
 - `PCGUtilsDynMesh` must not depend on `PCGUtilsVoxel`; the dependency only runs Voxel → DynMesh.
 - Tests in `Private/Tests/`:
@@ -407,7 +444,11 @@ they are where a negative offset would have to split the box, or a positive offs
   - Cell Properties: open sides, depth, neighbours and column values on a block; components by connectivity; concave
     edges and corners of a notch and a crease; a chunked set gives the same values as its expanded form; output names must be set and distinct;
   - Compress Random: boxes tile every cell exactly once, stay within Random Max Span, never mix unequal cells, and
-    depend only on the seed; the palette alias presets the shape.
+    depend only on the seed; the palette alias presets the shape;
+  - Shift Seams: in a row the ends stay and neighbours still meet; a 2×2 grid stays consistent; random lumpy shapes
+    after Compress Random and two passes (random, then noise) have no overlaps, no box outside the shape and the same
+    total volume; the shifted set meshes to the same shell. `PCGUtilsPerf.Voxel.ShiftSeams` reports timings and how
+    many boxes changed.
 
 ## 6. Decisions
 

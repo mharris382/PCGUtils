@@ -27,7 +27,37 @@ namespace PCGVoxelToDynMeshPrivate
 		return Names[Axis * 2 + (bMax ? 1 : 0)];
 	}
 
-	/** Every used point's offset must keep its surface the right way out: greater than minus half its extent. */
+	/** Whether any cell on that side of the point's box has an empty neighbour across it, so the side shows. */
+	bool SideHasSurface(const FPCGVoxelGrid& Grid, int32 Point, int32 Axis, bool bMax)
+	{
+		const FIntVector First = Grid.PointFirst[Point];
+		const FIntVector Span = Grid.PointSpan[Point];
+		FIntVector Step(0);
+		Step[Axis] = bMax ? 1 : -1;
+		FIntVector Size = Span;
+		Size[Axis] = 1;
+		FIntVector Start = First;
+		Start[Axis] = bMax ? First[Axis] + Span[Axis] - 1 : First[Axis];
+		for (int32 Z = 0; Z < Size.Z; ++Z)
+		{
+			for (int32 Y = 0; Y < Size.Y; ++Y)
+			{
+				for (int32 X = 0; X < Size.X; ++X)
+				{
+					if (!Grid.IsOccupied(Start + FIntVector(X, Y, Z) + Step))
+					{
+						return true;
+					}
+				}
+			}
+		}
+		return false;
+	}
+
+	/**
+	 * Every used point's offset must keep its surface the right way out: greater than minus half its extent. Only sides
+	 * that show count; offsets on hidden sides (for example seams moved by Voxel | Shift Seams) change nothing.
+	 */
 	bool ValidateOffsets(FPCGContext* Context, const FPCGVoxelGrid& Grid, const TArray<FVector>& OffsetMin, const TArray<FVector>& OffsetMax,
 		const FText& Title, int32 InputIndex)
 	{
@@ -43,7 +73,7 @@ namespace PCGVoxelToDynMeshPrivate
 				for (const bool bMax : { false, true })
 				{
 					const double Offset = bMax ? OffsetMax[Point][Axis] : OffsetMin[Point][Axis];
-					if (Offset <= -Half[Axis])
+					if (Offset <= -Half[Axis] && SideHasSurface(Grid, Point, Axis, bMax))
 					{
 						PCGLog::LogErrorOnGraph(PCGVoxel::FormatError(Title, InputIndex, FText::Format(
 							LOCTEXT("OffsetTooDeep", "point {0}: its surface offset on the {1} side is {2}; it must be greater than {3} (minus half its extent on that axis), or the surface turns inside out."),

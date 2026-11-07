@@ -7,6 +7,8 @@
 
 #if WITH_AUTOMATION_TESTS
 
+#include "Elements/PCGVoxelCompress.h"
+#include "Elements/PCGVoxelShiftSeams.h"
 #include "Elements/PCGVoxelToDynMesh.h"
 #include "Math/RandomStream.h"
 #include "PCGVoxelTestHelpers.h"
@@ -194,6 +196,59 @@ bool FPCGVoxelMesherBenchTest::RunTest(const FString&)
 		const double NodeMs = (FPlatformTime::Seconds() - Start) * 1000.0;
 		TestNotNull(*FString::Printf(TEXT("[%s] node made a mesh"), *Shape.Name), MeshOf(Outputs));
 		AddInfo(FString::Printf(TEXT("[%s] whole node (defaults): %.1f ms"), *Shape.Name, NodeMs));
+	}
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FPCGVoxelShiftSeamsBenchTest,
+	"PCGUtilsPerf.Voxel.ShiftSeams.Timings",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::ProductFilter)
+
+bool FPCGVoxelShiftSeamsBenchTest::RunTest(const FString&)
+{
+	using namespace PCGVoxelBenchTests;
+
+	struct FCase { FString Name; TArray<FIntVector> Cells; FIntVector MaxSpan; };
+	TArray<FCase> Cases;
+	Cases.Add({ TEXT("Solid 32^3, spans 3"), Block(32, 32, 32), FIntVector(3) });
+	Cases.Add({ TEXT("Wall 64x1x64, spans 3x1x3"), Block(64, 1, 64), FIntVector(3, 1, 3) });
+	Cases.Add({ TEXT("Bricks 64x1x64, spans 4x1x1"), Block(64, 1, 64), FIntVector(4, 1, 1) });
+	TArray<FIntVector> Terrain;
+	for (const FShape& Shape : Shapes())
+	{
+		if (Shape.Name.StartsWith(TEXT("Terrain")))
+		{
+			Terrain = Shape.Cells;
+		}
+	}
+	Cases.Add({ TEXT("Terrain 256x256, spans 3"), Terrain, FIntVector(3) });
+
+	for (const FCase& Case : Cases)
+	{
+		UPCGVoxelCompressSettings* Compress = NewObject<UPCGVoxelCompressSettings>();
+		Compress->Shape = EPCGVoxelChunkShape::Random;
+		Compress->RandomMaxSpan = Case.MaxSpan;
+		UPCGPointArrayData* Voxels = MakeVoxels(Case.Cells);
+		Voxels->Metadata->GetMetadataDomain(PCGMetadataDomainID::Elements)->DeleteAttribute(TEXT("Id")); // unique per cell: nothing would merge
+		const double T0 = FPlatformTime::Seconds();
+		const TArray<FPCGTaggedData> Tiled = Run<FPCGVoxelCompressElement>(Compress, { { PCGPinConstants::DefaultInputLabel, Voxels } });
+		const double T1 = FPlatformTime::Seconds();
+		const UPCGBasePointData* In = Cast<UPCGBasePointData>(Tiled[0].Data);
+
+		UPCGVoxelShiftSeamsSettings* Shift = NewObject<UPCGVoxelShiftSeamsSettings>();
+		const TArray<FPCGTaggedData> Shifted = Run<FPCGVoxelShiftSeamsElement>(Shift, { { PCGPinConstants::DefaultInputLabel, In } });
+		const double T2 = FPlatformTime::Seconds();
+		const UPCGBasePointData* Out = Cast<UPCGBasePointData>(Shifted[0].Data);
+
+		int32 Moved = 0;
+		for (int32 I = 0; I < Out->GetNumPoints(); ++I)
+		{
+			Moved += (Out->GetConstBoundsMinValueRange()[I].Equals(In->GetConstBoundsMinValueRange()[I])
+				&& Out->GetConstBoundsMaxValueRange()[I].Equals(In->GetConstBoundsMaxValueRange()[I])) ? 0 : 1;
+		}
+		AddInfo(FString::Printf(TEXT("[%s] %d cells -> %d boxes: Compress Random %.1f ms, Shift Seams %.1f ms, %d boxes changed (%.0f%%)"),
+			*Case.Name, Case.Cells.Num(), Out->GetNumPoints(), (T1 - T0) * 1000.0, (T2 - T1) * 1000.0, Moved,
+			100.0 * Moved / FMath::Max(1, Out->GetNumPoints())));
 	}
 	return true;
 }
