@@ -90,13 +90,23 @@ in its docs:
 ### 1.2 Voxel | Compress and Voxel | Expand
 
 **Compress** turns plain cells (or an already chunked set) into chunks.
-- `Shape: Cubes | Boxes`.
+- `Shape: Cubes | Boxes | Random`.
   - **Cubes** (default) makes N×N×N chunks only.
   - **Boxes** also allows uneven boxes, which usually means fewer points.
-- `Max Span` (default 16, one value for every axis).
+  - **Random** makes boxes of random size, as a stylistic choice rather than an optimization (below). The palette
+    lists it separately as **`Voxel | Compress Random`**: the same node with Shape preset to Random, titled to match.
+- `Max Span` (default 16, one value for every axis; Cubes and Boxes).
 - Method: an aligned octree. Power-of-two cubes on grid-aligned positions are merged level by level while all eight
   children are full and equal. This is fast, deterministic, and the same input always gives the same chunks.
   Boxes mode then merges neighbouring equal chunks greedily along X, then Y, then Z.
+- **Random** method: cells are visited in Z, Y, X order. Each cell not yet taken starts a box; the box draws a
+  target size per axis uniformly from 1 to `Random Max Span` (per axis, default 3×3×3) and grows one axis at a time,
+  in a random axis order, while the next slab of cells is occupied, not taken and equal. Every cell earlier in that
+  order is already taken, so the start is always the box's lowest corner and the boxes tile the set exactly, with
+  staggered joints. Boxes come out smaller than their target where they meet empty, taken or unequal cells. An axis
+  set to 1 keeps boxes one cell thick (flat tiles on a wall). Seeded from the node seed and the input index, so the
+  same seed gives the same tiling. It does not start from the maximal compression: that state's power-of-two seams
+  would show through any random split of it.
 - **Equal** means equal in:
   - every point attribute, or only those listed in `Match Attributes` (`All | Listed`, default All). Listing fewer
     attributes compresses more, but cells keep only the first cell's values for unlisted ones, and the node says
@@ -123,6 +133,7 @@ first cell's values. A test checks it.
 |---|---|---|
 | 1 | `Voxel \| To DynMesh` | The main node (section 3). |
 | 1 | `Voxel \| Compress` | Merges equal neighbouring cells into chunks (section 1.2). |
+| 1 | `Voxel \| Compress Random` | The same node preset to Shape Random: random-size boxes for looks (section 1.2). |
 | 1 | `Voxel \| Expand` | Turns chunks back into one point per cell (section 1.2). |
 | 1 | `Voxel \| Pack Points` | Packs loose points into free cells of a voxel grid, fully or part way, without overlaps (section 4). |
 | 1 | `Voxel \| Cell Properties` | Writes per-cell attributes: open sides, surrounded, inside corners, neighbourhood, depth, column and components (section 4b). Replaces the planned `Voxel \| Neighbors`. |
@@ -394,7 +405,9 @@ they are where a negative offset would have to split the box, or a positive offs
   - Pack Points: every cell is claimed at most once; Max Radius is respected; points keep their metadata; with
     random partial settle, no two output boxes intersect;
   - Cell Properties: open sides, depth, neighbours and column values on a block; components by connectivity; concave
-    edges and corners of a notch and a crease; a chunked set gives the same values as its expanded form; output names must be set and distinct.
+    edges and corners of a notch and a crease; a chunked set gives the same values as its expanded form; output names must be set and distinct;
+  - Compress Random: boxes tile every cell exactly once, stay within Random Max Span, never mix unequal cells, and
+    depend only on the seed; the palette alias presets the shape.
 
 ## 6. Decisions
 

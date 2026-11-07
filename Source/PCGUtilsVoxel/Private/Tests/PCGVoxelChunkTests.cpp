@@ -182,4 +182,98 @@ bool FPCGVoxelChunkEqualityTest::RunTest(const FString&)
 	return true;
 }
 
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FPCGVoxelChunkRandomTest,
+	"PCGUtils.Voxel.Chunks.RandomBoxesTileTheCellsExactly",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::ProductFilter)
+
+bool FPCGVoxelChunkRandomTest::RunTest(const FString&)
+{
+	using namespace PCGVoxelChunkTests;
+
+	auto RandomCompress = [](const UPCGData* Voxels, const FIntVector& MaxSpan, int32 Seed) -> const UPCGBasePointData*
+	{
+		UPCGVoxelCompressSettings* Settings = NewObject<UPCGVoxelCompressSettings>();
+		Settings->Shape = EPCGVoxelChunkShape::Random;
+		Settings->RandomMaxSpan = MaxSpan;
+		Settings->Seed = Seed;
+		const TArray<FPCGTaggedData> Out = Run<FPCGVoxelCompressElement>(Settings, { { PCGPinConstants::DefaultInputLabel, Voxels } });
+		return Out.IsEmpty() ? nullptr : Cast<UPCGBasePointData>(Out[0].Data);
+	};
+	auto SpansOf = [](const UPCGBasePointData* Points) -> TArray<FIntVector>
+	{
+		FPCGContext Context;
+		FPCGVoxelGrid Grid;
+		FPCGVoxelGrid::Build(&Context, Points, FPCGVoxelGridReadSettings(), FText::GetEmpty(), 0, Grid);
+		return Grid.PointSpan;
+	};
+
+	// The 4x4x4 block: one odd corner cell, and colors split into a lower and an upper half.
+	const UPCGPointArrayData* Plain = MakeBlock();
+	const UPCGBasePointData* A = RandomCompress(Plain, FIntVector(3), 1);
+	UTEST_NOT_NULL(TEXT("Random compressed"), A);
+	TestTrue(TEXT("Random merges some cells"), A->GetNumPoints() < 64);
+
+	const TArray<FIntVector> Spans = SpansOf(A);
+	bool bWithinMax = true;
+	bool bUneven = false;
+	for (const FIntVector& Span : Spans)
+	{
+		bWithinMax &= Span.X >= 1 && Span.Y >= 1 && Span.Z >= 1 && Span.X <= 3 && Span.Y <= 3 && Span.Z <= 3;
+		bUneven |= Span != Spans[0];
+	}
+	TestTrue(TEXT("Every box is within Random Max Span"), bWithinMax);
+	TestTrue(TEXT("Boxes come in more than one size"), bUneven);
+
+	// Expanding gives back every cell exactly once, each with its own Kind and color: boxes never mix unequal cells.
+	const UPCGBasePointData* Expanded = Expand(A);
+	UTEST_NOT_NULL(TEXT("Expanded"), Expanded);
+	UTEST_EQUAL(TEXT("64 cells again"), Expanded->GetNumPoints(), 64);
+	FPCGContext Context;
+	FPCGVoxelGrid Before, After;
+	UTEST_TRUE(TEXT("Original reads"), FPCGVoxelGrid::Build(&Context, Plain, FPCGVoxelGridReadSettings(), FText::GetEmpty(), 0, Before));
+	UTEST_TRUE(TEXT("Round trip reads"), FPCGVoxelGrid::Build(&Context, Expanded, FPCGVoxelGridReadSettings(), FText::GetEmpty(), 0, After));
+	bool bSame = Before.Cells == After.Cells;
+	for (const FIntVector& Cell : Before.Cells)
+	{
+		bSame &= KindAt(Plain, Before.FindPoint(Cell)) == KindAt(Expanded, After.FindPoint(Cell));
+		bSame &= Plain->GetConstColorValueRange()[Before.FindPoint(Cell)] == Expanded->GetConstColorValueRange()[After.FindPoint(Cell)];
+	}
+	TestTrue(TEXT("Every cell is covered once and keeps its Kind and color"), bSame);
+
+	// The seed decides the tiling.
+	const UPCGBasePointData* Again = RandomCompress(Plain, FIntVector(3), 1);
+	UTEST_NOT_NULL(TEXT("Again"), Again);
+	TestTrue(TEXT("The same seed gives the same boxes"), SpansOf(Again) == Spans && Again->GetNumPoints() == A->GetNumPoints());
+	bool bAnyDifferent = false;
+	for (int32 Seed = 2; Seed < 6 && !bAnyDifferent; ++Seed)
+	{
+		const UPCGBasePointData* Other = RandomCompress(Plain, FIntVector(3), Seed);
+		bAnyDifferent = Other && SpansOf(Other) != Spans;
+	}
+	TestTrue(TEXT("Another seed gives other boxes"), bAnyDifferent);
+
+	// One cell thick along Z: a wall of flat tiles.
+	const UPCGBasePointData* Flat = RandomCompress(Plain, FIntVector(4, 4, 1), 7);
+	UTEST_NOT_NULL(TEXT("Flat"), Flat);
+	bool bFlat = true;
+	for (const FIntVector& Span : SpansOf(Flat))
+	{
+		bFlat &= Span.Z == 1;
+	}
+	TestTrue(TEXT("Random Max Span Z = 1 keeps every box one cell thick"), bFlat);
+
+#if WITH_EDITOR
+	// The palette alias presets the Random shape.
+	UPCGVoxelCompressSettings* Preset = NewObject<UPCGVoxelCompressSettings>();
+	const TArray<FPCGPreConfiguredSettingsInfo> Presets = Preset->GetPreconfiguredInfo();
+	UTEST_EQUAL(TEXT("Two palette entries"), Presets.Num(), 2);
+	Preset->ApplyPreconfiguredSettings(Presets[1]);
+	TestEqual(TEXT("Voxel | Compress Random sets Shape Random"), Preset->Shape, EPCGVoxelChunkShape::Random);
+	TestEqual(TEXT("Its title says Random"), Preset->GetDefaultNodeTitle().ToString(), FString(TEXT("Voxel | Compress Random")));
+	Preset->ApplyPreconfiguredSettings(Presets[0]);
+	TestEqual(TEXT("Voxel | Compress sets Shape Cubes"), Preset->Shape, EPCGVoxelChunkShape::Cubes);
+#endif
+	return true;
+}
+
 #endif

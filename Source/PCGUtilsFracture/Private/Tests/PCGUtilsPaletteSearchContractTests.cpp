@@ -344,7 +344,7 @@ bool FPCGUtilsPaletteSearchContractTest::RunTest(const FString&)
 	TestTrue(TEXT("Path decomposition is registered"), bFoundPathDecomposition);
 	TestTrue(TEXT("Swizzle Bounds is registered"), bFoundSwizzleBounds);
 	TestTrue(TEXT("Get MPC Values is registered"), bFoundGetMPCValues);
-	TestEqual(TEXT("Every Voxel node is present (To DynMesh, Compress, Expand, Pack Points, Cell Properties)"), VoxelCount, 5);
+	TestEqual(TEXT("Every Voxel entry is present (To DynMesh, Compress, Compress Random, Expand, Pack Points, Cell Properties)"), VoxelCount, 6);
 	return true;
 }
 

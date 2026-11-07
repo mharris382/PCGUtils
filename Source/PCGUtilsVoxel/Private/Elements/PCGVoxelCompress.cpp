@@ -3,6 +3,8 @@
 #include "Elements/PCGVoxelCompress.h"
 
 #include "Data/PCGBasePointData.h"
+#include "Helpers/PCGHelpers.h"
+#include "Math/RandomStream.h"
 #include "Metadata/PCGMetadata.h"
 #include "Metadata/PCGMetadataAttribute.h"
 #include "Metadata/PCGMetadataDomain.h"
@@ -16,6 +18,10 @@
 
 namespace PCGVoxelCompressPrivate
 {
+	/** Palette entries: the plain node, and the same node preset to Shape Random. */
+	constexpr int32 CompressPreset = 0;
+	constexpr int32 CompressRandomPreset = 1;
+
 	/** Rounds down to a multiple of Size, also for negative values. */
 	int32 FloorAlign(int32 Value, int32 Size)
 	{
@@ -106,12 +112,85 @@ namespace PCGVoxelCompressPrivate
 		}
 		Boxes = MoveTemp(Joined);
 	}
+
+	/**
+	 * Random tiling: cells in Z, Y, X order; each cell not yet taken starts a box with a random target size, grown one
+	 * axis at a time (random axis order) while the next slab of cells is occupied, free and equal to the first cell.
+	 * Every cell before the start in that order is already taken, so the start is always the box's lowest corner.
+	 */
+	void RandomBoxes(const FPCGVoxelGrid& Grid, const FIntVector& MaxSpan, int32 Seed, const FPointEquality& Equal, TArray<FChunkBox>& Boxes)
+	{
+		FRandomStream Stream(Seed);
+		TArray<bool> Taken;
+		Taken.Init(false, Grid.NumCells());
+
+		auto SlabFree = [&](const FIntVector& First, const FIntVector& Span, int32 Axis, int32 Rep)
+		{
+			// The layer of cells just past the box along Axis.
+			FIntVector Lo = First;
+			Lo[Axis] += Span[Axis];
+			FIntVector Size = Span;
+			Size[Axis] = 1;
+			for (int32 Z = 0; Z < Size.Z; ++Z)
+			{
+				for (int32 Y = 0; Y < Size.Y; ++Y)
+				{
+					for (int32 X = 0; X < Size.X; ++X)
+					{
+						const int32 Cell = Grid.FindCellIndex(Lo + FIntVector(X, Y, Z));
+						if (Cell == INDEX_NONE || Taken[Cell] || !Equal(Rep, Grid.CellPoint[Cell]))
+						{
+							return false;
+						}
+					}
+				}
+			}
+			return true;
+		};
+
+		for (int32 Start = 0; Start < Grid.NumCells(); ++Start)
+		{
+			if (Taken[Start])
+			{
+				continue;
+			}
+			const FIntVector First = Grid.Cells[Start];
+			const int32 Rep = Grid.CellPoint[Start];
+			const FIntVector Target(Stream.RandRange(1, MaxSpan.X), Stream.RandRange(1, MaxSpan.Y), Stream.RandRange(1, MaxSpan.Z));
+			int32 Order[3] = { 0, 1, 2 };
+			for (int32 I = 2; I > 0; --I)
+			{
+				Swap(Order[I], Order[Stream.RandRange(0, I)]);
+			}
+
+			FIntVector Span(1);
+			for (const int32 Axis : Order)
+			{
+				while (Span[Axis] < Target[Axis] && SlabFree(First, Span, Axis, Rep))
+				{
+					++Span[Axis];
+				}
+			}
+
+			for (int32 Z = 0; Z < Span.Z; ++Z)
+			{
+				for (int32 Y = 0; Y < Span.Y; ++Y)
+				{
+					for (int32 X = 0; X < Span.X; ++X)
+					{
+						Taken[Grid.FindCellIndex(First + FIntVector(X, Y, Z))] = true;
+					}
+				}
+			}
+			Boxes.Add({ First, Span, Rep });
+		}
+	}
 }
 
 #if WITH_EDITOR
 FText UPCGVoxelCompressSettings::GetDefaultNodeTitle() const
 {
-	return LOCTEXT("Title", "Voxel | Compress");
+	return Shape == EPCGVoxelChunkShape::Random ? LOCTEXT("RandomTitle", "Voxel | Compress Random") : LOCTEXT("Title", "Voxel | Compress");
 }
 
 FText UPCGVoxelCompressSettings::GetNodeTooltipText() const
@@ -119,7 +198,26 @@ FText UPCGVoxelCompressSettings::GetNodeTooltipText() const
 	return LOCTEXT("Tooltip",
 		"Merges equal neighbouring cells of a voxel set into chunks (one point per box of cells, span in @VoxelSpan). "
 		"Cells merge only when equal in every value (or in Listed Attributes) and in surface offset, so other Voxel nodes "
-		"give the same result. With Listed, cells keep only the first cell's values for attributes not listed.");
+		"give the same result. With Listed, cells keep only the first cell's values for attributes not listed. "
+		"Shape Random makes boxes of random size instead, for looks.");
+}
+
+TArray<FPCGPreConfiguredSettingsInfo> UPCGVoxelCompressSettings::GetPreconfiguredInfo() const
+{
+	using namespace PCGVoxelCompressPrivate;
+	return {
+		{ CompressPreset, LOCTEXT("CompressPreset", "Voxel | Compress"),
+			LOCTEXT("CompressPresetTooltip", "Merges equal neighbouring cells into as few chunks as it can.") },
+		{ CompressRandomPreset, LOCTEXT("CompressRandomPreset", "Voxel | Compress Random"),
+			LOCTEXT("CompressRandomPresetTooltip", "Merges equal neighbouring cells into boxes of random size: a staggered tiling, for looks.") },
+	};
+}
+
+void UPCGVoxelCompressSettings::ApplyPreconfiguredSettings(const FPCGPreConfiguredSettingsInfo& PreconfiguredInfo)
+{
+	Shape = PreconfiguredInfo.PreconfiguredIndex == PCGVoxelCompressPrivate::CompressRandomPreset
+		? EPCGVoxelChunkShape::Random
+		: EPCGVoxelChunkShape::Cubes;
 }
 #endif
 
@@ -215,63 +313,71 @@ bool FPCGVoxelCompressElement::ExecuteInternal(FPCGContext* Context) const
 			continue;
 		}
 
-		// Aligned octree: eight equal full cubes of size S at a multiple of 2S become one cube of size 2S.
 		TArray<FChunkBox> Boxes;
-		TMap<FIntVector, int32> Level;
-		Level.Reserve(Grid.NumCells());
-		for (const FIntVector& Cell : Grid.Cells)
+		if (Settings->Shape == EPCGVoxelChunkShape::Random)
 		{
-			Level.Add(Cell, Grid.FindPoint(Cell));
+			const FIntVector RandomMax(FMath::Max(1, Settings->RandomMaxSpan.X), FMath::Max(1, Settings->RandomMaxSpan.Y), FMath::Max(1, Settings->RandomMaxSpan.Z));
+			RandomBoxes(Grid, RandomMax, PCGHelpers::ComputeSeed(Context->GetSeed(), Index), Equal, Boxes);
 		}
-		int32 Size = 1;
-		while (Size * 2 <= MaxSpan && !Level.IsEmpty())
+		else
 		{
-			TMap<FIntVector, int32> ChildCount;
+			// Aligned octree: eight equal full cubes of size S at a multiple of 2S become one cube of size 2S.
+			TMap<FIntVector, int32> Level;
+			Level.Reserve(Grid.NumCells());
+			for (const FIntVector& Cell : Grid.Cells)
+			{
+				Level.Add(Cell, Grid.FindPoint(Cell));
+			}
+			int32 Size = 1;
+			while (Size * 2 <= MaxSpan && !Level.IsEmpty())
+			{
+				TMap<FIntVector, int32> ChildCount;
+				for (const TPair<FIntVector, int32>& Node : Level)
+				{
+					++ChildCount.FindOrAdd(FloorAlign(Node.Key, Size * 2));
+				}
+				TMap<FIntVector, int32> Next;
+				TSet<FIntVector> Merged;
+				for (const TPair<FIntVector, int32>& Parent : ChildCount)
+				{
+					if (Parent.Value != 8)
+					{
+						continue;
+					}
+					const int32 Rep = Level.FindChecked(Parent.Key);
+					bool bEqual = true;
+					for (int32 Child = 1; Child < 8 && bEqual; ++Child)
+					{
+						const FIntVector Offset((Child & 1) ? Size : 0, (Child & 2) ? Size : 0, (Child & 4) ? Size : 0);
+						bEqual = Equal(Rep, Level.FindChecked(Parent.Key + Offset));
+					}
+					if (bEqual)
+					{
+						Next.Add(Parent.Key, Rep);
+						Merged.Add(Parent.Key);
+					}
+				}
+				for (const TPair<FIntVector, int32>& Node : Level)
+				{
+					if (!Merged.Contains(FloorAlign(Node.Key, Size * 2)))
+					{
+						Boxes.Add({ Node.Key, FIntVector(Size), Node.Value });
+					}
+				}
+				Level = MoveTemp(Next);
+				Size *= 2;
+			}
 			for (const TPair<FIntVector, int32>& Node : Level)
 			{
-				++ChildCount.FindOrAdd(FloorAlign(Node.Key, Size * 2));
+				Boxes.Add({ Node.Key, FIntVector(Size), Node.Value });
 			}
-			TMap<FIntVector, int32> Next;
-			TSet<FIntVector> Merged;
-			for (const TPair<FIntVector, int32>& Parent : ChildCount)
-			{
-				if (Parent.Value != 8)
-				{
-					continue;
-				}
-				const int32 Rep = Level.FindChecked(Parent.Key);
-				bool bEqual = true;
-				for (int32 Child = 1; Child < 8 && bEqual; ++Child)
-				{
-					const FIntVector Offset((Child & 1) ? Size : 0, (Child & 2) ? Size : 0, (Child & 4) ? Size : 0);
-					bEqual = Equal(Rep, Level.FindChecked(Parent.Key + Offset));
-				}
-				if (bEqual)
-				{
-					Next.Add(Parent.Key, Rep);
-					Merged.Add(Parent.Key);
-				}
-			}
-			for (const TPair<FIntVector, int32>& Node : Level)
-			{
-				if (!Merged.Contains(FloorAlign(Node.Key, Size * 2)))
-				{
-					Boxes.Add({ Node.Key, FIntVector(Size), Node.Value });
-				}
-			}
-			Level = MoveTemp(Next);
-			Size *= 2;
-		}
-		for (const TPair<FIntVector, int32>& Node : Level)
-		{
-			Boxes.Add({ Node.Key, FIntVector(Size), Node.Value });
-		}
 
-		if (Settings->Shape == EPCGVoxelChunkShape::Boxes)
-		{
-			for (int32 Axis = 0; Axis < 3; ++Axis)
+			if (Settings->Shape == EPCGVoxelChunkShape::Boxes)
 			{
-				JoinAlong(Boxes, Axis, MaxSpan, Equal);
+				for (int32 Axis = 0; Axis < 3; ++Axis)
+				{
+					JoinAlong(Boxes, Axis, MaxSpan, Equal);
+				}
 			}
 		}
 
