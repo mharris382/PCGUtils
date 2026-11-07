@@ -8,6 +8,7 @@
 #include "ConversionUtils/VolumeToDynamicMesh.h"
 #include "Data/PCGDynamicMeshData.h"
 #include "Data/PCGVolumeData.h"
+#include "Data/PCGVolumeShapeData.h"
 #include "DynamicMesh/DynamicMesh3.h"
 #include "DynamicMesh/MeshTransforms.h"
 #include "GameFramework/Volume.h"
@@ -47,6 +48,38 @@ namespace PCGGetVolumeDataPrivate
 				FText::FromName(Name)), Context);
 		}
 	}
+
+	/** Logs and returns false for the first shape size that cannot enclose anything, naming it and its value. */
+	bool ValidateShape(FPCGContext* Context, const UPCGVolumeComponent* Component)
+	{
+		const FText Name = FText::FromString(Component->GetName());
+		const FText ShapeName = StaticEnum<EPCGVolumeShape>()->GetDisplayNameTextByValue(static_cast<int64>(Component->Shape));
+		auto Fail = [&](const TCHAR* Property, double Value)
+		{
+			PCGLog::LogWarningOnGraph(FText::Format(LOCTEXT("BadShapeSize",
+				"Get PCG Volume Data: PCG Volume Component '{0}' ({1}): {2} is {3}; it must be greater than 0. Skipped."),
+				Name, ShapeName, FText::FromString(Property), FText::AsNumber(Value)), Context);
+			return false;
+		};
+		switch (Component->Shape)
+		{
+		case EPCGVolumeShape::Box:
+			if (Component->BoxExtent.X <= 0.0) { return Fail(TEXT("Box Extent X"), Component->BoxExtent.X); }
+			if (Component->BoxExtent.Y <= 0.0) { return Fail(TEXT("Box Extent Y"), Component->BoxExtent.Y); }
+			if (Component->BoxExtent.Z <= 0.0) { return Fail(TEXT("Box Extent Z"), Component->BoxExtent.Z); }
+			return true;
+		case EPCGVolumeShape::Sphere:
+			return Component->Radius > 0.0 || Fail(TEXT("Radius"), Component->Radius);
+		case EPCGVolumeShape::Cylinder:
+		case EPCGVolumeShape::Cone:
+		case EPCGVolumeShape::Capsule:
+			if (Component->Radius <= 0.0) { return Fail(TEXT("Radius"), Component->Radius); }
+			if (Component->HalfHeight <= 0.0) { return Fail(TEXT("Half Height"), Component->HalfHeight); }
+			return true;
+		default:
+			return true;
+		}
+	}
 }
 
 UPCGGetVolumeDataSettings::UPCGGetVolumeDataSettings()
@@ -66,9 +99,10 @@ FText UPCGGetVolumeDataSettings::GetDefaultNodeTitle() const
 
 FText UPCGGetVolumeDataSettings::GetNodeTooltipText() const
 {
-	return LOCTEXT("Tooltip", "Collects PCG Volume Components on standard UE volume actors. Outputs the owner's exact "
-		"volume data, or converts its brush to a DynMesh. Color, density, ID and component references are optional "
-		"Data-domain attributes. DynMesh vertices default to PCG target actor local space.");
+	return LOCTEXT("Tooltip", "Collects PCG Volume Components from the selected actors. Outputs each component's "
+		"shape (box, sphere, cylinder, cone or capsule) as exact volume data, or as a DynMesh; a component set to "
+		"Owner Volume gives its Volume actor's brush instead. Color, density, ID and component references are "
+		"optional Data-domain attributes. DynMesh vertices default to PCG target actor local space.");
 }
 
 EPCGChangeType UPCGGetVolumeDataSettings::GetChangeTypeForProperty(FPropertyChangedEvent& PropertyChangedEvent) const
@@ -119,13 +153,37 @@ void FPCGGetVolumeDataElement::ProcessActor(FPCGContext* InContext,
 			continue;
 		}
 
-		AVolume* Volume = Component->GetVolume();
-		UBrushComponent* Brush = IsValid(Volume) ? Volume->GetBrushComponent() : nullptr;
-		if (!IsValid(Brush) || !Brush->Brush || !Volume->GetBounds().GetBox().IsValid)
+		const bool bOwnerVolume = Component->Shape == EPCGVolumeShape::OwnerVolume;
+		AVolume* Volume = nullptr;
+		UBrushComponent* Brush = nullptr;
+		if (bOwnerVolume)
 		{
-			PCGLog::LogWarningOnGraph(FText::Format(LOCTEXT("MissingVolume",
-				"PCG Volume Component '{0}' needs an owning UE volume actor with valid brush geometry."),
-				FText::FromString(Component->GetName())), Context);
+			Volume = Component->GetVolume();
+			if (!IsValid(Volume))
+			{
+				PCGLog::LogWarningOnGraph(FText::Format(LOCTEXT("OwnerNotVolume",
+					"Get PCG Volume Data: PCG Volume Component '{0}' has Shape = Owner Volume, but its owner '{1}' is not a Volume actor. Skipped."),
+					FText::FromString(Component->GetName()), FText::FromString(FoundActor->GetActorNameOrLabel())), Context);
+				continue;
+			}
+			Brush = Volume->GetBrushComponent();
+			if (!IsValid(Brush) || !Brush->Brush)
+			{
+				PCGLog::LogWarningOnGraph(FText::Format(LOCTEXT("VolumeNoBrush",
+					"Get PCG Volume Data: PCG Volume Component '{0}' has Shape = Owner Volume, but Volume actor '{1}' has no brush geometry. Skipped."),
+					FText::FromString(Component->GetName()), FText::FromString(Volume->GetActorNameOrLabel())), Context);
+				continue;
+			}
+			if (!Volume->GetBounds().GetBox().IsValid)
+			{
+				PCGLog::LogWarningOnGraph(FText::Format(LOCTEXT("VolumeNoBounds",
+					"Get PCG Volume Data: PCG Volume Component '{0}' has Shape = Owner Volume, but Volume actor '{1}' has empty bounds. Skipped."),
+					FText::FromString(Component->GetName()), FText::FromString(Volume->GetActorNameOrLabel())), Context);
+				continue;
+			}
+		}
+		else if (!PCGGetVolumeDataPrivate::ValidateShape(Context, Component))
+		{
 			continue;
 		}
 
@@ -133,13 +191,20 @@ void FPCGGetVolumeDataElement::ProcessActor(FPCGContext* InContext,
 		if (Settings->OutputMode == EPCGVolumeDataOutputMode::DynMesh)
 		{
 			UE::Geometry::FDynamicMesh3 Mesh;
-			UE::Conversion::FVolumeToMeshOptions Options;
-			Options.bInWorldSpace = true;
-			UE::Conversion::BrushComponentToDynamicMesh(Brush, Mesh, Options);
+			if (bOwnerVolume)
+			{
+				UE::Conversion::FVolumeToMeshOptions Options;
+				Options.bInWorldSpace = true;
+				UE::Conversion::BrushComponentToDynamicMesh(Brush, Mesh, Options);
+			}
+			else
+			{
+				Component->GetShapeDesc().BuildMesh(Mesh, /*bWorldSpace=*/true);
+			}
 			if (Mesh.TriangleCount() == 0)
 			{
 				PCGLog::LogWarningOnGraph(LOCTEXT("EmptyMesh",
-					"Get PCG Volume Data: brush conversion produced an empty DynMesh and was skipped."), Context);
+					"Get PCG Volume Data: the volume produced an empty DynMesh and was skipped."), Context);
 				continue;
 			}
 
@@ -165,9 +230,18 @@ void FPCGGetVolumeDataElement::ProcessActor(FPCGContext* InContext,
 		}
 		else
 		{
-			UPCGVolumeData* VolumeData = FPCGContext::NewObject_AnyThread<UPCGVolumeData>(Context);
-			VolumeData->Initialize(Volume);
-			ProducedData = VolumeData;
+			if (bOwnerVolume)
+			{
+				UPCGVolumeData* VolumeData = FPCGContext::NewObject_AnyThread<UPCGVolumeData>(Context);
+				VolumeData->Initialize(Volume);
+				ProducedData = VolumeData;
+			}
+			else
+			{
+				UPCGVolumeShapeData* VolumeData = FPCGContext::NewObject_AnyThread<UPCGVolumeShapeData>(Context);
+				VolumeData->Initialize(Component->GetShapeDesc());
+				ProducedData = VolumeData;
+			}
 		}
 
 		UPCGMetadata* Metadata = ProducedData->MutableMetadata();

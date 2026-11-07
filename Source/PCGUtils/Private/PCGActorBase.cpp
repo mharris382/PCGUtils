@@ -112,23 +112,34 @@ void APCGActorBase::TriggerRegenerateOnActorEdits(AActor* OtherActor)
 #endif
 }
 
+void APCGActorBase::RefreshBounds()
+{
+	ApplyBoundsToBox();
+}
+
+FBox APCGActorBase::ComputeCombinedLocalBounds() const
+{
+    // Base bounds from the virtual/BP-overridable hook.
+    FVector LocalMin, LocalMax;
+    ComputeLocalBounds(LocalMin, LocalMax);  // polymorphic — calls BP override if present
+    FBox CombinedBox(LocalMin, LocalMax);
+
+    // Expand by the splines, markers, volumes and other bounds providers on this actor (actor space).
+    const FBox ComponentBox = UPCGUtilsHelpers::ComputeActorPCGBoundingBox(this, /*bLocalSpace=*/true);
+    if (ComponentBox.IsValid)
+    {
+        CombinedBox += ComponentBox;
+    }
+    return CombinedBox;
+}
+
 void APCGActorBase::ApplyBoundsToBox()
 {
 #if WITH_EDITOR
 	if (!BoundsBox)
 		return;
 
-    // Base bounds from the virtual/BP-overridable hook.
-    FVector LocalMin, LocalMax;
-    ComputeLocalBounds(LocalMin, LocalMax);  // polymorphic — calls BP override if present
-    FBox CombinedBox(LocalMin, LocalMax);
-
-    // Expand by any spline components attached to this actor (local space).
-    const FBox SplineBox = UPCGUtilsHelpers::ComputeActorPCGBoundingBox(this, /*bLocalSpace=*/true);
-    if (SplineBox.IsValid)
-    {
-        CombinedBox += SplineBox;
-    }
+    FBox CombinedBox = ComputeCombinedLocalBounds();
 
     const FVector Padding(BoundsPadding);
     CombinedBox.Min -= Padding;
@@ -146,15 +157,7 @@ void APCGActorBase::RecenterActorToBounds()
 {
 #if WITH_EDITOR
     // --- 1. Compute the local-space bounding box (same logic as ApplyBoundsToBox) ---
-    FVector LocalMin, LocalMax;
-    ComputeLocalBounds(LocalMin, LocalMax);
-    FBox CombinedBox(LocalMin, LocalMax);
-
-    const FBox SplineBox = UPCGUtilsHelpers::ComputeActorPCGBoundingBox(this, /*bLocalSpace=*/true);
-    if (SplineBox.IsValid)
-    {
-        CombinedBox += SplineBox;
-    }
+    const FBox CombinedBox = ComputeCombinedLocalBounds();
 
     const FVector LocalBoundsCenter = CombinedBox.GetCenter();
     if (LocalBoundsCenter.IsNearlyZero())

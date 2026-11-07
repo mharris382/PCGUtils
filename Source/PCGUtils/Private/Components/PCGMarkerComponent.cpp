@@ -17,18 +17,7 @@ UPCGMarkerComponent::UPCGMarkerComponent(const FObjectInitializer& ObjectInitial
 
 bool UPCGMarkerComponent::GetPCGActorBoundingBox_Implementation(AActor* Actor, FBox& OutBounds) const
 {
-	OutBounds.Init();
-	if (!IsValid(Actor))
-	{
-		return false;
-	}
-
-	FBox LocalBounds(EForceInit::ForceInit);
-	LocalBounds += BoundsMin;
-	LocalBounds += BoundsMax;
-	const FTransform ComponentToActor = GetComponentTransform().GetRelativeTransform(Actor->GetActorTransform());
-	OutBounds = LocalBounds.TransformBy(ComponentToActor);
-	return OutBounds.IsValid != 0;
+	return UPCGUtilsHelpers::ComputePCGComponentBounds(this, Actor, OutBounds);
 }
 
 void UPCGMarkerComponent::PostLoad()
@@ -84,12 +73,14 @@ void UPCGMarkerComponent::PostEditChangeProperty(FPropertyChangedEvent& Property
 		EditorUnselectedMarkerColor = UnselectedColor;
 	}
 
+	UPCGUtilsHelpers::RefreshOwnerPCGBounds(this);
 	TriggerRegeneratePCGOnMarkerEdits();
 }
 
 void UPCGMarkerComponent::PostEditComponentMove(bool bFinished)
 {
 	Super::PostEditComponentMove(bFinished);
+	UPCGUtilsHelpers::RefreshOwnerPCGBounds(this);
 	if (bFinished)
 	{
 		TriggerRegeneratePCGOnMarkerEdits();

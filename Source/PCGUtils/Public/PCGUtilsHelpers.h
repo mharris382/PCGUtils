@@ -64,8 +64,9 @@ public:
 	/**
 	 * Computes a bounding box that encloses every spline and PCG bounds-provider component on the actor.
 	 *
-	 * Samples all USplineComponent instances and combines their bounds with actor-relative
-	 * boxes returned by components implementing PCGBoundsProvider.
+	 * Samples all USplineComponent instances and combines their bounds with the PCG Marker and
+	 * PCG Volume Components on the actor (ComputePCGComponentBounds) and actor-relative boxes
+	 * returned by any other components implementing PCGBoundsProvider.
 	 *
 	 * @param Actor                  The actor whose spline components are measured.
 	 * @param bLocalSpace            When true each spline is measured in its own local space
@@ -83,6 +84,27 @@ public:
 		const AActor* Actor,
 		bool bLocalSpace = true,
 		int32 SampleSubdivisionCount = 1);
+
+	/**
+	 * The bounds of one PCG Marker or PCG Volume Component, in the space of RelativeTo (normally the component's
+	 * owner). Corners are transformed one by one, so rotation and non-uniform scale anywhere in the attachment
+	 * chain are honoured. Returns false, with OutBounds invalid, for any other component, for a volume reading its
+	 * owner's brush (Owner Volume), or when either argument is null.
+	 */
+	UFUNCTION(BlueprintCallable, BlueprintPure, Category = "PCGUtils|Bounds",
+		meta = (Keywords = "marker volume bounds bounding box AABB actor"))
+	static bool ComputePCGComponentBounds(
+		const USceneComponent* Component,
+		const AActor* RelativeTo,
+		FBox& OutBounds);
+
+	/**
+	 * Rebuilds the automatic bounds box of the PCG Actor that owns Component. Call after editing anything that
+	 * contributes to it (a marker, volume or spline) without a construction rerun. Does nothing when the owner is
+	 * not a PCG Actor.
+	 */
+	UFUNCTION(BlueprintCallable, Category = "PCGUtils|Bounds")
+	static void RefreshOwnerPCGBounds(UActorComponent* Component);
 
 	UFUNCTION(BlueprintCallable, BlueprintPure, Category = "PCGUtils|PCG",
 		meta = (Keywords = "PCG param data static mesh soft object path asset path"))

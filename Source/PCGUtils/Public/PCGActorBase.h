@@ -41,6 +41,13 @@ public:
     UFUNCTION(CallInEditor, Category = "PCG|Utilities")
     void RecenterActorToBounds();
 
+    /**
+     * Rebuilds the automatic bounds box from ComputeLocalBounds, the actor's splines and its PCG Marker and
+     * PCG Volume Components, plus Bounds Padding. Runs on every construction; components call it when edited.
+     */
+    UFUNCTION(BlueprintCallable, CallInEditor, Category = "PCG|Bounds")
+    void RefreshBounds();
+
     virtual void TriggerRegeneratePCGOnComponentEdits(UActorComponent* TriggeringComponent = nullptr);
     
     virtual void TriggerRegenerateOnActorEdits(AActor* OtherActor);
@@ -83,6 +90,9 @@ protected:
     
 private:
     void ApplyBoundsToBox();
+
+    /** ComputeLocalBounds combined with everything ComputeActorPCGBoundingBox measures, unpadded, in actor space. */
+    FBox ComputeCombinedLocalBounds() const;
 
 public:
 

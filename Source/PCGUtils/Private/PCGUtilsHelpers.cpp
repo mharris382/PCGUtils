@@ -3,6 +3,8 @@
 #include "PCGUtilsHelpers.h"
 
 #include "PCGActorBase.h"
+#include "Components/PCGMarkerComponent.h"
+#include "Components/PCGVolumeComponent.h"
 #include "Components/StaticMeshComponent.h"
 #include "Components/SplineComponent.h"
 #include "GameFramework/Actor.h"
@@ -114,6 +116,8 @@ bool UPCGUtilsHelpers::TryRefreshPCGGeneration(UActorComponent* Component, bool 
 	if (PCGActorBaseOwner)
 	{
 		bFoundProvider = true;	
+		// Whatever was edited may have changed the bounds the graph runs in.
+		PCGActorBaseOwner->RefreshBounds();
 		PCGActorBaseOwner->PCGComponent->GenerateLocal(true);
 		return true;
 	}
@@ -312,7 +316,23 @@ FBox UPCGUtilsHelpers::ComputeActorPCGBoundingBox(
 	Actor->GetComponents(Components);
 	for (UActorComponent* Component : Components)
 	{
-		if (!IsValid(Component) || !Component->GetClass()->ImplementsInterface(UPCGBoundsProvider::StaticClass()))
+		if (!IsValid(Component))
+		{
+			continue;
+		}
+
+		// Markers and volumes are measured directly rather than through the bounds interface.
+		if (Component->IsA<UPCGMarkerComponent>() || Component->IsA<UPCGVolumeComponent>())
+		{
+			FBox ComponentBounds(EForceInit::ForceInit);
+			if (ComputePCGComponentBounds(Cast<USceneComponent>(Component), Actor, ComponentBounds))
+			{
+				Result += bLocalSpace ? ComponentBounds : ComponentBounds.TransformBy(Actor->GetActorTransform());
+			}
+			continue;
+		}
+
+		if (!Component->GetClass()->ImplementsInterface(UPCGBoundsProvider::StaticClass()))
 		{
 			continue;
 		}
@@ -328,6 +348,61 @@ FBox UPCGUtilsHelpers::ComputeActorPCGBoundingBox(
 	}
 #endif
 	return Result;
+}
+
+bool UPCGUtilsHelpers::ComputePCGComponentBounds(
+	const USceneComponent* Component,
+	const AActor* RelativeTo,
+	FBox& OutBounds)
+{
+	OutBounds = FBox(EForceInit::ForceInit);
+	if (!IsValid(Component) || !IsValid(RelativeTo))
+	{
+		return false;
+	}
+
+	FBox LocalBounds(EForceInit::ForceInit);
+	if (const UPCGMarkerComponent* Marker = Cast<UPCGMarkerComponent>(Component))
+	{
+		LocalBounds += Marker->BoundsMin;
+		LocalBounds += Marker->BoundsMax;
+	}
+	else if (const UPCGVolumeComponent* Volume = Cast<UPCGVolumeComponent>(Component))
+	{
+		if (Volume->Shape == EPCGVolumeShape::OwnerVolume)
+		{
+			return false;
+		}
+		LocalBounds = Volume->GetShapeDesc().GetLocalBounds();
+	}
+	if (!LocalBounds.IsValid)
+	{
+		return false;
+	}
+
+	const FTransform& ComponentToWorld = Component->GetComponentTransform();
+	const FTransform& ActorToWorld = RelativeTo->GetActorTransform();
+	for (int32 Corner = 0; Corner < 8; ++Corner)
+	{
+		const FVector Local(
+			(Corner & 1) ? LocalBounds.Max.X : LocalBounds.Min.X,
+			(Corner & 2) ? LocalBounds.Max.Y : LocalBounds.Min.Y,
+			(Corner & 4) ? LocalBounds.Max.Z : LocalBounds.Min.Z);
+		OutBounds += ActorToWorld.InverseTransformPosition(ComponentToWorld.TransformPosition(Local));
+	}
+	return OutBounds.IsValid != 0;
+}
+
+void UPCGUtilsHelpers::RefreshOwnerPCGBounds(UActorComponent* Component)
+{
+	if (!IsValid(Component))
+	{
+		return;
+	}
+	if (APCGActorBase* PCGActor = Cast<APCGActorBase>(Component->GetOwner()))
+	{
+		PCGActor->RefreshBounds();
+	}
 }
 
 UStaticMesh* UPCGUtilsHelpers::ResolveStaticMeshFromData(
