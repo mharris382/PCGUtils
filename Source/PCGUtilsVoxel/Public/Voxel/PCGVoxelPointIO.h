@@ -71,7 +71,11 @@ namespace PCGVoxelPointIO
 	PCGUTILSVOXEL_API UPCGBasePointData* WriteCells(FPCGContext* Context, const UPCGBasePointData* Source, const FPCGVoxelGrid& Grid,
 		TConstArrayView<FPCGVoxelCellOut> Cells, FName SpanAttribute, bool bWriteSpan);
 
-	/** Gives each point of Points its own metadata entry (parented to the one it had), so per-point values can be written. */
+	/**
+	 * Gives each point of Points its own metadata entry (parented to the one it had), so per-point values can be written.
+	 * Call it once, on points whose entries still belong to the parent metadata: WriteCells already does. Calling it
+	 * again parents new entries to local ones, and inherited attribute values are lost.
+	 */
 	PCGUTILSVOXEL_API void MakeEntriesUnique(UPCGBasePointData* Points);
 
 	/** Creates (or replaces) a point attribute and writes one value per point. Points must have unique entries. */

@@ -125,7 +125,7 @@ first cell's values. A test checks it.
 | 1 | `Voxel \| Compress` | Merges equal neighbouring cells into chunks (section 1.2). |
 | 1 | `Voxel \| Expand` | Turns chunks back into one point per cell (section 1.2). |
 | 1 | `Voxel \| Pack Points` | Packs loose points into free cells of a voxel grid, fully or part way, without overlaps (section 4). |
-| 2 | `Voxel \| Neighbors` | Writes per-cell attributes: face-neighbour count, 6-bit exposed-face mask, `IsSurface`. |
+| 1 | `Voxel \| Cell Properties` | Writes per-cell attributes: open sides, surrounded, neighbourhood, depth, column and components (section 4b). Replaces the planned `Voxel \| Neighbors`. |
 | 2 | `Voxel \| Boolean` | Union, intersect or subtract voxel sets by cell index; attributes come from the first input. |
 | 2 | `Voxel \| Dilate / Erode` | Grow or shrink by N cells. Added cells copy the nearest source cell's attributes (the CLAUDE.md inheritance rule). |
 | later | `Voxel \| Resample`, `Voxel \| From DynMesh` | Change cell size; voxelize a mesh. |
@@ -326,6 +326,37 @@ cell-sized oriented box, and no two boxes may intersect.
   - One Cell ignores the span and treats it as a single voxel.
 - **Unfilled Cells** output: `Chunks: Keep | Expand` (default Expand). A partly claimed chunk always splits.
 
+## 4b. Voxel | Cell Properties
+
+Per-cell properties written as point attributes, in the style of PCGEx Path Properties: every output has its own
+toggle and an editable attribute name, and all outputs are optional. A side is **open** when the face neighbour on
+that side is empty. Directions are grid axes; grid +Z is up.
+
+| Output (default name) | Type | On by default | Value |
+|---|---|---|---|
+| `IsSurrounded` | Boolean | yes | All six face neighbours filled. |
+| `OpenSides` | Integer32 | yes | Bitmask: +X = 1, −X = 2, +Y = 4, −Y = 8, +Z = 16, −Z = 32. |
+| `OpenSideCount` | Integer32 | yes | Open sides, 0 to 6. |
+| `PositiveOpenSides` | Vector | yes | 1 on each axis whose + side is open, else 0. |
+| `NegativeOpenSides` | Vector | yes | −1 on each axis whose − side is open, else 0. Positive + Negative = sum of the open sides' outward directions. |
+| `OpenNormal` | Vector | no | That sum normalized: a rough surface normal; zero when nothing is open or open sides cancel. `Open Normal Space: Grid / World` (default World). |
+| `OpenAxisCount` | Integer32 | no | Axes with any open side: 0 inside, 1 face, 2 edge, 3 corner. |
+| `NeighborCount` | Integer32 | no | Filled cells among the 26 around (faces, edges, corners). |
+| `Depth` | Integer32 | no | Face steps to the nearest empty cell: a cell with an open side is 1, the next layer 2. |
+| `CellsAbove` | Integer32 | no | Filled cells stacked directly above without a gap (layering: grass / dirt / stone). |
+| `IsSkyVisible` | Boolean | no | No filled cell anywhere above in the column. |
+| `ComponentID` | Integer32 | no | Connected component, numbered from 0 in cell order (Z, Y, X). `Connectivity: Faces / Edges / Corners` (default Faces). |
+| `ComponentSize` | Integer32 | no | Cells in that component (for removing floaters). |
+| `CellIndex` | Vector | no | The whole-number grid index. |
+
+- **Output:** the input with the attributes added: points, metadata, tags and `@Data` carry over (written through
+  `PCGVoxelPointIO::WriteCells`).
+- **Chunk rule:** every property is per cell, so a chunked input comes out **expanded** to one point per cell (each
+  copying its chunk), with the span attribute removed. The values equal those of the expanded set, cell for cell.
+- Points dropped by `Duplicate Cells: Keep First / Keep Last` are left out, as in Expand.
+- **Validation:** an enabled output with an empty name, or two enabled outputs with the same name, is an error naming
+  the settings involved; nothing is written.
+
 ## 5. Module and files
 
 - `Source/PCGUtilsVoxel/PCGUtilsVoxel.Build.cs`. Dependencies: Core, CoreUObject, Engine, PCG,
@@ -334,7 +365,7 @@ cell-sized oriented box, and no two boxes may intersect.
 - `.uplugin`: `PCGUtilsVoxel`, Runtime, PreDefault.
 - `Public/Voxel/PCGVoxelGrid.h` holds the contract, validation and cell lookup.
 - `Public/Voxel/PCGVoxelMesher.h` holds the faces → mesh core. It is plain C++, so it can be tested without a graph.
-- `Public/Elements/PCGVoxelToDynMesh.h`, `PCGVoxelPackPoints.h`, `PCGVoxelCompress.h`, `PCGVoxelExpand.h`. All derive from `UPCGSettings`, so each overrides
+- `Public/Elements/PCGVoxelToDynMesh.h`, `PCGVoxelPackPoints.h`, `PCGVoxelCompress.h`, `PCGVoxelExpand.h`, `PCGVoxelCellProperties.h`. All derive from `UPCGSettings`, so each overrides
   `GetType()` (or they land in `Generic`). Add the `Voxel` category to the `PCGUtils.Palette.SearchContract` test.
 - `PCGUtilsDynMesh` must not depend on `PCGUtilsVoxel`; the dependency only runs Voxel → DynMesh.
 - Tests in `Private/Tests/`:
@@ -349,7 +380,9 @@ cell-sized oriented box, and no two boxes may intersect.
   - chunks: To DynMesh gives the same mesh for a set and its compressed form; Expand(Compress(x)) gives back x;
     a cell that differs in one attribute or in its offset stays out of a chunk; span validation errors;
   - Pack Points: every cell is claimed at most once; Max Radius is respected; points keep their metadata; with
-    random partial settle, no two output boxes intersect.
+    random partial settle, no two output boxes intersect;
+  - Cell Properties: open sides, depth, neighbours and column values on a block; components by connectivity; a
+    chunked set gives the same values as its expanded form; output names must be set and distinct.
 
 ## 6. Decisions
 
