@@ -32,6 +32,7 @@ namespace PCGUtilsSettingsCategories
 		Paths,
 		Points,
 		Params,
+		Voxel,
 	};
 
 	inline EPCGSettingsType AsSettingsType(EValue Value)

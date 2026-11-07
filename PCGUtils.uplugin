@@ -75,6 +75,11 @@
             "Name": "PCGUtilsChaosCache",
             "Type": "Runtime",
             "LoadingPhase": "PreDefault"
+        },
+        {
+            "Name": "PCGUtilsVoxel",
+            "Type": "Runtime",
+            "LoadingPhase": "PreDefault"
         }
     ],
     "Plugins": [

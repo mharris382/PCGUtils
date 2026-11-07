@@ -82,7 +82,7 @@ namespace PCGUtilsPaletteSearchContract
 	{
 		static const TSet<FString> Packages = {
 			TEXT("/Script/PCGUtilsDynMesh"), TEXT("/Script/PCGUtilsFracture"), TEXT("/Script/PCGUtilsPainter"),
-			TEXT("/Script/PCGUtilsSimulation"), TEXT("/Script/PCGUtilsChaosCache")};
+			TEXT("/Script/PCGUtilsSimulation"), TEXT("/Script/PCGUtilsChaosCache"), TEXT("/Script/PCGUtilsVoxel")};
 
 		TArray<FEntry> Entries;
 		for (TObjectIterator<UClass> It; It; ++It)
@@ -166,6 +166,7 @@ bool FPCGUtilsPaletteSearchContractTest::RunTest(const FString&)
 	bool bFoundSwizzleBounds = false;
 	bool bFoundGetMPCValues = false;
 	bool bFoundSpawnComponent = false;
+	int32 VoxelCount = 0;
 
 	for (const FEntry& Entry : Entries)
 	{
@@ -197,6 +198,18 @@ bool FPCGUtilsPaletteSearchContractTest::RunTest(const FString&)
             TestTrue(TEXT("Path search finds decomposition"), Matches(Entry.SearchText, TEXT("Path Decompose")));
             continue;
         }
+		// The Voxel family has its own category and prefix and is not part of the DynMesh family.
+		if (Entry.Package == TEXT("/Script/PCGUtilsVoxel"))
+		{
+			++VoxelCount;
+			TestEqual(*FString::Printf(TEXT("%s has the Voxel category"), *Where), Entry.Category, FString(TEXT("PCGUtils|Voxel")));
+			TestTrue(*FString::Printf(TEXT("%s carries the Voxel | prefix"), *Where), Entry.Label.StartsWith(TEXT("Voxel | ")));
+			TestTrue(*FString::Printf(TEXT("'Voxel' finds %s"), *Where), Matches(Entry.SearchText, TEXT("Voxel")));
+			const FString Name = Entry.Label.RightChop(FString(TEXT("Voxel | ")).Len()).ToLower();
+			TestFalse(*FString::Printf(TEXT("%s name omits Voxel"), *Where), Name.Contains(TEXT("voxel")));
+			TestFalse(*FString::Printf(TEXT("%s subtitle is not a qualified enum value"), *Where), Entry.Subtitle.Contains(TEXT("::")));
+			continue;
+		}
         const bool bIsSimulation = Entry.Package == TEXT("/Script/PCGUtilsSimulation");
 		const bool bIsChaosCache = Entry.Package == TEXT("/Script/PCGUtilsChaosCache");
 		const bool bIsFracture = Entry.Package == TEXT("/Script/PCGUtilsFracture") || bIsChaosCache ||
@@ -331,6 +344,7 @@ bool FPCGUtilsPaletteSearchContractTest::RunTest(const FString&)
 	TestTrue(TEXT("Path decomposition is registered"), bFoundPathDecomposition);
 	TestTrue(TEXT("Swizzle Bounds is registered"), bFoundSwizzleBounds);
 	TestTrue(TEXT("Get MPC Values is registered"), bFoundGetMPCValues);
+	TestEqual(TEXT("Every Voxel node is present (To DynMesh, Compress, Expand, Pack Points)"), VoxelCount, 4);
 	return true;
 }
 

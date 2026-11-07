@@ -25,6 +25,7 @@ Unreal Engine **5.8** · MIT licensed · <https://github.com/mharris382/PCGUtils
   - [PCGActorBase](#pcgactorbase)
   - [Splines and paths](#splines-and-paths)
   - [PCG Marker](#pcg-marker)
+  - [PCG Volume](#pcg-volume)
   - [Provider interfaces and shared data](#provider-interfaces-and-shared-data)
   - [Component query nodes](#component-query-nodes)
 - [Procedural Asset Authoring](#procedural-asset-authoring)
@@ -32,6 +33,7 @@ Unreal Engine **5.8** · MIT licensed · <https://github.com/mharris382/PCGUtils
   - [A representative workflow](#a-representative-workflow)
   - [Committing LODs](#committing-lods)
   - [Batch runs and data caching](#batch-runs-and-data-caching)
+- [Voxels](#voxels)
 - [Experimental — Procedural Fracture](#experimental--procedural-fracture)
 - [Also in the plugin](#also-in-the-plugin)
 - [Installation](#installation)
@@ -341,8 +343,9 @@ native nodes that pull their authored data into a graph.
 ### PCGActorBase
 
 `APCGActorBase` is a reusable actor base for PCG-driven tools. It owns a PCG component and an editor bounds
-box, computes bounds from supported components and splines, and can regenerate when its utility components are
-edited. It also provides:
+box, computes bounds from its splines, PCG Marker and PCG Volume Components and other bounds providers, and can
+regenerate when its utility components are edited. Editing or moving a marker or volume rebuilds the bounds box
+straight away (`UPCGUtilsHelpers::RefreshOwnerPCGBounds`); `Refresh Bounds` does it by hand. It also provides:
 
 - A stable seed and standardized bake settings.
 - Save name, save path, asset group label, and baked-asset metadata.
@@ -385,6 +388,20 @@ drawing.
 
 ![](https://i.imgur.com/usURBXv.png)
 
+### PCG Volume
+
+A **PCG Volume Component** is a volume that lives on any actor, like a marker: a Box, Sphere, Cylinder, Cone or
+Capsule, placed and sized by the component's own transform plus `Box Extent`, `Radius` and `Half Height`
+(a capsule's half height includes its rounded ends). **Get PCG Volume Data** outputs each one as volume data
+that tests points against the exact shape, rotation and non-uniform scale included, or as a closed DynMesh
+(`Sides` sets how finely round shapes are meshed). It carries `VolumeID`, `VolumeDensity` and `VolumeColor` for
+optional `@Data` attributes, contributes to a PCG Actor's bounds box, and draws in the editor with the same
+color and opacity settings as markers. It has no collision.
+
+Unreal's brush cannot be reused for this: `UBrushComponent` is not exported for subclassing, and the geometry
+brush tools only edit Volume actors. On a Volume actor, `Shape = Owner Volume` reads that actor's brush instead;
+components saved before the shapes existed load as Owner Volume when they sit on a Volume actor.
+
 ### Provider interfaces and shared data
 
 Blueprint-compatible interfaces decouple the PCG nodes from concrete component classes:
@@ -404,6 +421,7 @@ nodes pick it up.
   metadata and tags.
 - **Get PCG Point Data** — collects points from `PCGPointProvider` components.
 - **Get Marker Data** — retrieves marker components and their point metadata.
+- **Get PCG Volume Data** — retrieves PCG Volume Components as volume data or DynMeshes.
 - **Get PCG Spline Data**, **Get Shape Path Data**, **Get Spline Data With Overrides** — the specialized path
   component workflows.
 - **Get Static Mesh Data** — choose Static Mesh Components (the default), Instanced Static Mesh Components,
@@ -497,6 +515,25 @@ execution order; it does not pass data between entries.
 assets — a runtime folder for data intended to be cooked and loaded in game, and an offline folder for
 editor-only results. The save path is resolved from the component and project settings and written without a
 save dialog, which is what makes it usable inside a graph that runs repeatedly.
+
+---
+
+## Voxels
+
+`PCGUtilsVoxel` works on voxel sets that are ordinary point data: one point per occupied cell, with the cell size in
+`@Data.VoxelSize` and an optional grid placement in `@Data.VoxelGridTransform`. There is no voxel data type, so every
+point node still works on them and the engine's Volume Sampler output goes straight in (add `@Data.VoxelSize`). A point
+with a `VoxelSpan` attribute covers a box of cells (a chunk); every node reads a chunked set exactly as its expanded
+form.
+
+- **Voxel | To DynMesh** builds the closed outer surface: materials (constant or per cell), hard or smooth vertex
+  colors, grid, per-face or atlas UVs, a manifold-extrude style surface offset from point bounds, and optional
+  merging of coplanar faces without cracks.
+- **Voxel | Pack Points** packs loose points into free cells of a grid, fully or part way (constant, random or
+  per-point settle amounts), without overlapping boxes.
+- **Voxel | Compress** / **Voxel | Expand** merge equal cells into chunks and back.
+
+The contract and every node's rules are in `Docs/PCGUtilsVoxel.md`.
 
 ---
 
@@ -602,6 +639,7 @@ Deeper written documentation lives in `Docs/`:
 | `Docs/PCGUtilsDynMesh.md` | The process contract, selection domains, topology results, Boolean, PolyGroups, coordinate spaces |
 | `Docs/PCGUtilsPainter.md` | Painter architecture, the canonical target model, Static Mesh painting and LOD transfer |
 | `Docs/PCGUtilsFracture.md` | The full fracture pipeline, node reference, cluster interop and troubleshooting |
+| `Docs/PCGUtilsVoxel.md` | The voxel contract, chunks, and the Voxel nodes |
 | `Docs/PCGUtilsDynMesh/PrimitiveBuilder.md` | Builder fitting, padding and alignment |
 | `Docs/PCGUtils/PCGGraphBatch.md` | Running batches of standalone PCG graphs |
 

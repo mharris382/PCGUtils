@@ -1,0 +1,284 @@
+// Copyright Max Harris
+//
+// Voxel | To DynMesh: closed, manifold, outward meshes; collapse without cracks; colors, offsets and UVs.
+
+#include "Misc/AutomationTest.h"
+
+#if WITH_AUTOMATION_TESTS
+
+#include "DynamicMesh/DynamicMeshAttributeSet.h"
+#include "Elements/PCGVoxelToDynMesh.h"
+#include "PCGVoxelTestHelpers.h"
+#include "Voxel/PCGVoxelGrid.h"
+
+namespace PCGVoxelMeshTests
+{
+	using namespace PCGVoxelTestHelpers;
+
+	UPCGVoxelToDynMeshSettings* MakeSettings()
+	{
+		UPCGVoxelToDynMeshSettings* Settings = NewObject<UPCGVoxelToDynMeshSettings>();
+		Settings->bConvertToLocalSpace = false;
+		return Settings;
+	}
+
+	TArray<FPCGTaggedData> Mesh(UPCGVoxelToDynMeshSettings* Settings, const UPCGData* Voxels)
+	{
+		return Run<FPCGVoxelToDynMeshElement>(Settings, { { PCGPinConstants::DefaultInputLabel, Voxels } });
+	}
+
+	/** Closed, every edge shared by exactly two triangles, faces outward, and encloses Cells cubes of 100. */
+	void CheckSolid(FAutomationTestBase& Test, const TCHAR* What, const UE::Geometry::FDynamicMesh3& Mesh, int32 Cells, double Size = 100.0)
+	{
+		Test.TestEqual(*FString::Printf(TEXT("%s: no open edges"), What), OpenEdges(Mesh), 0);
+		Test.TestTrue(*FString::Printf(TEXT("%s: the mesh is valid"), What), Mesh.CheckValidity(UE::Geometry::FDynamicMesh3::FValidityOptions(), UE::Geometry::EValidityCheckFailMode::ReturnOnly));
+		const double Expected = Cells * Size * Size * Size;
+		Test.TestTrue(*FString::Printf(TEXT("%s: encloses %.0f outward (%.0f)"), What, Expected, Volume(Mesh)),
+			FMath::IsNearlyEqual(Volume(Mesh), Expected, Expected * 1e-6));
+	}
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FPCGVoxelMeshSingleCellTest,
+	"PCGUtils.Voxel.ToDynMesh.OneCellIsAClosedBox",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::ProductFilter)
+
+bool FPCGVoxelMeshSingleCellTest::RunTest(const FString&)
+{
+	using namespace PCGVoxelMeshTests;
+	const TArray<FPCGTaggedData> Outputs = Mesh(MakeSettings(), MakeVoxels({ FIntVector(2, 0, 0) }));
+	const UE::Geometry::FDynamicMesh3* Result = MeshOf(Outputs);
+	UTEST_NOT_NULL(TEXT("A DynMesh came out"), Result);
+	TestEqual(TEXT("12 triangles"), Result->TriangleCount(), 12);
+	TestEqual(TEXT("8 vertices"), Result->VertexCount(), 8);
+	CheckSolid(*this, TEXT("One cell"), *Result, 1);
+	const FBox Bounds(Result->GetBounds());
+	TestTrue(*FString::Printf(TEXT("It spans the cell around (200, 0, 0) (%s)"), *Bounds.ToString()),
+		Bounds.Min.Equals(FVector(150, -50, -50), 0.01) && Bounds.Max.Equals(FVector(250, 50, 50), 0.01));
+	TestTrue(TEXT("The input's tags carry over"), Outputs[0].Tags.Contains(TEXT("KeptTag")));
+	const UPCGDynamicMeshData* Data = Cast<UPCGDynamicMeshData>(Outputs[0].Data);
+	TestTrue(TEXT("Its @Data.VoxelSize carries over"), Data->ConstMetadata()->GetConstMetadataDomain(PCGMetadataDomainID::Data)
+		&& Data->ConstMetadata()->GetConstMetadataDomain(PCGMetadataDomainID::Data)->HasAttribute(TEXT("VoxelSize")));
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FPCGVoxelMeshManifoldTest,
+	"PCGUtils.Voxel.ToDynMesh.CellsTouchingAtAnEdgeOrCornerStayManifold",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::ProductFilter)
+
+bool FPCGVoxelMeshManifoldTest::RunTest(const FString&)
+{
+	using namespace PCGVoxelMeshTests;
+
+	const UE::Geometry::FDynamicMesh3* Result = MeshOf(Mesh(MakeSettings(), MakeVoxels({ FIntVector(0, 0, 0), FIntVector(1, 1, 0) })));
+	UTEST_NOT_NULL(TEXT("Edge pair meshed"), Result);
+	TestEqual(TEXT("Two cells touching along an edge get separate vertices there (16)"), Result->VertexCount(), 16);
+	CheckSolid(*this, TEXT("Edge pair"), *Result, 2);
+
+	Result = MeshOf(Mesh(MakeSettings(), MakeVoxels({ FIntVector(0, 0, 0), FIntVector(1, 1, 1) })));
+	UTEST_NOT_NULL(TEXT("Corner pair meshed"), Result);
+	TestEqual(TEXT("Two cells touching at a corner get separate vertices there (16)"), Result->VertexCount(), 16);
+	CheckSolid(*this, TEXT("Corner pair"), *Result, 2);
+
+	// A 2x2x2 block missing two cells that touch along an edge: the empty side has the awkward edge.
+	TArray<FIntVector> Cells = Block(2, 2, 2);
+	Cells.Remove(FIntVector(0, 0, 0));
+	Cells.Remove(FIntVector(1, 1, 0));
+	Result = MeshOf(Mesh(MakeSettings(), MakeVoxels(Cells)));
+	UTEST_NOT_NULL(TEXT("Notched block meshed"), Result);
+	CheckSolid(*this, TEXT("Block missing an edge pair"), *Result, 6);
+
+	// An L of three cells has a concave edge.
+	Result = MeshOf(Mesh(MakeSettings(), MakeVoxels({ FIntVector(0, 0, 0), FIntVector(1, 0, 0), FIntVector(0, 1, 0) })));
+	UTEST_NOT_NULL(TEXT("L meshed"), Result);
+	CheckSolid(*this, TEXT("L"), *Result, 3);
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FPCGVoxelMeshCollapseTest,
+	"PCGUtils.Voxel.ToDynMesh.CollapseLeavesNoCracks",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::ProductFilter)
+
+bool FPCGVoxelMeshCollapseTest::RunTest(const FString&)
+{
+	using namespace PCGVoxelMeshTests;
+
+	// A 5x4x3 block with a few cells missing, so merged faces meet uneven neighbours.
+	TArray<FIntVector> Cells = Block(5, 4, 3);
+	for (const FIntVector& Missing : { FIntVector(2, 1, 2), FIntVector(4, 3, 2), FIntVector(0, 0, 0), FIntVector(3, 2, 2), FIntVector(1, 3, 1) })
+	{
+		Cells.Remove(Missing);
+	}
+	const UPCGPointArrayData* Voxels = MakeVoxels(Cells);
+
+	UPCGVoxelToDynMeshSettings* Plain = MakeSettings();
+	const TArray<FPCGTaggedData> PlainOut = Mesh(Plain, Voxels);
+	UPCGVoxelToDynMeshSettings* Collapsed = MakeSettings();
+	Collapsed->bCollapseCoplanarFaces = true;
+	const TArray<FPCGTaggedData> CollapsedOut = Mesh(Collapsed, Voxels);
+	const UE::Geometry::FDynamicMesh3* PlainMesh = MeshOf(PlainOut);
+	const UE::Geometry::FDynamicMesh3* CollapsedMesh = MeshOf(CollapsedOut);
+	UTEST_TRUE(TEXT("Both meshed"), PlainMesh && CollapsedMesh);
+
+	CheckSolid(*this, TEXT("Plain"), *PlainMesh, Cells.Num());
+	CheckSolid(*this, TEXT("Collapsed"), *CollapsedMesh, Cells.Num());
+	TestTrue(*FString::Printf(TEXT("Collapsing uses fewer triangles (%d vs %d)"), CollapsedMesh->TriangleCount(), PlainMesh->TriangleCount()),
+		CollapsedMesh->TriangleCount() * 4 < PlainMesh->TriangleCount() * 3);
+
+	// A plain box collapses to the minimum: six faces of two triangles.
+	const UE::Geometry::FDynamicMesh3* Box = MeshOf(Mesh(Collapsed, MakeVoxels(Block(4, 3, 2))));
+	UTEST_NOT_NULL(TEXT("Box meshed"), Box);
+	TestEqual(TEXT("A collapsed box is 12 triangles"), Box->TriangleCount(), 12);
+	CheckSolid(*this, TEXT("Collapsed box"), *Box, 24);
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FPCGVoxelMeshColorTest,
+	"PCGUtils.Voxel.ToDynMesh.HardAndSmoothColors",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::ProductFilter)
+
+bool FPCGVoxelMeshColorTest::RunTest(const FString&)
+{
+	using namespace PCGVoxelMeshTests;
+
+	UPCGPointArrayData* Voxels = MakeVoxels({ FIntVector(0, 0, 0), FIntVector(1, 0, 0) });
+	auto Colors = Voxels->GetColorValueRange();
+	Colors[0] = FVector4(1, 0, 0, 1);
+	Colors[1] = FVector4(0, 0, 1, 1);
+
+	UPCGVoxelToDynMeshSettings* Settings = MakeSettings();
+	Settings->VertexColorSource = EPCGVoxelColorSource::Attribute;
+	const UE::Geometry::FDynamicMesh3* Hard = MeshOf(Mesh(Settings, Voxels));
+	UTEST_TRUE(TEXT("Hard meshed with colors"), Hard && Hard->HasAttributes() && Hard->Attributes()->HasPrimaryColors());
+	bool bAllPure = true;
+	const UE::Geometry::FDynamicMeshColorOverlay* HardColors = Hard->Attributes()->PrimaryColors();
+	for (const int32 Element : HardColors->ElementIndicesItr())
+	{
+		const FVector4f Color = HardColors->GetElement(Element);
+		bAllPure &= Color.Equals(FVector4f(1, 0, 0, 1)) || Color.Equals(FVector4f(0, 0, 1, 1));
+	}
+	TestTrue(TEXT("Hard: every color is one cell's exact color"), bAllPure);
+	CheckSolid(*this, TEXT("Hard colors"), *Hard, 2);
+
+	Settings->ColorTransition = EPCGVoxelColorTransition::Smooth;
+	const UE::Geometry::FDynamicMesh3* Smooth = MeshOf(Mesh(Settings, Voxels));
+	UTEST_TRUE(TEXT("Smooth meshed"), Smooth && Smooth->Attributes()->HasPrimaryColors());
+	bool bFoundBlend = false;
+	const UE::Geometry::FDynamicMeshColorOverlay* SmoothColors = Smooth->Attributes()->PrimaryColors();
+	for (const int32 Element : SmoothColors->ElementIndicesItr())
+	{
+		bFoundBlend |= SmoothColors->GetElement(Element).Equals(FVector4f(0.5f, 0, 0.5f, 1), 1e-4f);
+	}
+	TestTrue(TEXT("Smooth: the corners the two cells share are their average"), bFoundBlend);
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FPCGVoxelMeshOffsetTest,
+	"PCGUtils.Voxel.ToDynMesh.SurfaceOffsetMovesOnlyTheSurface",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::ProductFilter)
+
+bool FPCGVoxelMeshOffsetTest::RunTest(const FString&)
+{
+	using namespace PCGVoxelMeshTests;
+
+	// A 2x1x1 bar whose second cell's bounds reach 20 further up and 10 further out in +X.
+	UPCGPointArrayData* Voxels = MakeVoxels({ FIntVector(0, 0, 0), FIntVector(1, 0, 0) });
+	Voxels->GetBoundsMaxValueRange()[1] = FVector(60, 50, 70);
+	UPCGVoxelToDynMeshSettings* Settings = MakeSettings();
+	Settings->SurfaceOffset = EPCGVoxelSurfaceOffset::FromPointBounds;
+	const UE::Geometry::FDynamicMesh3* Result = MeshOf(Mesh(Settings, Voxels));
+	UTEST_NOT_NULL(TEXT("Meshed"), Result);
+	TestEqual(TEXT("Still closed"), OpenEdges(*Result), 0);
+	TestEqual(TEXT("Same topology as without the offset (12 vertices)"), Result->VertexCount(), 12);
+	const FBox Bounds(Result->GetBounds());
+	TestTrue(*FString::Printf(TEXT("The +X face moved out 10 and the top reached 70 (%s)"), *Bounds.ToString()),
+		FMath::IsNearlyEqual(Bounds.Max.X, 160.0, 0.01) && FMath::IsNearlyEqual(Bounds.Max.Z, 70.0, 0.01));
+	TestTrue(TEXT("The first cell's far side did not move"), FMath::IsNearlyEqual(Bounds.Min.X, -50.0, 0.01));
+
+	// A Constant inset too deep turns the surface inside out: refused with the exact side.
+	Settings->SurfaceOffset = EPCGVoxelSurfaceOffset::Constant;
+	Settings->SurfaceOffsetDistance.Constant = -60.0;
+	AddExpectedError(TEXT("point 0: its surface offset on the -X side is -60"), EAutomationExpectedErrorFlags::Contains, 1, false);
+	TestEqual(TEXT("Too deep an inset gives no mesh"), Mesh(Settings, Voxels).Num(), 0);
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FPCGVoxelMeshUVTest,
+	"PCGUtils.Voxel.ToDynMesh.GridUVsHaveNoSeamsWithinAPlane",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::ProductFilter)
+
+bool FPCGVoxelMeshUVTest::RunTest(const FString&)
+{
+	using namespace PCGVoxelMeshTests;
+
+	const UE::Geometry::FDynamicMesh3* Result = MeshOf(Mesh(MakeSettings(), MakeVoxels(Block(3, 2, 1))));
+	UTEST_TRUE(TEXT("Meshed with UVs"), Result && Result->HasAttributes() && Result->Attributes()->NumUVLayers() > 0);
+	const UE::Geometry::FDynamicMeshUVOverlay* UVs = Result->Attributes()->GetUVLayer(0);
+	int32 FlatEdges = 0;
+	int32 FlatSeams = 0;
+	for (const int32 EdgeID : Result->EdgeIndicesItr())
+	{
+		const UE::Geometry::FIndex2i Tris = Result->GetEdgeT(EdgeID);
+		if (Tris.B < 0)
+		{
+			continue;
+		}
+		if (Result->GetTriNormal(Tris.A).Dot(Result->GetTriNormal(Tris.B)) > 0.999)
+		{
+			++FlatEdges;
+			FlatSeams += UVs->IsSeamEdge(EdgeID) ? 1 : 0;
+		}
+	}
+	TestTrue(TEXT("There are edges inside flat faces"), FlatEdges > 0);
+	TestEqual(TEXT("No UV seam inside a flat face, across cells"), FlatSeams, 0);
+
+	// The top of cell (2, 1, 0) continues the grid: 1 UV unit per cell.
+	FVector2f MaxUV(-1e9f);
+	for (const int32 Element : UVs->ElementIndicesItr())
+	{
+		MaxUV = FVector2f(FMath::Max(MaxUV.X, UVs->GetElement(Element).X), FMath::Max(MaxUV.Y, UVs->GetElement(Element).Y));
+	}
+	TestTrue(*FString::Printf(TEXT("UVs run one unit per cell (largest U %.2f)"), MaxUV.X), FMath::IsNearlyEqual(MaxUV.X, 2.5f, 1e-3f));
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FPCGVoxelMeshSparseTest,
+	"PCGUtils.Voxel.ToDynMesh.FarApartCellsUseTheHashMapAndMeshTheSame",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::ProductFilter)
+
+bool FPCGVoxelMeshSparseTest::RunTest(const FString&)
+{
+	using namespace PCGVoxelMeshTests;
+
+	// A 3x3x2 block and a 2-cell brick 200000 cells away: the bounding box is far too big for the dense lookup.
+	TArray<FIntVector> Cells = Block(3, 3, 2);
+	Cells.Add(FIntVector(200000, 0, 0));
+	Cells.Add(FIntVector(200001, 0, 0));
+
+	FPCGVoxelGrid Grid;
+	Grid.PointFirst = Cells;
+	UTEST_TRUE(TEXT("The cells are read"), Grid.BuildCells());
+	TestFalse(TEXT("A set spread this far uses the hash map"), Grid.IsDense());
+	TestEqual(TEXT("A far cell is found"), Grid.FindPoint(FIntVector(200001, 0, 0)), 19);
+	TestEqual(TEXT("An empty cell between them is not"), Grid.FindPoint(FIntVector(1000, 0, 0)), INDEX_NONE);
+	TestEqual(TEXT("Cells stay ordered Z, Y, X"), Grid.Cells[3], FIntVector(200000, 0, 0));
+
+	FPCGVoxelGrid Near;
+	Near.PointFirst = Block(3, 3, 2);
+	Near.BuildCells();
+	TestTrue(TEXT("The block alone uses the dense lookup"), Near.IsDense());
+
+	UPCGVoxelToDynMeshSettings* Settings = MakeSettings();
+	const UE::Geometry::FDynamicMesh3* Plain = MeshOf(Mesh(Settings, MakeVoxels(Cells)));
+	UTEST_NOT_NULL(TEXT("Plain meshed"), Plain);
+	CheckSolid(*this, TEXT("Sparse plain"), *Plain, 20);
+	TestEqual(TEXT("Plain: two triangles per exposed face (block 42 faces, brick 10)"), Plain->TriangleCount(), (42 + 10) * 2);
+
+	Settings->bCollapseCoplanarFaces = true;
+	const UE::Geometry::FDynamicMesh3* Collapsed = MeshOf(Mesh(Settings, MakeVoxels(Cells)));
+	UTEST_NOT_NULL(TEXT("Collapsed meshed"), Collapsed);
+	CheckSolid(*this, TEXT("Sparse collapsed"), *Collapsed, 20);
+	TestEqual(TEXT("Collapsed: each box is 12 triangles"), Collapsed->TriangleCount(), 24);
+	return true;
+}
+
+#endif
