@@ -125,7 +125,7 @@ first cell's values. A test checks it.
 | 1 | `Voxel \| Compress` | Merges equal neighbouring cells into chunks (section 1.2). |
 | 1 | `Voxel \| Expand` | Turns chunks back into one point per cell (section 1.2). |
 | 1 | `Voxel \| Pack Points` | Packs loose points into free cells of a voxel grid, fully or part way, without overlaps (section 4). |
-| 1 | `Voxel \| Cell Properties` | Writes per-cell attributes: open sides, surrounded, neighbourhood, depth, column and components (section 4b). Replaces the planned `Voxel \| Neighbors`. |
+| 1 | `Voxel \| Cell Properties` | Writes per-cell attributes: open sides, surrounded, inside corners, neighbourhood, depth, column and components (section 4b). Replaces the planned `Voxel \| Neighbors`. |
 | 2 | `Voxel \| Boolean` | Union, intersect or subtract voxel sets by cell index; attributes come from the first input. |
 | 2 | `Voxel \| Dilate / Erode` | Grow or shrink by N cells. Added cells copy the nearest source cell's attributes (the CLAUDE.md inheritance rule). |
 | later | `Voxel \| Resample`, `Voxel \| From DynMesh` | Change cell size; voxelize a mesh. |
@@ -341,6 +341,11 @@ that side is empty. Directions are grid axes; grid +Z is up.
 | `NegativeOpenSides` | Vector | yes | −1 on each axis whose − side is open, else 0. Positive + Negative = sum of the open sides' outward directions. |
 | `OpenNormal` | Vector | no | That sum normalized: a rough surface normal; zero when nothing is open or open sides cancel. `Open Normal Space: Grid / World` (default World). |
 | `OpenAxisCount` | Integer32 | no | Axes with any open side: 0 inside, 1 face, 2 edge, 3 corner. |
+| `IsInnerCorner` | Boolean | no | No open side, but at least one concave edge or corner: the cell hides behind its face neighbours in an inside corner. |
+| `ConcaveEdges` | Integer32 | no | Bitmask of concave edges. XY: +X+Y = 1, −X+Y = 2, +X−Y = 4, −X−Y = 8; XZ: 16, 32, 64, 128 in the same order; YZ: +Y+Z = 256, −Y+Z = 512, +Y−Z = 1024, −Y−Z = 2048. |
+| `ConcaveCorners` | Integer32 | no | Bitmask of concave corners: bit value 1 << (1 if −X, + 2 if −Y, + 4 if −Z), so +X+Y+Z = 1 and −X−Y−Z = 128. |
+| `ConcaveCount` | Integer32 | no | Concave edges plus concave corners, 0 to 20. |
+| `ConcaveDirection` | Vector | no | Normalized sum of the directions towards the concave edges and corners (into the inside corner); zero when none or they cancel. `Concave Direction Space: Grid / World` (default World). |
 | `NeighborCount` | Integer32 | no | Filled cells among the 26 around (faces, edges, corners). |
 | `Depth` | Integer32 | no | Face steps to the nearest empty cell: a cell with an open side is 1, the next layer 2. |
 | `CellsAbove` | Integer32 | no | Filled cells stacked directly above without a gap (layering: grass / dirt / stone). |
@@ -348,6 +353,13 @@ that side is empty. Directions are grid axes; grid +Z is up.
 | `ComponentID` | Integer32 | no | Connected component, numbered from 0 in cell order (Z, Y, X). `Connectivity: Faces / Edges / Corners` (default Faces). |
 | `ComponentSize` | Integer32 | no | Cells in that component (for removing floaters). |
 | `CellIndex` | Vector | no | The whole-number grid index. |
+
+**Concave** means an inside corner that face checks cannot see. A concave edge is an empty edge neighbour whose two
+faces (between it and the cell) are filled. A concave corner is an empty corner neighbour whose three faces and three
+edges are all filled; a corner behind an empty edge counts only as that edge, so a crease along Z reports one edge, not
+edge plus two corners. Concave diagonals are reported for open cells too (a wall cell under a notch has a concave
+edge); `IsInnerCorner` is the case with no open side. Use: offsetting a surface by its open sides misses these cells;
+they are where a negative offset would have to split the box, or a positive offset of the neighbours closes the gap.
 
 - **Output:** the input with the attributes added: points, metadata, tags and `@Data` carry over (written through
   `PCGVoxelPointIO::WriteCells`).
@@ -381,8 +393,8 @@ that side is empty. Directions are grid axes; grid +Z is up.
     a cell that differs in one attribute or in its offset stays out of a chunk; span validation errors;
   - Pack Points: every cell is claimed at most once; Max Radius is respected; points keep their metadata; with
     random partial settle, no two output boxes intersect;
-  - Cell Properties: open sides, depth, neighbours and column values on a block; components by connectivity; a
-    chunked set gives the same values as its expanded form; output names must be set and distinct.
+  - Cell Properties: open sides, depth, neighbours and column values on a block; components by connectivity; concave
+    edges and corners of a notch and a crease; a chunked set gives the same values as its expanded form; output names must be set and distinct.
 
 ## 6. Decisions
 

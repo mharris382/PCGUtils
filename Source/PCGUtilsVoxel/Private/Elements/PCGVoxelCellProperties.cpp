@@ -18,6 +18,30 @@ namespace PCGVoxelCellPropertiesPrivate
 	const FIntVector FaceStep[6] = {
 		FIntVector(1, 0, 0), FIntVector(-1, 0, 0), FIntVector(0, 1, 0), FIntVector(0, -1, 0), FIntVector(0, 0, 1), FIntVector(0, 0, -1) };
 
+	/** The twelve edge directions in Concave Edges bit order: XY, then XZ, then YZ plane; + before - on each axis. */
+	const FIntVector EdgeStep[12] = {
+		FIntVector(1, 1, 0), FIntVector(-1, 1, 0), FIntVector(1, -1, 0), FIntVector(-1, -1, 0),
+		FIntVector(1, 0, 1), FIntVector(-1, 0, 1), FIntVector(1, 0, -1), FIntVector(-1, 0, -1),
+		FIntVector(0, 1, 1), FIntVector(0, -1, 1), FIntVector(0, 1, -1), FIntVector(0, -1, -1) };
+
+	/** Corner direction for Concave Corners bit Bit: -X if bit 0 is set, -Y if bit 1, -Z if bit 2. */
+	FIntVector CornerStep(int32 Bit)
+	{
+		return FIntVector((Bit & 1) ? -1 : 1, (Bit & 2) ? -1 : 1, (Bit & 4) ? -1 : 1);
+	}
+
+	/** Normalized sum of directions, or zero when they cancel out; rotated into world space when asked. */
+	FVector DirectionOf(const FIntVector& Sum, EPCGVoxelDirectionSpace Space, const FTransform& GridToWorld)
+	{
+		FVector Direction(Sum);
+		if (Direction.IsNearlyZero())
+		{
+			return FVector::ZeroVector;
+		}
+		Direction.Normalize();
+		return Space == EPCGVoxelDirectionSpace::World ? GridToWorld.TransformVectorNoScale(Direction) : Direction;
+	}
+
 	struct FUnionFind
 	{
 		TArray<int32> Parent;
@@ -83,7 +107,7 @@ FText UPCGVoxelCellPropertiesSettings::GetNodeTooltipText() const
 {
 	return LOCTEXT("Tooltip",
 		"Writes per-cell properties as point attributes: open sides (as a bitmask, count and direction vectors), whether the "
-		"cell is surrounded, and optionally neighbour count, depth from the surface, cells above, sky visibility, connected "
+		"cell is surrounded, and optionally inside corners (concave edges and corners), neighbour count, depth from the surface, cells above, sky visibility, connected "
 		"components and the cell index. Each output has its own toggle and attribute name. A chunked set comes out expanded "
 		"to one point per cell.");
 }
@@ -131,6 +155,11 @@ bool FPCGVoxelCellPropertiesElement::ExecuteInternal(FPCGContext* Context) const
 		{ Settings->bWriteNegativeOpenSides, Settings->NegativeOpenSidesAttribute, TEXT("Negative Open Sides Attribute") },
 		{ Settings->bWriteOpenNormal, Settings->OpenNormalAttribute, TEXT("Open Normal Attribute") },
 		{ Settings->bWriteOpenAxisCount, Settings->OpenAxisCountAttribute, TEXT("Open Axis Count Attribute") },
+		{ Settings->bWriteIsInnerCorner, Settings->IsInnerCornerAttribute, TEXT("Is Inner Corner Attribute") },
+		{ Settings->bWriteConcaveEdges, Settings->ConcaveEdgesAttribute, TEXT("Concave Edges Attribute") },
+		{ Settings->bWriteConcaveCorners, Settings->ConcaveCornersAttribute, TEXT("Concave Corners Attribute") },
+		{ Settings->bWriteConcaveCount, Settings->ConcaveCountAttribute, TEXT("Concave Count Attribute") },
+		{ Settings->bWriteConcaveDirection, Settings->ConcaveDirectionAttribute, TEXT("Concave Direction Attribute") },
 		{ Settings->bWriteNeighborCount, Settings->NeighborCountAttribute, TEXT("Neighbor Count Attribute") },
 		{ Settings->bWriteDepth, Settings->DepthAttribute, TEXT("Depth Attribute") },
 		{ Settings->bWriteCellsAbove, Settings->CellsAboveAttribute, TEXT("Cells Above Attribute") },
@@ -255,26 +284,85 @@ bool FPCGVoxelCellPropertiesElement::ExecuteInternal(FPCGContext* Context) const
 		Write(Settings->bWriteOpenNormal, Settings->OpenNormalAttribute, FVector::ZeroVector, [&](int32 I)
 		{
 			const uint32 M = MaskOf(I);
-			FVector Sum(0.0);
+			FIntVector Sum(0);
 			for (int32 Dir = 0; Dir < 6; ++Dir)
 			{
 				if (M & (1u << Dir))
 				{
-					Sum += FVector(FaceStep[Dir]);
+					Sum += FaceStep[Dir];
 				}
 			}
-			if (Sum.IsNearlyZero())
-			{
-				return FVector::ZeroVector;
-			}
-			Sum.Normalize();
-			return Settings->OpenNormalSpace == EPCGVoxelDirectionSpace::World ? Grid.GridToWorld.TransformVectorNoScale(Sum) : Sum;
+			return DirectionOf(Sum, Settings->OpenNormalSpace, Grid.GridToWorld);
 		});
 		Write(Settings->bWriteOpenAxisCount, Settings->OpenAxisCountAttribute, int32(0), [&](int32 I)
 		{
 			const uint32 M = MaskOf(I);
 			return int32((M & 3) != 0) + int32((M & 12) != 0) + int32((M & 48) != 0);
 		});
+		if (Settings->bWriteIsInnerCorner || Settings->bWriteConcaveEdges || Settings->bWriteConcaveCorners
+			|| Settings->bWriteConcaveCount || Settings->bWriteConcaveDirection)
+		{
+			// Concave edge and corner masks of every output cell: 12 edge bits low, 8 corner bits from bit 12.
+			TArray<uint32> Concave;
+			Concave.SetNumUninitialized(NumOut);
+			ParallelForTemplate(TEXT("PCGVoxelCellProperties.Concave"), NumOut, 4096, [&](int32 I)
+			{
+				const FIntVector Cell = OutCells[I].First;
+				auto Filled = [&](int32 X, int32 Y, int32 Z) { return Grid.IsOccupied(Cell + FIntVector(X, Y, Z)); };
+				uint32 Mask = 0;
+				for (int32 Bit = 0; Bit < 12; ++Bit)
+				{
+					// The edge's two faces: its step with one of its two non-zero components cleared.
+					const FIntVector& E = EdgeStep[Bit];
+					const FIntVector FaceA = E.X != 0 ? FIntVector(E.X, 0, 0) : FIntVector(0, E.Y, 0);
+					const FIntVector FaceB = E.Z != 0 ? FIntVector(0, 0, E.Z) : FIntVector(0, E.Y, 0);
+					if (!Filled(E.X, E.Y, E.Z) && Filled(FaceA.X, FaceA.Y, FaceA.Z) && Filled(FaceB.X, FaceB.Y, FaceB.Z))
+					{
+						Mask |= 1u << Bit;
+					}
+				}
+				for (int32 Bit = 0; Bit < 8; ++Bit)
+				{
+					const FIntVector C = CornerStep(Bit);
+					if (!Filled(C.X, C.Y, C.Z)
+						&& Filled(C.X, 0, 0) && Filled(0, C.Y, 0) && Filled(0, 0, C.Z)
+						&& Filled(C.X, C.Y, 0) && Filled(C.X, 0, C.Z) && Filled(0, C.Y, C.Z))
+					{
+						Mask |= 1u << (12 + Bit);
+					}
+				}
+				Concave[I] = Mask;
+			});
+
+			Write(Settings->bWriteIsInnerCorner, Settings->IsInnerCornerAttribute, false,
+				[&](int32 I) { return MaskOf(I) == 0 && Concave[I] != 0; });
+			Write(Settings->bWriteConcaveEdges, Settings->ConcaveEdgesAttribute, int32(0),
+				[&](int32 I) { return static_cast<int32>(Concave[I] & 0xFFF); });
+			Write(Settings->bWriteConcaveCorners, Settings->ConcaveCornersAttribute, int32(0),
+				[&](int32 I) { return static_cast<int32>(Concave[I] >> 12); });
+			Write(Settings->bWriteConcaveCount, Settings->ConcaveCountAttribute, int32(0),
+				[&](int32 I) { return static_cast<int32>(FMath::CountBits(Concave[I])); });
+			Write(Settings->bWriteConcaveDirection, Settings->ConcaveDirectionAttribute, FVector::ZeroVector, [&](int32 I)
+			{
+				FIntVector Sum(0);
+				for (int32 Bit = 0; Bit < 12; ++Bit)
+				{
+					if (Concave[I] & (1u << Bit))
+					{
+						Sum += EdgeStep[Bit];
+					}
+				}
+				for (int32 Bit = 0; Bit < 8; ++Bit)
+				{
+					if (Concave[I] & (1u << (12 + Bit)))
+					{
+						Sum += CornerStep(Bit);
+					}
+				}
+				return DirectionOf(Sum, Settings->ConcaveDirectionSpace, Grid.GridToWorld);
+			});
+		}
+
 		Write(Settings->bWriteNeighborCount, Settings->NeighborCountAttribute, int32(0), [&](int32 I)
 		{
 			int32 Count = 0;

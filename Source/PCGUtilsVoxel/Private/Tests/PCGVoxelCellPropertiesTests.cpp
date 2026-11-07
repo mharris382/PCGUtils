@@ -188,6 +188,65 @@ bool FPCGVoxelCellChunksTest::RunTest(const FString&)
 	return true;
 }
 
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FPCGVoxelCellConcaveTest,
+	"PCGUtils.Voxel.CellProperties.InsideCornersAreConcave",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::ProductFilter)
+
+bool FPCGVoxelCellConcaveTest::RunTest(const FString&)
+{
+	using namespace PCGVoxelCellPropertiesTests;
+
+	UPCGVoxelCellPropertiesSettings* Settings = NewObject<UPCGVoxelCellPropertiesSettings>();
+	Settings->bWriteIsInnerCorner = true;
+	Settings->bWriteConcaveEdges = true;
+	Settings->bWriteConcaveCorners = true;
+	Settings->bWriteConcaveCount = true;
+	Settings->bWriteConcaveDirection = true;
+	Settings->ConcaveDirectionSpace = EPCGVoxelDirectionSpace::Grid;
+
+	// A 3x3x3 block with its +X+Y+Z corner cell removed: a one-cell notch.
+	TArray<FIntVector> Notched = Block(3, 3, 3);
+	Notched.Remove(FIntVector(2, 2, 2));
+	const UPCGBasePointData* Out = Properties(Settings, MakeVoxels(Notched));
+	UTEST_NOT_NULL(TEXT("Notched ran"), Out);
+
+	const int32 Centre = PointAt(Out, FIntVector(1, 1, 1));
+	TestTrue(TEXT("Notch: the centre is an inner corner"), ValueOf<bool>(Out, TEXT("IsInnerCorner"), Centre, false));
+	TestEqual(TEXT("Notch: the centre has no concave edge"), ValueOf<int32>(Out, TEXT("ConcaveEdges"), Centre, -1), 0);
+	TestEqual(TEXT("Notch: the centre's concave corner is +X+Y+Z (1)"), ValueOf<int32>(Out, TEXT("ConcaveCorners"), Centre, -1), 1);
+	TestEqual(TEXT("Notch: the centre's concave count"), ValueOf<int32>(Out, TEXT("ConcaveCount"), Centre, -1), 1);
+	TestTrue(TEXT("Notch: the centre's direction points into the notch"),
+		ValueOf<FVector>(Out, TEXT("ConcaveDirection"), Centre, FVector(0.0)).Equals(FVector(1.0).GetSafeNormal(), 1e-6));
+
+	// (2, 1, 1) is open on +X but sits in the +Y+Z crease under the notch.
+	const int32 Side = PointAt(Out, FIntVector(2, 1, 1));
+	TestFalse(TEXT("Notch: an open cell is never an inner corner"), ValueOf<bool>(Out, TEXT("IsInnerCorner"), Side, true));
+	TestEqual(TEXT("Notch: the side cell's concave edge is +Y+Z (256)"), ValueOf<int32>(Out, TEXT("ConcaveEdges"), Side, -1), 256);
+	TestEqual(TEXT("Notch: a far corner has nothing concave"), ValueOf<int32>(Out, TEXT("ConcaveCount"), PointAt(Out, FIntVector(0, 0, 0)), -1), 0);
+
+	// The same block with the whole +X+Y column removed: a crease along Z.
+	TArray<FIntVector> Creased = Block(3, 3, 3);
+	for (int32 Z = 0; Z < 3; ++Z)
+	{
+		Creased.Remove(FIntVector(2, 2, Z));
+	}
+	Out = Properties(Settings, MakeVoxels(Creased));
+	UTEST_NOT_NULL(TEXT("Creased ran"), Out);
+	const int32 Middle = PointAt(Out, FIntVector(1, 1, 1));
+	TestTrue(TEXT("Crease: the centre is an inner corner"), ValueOf<bool>(Out, TEXT("IsInnerCorner"), Middle, false));
+	TestEqual(TEXT("Crease: the centre's concave edge is +X+Y (1)"), ValueOf<int32>(Out, TEXT("ConcaveEdges"), Middle, -1), 1);
+	TestEqual(TEXT("Crease: corners behind an empty edge are not concave corners"),
+		ValueOf<int32>(Out, TEXT("ConcaveCorners"), Middle, -1), 0);
+	TestTrue(TEXT("Crease: the direction points into the crease"),
+		ValueOf<FVector>(Out, TEXT("ConcaveDirection"), Middle, FVector(0.0)).Equals(FVector(1, 1, 0).GetSafeNormal(), 1e-6));
+
+	Out = Properties(Settings, MakeVoxels(Block(3, 3, 3)));
+	UTEST_NOT_NULL(TEXT("Block ran"), Out);
+	TestFalse(TEXT("A plain block's centre is not an inner corner"),
+		ValueOf<bool>(Out, TEXT("IsInnerCorner"), PointAt(Out, FIntVector(1, 1, 1)), true));
+	return true;
+}
+
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(FPCGVoxelCellNamesTest,
 	"PCGUtils.Voxel.CellProperties.EnabledOutputsNeedTheirOwnNames",
 	EAutomationTestFlags::EditorContext | EAutomationTestFlags::ProductFilter)

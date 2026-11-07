@@ -110,6 +110,61 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Outputs|Open Sides", meta=(PCG_Overridable, EditCondition="bWriteOpenAxisCount"))
 	FName OpenAxisCountAttribute = TEXT("OpenAxisCount");
 
+	// ---- Concave diagonals (inside corners). A concave edge is an empty edge neighbour whose two face neighbours
+	// between it and the cell are filled: the cell sits in the crease of an inside corner. A concave corner is an empty
+	// corner neighbour whose three faces and three edges between it and the cell are filled: a one-cell notch.
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Outputs|Concave", meta=(PCG_Overridable, InlineEditConditionToggle))
+	bool bWriteIsInnerCorner = false;
+
+	/**
+	 * Optional output, Boolean: true when no side is open but at least one diagonal neighbour is empty. The cell is
+	 * hidden behind its face neighbours, tucked into an inside corner.
+	 */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Outputs|Concave", meta=(PCG_Overridable, EditCondition="bWriteIsInnerCorner"))
+	FName IsInnerCornerAttribute = TEXT("IsInnerCorner");
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Outputs|Concave", meta=(PCG_Overridable, InlineEditConditionToggle))
+	bool bWriteConcaveEdges = false;
+
+	/**
+	 * Optional output, Integer32: bitmask of concave edges (grid axes). XY plane: +X+Y = 1, -X+Y = 2, +X-Y = 4, -X-Y = 8.
+	 * XZ plane: +X+Z = 16, -X+Z = 32, +X-Z = 64, -X-Z = 128. YZ plane: +Y+Z = 256, -Y+Z = 512, +Y-Z = 1024, -Y-Z = 2048.
+	 */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Outputs|Concave", meta=(PCG_Overridable, EditCondition="bWriteConcaveEdges"))
+	FName ConcaveEdgesAttribute = TEXT("ConcaveEdges");
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Outputs|Concave", meta=(PCG_Overridable, InlineEditConditionToggle))
+	bool bWriteConcaveCorners = false;
+
+	/**
+	 * Optional output, Integer32: bitmask of concave corners (grid axes). +X+Y+Z = 1, -X+Y+Z = 2, +X-Y+Z = 4, -X-Y+Z = 8,
+	 * +X+Y-Z = 16, -X+Y-Z = 32, +X-Y-Z = 64, -X-Y-Z = 128 (bit = 1 if -X, + 2 if -Y, + 4 if -Z).
+	 */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Outputs|Concave", meta=(PCG_Overridable, EditCondition="bWriteConcaveCorners"))
+	FName ConcaveCornersAttribute = TEXT("ConcaveCorners");
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Outputs|Concave", meta=(PCG_Overridable, InlineEditConditionToggle))
+	bool bWriteConcaveCount = false;
+
+	/** Optional output, Integer32: how many concave edges plus concave corners the cell has (0 to 20). */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Outputs|Concave", meta=(PCG_Overridable, EditCondition="bWriteConcaveCount"))
+	FName ConcaveCountAttribute = TEXT("ConcaveCount");
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Outputs|Concave", meta=(PCG_Overridable, InlineEditConditionToggle))
+	bool bWriteConcaveDirection = false;
+
+	/**
+	 * Optional output, Vector: the normalized sum of the directions towards the concave edges and corners, pointing
+	 * into the inside corner. For example (0.71, 0.71, 0) for a +X+Y crease. (0, 0, 0) when there are none or they cancel out.
+	 */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Outputs|Concave", meta=(PCG_Overridable, EditCondition="bWriteConcaveDirection"))
+	FName ConcaveDirectionAttribute = TEXT("ConcaveDirection");
+
+	/** The space Concave Direction is written in. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Outputs|Concave", meta=(PCG_Overridable, EditCondition="bWriteConcaveDirection"))
+	EPCGVoxelDirectionSpace ConcaveDirectionSpace = EPCGVoxelDirectionSpace::World;
+
 	// ---- Neighbourhood.
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Outputs|Neighbourhood", meta=(PCG_Overridable, InlineEditConditionToggle))
