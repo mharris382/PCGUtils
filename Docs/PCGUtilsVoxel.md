@@ -131,7 +131,7 @@ first cell's values. A test checks it.
 
 | Phase | Node | Does |
 |---|---|---|
-| 1 | `Voxel \| To DynMesh` | The main node (section 3). |
+| 1 | `Voxel \| To DynMesh` | The main node (section 3); Shape Bevel in 3.5b. |
 | 1 | `Voxel \| Compress` | Merges equal neighbouring cells into chunks (section 1.2). |
 | 1 | `Voxel \| Compress Random` | The same node preset to Shape Random: random-size boxes for looks (section 1.2). |
 | 1 | `Voxel \| Shift Seams` | Slides interior seams so boxes become uneven but fill the same space (section 4c). |
@@ -205,6 +205,54 @@ The offset changes only the **outer surface**:
 - An offset ≤ −VoxelSize/2 on any side would turn the shell inside out. That is an error naming the point index,
   the side and the value.
 
+### 3.5b Shape: Bevel
+`Shape: Blocks | Bevel`. Default Blocks. Bevel cuts the surface's edges at an angle while the set is still voxels,
+which gives cleaner, more angular corners than running DynMesh | Bevel on the finished mesh. Convex (outside) edges
+are cut away; concave (inside) edges are filled in. Collapse and surface offsets are hidden and not used in this mode.
+
+Amounts are fractions of a cell, 0 to 1. At 1 the cut runs a whole cell along each face (a full cell diagonal). With
+a non-cubic Voxel Size the cut follows the cell's proportions, so it is not 45°.
+
+`Bevel Controls` picks how many amounts to set:
+- **One Amount**: `Bevel Amount` for every edge.
+- **Convex / Concave**: `Convex Bevel`, `Concave Bevel`.
+- **Convex / Concave x Top / Side / Bottom**: six amounts. An edge faces **Top** when one of its two faces points up
+  (grid +Z), **Bottom** when one points down, otherwise **Side** (vertical edges). A concave Top edge is a floor
+  meeting a wall; a concave Bottom edge is a ceiling meeting a wall.
+
+`Use Bevel Scale Attribute` / `Bevel Scale Attribute` (default `BevelScale`, a float, 0 or greater, optional)
+multiplies the amounts per point. A convex edge uses its cell's value; a concave edge averages the two cells beside
+it. A band whose amount changes along its length tapers over one cell.
+
+How it is built (`PCGVoxelBevelMesher.cpp`): the same closed quad surface as Blocks, then
+- **Trim**: each cell face is pulled back from its beveled edges.
+- **Strip**: each beveled edge becomes a sloped band between the two trimmed faces.
+- **Fill**: the hole left round each surface corner is closed with one polygon (a triangle at a box corner).
+
+Rules that keep it closed:
+- Widths are kept per (surface corner, axis), the narrowest beveled edge there, so bands along long edges are
+  continuous.
+- Where two bevels would overlap on one face (opposite edges of a one-cell-wide face, or trims passing each other
+  along a square edge), both are scaled down to meet. So a single cube at 1 becomes the octahedron through its face
+  centres, and a one-cell wall at 1 gets a pointed ridge.
+- Where a face's own two edges at a corner are square but a third edge there is beveled (top face over a beveled
+  vertical edge), the face's corner is cut diagonally to meet the band's end.
+- Where bevels meet exactly, faces shrink to lines or points; corners that land together along a polygon edge are
+  welded and the collapsed polygons dropped.
+- Edges where cells touch only along the edge count as convex on both cells.
+
+Output: normals are flat per polygon (hard edges everywhere). UVs project each polygon on its dominant axis (Grid
+Projection keeps tiling across the bevels; Per Face and Atlas start each polygon at its own corner). Colors work as in
+Blocks (Smooth averages the cells round each surface corner). Polygroups Per Face Direction puts bands in group 6 and
+corner fills in group 7.
+
+Not handled: no collapsing of coplanar faces yet (every cell face is its own polygon); amounts that differ a lot
+between neighbouring edges can give slightly folded corners; bevel 0 at a pinched edge has the Blocks limitation in
+3.10.
+
+Speed (2026-11-07, Development, every edge at 0.5): solid 64³ 27 ms (plain 11), terrain 1.3M cells 390 ms (plain
+124), random 50% of 48³ 325 ms (plain 88). All three closed with no rejected triangles.
+
 ### 3.6 UVs
 `UV Mode`:
 - **None.**
@@ -261,6 +309,14 @@ Later: skipping chunk interiors in the face pass.
 The mesh is the same for a chunked set and its expanded form, vertex for vertex. Faces, collapse, colors (Smooth
 averages count cells, not points), UVs and offsets all read the expanded cell lookup. No `Chunks` setting.
 Later speed-up: a chunk's inside has no faces, so the face pass can skip it.
+
+### 3.10 Known limitation: pinched edges under an overhang
+Found 2026-11-07 while testing Bevel. Two cells touching only along an edge, with empty cells on both other sides
+(for example the ceiling of a pocket meeting the back wall of the cell behind it, with open space above), make the
+surface pass along that edge twice between the same two corners. Blocks gives 4 open edges there (cells
+`(0,0,0) (2,0,0) (0,1,0) (1,1,0) (2,1,0) (0,0,1) (1,0,1) (2,0,1)`). Bevel avoids it whenever the corners there are
+trimmed, which keeps the two passes apart; it shows only when every amount at that edge is 0. Fix: give one of the
+two passes its own corner vertices (or a midpoint), not yet done.
 
 ## 4. Voxel | Pack Points
 
@@ -425,6 +481,7 @@ seam of a lumpy shape; the area test replaced it.
 - `.uplugin`: `PCGUtilsVoxel`, Runtime, PreDefault.
 - `Public/Voxel/PCGVoxelGrid.h` holds the contract, validation and cell lookup.
 - `Public/Voxel/PCGVoxelMesher.h` holds the faces → mesh core. It is plain C++, so it can be tested without a graph.
+  The bevel path is `Private/Voxel/PCGVoxelBevelMesher.cpp` (`PCGVoxelMesher::BuildBeveledMesh`).
 - `Public/Elements/PCGVoxelToDynMesh.h`, `PCGVoxelPackPoints.h`, `PCGVoxelCompress.h`, `PCGVoxelExpand.h`, `PCGVoxelCellProperties.h`, `PCGVoxelShiftSeams.h`. All derive from `UPCGSettings`, so each overrides
   `GetType()` (or they land in `Generic`). Add the `Voxel` category to the `PCGUtils.Palette.SearchContract` test.
 - `PCGUtilsDynMesh` must not depend on `PCGUtilsVoxel`; the dependency only runs Voxel → DynMesh.
@@ -445,6 +502,10 @@ seam of a lumpy shape; the area test replaced it.
     edges and corners of a notch and a crease; a chunked set gives the same values as its expanded form; output names must be set and distinct;
   - Compress Random: boxes tile every cell exactly once, stay within Random Max Span, never mix unequal cells, and
     depend only on the seed; the palette alias presets the shape;
+  - Bevel: a cube's chamfer volume matches the formula at 0.1, 0.25, 0.4 and 1 (octahedron); each of the six Full
+    controls touches only its own edges (frustum, octagonal prism, L, step); the scale attribute and its errors;
+    random lumpy shapes and touching pairs stay closed; every filling of a 3×2×2 block under ten bevel setups is
+    closed and valid. `PCGUtilsPerf.Voxel.ToDynMesh` also reports bevel timings and open edges on the big shapes;
   - Shift Seams: in a row the ends stay and neighbours still meet; a 2×2 grid stays consistent; random lumpy shapes
     after Compress Random and two passes (random, then noise) have no overlaps, no box outside the shape and the same
     total volume; the shifted set meshes to the same shell. `PCGUtilsPerf.Voxel.ShiftSeams` reports timings and how

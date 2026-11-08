@@ -67,7 +67,17 @@ struct PCGUTILSVOXEL_API FPCGVoxelMeshInput
 	 */
 	TArray<FVector> OffsetMin;
 	TArray<FVector> OffsetMax;
+
+	/** Bevel only. Multiplier on each point's bevel amounts (0 or greater). Empty: 1 for every point. */
+	TArray<float> BevelScale;
 };
+
+/** Which edges a bevel amount applies to: convex (outside) or concave (inside), and which way the edge faces. */
+namespace PCGVoxelBevel
+{
+	enum EKind : int32 { Convex = 0, Concave = 1 };
+	enum EFacing : int32 { Top = 0, Side = 1, Bottom = 2 };
+}
 
 struct PCGUTILSVOXEL_API FPCGVoxelMeshOptions
 {
@@ -78,6 +88,14 @@ struct PCGUTILSVOXEL_API FPCGVoxelMeshOptions
 	int32 UVChannel = 0;
 	EPCGVoxelPolygroupMode Polygroups = EPCGVoxelPolygroupMode::PerFaceDirection;
 
+	/**
+	 * Bevel the surface's edges instead of leaving them square. Offsets and collapsing are not used in this mode.
+	 * BevelAmount[Kind][Facing] is the bevel width as a fraction of a cell (0 to 1; 1 cuts a whole cell diagonal).
+	 * An edge faces Top when one of its faces points +Z (grid), Bottom when one points -Z, else Side.
+	 */
+	bool bBevel = false;
+	float BevelAmount[2][3] = { { 0.0f, 0.0f, 0.0f }, { 0.0f, 0.0f, 0.0f } };
+
 	/** The space vertices are written in: output = OutputSpace.Inverse(GridToWorld(grid position)). Identity = world. */
 	FTransform OutputSpace = FTransform::Identity;
 };
@@ -86,6 +104,10 @@ struct PCGUTILSVOXEL_API FPCGVoxelMeshStats
 {
 	int32 NumFaces = 0;
 	int32 NumRegions = 0;
+
+	/** Bevel only: triangles the mesh refused (non-manifold or degenerate), and surface vertices whose ring of faces did not close. Both 0 when healthy. */
+	int32 NumRejectedTriangles = 0;
+	int32 NumOpenFans = 0;
 
 	/** Seconds spent in each stage, for profiling: faces, vertices, offsets, smooth colors, regions, emit, normals. */
 	static constexpr int32 NumStages = 7;
@@ -105,5 +127,14 @@ namespace PCGVoxelMesher
 	 * Normals are flat with hard edges between face directions.
 	 */
 	PCGUTILSVOXEL_API void BuildMesh(const FPCGVoxelMeshInput& Input, const FPCGVoxelMeshOptions& Options,
+		UE::Geometry::FDynamicMesh3& OutMesh, FPCGVoxelMeshStats* OutStats = nullptr);
+
+	/**
+	 * The beveled surface (BuildMesh calls it when Options.bBevel is set). Each cell face is trimmed back from its
+	 * beveled edges, each beveled edge becomes a sloped strip, and the hole left at each surface corner is filled.
+	 * Bevels that would overlap on a face are scaled down to meet. Edges where cells touch only along the edge count
+	 * as convex. Normals are flat per polygon.
+	 */
+	PCGUTILSVOXEL_API void BuildBeveledMesh(const FPCGVoxelMeshInput& Input, const FPCGVoxelMeshOptions& Options,
 		UE::Geometry::FDynamicMesh3& OutMesh, FPCGVoxelMeshStats* OutStats = nullptr);
 }

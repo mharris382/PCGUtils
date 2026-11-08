@@ -183,6 +183,23 @@ Both operations preserve mesh overlays, PolyGroups, material IDs, weight layers,
 Their topology changes invalidate an incoming active selection. Builder Local falls back to the DynMesh bounds
 center for immediate DynMesh inputs, matching **DynMesh | Transform**.
 
+### Fill Holes
+
+**DynMesh | Fill Holes** closes open boundary loops with the engine operator behind Modeling Mode's
+Mesh > Fill Holes tool (`FHoleFillOp`, ModelingOperators), so its five fill types (Triangle Fan, Polygon Ear
+Clipping, Planar, Minimal, Smooth), *Remove Isolated Triangles*, *Quick Fill Small Holes* and the Smooth options
+behave as they do in the tool. Loops are traced the way the tool traces them, including boundary spans that
+bowtie vertices stop from forming simple loops. Fill UVs are projected at the tool's scale (one unit per largest
+bounds dimension) and normals follow each hole's best-fit plane.
+
+It is a topology node with an edge selection domain. With no selection it fills every hole, so it does not
+require a selection like the other topology nodes. With a Selection or Selector, a hole is filled when any of its
+boundary edges is selected; face and vertex selections are converted to edges first, so selecting the faces
+around a hole selects that hole. The fill triangles are the result selection (Output Selection Data, Result
+Selector, result PolyGroup). *Max Hole Edges* (0 = no limit) is not in the tool: it skips large loops, such as the
+outer rim of an open surface. Holes the operator cannot fill stay open, with one warning per input giving the
+count and the fill type. Builder inputs are supported. Coverage: `PCGUtils.DynMesh.FillHoles`.
+
 ## Whole-mesh processes with an operand
 
 `UPCGUtilsDynMeshOperandProcessBaseSettings` extends the process base for two-input whole-mesh operations.
@@ -647,7 +664,7 @@ Properties always describe the whole mesh; a selection input passes through and 
 not on the node. A process node exposes a `FPCGUtilsDynMeshFreeProperties` UPROPERTY and returns it from
 `GetInlineFreeProperties()`; the process base validates the names once and writes after each successful input.
 Simplify, Remesh, Self Union, Merge by Distance, Delete, Planar Cut, Mirror, Array, Separate (both outputs) and
-every topology-base node (Extrude, Extrude to Paths, Inset, Bevel) offer this under *Output Properties*, all off by
+every topology-base node (Extrude, Extrude to Paths, Inset, Bevel, Fill Holes) offer this under *Output Properties*, all off by
 default. Default names match the Properties node, so a renamed write before an operation (`PrevTriCount`) and a
 default-named write after it can be subtracted. Builder results are the exception: realizing a Builder keeps the
 mesh but not intermediate `@Data`, so a node given a Builder with inline writes on logs a note instead. Boolean

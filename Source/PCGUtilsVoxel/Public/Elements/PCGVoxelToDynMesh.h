@@ -47,6 +47,28 @@ enum class EPCGVoxelSurfaceOffset : uint8
 	Constant,
 };
 
+/** The overall form of a voxel mesh. */
+UENUM(BlueprintType)
+enum class EPCGVoxelMeshShape : uint8
+{
+	/** Square cell faces. Collapse and surface offsets are available. */
+	Blocks,
+	/** Edges cut at an angle: convex edges are cut away, concave edges filled in. Uses the Bevel settings. */
+	Bevel,
+};
+
+/** How many bevel amounts a voxel mesh exposes. */
+UENUM(BlueprintType)
+enum class EPCGVoxelBevelControls : uint8
+{
+	/** One amount for every edge. */
+	Single UMETA(DisplayName="One Amount"),
+	/** One amount for convex (outside) edges and one for concave (inside) edges. */
+	ConvexConcave UMETA(DisplayName="Convex / Concave"),
+	/** Convex and concave, each split by which way the edge faces: Top, Side or Bottom. */
+	Full UMETA(DisplayName="Convex / Concave x Top / Side / Bottom"),
+};
+
 /** How Atlas From Attribute picks each cell's tile. */
 UENUM(BlueprintType)
 enum class EPCGVoxelAtlasSource : uint8
@@ -94,24 +116,100 @@ public:
 		EditCondition="MaterialSource == EPCGVoxelMaterialSource::Attribute", EditConditionHides))
 	FName MaterialAttribute = TEXT("Material");
 
-	/**
-	 * Merge neighbouring faces that share a plane, material, color, offset and polygroup into one face. Each merged face
-	 * keeps every vertex its neighbours use along its edges, so there are no cracks. Ignored in Atlas From Attribute mode.
-	 */
+	/** Blocks (default): square cell faces. Bevel: edges cut at an angle, set in the Bevel category; collapse and surface offsets are not used. */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Geometry", meta=(PCG_Overridable))
+	EPCGVoxelMeshShape Shape = EPCGVoxelMeshShape::Blocks;
+
+	/**
+	 * Blocks only. Merge neighbouring faces that share a plane, material, color, offset and polygroup into one face. Each
+	 * merged face keeps every vertex its neighbours use along its edges, so there are no cracks. Ignored in Atlas From
+	 * Attribute mode.
+	 */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Geometry", meta=(PCG_Overridable,
+		EditCondition="Shape == EPCGVoxelMeshShape::Blocks", EditConditionHides))
 	bool bCollapseCoplanarFaces = false;
 
 	/**
-	 * Moves the outer surface off the cell faces, like Blender's manifold extrude: only the surface moves and it stays
-	 * closed. Where neighbouring cells on one flat surface differ, their shared vertices take the average.
+	 * Blocks only. Moves the outer surface off the cell faces, like Blender's manifold extrude: only the surface moves
+	 * and it stays closed. Where neighbouring cells on one flat surface differ, their shared vertices take the average.
 	 */
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Geometry", meta=(PCG_Overridable))
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Geometry", meta=(PCG_Overridable,
+		EditCondition="Shape == EPCGVoxelMeshShape::Blocks", EditConditionHides))
 	EPCGVoxelSurfaceOffset SurfaceOffset = EPCGVoxelSurfaceOffset::None;
 
 	/** Constant only. Distance every face moves outward; negative moves inward. Must be greater than minus half the smallest cell axis. */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Geometry", meta=(PCG_Overridable,
-		EditCondition="SurfaceOffset == EPCGVoxelSurfaceOffset::Constant", EditConditionHides))
+		EditCondition="Shape == EPCGVoxelMeshShape::Blocks && SurfaceOffset == EPCGVoxelSurfaceOffset::Constant", EditConditionHides))
 	FPCGUtilsInputShorthandDouble SurfaceOffsetDistance{0.0};
+
+	/**
+	 * How many bevel amounts to set. Every amount is a fraction of a cell, from 0 (square) to 1 (the cut runs a whole
+	 * cell along each face: a full cell diagonal). Convex edges are cut away; concave edges are filled in. An edge
+	 * faces Top when one of its faces points up (grid +Z), Bottom when one points down, otherwise Side. Where two
+	 * bevels would overlap on one face they are scaled down to meet.
+	 */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Bevel", meta=(PCG_Overridable,
+		EditCondition="Shape == EPCGVoxelMeshShape::Bevel", EditConditionHides))
+	EPCGVoxelBevelControls BevelControls = EPCGVoxelBevelControls::Single;
+
+	/** One Amount only. Bevel of every edge, as a fraction of a cell (0 to 1). */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Bevel", meta=(PCG_Overridable, ClampMin="0", ClampMax="1", UIMin="0", UIMax="1",
+		EditCondition="Shape == EPCGVoxelMeshShape::Bevel && BevelControls == EPCGVoxelBevelControls::Single", EditConditionHides))
+	float BevelAmount = 0.5f;
+
+	/** Convex / Concave only. Bevel of convex (outside) edges, as a fraction of a cell (0 to 1). */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Bevel", meta=(PCG_Overridable, ClampMin="0", ClampMax="1", UIMin="0", UIMax="1",
+		EditCondition="Shape == EPCGVoxelMeshShape::Bevel && BevelControls == EPCGVoxelBevelControls::ConvexConcave", EditConditionHides))
+	float ConvexBevel = 0.5f;
+
+	/** Convex / Concave only. Bevel of concave (inside) edges, as a fraction of a cell (0 to 1). */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Bevel", meta=(PCG_Overridable, ClampMin="0", ClampMax="1", UIMin="0", UIMax="1",
+		EditCondition="Shape == EPCGVoxelMeshShape::Bevel && BevelControls == EPCGVoxelBevelControls::ConvexConcave", EditConditionHides))
+	float ConcaveBevel = 0.5f;
+
+	/** Full only. Convex edges with an upward face (grid +Z), as a fraction of a cell (0 to 1). */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Bevel", meta=(PCG_Overridable, ClampMin="0", ClampMax="1", UIMin="0", UIMax="1",
+		EditCondition="Shape == EPCGVoxelMeshShape::Bevel && BevelControls == EPCGVoxelBevelControls::Full", EditConditionHides))
+	float ConvexTopBevel = 0.5f;
+
+	/** Full only. Vertical convex edges, as a fraction of a cell (0 to 1). */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Bevel", meta=(PCG_Overridable, ClampMin="0", ClampMax="1", UIMin="0", UIMax="1",
+		EditCondition="Shape == EPCGVoxelMeshShape::Bevel && BevelControls == EPCGVoxelBevelControls::Full", EditConditionHides))
+	float ConvexSideBevel = 0.5f;
+
+	/** Full only. Convex edges with a downward face (grid -Z), as a fraction of a cell (0 to 1). */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Bevel", meta=(PCG_Overridable, ClampMin="0", ClampMax="1", UIMin="0", UIMax="1",
+		EditCondition="Shape == EPCGVoxelMeshShape::Bevel && BevelControls == EPCGVoxelBevelControls::Full", EditConditionHides))
+	float ConvexBottomBevel = 0.5f;
+
+	/** Full only. Concave edges with an upward face (a floor meeting a wall), as a fraction of a cell (0 to 1). */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Bevel", meta=(PCG_Overridable, ClampMin="0", ClampMax="1", UIMin="0", UIMax="1",
+		EditCondition="Shape == EPCGVoxelMeshShape::Bevel && BevelControls == EPCGVoxelBevelControls::Full", EditConditionHides))
+	float ConcaveTopBevel = 0.5f;
+
+	/** Full only. Vertical concave edges (two walls meeting), as a fraction of a cell (0 to 1). */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Bevel", meta=(PCG_Overridable, ClampMin="0", ClampMax="1", UIMin="0", UIMax="1",
+		EditCondition="Shape == EPCGVoxelMeshShape::Bevel && BevelControls == EPCGVoxelBevelControls::Full", EditConditionHides))
+	float ConcaveSideBevel = 0.5f;
+
+	/** Full only. Concave edges with a downward face (a ceiling meeting a wall), as a fraction of a cell (0 to 1). */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Bevel", meta=(PCG_Overridable, ClampMin="0", ClampMax="1", UIMin="0", UIMax="1",
+		EditCondition="Shape == EPCGVoxelMeshShape::Bevel && BevelControls == EPCGVoxelBevelControls::Full", EditConditionHides))
+	float ConcaveBottomBevel = 0.5f;
+
+	/** Scale each point's bevels by Bevel Scale Attribute. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Bevel", meta=(PCG_Overridable,
+		EditCondition="Shape == EPCGVoxelMeshShape::Bevel", EditConditionHides))
+	bool bUseBevelScaleAttribute = false;
+
+	/**
+	 * Optional point attribute (a float, 0 or greater) multiplying the bevel amounts of each point's edges. Required when
+	 * Use Bevel Scale Attribute is on. A convex edge uses its cell's value; a concave edge averages the two cells beside
+	 * it. The result is still capped at one cell.
+	 */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Bevel", meta=(PCG_Overridable,
+		EditCondition="Shape == EPCGVoxelMeshShape::Bevel && bUseBevelScaleAttribute", EditConditionHides))
+	FName BevelScaleAttribute = TEXT("BevelScale");
 
 	/** None (default) or Attribute: read each cell's color from Color Attribute. */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Vertex Color", meta=(PCG_Overridable))

@@ -87,6 +87,59 @@ namespace PCGVoxelToDynMeshPrivate
 	}
 }
 
+namespace PCGVoxelToDynMeshPrivate
+{
+	/**
+	 * The bevel amount of each edge kind (convex, concave) and facing (top, side, bottom) from the active Bevel
+	 * Controls. Logs an error naming the setting and returns false when one is outside 0 to 1.
+	 */
+	bool ReadBevelAmounts(FPCGContext* Context, const UPCGVoxelToDynMeshSettings& Settings, const FText& Title, float (&OutAmounts)[2][3])
+	{
+		struct FSource { float Value; FText Name; int32 Kind; int32 Facing; };
+		TArray<FSource, TInlineAllocator<6>> Sources;
+		using namespace PCGVoxelBevel;
+		switch (Settings.BevelControls)
+		{
+		case EPCGVoxelBevelControls::Single:
+			for (int32 Kind = 0; Kind < 2; ++Kind)
+			{
+				for (int32 Facing = 0; Facing < 3; ++Facing)
+				{
+					Sources.Add({ Settings.BevelAmount, LOCTEXT("BevelAmountName", "Bevel Amount"), Kind, Facing });
+				}
+			}
+			break;
+		case EPCGVoxelBevelControls::ConvexConcave:
+			for (int32 Facing = 0; Facing < 3; ++Facing)
+			{
+				Sources.Add({ Settings.ConvexBevel, LOCTEXT("ConvexBevelName", "Convex Bevel"), Convex, Facing });
+				Sources.Add({ Settings.ConcaveBevel, LOCTEXT("ConcaveBevelName", "Concave Bevel"), Concave, Facing });
+			}
+			break;
+		default:
+			Sources.Add({ Settings.ConvexTopBevel, LOCTEXT("ConvexTopName", "Convex Top Bevel"), Convex, Top });
+			Sources.Add({ Settings.ConvexSideBevel, LOCTEXT("ConvexSideName", "Convex Side Bevel"), Convex, Side });
+			Sources.Add({ Settings.ConvexBottomBevel, LOCTEXT("ConvexBottomName", "Convex Bottom Bevel"), Convex, Bottom });
+			Sources.Add({ Settings.ConcaveTopBevel, LOCTEXT("ConcaveTopName", "Concave Top Bevel"), Concave, Top });
+			Sources.Add({ Settings.ConcaveSideBevel, LOCTEXT("ConcaveSideName", "Concave Side Bevel"), Concave, Side });
+			Sources.Add({ Settings.ConcaveBottomBevel, LOCTEXT("ConcaveBottomName", "Concave Bottom Bevel"), Concave, Bottom });
+			break;
+		}
+		for (const FSource& Source : Sources)
+		{
+			if (!(Source.Value >= 0.0f && Source.Value <= 1.0f))
+			{
+				PCGLog::LogErrorOnGraph(PCGVoxel::FormatError(Title, INDEX_NONE, FText::Format(
+					LOCTEXT("BevelRange", "{0} is {1}; it must be from 0 to 1 (a fraction of a cell)."),
+					Source.Name, FText::AsNumber(Source.Value))), Context);
+				return false;
+			}
+			OutAmounts[Source.Kind][Source.Facing] = Source.Value;
+		}
+		return true;
+	}
+}
+
 UPCGVoxelToDynMeshSettings::UPCGVoxelToDynMeshSettings()
 {
 	ColorAttribute.SetPointProperty(EPCGPointProperties::Color);
@@ -102,7 +155,8 @@ FText UPCGVoxelToDynMeshSettings::GetNodeTooltipText() const
 {
 	return LOCTEXT("Tooltip",
 		"Builds one closed DynMesh per voxel set (point data with @Data.VoxelSize): a face for every cell side next to an "
-		"empty cell. Materials, vertex colors (hard or smooth), UVs and a manifold-extrude style surface offset are optional. "
+		"empty cell. Shape Bevel cuts convex edges and fills concave ones, with separate amounts by edge kind and facing if wanted. "
+		"Materials, vertex colors (hard or smooth), UVs and a manifold-extrude style surface offset are optional. "
 		"Collapse Coplanar Faces merges equal faces without leaving cracks. A chunked set gives the same mesh as its expanded form.");
 }
 #endif
@@ -146,6 +200,12 @@ bool FPCGVoxelToDynMeshElement::ExecuteInternal(FPCGContext* Context) const
 	}
 	const FTransform OutputSpace = PCGUtilsDynMeshSpaceHelpers::ResolveMeshActorTransform(Context, nullptr, Settings->bConvertToLocalSpace);
 
+	float BevelAmounts[2][3] = {};
+	if (Settings->Shape == EPCGVoxelMeshShape::Bevel && !ReadBevelAmounts(Context, *Settings, Title, BevelAmounts))
+	{
+		return true;
+	}
+
 	for (int32 Index = 0; Index < Inputs.Num(); ++Index)
 	{
 		const UPCGBasePointData* Points = Cast<const UPCGBasePointData>(Inputs[Index].Data);
@@ -157,9 +217,45 @@ bool FPCGVoxelToDynMeshElement::ExecuteInternal(FPCGContext* Context) const
 
 		FPCGVoxelMeshInput MeshInput;
 		MeshInput.Grid = &Grid;
+		const bool bBevel = Settings->Shape == EPCGVoxelMeshShape::Bevel;
+
+		// Bevel scale.
+		if (bBevel && Settings->bUseBevelScaleAttribute)
+		{
+			FPCGAttributePropertyInputSelector Selector;
+			Selector.SetAttributeName(Settings->BevelScaleAttribute);
+			TArray<double> Scales;
+			if (!PCGVoxelPointIO::ReadPointValues<double>(Context, Points, Selector, Scales, Title, Index,
+				LOCTEXT("BevelScaleLabel", "Bevel Scale Attribute"), LOCTEXT("BevelScaleType", "a float")))
+			{
+				continue;
+			}
+			bool bScaleFailed = false;
+			MeshInput.BevelScale.SetNumUninitialized(Scales.Num());
+			for (int32 Point = 0; Point < Scales.Num(); ++Point)
+			{
+				if (Grid.PointUsed[Point] && !(Scales[Point] >= 0.0))
+				{
+					PCGLog::LogErrorOnGraph(PCGVoxel::FormatError(Title, Index, FText::Format(
+						LOCTEXT("BevelScaleNegative", "point {0}: '{1}' is {2}; a bevel scale must be 0 or greater."),
+						FText::AsNumber(Point), FText::FromName(Settings->BevelScaleAttribute), FText::AsNumber(Scales[Point]))), Context);
+					bScaleFailed = true;
+					break;
+				}
+				MeshInput.BevelScale[Point] = static_cast<float>(Scales[Point]);
+			}
+			if (bScaleFailed)
+			{
+				continue;
+			}
+		}
 
 		// Surface offset.
-		if (Settings->SurfaceOffset == EPCGVoxelSurfaceOffset::FromPointBounds)
+		if (bBevel)
+		{
+			// Not used with Bevel.
+		}
+		else if (Settings->SurfaceOffset == EPCGVoxelSurfaceOffset::FromPointBounds)
 		{
 			Grid.ComputeSurfaceOffsets(Points, MeshInput.OffsetMin, MeshInput.OffsetMax);
 		}
@@ -307,7 +403,9 @@ bool FPCGVoxelToDynMeshElement::ExecuteInternal(FPCGContext* Context) const
 		}
 
 		FPCGVoxelMeshOptions Options;
-		Options.bCollapseCoplanarFaces = Settings->bCollapseCoplanarFaces;
+		Options.bCollapseCoplanarFaces = Settings->bCollapseCoplanarFaces && !bBevel;
+		Options.bBevel = bBevel;
+		FMemory::Memcpy(Options.BevelAmount, BevelAmounts, sizeof(BevelAmounts));
 		Options.ColorTransition = Settings->ColorTransition;
 		Options.UVMode = Settings->UVMode;
 		Options.UVScale = Settings->UVScale;

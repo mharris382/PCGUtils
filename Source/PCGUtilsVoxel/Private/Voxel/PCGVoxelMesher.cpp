@@ -139,6 +139,11 @@ void PCGVoxelMesher::BuildMesh(const FPCGVoxelMeshInput& Input, const FPCGVoxelM
 	using namespace PCGVoxelMesherPrivate;
 	TRACE_CPUPROFILER_EVENT_SCOPE(PCGVoxelMesher::BuildMesh);
 
+	if (Options.bBevel)
+	{
+		BuildBeveledMesh(Input, Options, OutMesh, OutStats);
+		return;
+	}
 	OutMesh.Clear();
 	if (!Input.Grid || Input.Grid->NumCells() == 0)
 	{

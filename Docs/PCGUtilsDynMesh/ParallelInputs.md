@@ -67,11 +67,11 @@ Each reason below was checked against the code and the 5.8 engine source.
 
 ## Inventory
 
-### Process-base nodes (24): one loop decides all of them
+### Process-base nodes (25): one loop decides all of them
 
-Ready once the base can run inputs in parallel and the allocation helper exists (19):
+Ready once the base can run inputs in parallel and the allocation helper exists (20):
 Decimate, Simplify, Remesh, Self Union, Planar Cut, Merge by Distance, Smooth, Warp, Spline Deform,
-Delete Selection, Bevel Edges, Extrude, Extrude to Paths, Inset, Set PolyGroup, Clear PolyGroups,
+Delete Selection, Bevel Edges, Extrude, Extrude to Paths, Inset, Fill Holes, Set PolyGroup, Clear PolyGroups,
 Set Vertex Color, Material, Properties.
 
 Need the actor-transform prefetch first (5): Transform, Array, Mirror, UV Project, Paint Vertex Color.

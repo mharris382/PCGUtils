@@ -526,7 +526,8 @@ point node still works on them and the engine's Volume Sampler output goes strai
 with a `VoxelSpan` attribute covers a box of cells (a chunk); every node reads a chunked set exactly as its expanded
 form.
 
-- **Voxel | To DynMesh** builds the closed outer surface: materials (constant or per cell), hard or smooth vertex
+- **Voxel | To DynMesh** builds the closed outer surface, square or beveled (Shape Bevel cuts convex edges and fills
+  concave ones, with one amount, convex/concave, or convex/concave by top/side/bottom, scalable per point): materials (constant or per cell), hard or smooth vertex
   colors, grid, per-face or atlas UVs, a manifold-extrude style surface offset from point bounds, and optional
   merging of coplanar faces without cracks.
 - **Voxel | Pack Points** packs loose points into free cells of a grid, fully or part way (constant, random or

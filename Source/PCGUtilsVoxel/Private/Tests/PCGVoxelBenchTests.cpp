@@ -148,6 +148,34 @@ bool FPCGVoxelMesherBenchTest::RunTest(const FString&)
 				*Shape.Name, Case.Name, Best * 1000.0, BestStats.NumFaces, Triangles, *StageText(BestStats)));
 		}
 
+		// Bevel, every edge at half a cell. Also counts open edges: a large real shape is the best closedness check.
+		{
+			FPCGVoxelMeshInput Input;
+			Input.Grid = &Grid;
+			FPCGVoxelMeshOptions Options;
+			Options.bBevel = true;
+			for (int32 Kind = 0; Kind < 2; ++Kind)
+			{
+				for (int32 Facing = 0; Facing < 3; ++Facing)
+				{
+					Options.BevelAmount[Kind][Facing] = 0.5f;
+				}
+			}
+			UE::Geometry::FDynamicMesh3 Mesh;
+			FPCGVoxelMeshStats Stats;
+			Start = FPlatformTime::Seconds();
+			PCGVoxelMesher::BuildMesh(Input, Options, Mesh, &Stats);
+			const double Seconds = FPlatformTime::Seconds() - Start;
+			int32 Open = 0;
+			for (const int32 EdgeID : Mesh.BoundaryEdgeIndicesItr())
+			{
+				(void)EdgeID;
+				++Open;
+			}
+			AddInfo(FString::Printf(TEXT("[%s] bevel 0.5: %.1f ms, %d polygons, %d triangles, %d open edges, %d rejected, %d open fans |%s"),
+				*Shape.Name, Seconds * 1000.0, Stats.NumRegions, Mesh.TriangleCount(), Open, Stats.NumRejectedTriangles, Stats.NumOpenFans, *StageText(Stats)));
+		}
+
 		// The engine floor: appending the plain mesh's vertices and triangles to a fresh mesh, bare and with the
 		// attribute set enabled, as the mesher's emit stage does.
 		{
