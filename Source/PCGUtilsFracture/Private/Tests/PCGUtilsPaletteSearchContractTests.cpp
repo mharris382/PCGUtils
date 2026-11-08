@@ -97,7 +97,8 @@ namespace PCGUtilsPaletteSearchContract
 			const FString Package = Class->GetOutermost()->GetName();
 			if (!Packages.Contains(Package) && Class->GetName() != TEXT("PCGDecomposeClosedPathSettings") &&
 				Class->GetName() != TEXT("PCGSwizzleBoundsSettings") &&
-				Class->GetName() != TEXT("PCGGetMPCValuesSettings"))
+				Class->GetName() != TEXT("PCGGetMPCValuesSettings") &&
+				Class->GetName() != TEXT("PCGUtilsBitPackAttributesSettings"))
 			{
 				continue;
 			}
@@ -165,6 +166,7 @@ bool FPCGUtilsPaletteSearchContractTest::RunTest(const FString&)
 	bool bFoundPathDecomposition = false;
 	bool bFoundSwizzleBounds = false;
 	bool bFoundGetMPCValues = false;
+	bool bFoundBitPack = false;
 	bool bFoundSpawnComponent = false;
 	int32 VoxelCount = 0;
 
@@ -188,6 +190,14 @@ bool FPCGUtilsPaletteSearchContractTest::RunTest(const FString&)
 			TestEqual(TEXT("Params category"), Entry.Category, FString(TEXT("PCGUtils|Params")));
 			TestEqual(TEXT("Get MPC Values palette label"), Entry.Label, FString(TEXT("Param | Get MPC Values")));
 			TestTrue(TEXT("Search finds Get MPC Values by its full name"), Matches(Entry.SearchText, TEXT("material parameter collection")));
+			continue;
+		}
+		if (Entry.ClassName == TEXT("PCGUtilsBitPackAttributesSettings"))
+		{
+			bFoundBitPack = true;
+			TestEqual(TEXT("Bit Pack category"), Entry.Category, FString(TEXT("PCGUtils|Params")));
+			TestEqual(TEXT("Bit Pack palette label"), Entry.Label, FString(TEXT("Param | Bit Pack Attributes")));
+			TestTrue(TEXT("Search finds Bit Pack by custom data"), Matches(Entry.SearchText, TEXT("custom data")));
 			continue;
 		}
 		if (Entry.ClassName == TEXT("PCGDecomposeClosedPathSettings"))
@@ -344,6 +354,7 @@ bool FPCGUtilsPaletteSearchContractTest::RunTest(const FString&)
 	TestTrue(TEXT("Path decomposition is registered"), bFoundPathDecomposition);
 	TestTrue(TEXT("Swizzle Bounds is registered"), bFoundSwizzleBounds);
 	TestTrue(TEXT("Get MPC Values is registered"), bFoundGetMPCValues);
+	TestTrue(TEXT("Bit Pack Attributes is registered"), bFoundBitPack);
 	TestEqual(TEXT("Every Voxel entry is present (To DynMesh, Compress, Compress Random, Expand, Pack Points, Cell Properties, Shift Seams)"), VoxelCount, 7);
 	return true;
 }

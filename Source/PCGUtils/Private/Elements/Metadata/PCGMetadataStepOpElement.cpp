@@ -27,6 +27,26 @@ namespace PCGMetadataStepOp
 		return Alpha * Alpha * (3.0 - 2.0 * Alpha);
 	}
 
+	/**
+	 * Scalar Multi Step: the SmoothStep alpha quantized down to StepCount equal steps, so the result takes the
+	 * values 0, 1/StepCount ... (StepCount - 1)/StepCount inside the range and 1 at or above Max.
+	 */
+	double MultiStepScalar(const double Min, const double Max, const double Value, const int32 StepCount)
+	{
+		const double Range = Max - Min;
+		if (FMath::IsNearlyZero(Range))
+		{
+			return (Value >= Max) ? 1.0 : 0.0;
+		}
+
+		const double Steps = static_cast<double>(FMath::Max(1, StepCount));
+		const double Alpha = FMath::Clamp((Value - Min) / Range, 0.0, 1.0);
+
+		// The small bias keeps a value sitting exactly on a step boundary (0.6 of the range with 5 steps, say)
+		// from landing one step low through floating point error.
+		return FMath::Min(FMath::FloorToDouble(Alpha * Steps + 1e-9), Steps) / Steps;
+	}
+
 	/** Scalar Step, computed in double precision then cast back to the attribute type. */
 	inline double StepScalar(const double Edge, const double Value)
 	{
@@ -64,6 +84,39 @@ namespace PCGMetadataStepOp
 			SmoothStepScalar(Min.Y, Max.Y, Value.Y),
 			SmoothStepScalar(Min.Z, Max.Z, Value.Z),
 			SmoothStepScalar(Min.W, Max.W, Value.W));
+	}
+
+	template <typename T>
+	inline T MultiStep(const T& Min, const T& Max, const T& Value, const int32 StepCount)
+	{
+		return static_cast<T>(MultiStepScalar(static_cast<double>(Min), static_cast<double>(Max), static_cast<double>(Value), StepCount));
+	}
+
+	template <>
+	inline FVector2D MultiStep(const FVector2D& Min, const FVector2D& Max, const FVector2D& Value, const int32 StepCount)
+	{
+		return FVector2D(
+			MultiStepScalar(Min.X, Max.X, Value.X, StepCount),
+			MultiStepScalar(Min.Y, Max.Y, Value.Y, StepCount));
+	}
+
+	template <>
+	inline FVector MultiStep(const FVector& Min, const FVector& Max, const FVector& Value, const int32 StepCount)
+	{
+		return FVector(
+			MultiStepScalar(Min.X, Max.X, Value.X, StepCount),
+			MultiStepScalar(Min.Y, Max.Y, Value.Y, StepCount),
+			MultiStepScalar(Min.Z, Max.Z, Value.Z, StepCount));
+	}
+
+	template <>
+	inline FVector4 MultiStep(const FVector4& Min, const FVector4& Max, const FVector4& Value, const int32 StepCount)
+	{
+		return FVector4(
+			MultiStepScalar(Min.X, Max.X, Value.X, StepCount),
+			MultiStepScalar(Min.Y, Max.Y, Value.Y, StepCount),
+			MultiStepScalar(Min.Z, Max.Z, Value.Z, StepCount),
+			MultiStepScalar(Min.W, Max.W, Value.W, StepCount));
 	}
 
 	template <typename T>
@@ -143,7 +196,7 @@ bool UPCGMetadataStepOpSettings::IsSupportedInputType(uint16 TypeId, uint32 Inpu
 
 uint16 UPCGMetadataStepOpSettings::GetOutputType(uint16 InputTypeId) const
 {
-	// Both operations return a value in [0, 1], which is of little use as an integer, so allow promoting to double.
+	// Every operation returns a value in [0, 1], which is of little use as an integer, so allow promoting to double.
 	if (bForceOpToDouble && PCG::Private::IsOfTypes<int32, int64>(InputTypeId))
 	{
 		return PCG::Private::MetadataTypes<double>::Id;
@@ -155,12 +208,22 @@ uint16 UPCGMetadataStepOpSettings::GetOutputType(uint16 InputTypeId) const
 #if WITH_EDITOR
 FName UPCGMetadataStepOpSettings::GetDefaultNodeName() const
 {
-	return (Operation == EPCGMetadataStepOperation::Step) ? TEXT("Step") : TEXT("SmoothStep");
+	switch (Operation)
+	{
+	case EPCGMetadataStepOperation::Step: return TEXT("Step");
+	case EPCGMetadataStepOperation::MultiStep: return TEXT("MultiStep");
+	default: return TEXT("SmoothStep");
+	}
 }
 
 FText UPCGMetadataStepOpSettings::GetDefaultNodeTitle() const
 {
-	return (Operation == EPCGMetadataStepOperation::Step) ? LOCTEXT("StepNodeTitle", "Step") : LOCTEXT("SmoothStepNodeTitle", "Smooth Step");
+	switch (Operation)
+	{
+	case EPCGMetadataStepOperation::Step: return LOCTEXT("StepNodeTitle", "Step");
+	case EPCGMetadataStepOperation::MultiStep: return LOCTEXT("MultiStepNodeTitle", "Multi Step");
+	default: return LOCTEXT("SmoothStepNodeTitle", "Smooth Step");
+	}
 }
 
 FText UPCGMetadataStepOpSettings::GetNodeTooltipText() const
@@ -170,6 +233,13 @@ FText UPCGMetadataStepOpSettings::GetNodeTooltipText() const
 		return LOCTEXT("StepNodeTooltip", "Hard threshold, matching the HLSL step function.\n"
 			"Result = (In >= Edge) ? 1 : 0.\n"
 			"Vectors are computed per component.");
+	}
+
+	if (Operation == EPCGMetadataStepOperation::MultiStep)
+	{
+		return LOCTEXT("MultiStepNodeTooltip", "Staircase between Min and Max: like Smooth Step, but the result climbs in Step Count equal steps instead of easing.\n"
+			"Alpha = saturate((In - Min) / (Max - Min)), Result = floor(Alpha * StepCount) / StepCount.\n"
+			"With Step Count 5: 0, 0.2, 0.4, 0.6, 0.8 across the range, 1 at or above Max. Vectors are computed per component.");
 	}
 
 	return LOCTEXT("SmoothStepNodeTooltip", "Hermite interpolation between Min and Max, matching the material SmoothStep function.\n"
@@ -205,7 +275,7 @@ bool FPCGMetadataStepOpElement::DoOperation(PCGMetadataOps::FOperationData& Oper
 
 	const UPCGMetadataStepOpSettings* Settings = CastChecked<UPCGMetadataStepOpSettings>(OperationData.Settings);
 
-	auto StepFunc = [this, Operation = Settings->Operation, &OperationData]<typename AttributeType>(AttributeType) -> bool
+	auto StepFunc = [this, Operation = Settings->Operation, StepCount = FMath::Max(1, Settings->StepCount), &OperationData]<typename AttributeType>(AttributeType) -> bool
 	{
 		if constexpr (PCG::Private::IsOfTypes<AttributeType, float, double, int32, int64, FVector2D, FVector, FVector4>())
 		{
@@ -215,6 +285,14 @@ bool FPCGMetadataStepOpElement::DoOperation(PCGMetadataOps::FOperationData& Oper
 					[](const AttributeType& Value, const AttributeType& Edge) -> AttributeType
 					{
 						return PCGMetadataStepOp::Step(Edge, Value);
+					});
+			}
+			else if (Operation == EPCGMetadataStepOperation::MultiStep)
+			{
+				return DoTernaryOp<AttributeType, AttributeType, AttributeType>(OperationData,
+					[StepCount](const AttributeType& Value, const AttributeType& Min, const AttributeType& Max) -> AttributeType
+					{
+						return PCGMetadataStepOp::MultiStep(Min, Max, Value, StepCount);
 					});
 			}
 			else

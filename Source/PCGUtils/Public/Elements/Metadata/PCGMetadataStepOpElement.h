@@ -6,13 +6,24 @@
 
 #include "PCGMetadataStepOpElement.generated.h"
 
+namespace PCGMetadataStepOp
+{
+	/** Multi Step on one scalar: floor(saturate((Value - Min) / (Max - Min)) * StepCount) / StepCount. StepCount below 1 is treated as 1. */
+	PCGUTILS_API double MultiStepScalar(double Min, double Max, double Value, int32 StepCount);
+}
+
 UENUM()
 enum class EPCGMetadataStepOperation : uint8
 {
 	/** Hermite interpolation: Alpha = saturate((In - Min) / (Max - Min)), Result = Alpha * Alpha * (3 - 2 * Alpha). */
 	SmoothStep UMETA(DisplayName = "Smooth Step", SearchHints = "smoothstep hermite ease"),
 	/** Hard threshold: 1 where In is at or above Edge, 0 below it. */
-	Step UMETA(DisplayName = "Step", SearchHints = "threshold edge")
+	Step UMETA(DisplayName = "Step", SearchHints = "threshold edge"),
+	/**
+	 * Staircase between Min and Max: Alpha = saturate((In - Min) / (Max - Min)), Result = floor(Alpha * StepCount) / StepCount.
+	 * With StepCount 5 the result climbs 0, 0.2, 0.4, 0.6, 0.8 across the range and reaches 1 at Max.
+	 */
+	MultiStep UMETA(DisplayName = "Multi Step", SearchHints = "multistep staircase quantize posterize steps bands")
 };
 
 /**
@@ -20,12 +31,13 @@ enum class EPCGMetadataStepOperation : uint8
  *
  *     Smooth Step: Alpha = saturate((In - Min) / (Max - Min)), Result = Alpha * Alpha * (3 - 2 * Alpha)
  *     Step:        Result = (In >= Edge) ? 1 : 0
+ *     Multi Step:  Alpha = saturate((In - Min) / (Max - Min)), Result = floor(Alpha * StepCount) / StepCount
  *
  * Same interface and behaviour as the engine's Attribute Maths Op: attribute or property sources, dynamic pin
  * typing, broadcasting and inline pin default values. Like those nodes, the pins follow the selected operation -
- * Smooth Step takes In/Min/Max, Step takes In/Edge.
+ * Smooth Step and Multi Step take In/Min/Max, Step takes In/Edge.
  */
-UCLASS(BlueprintType, ClassGroup = (Procedural), meta = (Keywords = "smoothstep smooth step remap ease hermite interpolate threshold edge saturate"))
+UCLASS(BlueprintType, ClassGroup = (Procedural), meta = (Keywords = "smoothstep smooth step multistep multi remap ease hermite interpolate threshold edge saturate quantize staircase posterize"))
 class PCGUTILS_API UPCGMetadataStepOpSettings : public UPCGMetadataSettingsBase
 {
 	GENERATED_BODY()
@@ -72,16 +84,23 @@ public:
 	UPROPERTY(BlueprintReadWrite, EditAnywhere, Category = Input, meta = (PCG_Overridable))
 	FPCGAttributePropertyInputSelector InputSource1;
 
-	/** Smooth Step: lower edge of the transition, at or below which the result is 0. Step: the threshold edge. */
+	/** Smooth Step / Multi Step: lower edge of the transition, at or below which the result is 0. Step: the threshold edge. */
 	UPROPERTY(BlueprintReadWrite, EditAnywhere, Category = Input, meta = (PCG_Overridable))
 	FPCGAttributePropertyInputSelector InputSource2;
 
-	/** Smooth Step only: upper edge of the transition, at or above which the result is 1. */
-	UPROPERTY(BlueprintReadWrite, EditAnywhere, Category = Input, meta = (EditCondition = "Operation == EPCGMetadataStepOperation::SmoothStep", EditConditionHides, PCG_Overridable))
+	/** Smooth Step / Multi Step: upper edge of the transition, at or above which the result is 1. */
+	UPROPERTY(BlueprintReadWrite, EditAnywhere, Category = Input, meta = (EditCondition = "Operation != EPCGMetadataStepOperation::Step", EditConditionHides, PCG_Overridable))
 	FPCGAttributePropertyInputSelector InputSource3;
 
 	/**
-	 * Both operations yield a value in [0, 1], so an integer input would collapse the result to 0 or 1.
+	 * Multi Step only: how many equal steps the result climbs between Min and Max. The output takes the values
+	 * 0, 1/StepCount, 2/StepCount ... and reaches 1 at Max. 1 behaves like Step with its edge at Max.
+	 */
+	UPROPERTY(BlueprintReadWrite, EditAnywhere, Category = Settings, meta = (EditCondition = "Operation == EPCGMetadataStepOperation::MultiStep", EditConditionHides, ClampMin = "1", UIMin = "1", UIMax = "16", PCG_Overridable))
+	int32 StepCount = 5;
+
+	/**
+	 * Every operation yields a value in [0, 1], so an integer input would collapse the result to 0 or 1.
 	 * When the inputs are Int32/Int64, this forces the output attribute to be Double instead.
 	 */
 	UPROPERTY(BlueprintReadWrite, EditAnywhere, Category = Settings)

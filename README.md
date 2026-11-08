@@ -647,6 +647,7 @@ Deeper written documentation lives in `Docs/`:
 | `Docs/PCGUtilsVoxel.md` | The voxel contract, chunks, and the Voxel nodes |
 | `Docs/PCGUtilsDynMesh/PrimitiveBuilder.md` | Builder fitting, padding and alignment |
 | `Docs/PCGUtils/PCGGraphBatch.md` | Running batches of standalone PCG graphs |
+| `Docs/PCGUtils/BitPackAttributes.md` | Packing small attributes into one value for Per Instance Custom Data; the Step node's Multi Step |
 
 Full node and API reference documentation is planned for a dedicated documentation site; this README is an
 overview of what the plugin is and how its pieces fit together.
