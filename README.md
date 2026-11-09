@@ -476,6 +476,10 @@ struct supplies the baked asset save name, the output directory, a group label (
 `{GroupLabel}_{SaveName}`), and pre/post-bake override graphs. The default output directory comes from the
 plugin's project settings, `/Game/_Generated` out of the box.
 
+To get a baked mesh back, the Blueprint helper **Resolve Bake Settings To Static Mesh** loads the Static Mesh at
+`{BakedAssetSavePath}/{BakedAssetSaveName}{NameSuffix}`. Use the optional suffix for the extra meshes a bake writes
+(`Green`, `Barrier`, ...). It returns none when nothing is there or the asset is not a Static Mesh.
+
 When baking several meshes from one graph, give each Dynamic Mesh data set a distinct `@Data.Label` so the
 derived save names stay unique.
 
@@ -534,6 +538,7 @@ form.
   per-point settle amounts), without overlapping boxes.
 - **Voxel | Compress** / **Voxel | Expand** merge equal cells into chunks and back. **Voxel | Compress Random** tiles the cells with random-size boxes instead, for looks.
 - **Voxel | Transform Grid** moves, turns and scales whole voxel sets about a pivot (a spot in each set's bounds or a position), with every value a constant or read from each set's @Data, so parts split from one grid can each turn their own way.
+- **Voxel | Air Flow** solves wind around a voxel set: a smooth flow that goes around solids, speeds up over tops and corners and weakens in wind shadows (optional turbulence). Out comes a voxel set of air cells with flow, speed and shelter, plus the input with wind exposure and surface flow per cell.
 - **Voxel | Shift Seams** slides the interior seams between boxes so they become uneven while filling exactly the same space (outer shape unchanged); chain it after Compress Random.
 - **Voxel | Cell Properties** writes per-cell attributes: open sides (bitmask, count, direction vectors), surrounded, inside corners (concave edges and corners),
   and optionally neighbour count, depth from the surface, cells above, sky visibility, connected components and cell

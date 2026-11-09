@@ -355,7 +355,7 @@ bool FPCGUtilsPaletteSearchContractTest::RunTest(const FString&)
 	TestTrue(TEXT("Swizzle Bounds is registered"), bFoundSwizzleBounds);
 	TestTrue(TEXT("Get MPC Values is registered"), bFoundGetMPCValues);
 	TestTrue(TEXT("Bit Pack Attributes is registered"), bFoundBitPack);
-	TestEqual(TEXT("Every Voxel entry is present (To DynMesh, Compress, Compress Random, Expand, Pack Points, Cell Properties, Shift Seams, Transform Grid)"), VoxelCount, 8);
+	TestEqual(TEXT("Every Voxel entry is present (To DynMesh, Compress, Compress Random, Expand, Pack Points, Cell Properties, Shift Seams, Transform Grid, Air Flow)"), VoxelCount, 9);
 	return true;
 }
 

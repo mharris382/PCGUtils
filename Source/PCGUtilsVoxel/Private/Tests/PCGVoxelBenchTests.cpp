@@ -7,6 +7,7 @@
 
 #if WITH_AUTOMATION_TESTS
 
+#include "Elements/PCGVoxelAirFlow.h"
 #include "Elements/PCGVoxelCompress.h"
 #include "Elements/PCGVoxelShiftSeams.h"
 #include "Elements/PCGVoxelToDynMesh.h"
@@ -277,6 +278,33 @@ bool FPCGVoxelShiftSeamsBenchTest::RunTest(const FString&)
 		AddInfo(FString::Printf(TEXT("[%s] %d cells -> %d boxes: Compress Random %.1f ms, Shift Seams %.1f ms, %d boxes changed (%.0f%%)"),
 			*Case.Name, Case.Cells.Num(), Out->GetNumPoints(), (T1 - T0) * 1000.0, (T2 - T1) * 1000.0, Moved,
 			100.0 * Moved / FMath::Max(1, Out->GetNumPoints())));
+	}
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FPCGVoxelAirFlowBenchTest,
+	"PCGUtilsPerf.Voxel.AirFlow.Timings",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::ProductFilter)
+
+bool FPCGVoxelAirFlowBenchTest::RunTest(const FString&)
+{
+	using namespace PCGVoxelBenchTests;
+	for (const FShape& Shape : Shapes())
+	{
+		const UPCGPointArrayData* Points = MakeVoxels(Shape.Cells);
+		for (const int32 AirCellVoxels : { 4, 2, 1 })
+		{
+			UPCGVoxelAirFlowSettings* Settings = NewObject<UPCGVoxelAirFlowSettings>();
+			Settings->AirCellVoxels = AirCellVoxels;
+			Settings->bGroundAtBottom = true;
+			Settings->TurbulenceStrength = 0.3;
+			const double Start = FPlatformTime::Seconds();
+			const TArray<FPCGTaggedData> Outputs = Run<FPCGVoxelAirFlowElement>(Settings, { { PCGPinConstants::DefaultInputLabel, Points } });
+			const double Seconds = FPlatformTime::Seconds() - Start;
+			const UPCGBasePointData* Flow = Outputs.IsEmpty() ? nullptr : Cast<UPCGBasePointData>(Outputs[0].Data);
+			AddInfo(FString::Printf(TEXT("%s (%d cells), air cell %d voxels: %d air points in %.3f s"),
+				*Shape.Name, Shape.Cells.Num(), AirCellVoxels, Flow ? Flow->GetNumPoints() : -1, Seconds));
+		}
 	}
 	return true;
 }

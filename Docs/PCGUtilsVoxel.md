@@ -136,6 +136,7 @@ first cell's values. A test checks it.
 | 1 | `Voxel \| Compress Random` | The same node preset to Shape Random: random-size boxes for looks (section 1.2). |
 | 1 | `Voxel \| Shift Seams` | Slides interior seams so boxes become uneven but fill the same space (section 4c). |
 | 1 | `Voxel \| Transform Grid` | Moves, turns and scales whole voxel sets about a per-set pivot; values per set from @Data (section 4e). |
+| 1 | `Voxel \| Air Flow` | Wind around a voxel set: a smooth flow field on air cells (a voxel set of its own), wind shadows, exposure per solid cell (section 4f). |
 | 1 | `Voxel \| Expand` | Turns chunks back into one point per cell (section 1.2). |
 | 1 | `Voxel \| Pack Points` | Packs loose points into free cells of a voxel grid, fully or part way, without overlaps (section 4). |
 | 1 | `Voxel \| Cell Properties` | Writes per-cell attributes: open sides, surrounded, inside corners, neighbourhood, depth, column and components (section 4b). Replaces the planned `Voxel \| Neighbors`. |
@@ -511,6 +512,58 @@ The math, in the input grid's space with pivot P, rotation R, scale S and transl
 The new grid has rotation `G.R * R`, origin `G(P - R(S*P) + T)` and Voxel Size `S * VoxelSize`; a point at grid
 position x goes to `NewGrid(S * x)`. World-space values are converted first: `R = G.R^-1 * Rw * G.R`, `T = G.R^-1 * Tw`.
 
+## 4f. Voxel | Air Flow
+
+Built 2026-11-09 from the designer's request: a smoothed vector field of air flowing around a voxel set, using the
+dense grid. Design choices were left to me; these are them.
+
+**What it is.** Potential flow plus a wind shadow, on a staggered (MAC) grid of air cells:
+1. **Air box.** The set's cell bounds, cut into air cells of `Air Cell Voxels` voxels per side (1 to 16), plus
+   `Padding` air cells on every side. With `Ground At Bottom` the box stops at the lowest cells and its floor is a wall
+   (terrain); otherwise there is air all round (floating shapes). An air cell is solid when more than `Solid Fraction`
+   of its voxels are filled (default 0: any filled voxel, so thin walls still block). Over `Max Air Cells` (default 4M,
+   about 60 bytes each while running) is an error that names the box size.
+2. **Sealed air.** Air that cannot be reached from the open edge of the box (inside a hollow shape) is still, with
+   shelter 1.
+3. **Wind shadow.** From each air cell the node marches upwind, one air cell per step along the wind's main axis, up
+   to `Wake Length` steps. Hitting a solid at step s gives `Shelter = 1 - (s - 1) / Wake Length` (1 right behind it).
+4. **Starting wind.** `Wind * (1 - Wake Strength * Shelter)` plus optional turbulence: the curl of a three-channel
+   Perlin field (no sources or sinks), size `Turbulence Size`, strength `Turbulence Strength` times the wind speed,
+   seeded by the node seed.
+5. **Smoothing.** `Smooth Passes` of a 1-2-1 blur along each axis over moving air only.
+6. **Solve.** Face velocities are averaged from the cells; a face touching a solid (or the floor) is closed and holds
+   0, so no air ever enters a solid. A pressure solve (conjugate gradient, Jacobi preconditioner, pressure 0 outside
+   the box, so its edges are open) removes every source and sink; the air shadowed in step 3 is pushed over and round
+   instead, which is what makes air speed up over tops and corners. It stops at `Tolerance` (fraction of the starting
+   error) or `Max Iterations`, with a graph warning in that case. Measured: 32 to 160 steps, so the default cap of 300
+   is rarely hit.
+7. Cell velocity = the mean of its two faces per axis.
+
+**Wind** is a vector shorthand (Constant or `@Data.Wind`, default constant (500, 0, 0)): direction, with its length as
+the speed, in `Wind Space` (World or Grid). Zero is an error.
+
+**Flow pin.** One point per non-solid air cell (only those within `Max Distance` face steps of a solid when that is
+above 0), ordered Z, Y, X. It is a voxel set: `@Data` gets the air cell size in the Voxel Size attribute name and a grid
+transform whose cell c centre is c × air cell size, so Compress, To DynMesh and the rest read it. Points are fresh
+(they are not a modification of the input), but carry the input's tags. Attributes, each name a setting:
+`Flow` (Vector, always), `FlowSpeed` (Double), `Shelter` (Double), `SolidDistance` (Integer32, off by default). Vectors
+are in `Output Space` (World default).
+
+**Cells pin.** Only made when connected (or when there is no node, in tests). The input copied point for point, with:
+- `WindExposure` (Double, 0 to 1), for the most hit open side: how square the side faces the wind times
+  `1 - Shelter` of the air outside it. It uses the shadow and not the solved flow, because the solved flow into a wall
+  is 0 by construction; with Wake Length 0 it is facing only.
+- `SurfaceFlow` (Vector): the mean flow in the air just outside the point's open sides. Air cells that are solid only
+  because a coarse cell also holds other voxels are stepped past (up to 3 air cells).
+
+**Speed** (`PCGUtilsPerf.Voxel.AirFlow`, turbulence on, ground on): 1.3M-cell terrain 2.7 s at 1 voxel per air cell
+(1.5M air cells), 0.76 s at 2, 0.58 s at 4; a 64³ solid 0.16 s at 1.
+
+**Not done (ideas).** No time stepping or vortex shedding (it is not a fluid simulation); no upwind lift of shadows
+off the ground; no multigrid (CG cost grows with box size, fine at the sizes measured); no thermal or per-set source
+terms. A `Voxel | Sample Flow` node to sample the field at arbitrary points (trilinear) would make it easier to drive
+foliage that is not on the grid.
+
 ## 4d. Shared voxel grid (design, not built)
 
 Proposed 2026-11-08 by the designer. Today every Voxel node rebuilds its own cell lookup (`FPCGVoxelGrid`: a dense
@@ -594,7 +647,7 @@ a cell hash.
 - `Public/Voxel/PCGVoxelGrid.h` holds the contract, validation and cell lookup.
 - `Public/Voxel/PCGVoxelMesher.h` holds the faces → mesh core. It is plain C++, so it can be tested without a graph.
   The bevel path is `Private/Voxel/PCGVoxelBevelMesher.cpp` (`PCGVoxelMesher::BuildBeveledMesh`).
-- `Public/Elements/PCGVoxelToDynMesh.h`, `PCGVoxelPackPoints.h`, `PCGVoxelCompress.h`, `PCGVoxelExpand.h`, `PCGVoxelCellProperties.h`, `PCGVoxelShiftSeams.h`, `PCGVoxelTransformGrid.h`. All derive from `UPCGSettings`, so each overrides
+- `Public/Elements/PCGVoxelToDynMesh.h`, `PCGVoxelPackPoints.h`, `PCGVoxelCompress.h`, `PCGVoxelExpand.h`, `PCGVoxelCellProperties.h`, `PCGVoxelShiftSeams.h`, `PCGVoxelTransformGrid.h`, `PCGVoxelAirFlow.h`. All derive from `UPCGSettings`, so each overrides
   `GetType()` (or they land in `Generic`). Add the `Voxel` category to the `PCGUtils.Palette.SearchContract` test.
 - `PCGUtilsDynMesh` must not depend on `PCGUtilsVoxel`; the dependency only runs Voxel → DynMesh.
 - Tests in `Private/Tests/`:
@@ -624,6 +677,13 @@ a cell hash.
     translation still reads with no off-grid points, same cells and same mesh volume; two sets each use their own
     `@Data` rotation and pivot alignment; a `@Data` Location pivot in world space; grid space and the matching world
     rotation agree on a turned grid; scale writes Voxel Size and keeps the pivot fixed; scale and missing-value errors;
+  - Air Flow: past a wall the wind slows in front, speeds up round the edge and over the top, keeps symmetry and is
+    near the free wind far off; the flow output is a voxel set with the input's tags; exposure is 1 square on to the
+    wind and 0 downwind; wind shadow values behind a cube; sealed air inside a hollow box is still; Ground At Bottom
+    leaves no air under the set; coarse air cells sit over the right voxels; Max Distance and Solid Distance;
+    turbulence changes the flow, repeats with the seed and has no NaN; errors for zero wind, too many air cells, a bad
+    Air Cell Voxels, clashing names and a missing `@Data.Wind`; the warning when the solve hits Max Iterations.
+    `PCGUtilsPerf.Voxel.AirFlow` reports timings;
   - Shift Seams: in a row the ends stay and neighbours still meet; a 2×2 grid stays consistent; random lumpy shapes
     after Compress Random and two passes (random, then noise) have no overlaps, no box outside the shape and the same
     total volume; the shifted set meshes to the same shell. `PCGUtilsPerf.Voxel.ShiftSeams` reports timings and how
