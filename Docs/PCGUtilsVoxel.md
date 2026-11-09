@@ -135,6 +135,7 @@ first cell's values. A test checks it.
 | 1 | `Voxel \| Compress` | Merges equal neighbouring cells into chunks (section 1.2). |
 | 1 | `Voxel \| Compress Random` | The same node preset to Shape Random: random-size boxes for looks (section 1.2). |
 | 1 | `Voxel \| Shift Seams` | Slides interior seams so boxes become uneven but fill the same space (section 4c). |
+| 1 | `Voxel \| Transform Grid` | Moves, turns and scales whole voxel sets about a per-set pivot; values per set from @Data (section 4e). |
 | 1 | `Voxel \| Expand` | Turns chunks back into one point per cell (section 1.2). |
 | 1 | `Voxel \| Pack Points` | Packs loose points into free cells of a voxel grid, fully or part way, without overlaps (section 4). |
 | 1 | `Voxel \| Cell Properties` | Writes per-cell attributes: open sides, surrounded, inside corners, neighbourhood, depth, column and components (section 4b). Replaces the planned `Voxel \| Neighbors`. |
@@ -270,7 +271,14 @@ Also:
 - Fixed U/V axes per face direction, so textures stay upright on side faces.
 
 ### 3.7 Polygroups, space, metadata
-- `Polygroups: None | Per Face Direction | Per Material | Per Collapsed Region`. Default Per Face Direction.
+- `Polygroups: None | Per Face Direction | Per Material | Per Collapsed Region | Per Attribute Value`. Default Per Face
+  Direction.
+- **Per Attribute Value** (added 2026-11-09): every cell sharing a value of `Polygroup Attribute` (an attribute
+  selector, default `Polygroup`, required in this mode) lands in one group, and collapsed faces never merge across
+  groups. With `Integer Values Are Group IDs` (default on) an int32/int64 attribute's value is the group ID itself
+  (must be 0 to 2^31-1; the error names the point and value). Otherwise, or for any other type, the value is read as a
+  string and distinct strings are numbered 0, 1, 2... in order of their first point, so values that print the same
+  count as equal. In Bevel mode a band or corner fill takes the group of one of the cells beside it.
 - Output space follows the DynMesh convention: vertices in the PCG target actor's local space by default, with the
   space helpers in `PCGUtilsDynMeshSpaceHelpers.h`.
 - `bCopyDataAttributes` (default true). Copies the input's `@Data`, including `VoxelSize` and `VoxelGridTransform`,
@@ -473,6 +481,110 @@ seam of a lumpy shape; the area test replaced it.
   at sides that show, so shifted seams never trip it.
 - Running it twice is valid (each pass reads the current bounds).
 
+## 4e. Voxel | Transform Grid
+
+Built 2026-11-09 from the designer's idea (a corridor split into slices, each slice turned a little more than the
+last, like a twisting tiled tunnel). The graph splits a grid into parts first and writes each part's values to its
+`@Data`; this node then moves, turns and scales each input set as a whole. One output per input.
+
+- The set's grid transform (`Grid Transform Attribute`, written even when the input had none) and, when scaled, its
+  `Voxel Size` attribute are updated, and every point moves with them (position, rotation, scale). Cells keep their
+  indices, spans and per-cell values, so the output is a valid voxel set at any angle and every Voxel node reads it
+  (a turned slice meshes on its own grid).
+- The output is the input copied point for point (metadata, tags, `@Data` kept), per the mutated-input rule.
+- `Space: Grid | World` (default Grid) for Translation, Rotation and a Location pivot. Grid means the set's own axes,
+  so "roll about X" turns about the corridor whatever the grid's world rotation.
+- `Translation` (Vector), `Rotation` (Rotator), `Scale` (Vector, grid axes, every axis > 0): Constant or `@Data`
+  shorthands (defaults `@Data.Translation`, `@Data.Rotation`, `@Data.Scale`). Order: scale and turn about the pivot,
+  then translate. Scale multiplies Voxel Size, so cells stay cells; anything but 1 needs Voxel Size read from `@Data`
+  (it writes the new size there), else an error. Point scale follows the grid axis each point axis lies on (exact for
+  points at 90° steps against the grid).
+- `Pivot: Bounds | Location`, per set:
+  - **Bounds** (default): `Pivot Alignment`, a fraction of the set's cell bounds per grid axis (0 min side, 0.5
+    centre, 1 max side, outside 0-1 allowed), Constant or `@Data.PivotAlignment`. This covers the justification
+    choices (Min / Center / Max / Custom) as one value that can differ per set.
+  - **Location**: `Pivot Location` in Space, Constant or `@Data.Pivot`.
+- Errors: each shorthand's own (missing or wrong-typed `@Data`), `Scale {axis} is {v}; every axis must be greater
+  than 0.`, and scaling with a Constant Voxel Size.
+
+The math, in the input grid's space with pivot P, rotation R, scale S and translation T: `x -> P + R(S*(x - P)) + T`.
+The new grid has rotation `G.R * R`, origin `G(P - R(S*P) + T)` and Voxel Size `S * VoxelSize`; a point at grid
+position x goes to `NewGrid(S * x)`. World-space values are converted first: `R = G.R^-1 * Rw * G.R`, `T = G.R^-1 * Tw`.
+
+## 4d. Shared voxel grid (design, not built)
+
+Proposed 2026-11-08 by the designer. Today every Voxel node rebuilds its own cell lookup (`FPCGVoxelGrid`: a dense
+int32 per cell over the bounding box, or a hash map, plus the cell and cell → point arrays). Large sets pay that once
+per node, which is heavy on memory. The idea: build the grid once, keep it for the rest of the graph run, and link the
+point set to it from `@Data`. Two wins:
+- (a) nodes downstream skip the rebuild;
+- (b) points can be both the cells and selections of cells: a node takes selection points and edits the grid and the
+  cell points together.
+
+The grid is an optional speed-up. Every node must still work, with the same result, when the grid is missing or
+does not match its points.
+
+### 4d.1 Grids are versions that never change
+A PCG graph is dataflow: one point set often feeds two branches, PCG can run them in parallel, and it caches node
+outputs. A grid edited in place would make one branch's result depend on whether the other branch ran first, race
+when they run together, and leave cached outputs pointing at a grid that has since changed. So a grid is never edited
+after it is built. A node that changes cells (Clear, Fill, Filter Cells) makes a new version, and its output points
+link to the new version; the input points keep the old one.
+
+New versions stay cheap by sharing storage: the grid is stored in bricks (16³ cells proposed), and a new version copies
+only the bricks it touches and shares the rest with the version it came from (reference-counted, copy on write).
+Clearing a few hundred cells of a 1.3M-cell set copies a few bricks.
+
+### 4d.2 The grid stores occupancy, not point indices
+Any ordinary node (Filter, Merge, Uber Filter, a Self Pruning) changes the points but keeps `@Data`, so point indices
+cannot live in the grid; they would be wrong after the first filter. A brick holds one bit per cell (512 bytes per
+16³ brick, against 16 KB for today's int32 per cell). Chunks (`VoxelSpan`) are written into the occupancy as the
+cells they cover.
+
+Nodes that read point attributes per cell (To DynMesh reads materials and colors only on surface cells) build a small
+cell → point lookup over just the cells they need, from the points.
+
+### 4d.3 Checking that a grid matches its points
+Before trusting a grid, a node checks that it matches the points, which needs no allocation:
+- the grid's cell count equals the number of cells the points cover (point count, or the sum of spans for chunks);
+- every point's cells are occupied in the grid.
+
+When no two points fill one cell, these two together prove the grid holds exactly the points' cells. Duplicate cells
+(allowed under `Duplicate Cells: Keep First | Keep Last`, section 1) make the counts differ, so such a set always
+rebuilds. Cost: one occupancy read per cell, far less than building a grid. When the check fails, the node
+builds its own lookup as it does today and gives a note naming the reason (missing grid, cell count A against B, or
+the first point whose cell is empty). So a plain Uber Filter is always safe; the Voxel versions only save time.
+
+### 4d.4 Lifetime: an ID and a registry
+A soft object path to a transient object holds nothing, so garbage collection could free the grid during the graph
+run. Instead:
+- points carry `@Data.VoxelGridId` (name exposed as an FName setting on every node that reads or writes it);
+- a subsystem (`UPCGVoxelGridSubsystem`) owns the grid versions, keyed by ID;
+- the subsystem keeps a component's grids until that component's generation finishes, then releases them. A cached
+  output from an earlier run then finds no grid, fails the check and rebuilds, which is correct.
+
+Open: whether to keep grids across runs for the same component (faster re-runs in the editor, more memory), keyed by
+a cell hash.
+
+### 4d.5 Nodes
+- `Voxel | Build Grid`: points in, the same points out with `@Data.VoxelGridId`. Optional; any Voxel node that builds
+  a grid could also attach it (setting `Attach Grid`, default off at first).
+- `Voxel | Clear Cells`: cell points first, selection points second; out the cell points without the selected cells,
+  linked to a new grid version. Selection points pick cells by position (or by their own cells when they carry the same
+  `@Data.VoxelSize`).
+- `Voxel | Fill Cells`: the same pins; adds a cell point for every selected empty cell. Added points take metadata from
+  the nearest cell (or the selection point, setting), following the mutated-input rule.
+- `Voxel | Filter Cells` (PCGUtilsPCGExInterop): Uber Filter on the cell points, removing the cells that fail, with a
+  new grid version.
+- Every existing node reads the grid when it matches and writes nothing to it unless it changes cells.
+
+### 4d.6 Order of work
+1. Measure peak memory per node on the 1.3M-cell terrain. The pressure may be from Expand or chunk expansion rather
+   than the lookup itself; that decides how much this saves.
+2. Brick occupancy grid, the registry, the match check and the rebuild fallback. Existing graphs get faster with no
+   changes.
+3. Clear, Fill and Filter Cells.
+
 ## 5. Module and files
 
 - `Source/PCGUtilsVoxel/PCGUtilsVoxel.Build.cs`. Dependencies: Core, CoreUObject, Engine, PCG,
@@ -482,7 +594,7 @@ seam of a lumpy shape; the area test replaced it.
 - `Public/Voxel/PCGVoxelGrid.h` holds the contract, validation and cell lookup.
 - `Public/Voxel/PCGVoxelMesher.h` holds the faces → mesh core. It is plain C++, so it can be tested without a graph.
   The bevel path is `Private/Voxel/PCGVoxelBevelMesher.cpp` (`PCGVoxelMesher::BuildBeveledMesh`).
-- `Public/Elements/PCGVoxelToDynMesh.h`, `PCGVoxelPackPoints.h`, `PCGVoxelCompress.h`, `PCGVoxelExpand.h`, `PCGVoxelCellProperties.h`, `PCGVoxelShiftSeams.h`. All derive from `UPCGSettings`, so each overrides
+- `Public/Elements/PCGVoxelToDynMesh.h`, `PCGVoxelPackPoints.h`, `PCGVoxelCompress.h`, `PCGVoxelExpand.h`, `PCGVoxelCellProperties.h`, `PCGVoxelShiftSeams.h`, `PCGVoxelTransformGrid.h`. All derive from `UPCGSettings`, so each overrides
   `GetType()` (or they land in `Generic`). Add the `Voxel` category to the `PCGUtils.Palette.SearchContract` test.
 - `PCGUtilsDynMesh` must not depend on `PCGUtilsVoxel`; the dependency only runs Voxel → DynMesh.
 - Tests in `Private/Tests/`:
@@ -491,6 +603,8 @@ seam of a lumpy shape; the area test replaced it.
   - two cells touching only at an edge stay manifold;
   - collapse leaves no T-junctions (the mesh is closed and the volume is the same with and without collapse);
   - Hard vs Smooth colors;
+  - Per Attribute Value polygroups: string values numbered, integer values as IDs or numbered, collapsed faces never
+    cross a seam between values, bevel stays closed with one group per value; negative ID and missing attribute errors;
   - the offset keeps the mesh closed and moves only surface vertices;
   - UV tiling continues across cells;
   - `@Data` is carried over;
@@ -506,6 +620,10 @@ seam of a lumpy shape; the area test replaced it.
     controls touches only its own edges (frustum, octagonal prism, L, step); the scale attribute and its errors;
     random lumpy shapes and touching pairs stay closed; every filling of a 3×2×2 block under ten bevel setups is
     closed and valid. `PCGUtilsPerf.Voxel.ToDynMesh` also reports bevel timings and open edges on the big shapes;
+  - Transform Grid: a quarter turn moves cells where expected and keeps attributes and tags; an odd turn plus
+    translation still reads with no off-grid points, same cells and same mesh volume; two sets each use their own
+    `@Data` rotation and pivot alignment; a `@Data` Location pivot in world space; grid space and the matching world
+    rotation agree on a turned grid; scale writes Voxel Size and keeps the pivot fixed; scale and missing-value errors;
   - Shift Seams: in a row the ends stay and neighbours still meet; a 2×2 grid stays consistent; random lumpy shapes
     after Compress Random and two passes (random, then noise) have no overlaps, no box outside the shape and the same
     total volume; the shifted set meshes to the same shell. `PCGUtilsPerf.Voxel.ShiftSeams` reports timings and how

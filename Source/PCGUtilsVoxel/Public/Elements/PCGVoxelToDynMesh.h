@@ -258,8 +258,31 @@ public:
 		EditCondition="UVMode == EPCGVoxelUVMode::AtlasFromAttribute && AtlasSource == EPCGVoxelAtlasSource::TileIndex", EditConditionHides))
 	int32 AtlasRows = 4;
 
+	/**
+	 * Which polygroup each face gets. Per Attribute Value puts every cell sharing a value of Polygroup Attribute in one
+	 * group; collapsed faces never merge across groups. In Bevel mode a band or corner fill takes the group of one of
+	 * the cells beside it.
+	 */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Output", meta=(PCG_Overridable))
 	EPCGVoxelPolygroupMode Polygroups = EPCGVoxelPolygroupMode::PerFaceDirection;
+
+	/**
+	 * Per Attribute Value only. The point attribute or property whose value picks each cell's polygroup (required in
+	 * this mode). Any type that converts to a string works (integers, floats, vectors, names, strings, object paths...);
+	 * values that print the same count as equal.
+	 */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Output", meta=(PCG_Overridable,
+		EditCondition="Polygroups == EPCGVoxelPolygroupMode::PerAttributeValue", EditConditionHides))
+	FPCGAttributePropertyInputSelector PolygroupAttribute;
+
+	/**
+	 * Per Attribute Value only. On: an integer attribute's value is the group ID itself, so a value of 3 is polygroup 3
+	 * (values must be 0 or greater). Off, or for any other type: distinct values are numbered 0, 1, 2... in the order
+	 * their first point appears.
+	 */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Output", meta=(PCG_Overridable,
+		EditCondition="Polygroups == EPCGVoxelPolygroupMode::PerAttributeValue", EditConditionHides))
+	bool bIntegerValuesAreGroupIds = true;
 
 	/** DynMesh data is in the PCG target actor's local space by convention. Off writes world space. */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Output", meta=(PCG_Overridable))

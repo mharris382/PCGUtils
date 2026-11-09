@@ -533,6 +533,7 @@ form.
 - **Voxel | Pack Points** packs loose points into free cells of a grid, fully or part way (constant, random or
   per-point settle amounts), without overlapping boxes.
 - **Voxel | Compress** / **Voxel | Expand** merge equal cells into chunks and back. **Voxel | Compress Random** tiles the cells with random-size boxes instead, for looks.
+- **Voxel | Transform Grid** moves, turns and scales whole voxel sets about a pivot (a spot in each set's bounds or a position), with every value a constant or read from each set's @Data, so parts split from one grid can each turn their own way.
 - **Voxel | Shift Seams** slides the interior seams between boxes so they become uneven while filling exactly the same space (outer shape unchanged); chain it after Compress Random.
 - **Voxel | Cell Properties** writes per-cell attributes: open sides (bitmask, count, direction vectors), surrounded, inside corners (concave edges and corners),
   and optionally neighbour count, depth from the surface, cells above, sky visibility, connected components and cell

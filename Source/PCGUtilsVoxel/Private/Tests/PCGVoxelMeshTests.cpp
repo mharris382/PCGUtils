@@ -281,4 +281,109 @@ bool FPCGVoxelMeshSparseTest::RunTest(const FString&)
 	return true;
 }
 
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FPCGVoxelMeshPolygroupAttributeTest,
+	"PCGUtils.Voxel.ToDynMesh.PolygroupsPerAttributeValue",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::ProductFilter)
+
+bool FPCGVoxelMeshPolygroupAttributeTest::RunTest(const FString&)
+{
+	using namespace PCGVoxelMeshTests;
+	// A row of four cells: cells 0 and 1 share one value, cells 2 and 3 another. The seam between them is at x = 150.
+	UPCGPointArrayData* Row = MakeVoxels({ FIntVector(0, 0, 0), FIntVector(1, 0, 0), FIntVector(2, 0, 0), FIntVector(3, 0, 0) });
+	FPCGMetadataDomain* Elements = Row->Metadata->GetMetadataDomain(PCGMetadataDomainID::Elements);
+	FPCGMetadataAttribute<FString>* Name = Elements->CreateAttribute<FString>(TEXT("Room"), FString(), false);
+	FPCGMetadataAttribute<int32>* Number = Elements->CreateAttribute<int32>(TEXT("Polygroup"), 0, false);
+	const TConstPCGValueRange<int64> Keys = Row->GetConstMetadataEntryValueRange();
+	const TCHAR* Names[4] = { TEXT("b"), TEXT("b"), TEXT("a"), TEXT("a") };
+	const int32 Numbers[4] = { 7, 7, 3, 3 };
+	for (int32 I = 0; I < 4; ++I)
+	{
+		Name->SetValue(Keys[I], FString(Names[I]));
+		Number->SetValue(Keys[I], Numbers[I]);
+	}
+
+	// Each triangle's group must be the one of the side of the seam it lies on, and collapsed faces must not cross it.
+	auto Check = [this](const FString& What, const UE::Geometry::FDynamicMesh3* Result, int32 LeftGroup, int32 RightGroup)
+	{
+		if (!TestNotNull(*FString::Printf(TEXT("%s: a mesh came out"), *What), Result))
+		{
+			return;
+		}
+		TestEqual(*FString::Printf(TEXT("%s: closed"), *What), OpenEdges(*Result), 0);
+		int32 Wrong = 0;
+		int32 Crossing = 0;
+		for (const int32 Tri : Result->TriangleIndicesItr())
+		{
+			const UE::Geometry::FIndex3i V = Result->GetTriangle(Tri);
+			double MinX = TNumericLimits<double>::Max();
+			double MaxX = TNumericLimits<double>::Lowest();
+			for (int32 C = 0; C < 3; ++C)
+			{
+				MinX = FMath::Min(MinX, Result->GetVertex(V[C]).X);
+				MaxX = FMath::Max(MaxX, Result->GetVertex(V[C]).X);
+			}
+			if (MinX < 149.0 && MaxX > 151.0)
+			{
+				++Crossing;
+			}
+			const int32 Expected = (MinX + MaxX) * 0.5 < 150.0 ? LeftGroup : RightGroup;
+			Wrong += Result->GetTriangleGroup(Tri) != Expected ? 1 : 0;
+		}
+		TestEqual(*FString::Printf(TEXT("%s: no triangle crosses the seam between values"), *What), Crossing, 0);
+		TestEqual(*FString::Printf(TEXT("%s: every triangle has its cell's group"), *What), Wrong, 0);
+	};
+
+	// Strings: numbered in order of first point, so "b" is 0 and "a" is 1. Collapse on.
+	UPCGVoxelToDynMeshSettings* Settings = MakeSettings();
+	Settings->Polygroups = EPCGVoxelPolygroupMode::PerAttributeValue;
+	Settings->PolygroupAttribute.SetAttributeName(TEXT("Room"));
+	Settings->bCollapseCoplanarFaces = true;
+	Check(TEXT("String values, collapsed"), MeshOf(Run<FPCGVoxelToDynMeshElement>(Settings, { { PCGPinConstants::DefaultInputLabel, Row } })), 0, 1);
+
+	// Integers are the IDs themselves (default attribute name Polygroup).
+	Settings = MakeSettings();
+	Settings->Polygroups = EPCGVoxelPolygroupMode::PerAttributeValue;
+	Settings->bCollapseCoplanarFaces = true;
+	Check(TEXT("Integer values as IDs"), MeshOf(Run<FPCGVoxelToDynMeshElement>(Settings, { { PCGPinConstants::DefaultInputLabel, Row } })), 7, 3);
+
+	// Or numbered like any other value.
+	Settings->bIntegerValuesAreGroupIds = false;
+	Check(TEXT("Integer values numbered"), MeshOf(Run<FPCGVoxelToDynMeshElement>(Settings, { { PCGPinConstants::DefaultInputLabel, Row } })), 0, 1);
+
+	// Bevel mode: bands and corners take one neighbouring cell's group; the mesh stays closed.
+	Settings = MakeSettings();
+	Settings->Polygroups = EPCGVoxelPolygroupMode::PerAttributeValue;
+	Settings->PolygroupAttribute.SetAttributeName(TEXT("Room"));
+	Settings->Shape = EPCGVoxelMeshShape::Bevel;
+	Settings->BevelAmount = 0.25f;
+	if (const UE::Geometry::FDynamicMesh3* Beveled = MeshOf(Run<FPCGVoxelToDynMeshElement>(Settings, { { PCGPinConstants::DefaultInputLabel, Row } })))
+	{
+		TestEqual(TEXT("Bevel: closed"), OpenEdges(*Beveled), 0);
+		TSet<int32> Groups;
+		for (const int32 Tri : Beveled->TriangleIndicesItr())
+		{
+			Groups.Add(Beveled->GetTriangleGroup(Tri));
+		}
+		TestEqual(TEXT("Bevel: two groups"), Groups.Num(), 2);
+	}
+	else
+	{
+		AddError(TEXT("Bevel: no mesh came out"));
+	}
+
+	// Errors.
+	Number->SetValue(Keys[2], -4);
+	Settings = MakeSettings();
+	Settings->Polygroups = EPCGVoxelPolygroupMode::PerAttributeValue;
+	AddExpectedError(TEXT("point 2: Polygroup Attribute 'Polygroup' is -4; with Integer Values Are Group IDs on, a group ID must be from 0 to"),
+		EAutomationExpectedErrorFlags::Contains, 1, false);
+	TestEqual(TEXT("A negative group ID makes no mesh"), Run<FPCGVoxelToDynMeshElement>(Settings, { { PCGPinConstants::DefaultInputLabel, Row } }).Num(), 0);
+
+	Settings->PolygroupAttribute.SetAttributeName(TEXT("Missing"));
+	AddExpectedError(TEXT("Polygroup Attribute 'Missing' does not exist on the points; Polygroups is Per Attribute Value, which needs it."),
+		EAutomationExpectedErrorFlags::Contains, 1, false);
+	TestEqual(TEXT("A missing attribute makes no mesh"), Run<FPCGVoxelToDynMeshElement>(Settings, { { PCGPinConstants::DefaultInputLabel, Row } }).Num(), 0);
+	return true;
+}
+
 #endif

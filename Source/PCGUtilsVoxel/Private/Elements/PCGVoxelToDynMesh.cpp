@@ -27,6 +27,72 @@ namespace PCGVoxelToDynMeshPrivate
 		return Names[Axis * 2 + (bMax ? 1 : 0)];
 	}
 
+	/**
+	 * Per Attribute Value polygroups: one group ID per point. Integer attributes give their value as the ID when
+	 * bIntegerValuesAreGroupIds is on; anything else is read as a string and distinct strings are numbered in the order
+	 * their first point appears. Logs the exact failure and returns false.
+	 */
+	bool ReadPolygroups(FPCGContext* Context, const UPCGVoxelToDynMeshSettings& Settings, const UPCGBasePointData* Points,
+		const FPCGVoxelGrid& Grid, const FText& Title, int32 InputIndex, TArray<int32>& OutGroups)
+	{
+		const FText Label = LOCTEXT("PolygroupAttributeLabel", "Polygroup Attribute");
+		const FPCGAttributePropertyInputSelector Fixed = Settings.PolygroupAttribute.CopyAndFixLast(Points);
+		const TUniquePtr<const IPCGAttributeAccessor> Accessor = PCGAttributeAccessorHelpers::CreateConstAccessor(Points, Fixed);
+		if (!Accessor)
+		{
+			PCGLog::LogErrorOnGraph(PCGVoxel::FormatError(Title, InputIndex, FText::Format(
+				LOCTEXT("PolygroupMissing", "{0} '{1}' does not exist on the points; Polygroups is Per Attribute Value, which needs it."),
+				Label, Fixed.GetDisplayText())), Context);
+			return false;
+		}
+		const int16 Type = Accessor->GetUnderlyingType();
+		const bool bInteger = Type == static_cast<int16>(EPCGMetadataTypes::Integer32) || Type == static_cast<int16>(EPCGMetadataTypes::Integer64);
+		const int32 NumPoints = Points->GetNumPoints();
+		OutGroups.SetNumZeroed(NumPoints);
+
+		if (bInteger && Settings.bIntegerValuesAreGroupIds)
+		{
+			TArray<int64> Values;
+			if (!PCGVoxelPointIO::ReadPointValues<int64>(Context, Points, Settings.PolygroupAttribute, Values, Title, InputIndex,
+				Label, LOCTEXT("PolygroupIntType", "an integer")))
+			{
+				return false;
+			}
+			for (int32 Point = 0; Point < NumPoints; ++Point)
+			{
+				if (!Grid.PointUsed[Point])
+				{
+					continue;
+				}
+				if (Values[Point] < 0 || Values[Point] > MAX_int32)
+				{
+					PCGLog::LogErrorOnGraph(PCGVoxel::FormatError(Title, InputIndex, FText::Format(
+						LOCTEXT("PolygroupRange", "point {0}: {1} '{2}' is {3}; with Integer Values Are Group IDs on, a group ID must be from 0 to {4}. Turn it off to number the values instead."),
+						FText::AsNumber(Point), Label, Fixed.GetDisplayText(), FText::AsNumber(Values[Point]), FText::AsNumber(MAX_int32))), Context);
+					return false;
+				}
+				OutGroups[Point] = static_cast<int32>(Values[Point]);
+			}
+			return true;
+		}
+
+		TArray<FString> Values;
+		if (!PCGVoxelPointIO::ReadPointValues<FString>(Context, Points, Settings.PolygroupAttribute, Values, Title, InputIndex,
+			Label, LOCTEXT("PolygroupAnyType", "a type that converts to a string")))
+		{
+			return false;
+		}
+		TMap<FString, int32> GroupOfValue;
+		for (int32 Point = 0; Point < NumPoints; ++Point)
+		{
+			if (Grid.PointUsed[Point])
+			{
+				OutGroups[Point] = GroupOfValue.FindOrAdd(Values[Point], GroupOfValue.Num());
+			}
+		}
+		return true;
+	}
+
 	/** Whether any cell on that side of the point's box has an empty neighbour across it, so the side shows. */
 	bool SideHasSurface(const FPCGVoxelGrid& Grid, int32 Point, int32 Axis, bool bMax)
 	{
@@ -143,6 +209,7 @@ namespace PCGVoxelToDynMeshPrivate
 UPCGVoxelToDynMeshSettings::UPCGVoxelToDynMeshSettings()
 {
 	ColorAttribute.SetPointProperty(EPCGPointProperties::Color);
+	PolygroupAttribute.SetAttributeName(TEXT("Polygroup"));
 }
 
 #if WITH_EDITOR
@@ -400,6 +467,13 @@ bool FPCGVoxelToDynMeshElement::ExecuteInternal(FPCGContext* Context) const
 			{
 				continue;
 			}
+		}
+
+		// Polygroups from an attribute.
+		if (Settings->Polygroups == EPCGVoxelPolygroupMode::PerAttributeValue
+			&& !ReadPolygroups(Context, *Settings, Points, Grid, Title, Index, MeshInput.Polygroup))
+		{
+			continue;
 		}
 
 		FPCGVoxelMeshOptions Options;

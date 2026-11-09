@@ -1059,6 +1059,8 @@ void PCGVoxelMesher::BuildBeveledMesh(const FPCGVoxelMeshInput& Input, const FPC
 			return PolyKind[Poly] == FacePoly ? Faces[PolyFace[Poly]].Dir : (PolyKind[Poly] == StripPoly ? 6 : 7);
 		case EPCGVoxelPolygroupMode::PerMaterial:        return SlotOf(Faces[PolyFace[Poly]].Point);
 		case EPCGVoxelPolygroupMode::PerCollapsedRegion: return Poly;
+		case EPCGVoxelPolygroupMode::PerAttributeValue:
+			return Input.Polygroup.IsEmpty() ? 0 : Input.Polygroup[Faces[PolyFace[Poly]].Point];
 		default: return 0;
 		}
 	};

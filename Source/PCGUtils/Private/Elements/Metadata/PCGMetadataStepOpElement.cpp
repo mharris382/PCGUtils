@@ -31,7 +31,9 @@ namespace PCGMetadataStepOp
 	 * Scalar Multi Step: the SmoothStep alpha quantized down to StepCount equal steps, so the result takes the
 	 * values 0, 1/StepCount ... (StepCount - 1)/StepCount inside the range and 1 at or above Max.
 	 */
-	double MultiStepScalar(const double Min, const double Max, const double Value, const int32 StepCount)
+	// Not inlined: once inlined into a caller with constant arguments, MSVC reports a false C4723 (divide by 0) on the
+	// guarded division below, which fails the Development build.
+	FORCENOINLINE double MultiStepScalar(const double Min, const double Max, const double Value, const int32 StepCount)
 	{
 		const double Range = Max - Min;
 		if (FMath::IsNearlyZero(Range))

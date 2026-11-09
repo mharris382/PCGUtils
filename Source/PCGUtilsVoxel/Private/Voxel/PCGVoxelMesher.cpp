@@ -510,6 +510,11 @@ void PCGVoxelMesher::BuildMesh(const FPCGVoxelMeshInput& Input, const FPCGVoxelM
 			{
 				return false;
 			}
+			if (Options.Polygroups == EPCGVoxelPolygroupMode::PerAttributeValue && !Input.Polygroup.IsEmpty()
+				&& Input.Polygroup[FaceA.Point] != Input.Polygroup[FaceB.Point])
+			{
+				return false;
+			}
 			if (bColors)
 			{
 				if (bSmooth)
@@ -902,6 +907,8 @@ void PCGVoxelMesher::BuildMesh(const FPCGVoxelMeshInput& Input, const FPCGVoxelM
 		case EPCGVoxelPolygroupMode::PerFaceDirection:   return Regions[RegionID].Dir;
 		case EPCGVoxelPolygroupMode::PerMaterial:        return SlotOf(Faces[Regions[RegionID].RepFace].Point);
 		case EPCGVoxelPolygroupMode::PerCollapsedRegion: return RegionID;
+		case EPCGVoxelPolygroupMode::PerAttributeValue:
+			return Input.Polygroup.IsEmpty() ? 0 : Input.Polygroup[Faces[Regions[RegionID].RepFace].Point];
 		default: return 0;
 		}
 	};

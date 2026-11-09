@@ -45,6 +45,8 @@ enum class EPCGVoxelPolygroupMode : uint8
 	PerMaterial UMETA(DisplayName="Per Material"),
 	/** One group per collapsed face (per cell face when Collapse Coplanar Faces is off). */
 	PerCollapsedRegion UMETA(DisplayName="Per Collapsed Region"),
+	/** One group per distinct value of a point attribute: every cell sharing a value lands in the same group. */
+	PerAttributeValue UMETA(DisplayName="Per Attribute Value"),
 };
 
 /** Per-point values a voxel mesh is built from. Each array is either empty (not used) or one value per grid point. */
@@ -67,6 +69,9 @@ struct PCGUTILSVOXEL_API FPCGVoxelMeshInput
 	 */
 	TArray<FVector> OffsetMin;
 	TArray<FVector> OffsetMax;
+
+	/** Per Attribute Value only. Polygroup ID of each point's faces (0 or greater). Empty: every face uses group 0. */
+	TArray<int32> Polygroup;
 
 	/** Bevel only. Multiplier on each point's bevel amounts (0 or greater). Empty: 1 for every point. */
 	TArray<float> BevelScale;
