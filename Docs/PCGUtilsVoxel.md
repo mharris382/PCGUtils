@@ -139,10 +139,10 @@ first cell's values. A test checks it.
 | 1 | `Voxel \| Air Flow` | Wind around a voxel set: a smooth flow field on air cells (a voxel set of its own), wind shadows, exposure per solid cell (section 4f). |
 | 1 | `Voxel \| Rasterize` | A DynMesh or a closed point path to cells: Fill, Intersect and Surround modes, on its own grid or another set's (section 4g). |
 | 1 | `Voxel \| Boolean` | Union, intersect or subtract voxel sets by cell index; Out is In, mutated (section 4h). |
+| 1 | `Voxel \| Offset Surface` | Moves the surface by Amount cells: whole layers added or removed, the fraction on the open faces (bounds), inside corners split (section 4i). |
 | 1 | `Voxel \| Expand` | Turns chunks back into one point per cell (section 1.2). |
 | 1 | `Voxel \| Pack Points` | Packs loose points into free cells of a voxel grid, fully or part way, without overlaps (section 4). |
 | 1 | `Voxel \| Cell Properties` | Writes per-cell attributes: open sides, surrounded, inside corners, neighbourhood, depth, column and components (section 4b). Replaces the planned `Voxel \| Neighbors`. |
-| 2 | `Voxel \| Dilate / Erode` | Grow or shrink by N cells. Added cells copy the nearest source cell's attributes (the CLAUDE.md inheritance rule). |
 | later | `Voxel \| Resample` | Change cell size. (`From DynMesh` became `Voxel \| Rasterize`.) |
 
 ## 3. Voxel | To DynMesh
@@ -653,6 +653,36 @@ out.
   An In set with no cells has nothing to take values from, so Union outputs it unchanged with a warning.
 - **Speed** (DebugGame): a 216k-cell block against the 85k-cell sphere, Subtract 0.31 s, Union 0.39 s.
 
+## 4i. Voxel | Offset Surface
+
+Built 2026-11-10 from the designer's request. Their graph offset cells by adding Cell Properties' open-side vectors to
+the bounds (`BoundsMax += PositiveOpenSides * Amount`, `BoundsMin += NegativeOpenSides * Amount`). That is limited to
+under one cell, and leaves inside-corner cells sticking out on a shrink. This node knows the grid, so the offset can
+be any size and corners come out right. It takes over the planned phase-2 `Dilate / Erode`.
+
+- `Amount` (cells, default 0.25): positive grows, negative shrinks. It is a box (L-infinity) offset of the whole set:
+  the whole part is a box dilation or erosion by that many layers (separable passes over a dense box, so corners
+  stay square), and the fraction then moves the open faces of the cells that are left. `-1.25` removes one layer and
+  pulls the new surface in a quarter cell; a 5x5x5 block becomes a 2.5-cell cube.
+- **Fraction.** Written to the point bounds: the point stays on its cell centre and its bounds cover the box (in the
+  point's frame: its rotation and scale are allowed for). Any bounds the input had are replaced. Growing never needs
+  splitting (at an inside corner the two grown faces overlap inside the solid). Shrinking with `Split Inner Corners`
+  (default on) takes away everything within the fraction of every empty neighbour among the 26, so cells in inside
+  corners and under notches are carved too: each cell is cut at its faces and the planes the fraction in from them
+  (up to 3x3x3 pieces), and the kept pieces are merged greedily into the fewest boxes found (an inside edge gives 2, an
+  inside corner 3). Each box is a point copied from the cell. Off: one box per cell, open faces only (the old look).
+- `Removed Cells` (negative, a cell or more): **Delete** (default) keeps each remaining cell's own values; **Push**
+  gives each cell of the new surface the values of the nearest cell of the old surface, so the surface sinks with its
+  look. The geometry is the same.
+- `Added Values` (positive, a cell or more): **Nearest** (default; nearest old surface cell, by centre distance: hash
+  grid, then a scan) or **None** (default attributes; native properties still from the nearest).
+- Out: In, mutated (CLAUDE.md rule): metadata, tags and `@Data` kept, chunks expanded to one point per cell (the span
+  attribute removed), cells ordered Z, Y, X. Without split cells it is still a valid voxel set whose bounds are surface
+  offsets (`Voxel | To DynMesh` with Surface Offset From Point Bounds meshes it). With split cells a cell has several
+  points, so other Voxel nodes reject it as duplicate cells: it is for spawning meshes.
+- Error when the box worked over (bounds plus grown layers plus one) is over `Max Cells` (default 64M), naming its
+  size.
+
 ## 4d. Shared voxel grid (design, not built)
 
 Proposed 2026-11-08 by the designer. Today every Voxel node rebuilds its own cell lookup (`FPCGVoxelGrid`: a dense
@@ -736,7 +766,7 @@ a cell hash.
 - `Public/Voxel/PCGVoxelGrid.h` holds the contract, validation and cell lookup.
 - `Public/Voxel/PCGVoxelMesher.h` holds the faces → mesh core. It is plain C++, so it can be tested without a graph.
   The bevel path is `Private/Voxel/PCGVoxelBevelMesher.cpp` (`PCGVoxelMesher::BuildBeveledMesh`).
-- `Public/Elements/PCGVoxelToDynMesh.h`, `PCGVoxelPackPoints.h`, `PCGVoxelCompress.h`, `PCGVoxelExpand.h`, `PCGVoxelCellProperties.h`, `PCGVoxelShiftSeams.h`, `PCGVoxelTransformGrid.h`, `PCGVoxelAirFlow.h`, `PCGVoxelRasterize.h`, `PCGVoxelBoolean.h`. All derive from `UPCGSettings`, so each overrides
+- `Public/Elements/PCGVoxelToDynMesh.h`, `PCGVoxelPackPoints.h`, `PCGVoxelCompress.h`, `PCGVoxelExpand.h`, `PCGVoxelCellProperties.h`, `PCGVoxelShiftSeams.h`, `PCGVoxelTransformGrid.h`, `PCGVoxelAirFlow.h`, `PCGVoxelRasterize.h`, `PCGVoxelBoolean.h`, `PCGVoxelOffsetSurface.h`. All derive from `UPCGSettings`, so each overrides
   `GetType()` (or they land in `Generic`). Add the `Voxel` category to the `PCGUtils.Palette.SearchContract` test.
 - `PCGUtilsDynMesh` must not depend on `PCGUtilsVoxel`; the dependency only runs Voxel → DynMesh.
 - Tests in `Private/Tests/`:
@@ -787,6 +817,11 @@ a cell hash.
     cell or defaults; a chunk stays whole when untouched and becomes 7 cells when one is cut; a whole-cell grid shift
     lines up; errors for a different Voxel Size and a half-cell shift; Rasterize on a block's grid then Subtract leaves
     the block with the mesh's 8 cells gone;
+  - Offset Surface: a cell grows a quarter on every side keeping Id and tags; a plate shrinks on its open sides
+    only; -0.5 removes a lone cell; an L's corner cell splits in 2 and a notched block's middle cell in 3, with the exact
+    inset volume, and no split keeps the notch; -1 on 5x5x5 leaves the inner 27 (Delete keeps Ids, Push gives the new
+    surface the old surface's), -1.25 gives a 2.5 cube, +1.5 on a cell a 4 cube with Ids copied (None: defaults);
+    a chunk expands with the shared face unmoved; Max Cells error;
   - Shift Seams: in a row the ends stay and neighbours still meet; a 2×2 grid stays consistent; random lumpy shapes
     after Compress Random and two passes (random, then noise) have no overlaps, no box outside the shape and the same
     total volume; the shifted set meshes to the same shell. `PCGUtilsPerf.Voxel.ShiftSeams` reports timings and how
