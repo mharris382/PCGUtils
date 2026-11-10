@@ -33,5 +33,12 @@ struct PCGUTILS_API FPCGUtilsBakeSettings
 	
 	FString GetBakeAssetSaveName() const { return BakedAssetGroupLabel+ "_"+ BakedAssetSaveName; }
 	FSoftObjectPath GetBakedAssetSoftPath() const;
+
+	/**
+	 * Object path of a baked asset: {BakedAssetSavePath}/{BakedAssetSaveName}{NameSuffix}. This matches what the bake
+	 * subgraphs write, where BakedAssetSaveName already carries the group label. Backslashes and a trailing slash in
+	 * the save path are tolerated. Returns a null path when the save name or the save path is empty.
+	 */
+	FSoftObjectPath GetBakedAssetObjectPath(const FString& NameSuffix = FString()) const;
 };
 

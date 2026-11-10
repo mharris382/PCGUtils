@@ -89,6 +89,27 @@ namespace PCGVoxelAirFlowPrivate
 		bool IsFloor(int32 Axis, int32 Sign) const { return bGround && Axis == 2 && Sign < 0; }
 	};
 
+	/** One flow source, in world space. Force is already in world axes (Point space applied) and scaled by Source Strength. */
+	struct FSource
+	{
+		FVector Position = FVector::ZeroVector;
+		FVector Force = FVector::ZeroVector;
+		FVector Axis = FVector::UpVector;
+		double Outflow = 0.0;
+		double Swirl = 0.0;
+		double Radius = 1.0;
+	};
+
+	double Falloff(EPCGVoxelFlowFalloff Mode, double T)
+	{
+		switch (Mode)
+		{
+		case EPCGVoxelFlowFalloff::Linear: return 1.0 - T;
+		case EPCGVoxelFlowFalloff::Constant: return 1.0;
+		default: { const double U = 1.0 - T * T; return U * U; }
+		}
+	}
+
 	/** Curl of a three-channel Perlin field at Q (noise space): swirls with no sources or sinks. */
 	FVector CurlNoise(const FVector& Q, const FVector Offsets[3])
 	{
@@ -121,7 +142,7 @@ FText UPCGVoxelAirFlowSettings::GetNodeTooltipText() const
 {
 	return LOCTEXT("Tooltip",
 		"Wind blowing past each voxel set: a smooth flow that goes around solid cells, speeds up over tops and corners and is "
-		"weaker in wind shadows, with optional turbulence. Flow: one point per air cell (a voxel set of its own) with the flow "
+		"weaker in wind shadows, with optional turbulence. Points on Sources add fans, vents, suction and vortices. Flow: one point per air cell (a voxel set of its own) with the flow "
 		"vector, speed, shelter and distance to the solids. Cells: the input with how hard the wind hits each cell and the flow "
 		"along its surface.");
 }
@@ -133,6 +154,9 @@ TArray<FPCGPinProperties> UPCGVoxelAirFlowSettings::InputPinProperties() const
 	Pins.Emplace_GetRef(PCGPinConstants::DefaultInputLabel, EPCGDataType::Point, true, true,
 		LOCTEXT("InTooltip", "Voxel sets: the solid cells the wind blows past. Each set gets its own air."))
 		.SetRequiredPin();
+	Pins.Emplace(PCGVoxelAirFlowPins::Sources, EPCGDataType::Point, true, true,
+		LOCTEXT("SourcesTooltip", "Optional flow sources: any points (not a voxel set) carrying Force, Outflow and/or Swirl attributes, "
+			"each reaching out to its Radius. Every source acts on every voxel set it overlaps, on top of the wind."));
 	return Pins;
 }
 
@@ -275,6 +299,101 @@ bool FPCGVoxelAirFlowElement::ExecuteInternal(FPCGContext* Context) const
 		return true;
 	}
 
+	// ---- Sources, read once in world space ----
+	TArray<FSource> Sources;
+	const TArray<FPCGTaggedData> SourceInputs = Context->InputData.GetInputsByPin(PCGVoxelAirFlowPins::Sources);
+	for (int32 SourceIndex = 0; SourceIndex < SourceInputs.Num(); ++SourceIndex)
+	{
+		const UPCGBasePointData* SourcePoints = Cast<const UPCGBasePointData>(SourceInputs[SourceIndex].Data);
+		if (!SourcePoints || SourcePoints->GetNumPoints() == 0)
+		{
+			continue;
+		}
+		const FText Where = FText::Format(LOCTEXT("SourceWhere", "Sources input {0}"), FText::AsNumber(SourceIndex));
+		auto FailSource = [&](const FText& Message)
+		{
+			Fail(FText::Format(LOCTEXT("SourceFail", "{0}: {1}"), Where, Message));
+		};
+		const bool bForce = PCGVoxelPointIO::HasPointAttribute(SourcePoints, Settings->ForceAttribute);
+		const bool bOutflow = PCGVoxelPointIO::HasPointAttribute(SourcePoints, Settings->OutflowAttribute);
+		const bool bSwirl = PCGVoxelPointIO::HasPointAttribute(SourcePoints, Settings->SwirlAttribute);
+		if (!bForce && !bOutflow && !bSwirl)
+		{
+			FailSource(FText::Format(LOCTEXT("NoSourceAttribute",
+				"none of Force Attribute '{0}', Outflow Attribute '{1}' and Swirl Attribute '{2}' exists on its points; a source needs at least one."),
+				FText::FromName(Settings->ForceAttribute), FText::FromName(Settings->OutflowAttribute), FText::FromName(Settings->SwirlAttribute)));
+			return true;
+		}
+		auto Selector = [](FName Name)
+		{
+			FPCGAttributePropertyInputSelector Out;
+			Out.SetAttributeName(Name);
+			return Out;
+		};
+		const int32 NumSourcePoints = SourcePoints->GetNumPoints();
+		TArray<FVector> Forces;
+		TArray<double> Outflows, Swirls, Radii;
+		if ((bForce && !PCGVoxelPointIO::ReadPointValues<FVector>(Context, SourcePoints, Selector(Settings->ForceAttribute), Forces, Title, INDEX_NONE,
+				LOCTEXT("ForceLabel", "Force Attribute"), LOCTEXT("ForceType", "a Vector")))
+			|| (bOutflow && !PCGVoxelPointIO::ReadPointValues<double>(Context, SourcePoints, Selector(Settings->OutflowAttribute), Outflows, Title, INDEX_NONE,
+				LOCTEXT("OutflowLabel", "Outflow Attribute"), LOCTEXT("OutflowType", "a number")))
+			|| (bSwirl && !PCGVoxelPointIO::ReadPointValues<double>(Context, SourcePoints, Selector(Settings->SwirlAttribute), Swirls, Title, INDEX_NONE,
+				LOCTEXT("SwirlLabel", "Swirl Attribute"), LOCTEXT("SwirlType", "a number")))
+			|| (!Settings->bRadiusFromBounds && !PCGVoxelPointIO::ReadPointValues<double>(Context, SourcePoints, Selector(Settings->RadiusAttribute), Radii, Title, INDEX_NONE,
+				LOCTEXT("RadiusLabel", "Radius Attribute"), LOCTEXT("RadiusType", "a number"))))
+		{
+			return true;
+		}
+		const TConstPCGValueRange<FTransform> SourceTransforms = SourcePoints->GetConstTransformValueRange();
+		const TConstPCGValueRange<FVector> BoundsMin = SourcePoints->GetConstBoundsMinValueRange();
+		const TConstPCGValueRange<FVector> BoundsMax = SourcePoints->GetConstBoundsMaxValueRange();
+		for (int32 Point = 0; Point < NumSourcePoints; ++Point)
+		{
+			const FTransform& Transform = SourceTransforms[Point];
+			FSource Source;
+			Source.Position = Transform.GetLocation();
+			Source.Axis = Transform.GetRotation().GetUpVector();
+			if (bForce)
+			{
+				Source.Force = (Settings->ForceSpace == EPCGVoxelFlowSourceSpace::Point ? Transform.GetRotation().RotateVector(Forces[Point]) : Forces[Point])
+					* Settings->SourceStrength;
+			}
+			Source.Outflow = bOutflow ? Outflows[Point] * Settings->SourceStrength : 0.0;
+			Source.Swirl = bSwirl ? Swirls[Point] * Settings->SourceStrength : 0.0;
+			if (Settings->bRadiusFromBounds)
+			{
+				Source.Radius = ((BoundsMax[Point] - BoundsMin[Point]) * 0.5 * Transform.GetScale3D().GetAbs()).GetMax();
+				if (!(Source.Radius > 0.0))
+				{
+					FailSource(FText::Format(LOCTEXT("ZeroBoundsRadius",
+						"point {0}: its largest scaled half-size is {1}, so it reaches nowhere; give the point bounds, or turn Radius From Bounds off and set Radius Attribute."),
+						FText::AsNumber(Point), FText::AsNumber(Source.Radius)));
+					return true;
+				}
+			}
+			else
+			{
+				Source.Radius = Radii[Point];
+				if (!(Source.Radius > 0.0))
+				{
+					FailSource(FText::Format(LOCTEXT("BadRadius", "point {0}: Radius Attribute '{1}' is {2}; it must be greater than 0."),
+						FText::AsNumber(Point), FText::FromName(Settings->RadiusAttribute), FText::AsNumber(Source.Radius)));
+					return true;
+				}
+			}
+			if (!Source.Force.IsNearlyZero() || Source.Outflow != 0.0 || Source.Swirl != 0.0)
+			{
+				Sources.Add(Source);
+			}
+		}
+	}
+	const bool bHasSourceData = !SourceInputs.IsEmpty();
+	double StrongestSource = 0.0;
+	for (const FSource& Source : Sources)
+	{
+		StrongestSource = FMath::Max(StrongestSource, FMath::Max3(Source.Force.Size(), FMath::Abs(Source.Outflow), FMath::Abs(Source.Swirl)));
+	}
+
 	const bool bMakeCells = (Settings->bWriteExposure || Settings->bWriteSurfaceFlow)
 		&& (!Context->Node || Context->Node->IsOutputPinConnected(PCGVoxelAirFlowPins::Cells));
 	const int32 F = Settings->AirCellVoxels;
@@ -298,16 +417,18 @@ bool FPCGVoxelAirFlowElement::ExecuteInternal(FPCGContext* Context) const
 			Fail(Error);
 			continue;
 		}
-		if (WindValue.IsNearlyZero())
+		if (WindValue.IsNearlyZero() && !bHasSourceData)
 		{
-			Fail(FText::Format(LOCTEXT("ZeroWind", "Wind is {0}; it must not be zero (its direction is the wind direction and its length the speed)."),
+			Fail(FText::Format(LOCTEXT("ZeroWind", "Wind is {0}; it must not be zero (its direction is the wind direction and its length the speed) unless the Sources pin has data."),
 				FText::FromString(WindValue.ToString())), InputIndex);
 			continue;
 		}
 		const FTransform& G = Grid.GridToWorld;
 		const FVector WindGrid = Settings->WindSpace == EPCGVoxelDirectionSpace::World ? G.InverseTransformVectorNoScale(WindValue) : WindValue;
-		const double WindSpeed = WindGrid.Size();
-		const FVector WindDir = WindGrid / WindSpeed;
+		const double WindSpeed = WindValue.IsNearlyZero() ? 0.0 : WindGrid.Size();
+		const FVector WindDir = WindSpeed > 0.0 ? WindGrid / WindSpeed : FVector::ZeroVector;
+		// What exposure 1 means: the wind speed, or the strongest source when sources alone drive the air.
+		const double ReferenceSpeed = WindSpeed > 0.0 ? WindSpeed : (StrongestSource > 0.0 ? StrongestSource : 1.0);
 		const FVector AirSize = Grid.VoxelSize * F;
 
 		// ---- The air box ----
@@ -452,8 +573,11 @@ bool FPCGVoxelAirFlowElement::ExecuteInternal(FPCGContext* Context) const
 		Shelter.SetNumZeroed(NumAir);
 		{
 			FVector Step = -WindDir / AirSize; // in air cells
-			Step /= Step.GetAbsMax();          // one air cell along the main axis per step
-			const int32 Steps = FMath::CeilToInt32(Settings->WakeLength);
+			if (WindSpeed > 0.0)
+			{
+				Step /= Step.GetAbsMax();      // one air cell along the main axis per step
+			}
+			const int32 Steps = WindSpeed > 0.0 ? FMath::CeilToInt32(Settings->WakeLength) : 0;
 			const double Length = Settings->WakeLength;
 			ParallelFor(NumAir, [&](int32 Index)
 			{
@@ -495,7 +619,7 @@ bool FPCGVoxelAirFlowElement::ExecuteInternal(FPCGContext* Context) const
 				Offset = FVector(Stream.FRandRange(-1000.0, 1000.0), Stream.FRandRange(-1000.0, 1000.0), Stream.FRandRange(-1000.0, 1000.0));
 			}
 			const bool bTurbulence = Settings->TurbulenceStrength > 0.0;
-			const double TurbulenceScale = Settings->TurbulenceStrength * WindSpeed * 0.5;
+			const double TurbulenceScale = Settings->TurbulenceStrength * ReferenceSpeed * 0.5;
 			ParallelFor(NumActive, [&](int32 A)
 			{
 				const int32 Index = Active[A];
@@ -507,6 +631,93 @@ bool FPCGVoxelAirFlowElement::ExecuteInternal(FPCGContext* Context) const
 				}
 				Velocity[Index] = FVector3f(V);
 			});
+		}
+
+		// ---- Sources: pushes and swirls go into the starting air; outflow goes into the solve as made (or lost) air ----
+		TArray<float> Made; // per air cell, in the solve's units (face speed summed over the cell's faces)
+		if (!Sources.IsEmpty())
+		{
+			Made.SetNumZeroed(NumAir);
+			const double FaceArea = FMath::Pow(AirSize.X * AirSize.Y * AirSize.Z, 2.0 / 3.0);
+			const FVector Half((F - 1) * 0.5);
+			auto CellCentre = [&](const FIntVector& L) { return (FVector(L + Air.Origin) * F + Half) * Grid.VoxelSize; };
+			TArray<TPair<int32, double>> Touched;
+			for (const FSource& Source : Sources)
+			{
+				const FVector Centre = G.InverseTransformPositionNoScale(Source.Position);
+				const FVector Force = G.InverseTransformVectorNoScale(Source.Force);
+				const FVector Axis = G.InverseTransformVectorNoScale(Source.Axis).GetSafeNormal(UE_SMALL_NUMBER, FVector::UpVector);
+				const FVector CentreCells = (Centre / Grid.VoxelSize - Half) / F - FVector(Air.Origin);
+				const FVector ReachCells = FVector(Source.Radius) / AirSize;
+				const FIntVector Lo(
+					FMath::Max(0, FMath::FloorToInt32(CentreCells.X - ReachCells.X)), FMath::Max(0, FMath::FloorToInt32(CentreCells.Y - ReachCells.Y)),
+					FMath::Max(0, FMath::FloorToInt32(CentreCells.Z - ReachCells.Z)));
+				const FIntVector Hi(
+					FMath::Min(Dims.X - 1, FMath::CeilToInt32(CentreCells.X + ReachCells.X)), FMath::Min(Dims.Y - 1, FMath::CeilToInt32(CentreCells.Y + ReachCells.Y)),
+					FMath::Min(Dims.Z - 1, FMath::CeilToInt32(CentreCells.Z + ReachCells.Z)));
+				Touched.Reset();
+				double TotalWeight = 0.0;
+				for (int32 Z = Lo.Z; Z <= Hi.Z; ++Z)
+				{
+					for (int32 Y = Lo.Y; Y <= Hi.Y; ++Y)
+					{
+						for (int32 X = Lo.X; X <= Hi.X; ++X)
+						{
+							const FIntVector L(X, Y, Z);
+							const int32 Index = Air.Index(L);
+							if (State[Index] != Moving)
+							{
+								continue;
+							}
+							const FVector Offset = CellCentre(L) - Centre;
+							const double T = Offset.Size() / Source.Radius;
+							if (T >= 1.0)
+							{
+								continue;
+							}
+							const double Weight = Falloff(Settings->SourceFalloff, T);
+							FVector Add = Force * Weight;
+							if (Source.Swirl != 0.0)
+							{
+								const FVector Across = Offset - Axis * (Offset | Axis);
+								const double FromAxis = Across.Size();
+								if (FromAxis > UE_KINDA_SMALL_NUMBER)
+								{
+									// Solid-body turning inside a small core, so the centre has no spike.
+									const double Core = FMath::Min(1.0, FromAxis / (0.3 * Source.Radius));
+									Add += (Axis ^ (Across / FromAxis)) * (Source.Swirl * Weight * Core);
+								}
+							}
+							Velocity[Index] += FVector3f(Add);
+							if (Source.Outflow != 0.0 && Weight > 0.0)
+							{
+								Touched.Emplace(Index, Weight);
+								TotalWeight += Weight;
+							}
+						}
+					}
+				}
+				if (Source.Outflow != 0.0)
+				{
+					// The air made per second, spread over the cells it reaches. A source smaller than a cell feeds the cell it is in.
+					const double Total = Source.Outflow * 4.0 * UE_DOUBLE_PI * Source.Radius * Source.Radius / FaceArea;
+					if (TotalWeight > 0.0)
+					{
+						for (const TPair<int32, double>& Cell : Touched)
+						{
+							Made[Cell.Key] += static_cast<float>(Total * Cell.Value / TotalWeight);
+						}
+					}
+					else
+					{
+						const FIntVector Nearest(FMath::RoundToInt32(CentreCells.X), FMath::RoundToInt32(CentreCells.Y), FMath::RoundToInt32(CentreCells.Z));
+						if (Air.Inside(Nearest) && State[Air.Index(Nearest)] == Moving)
+						{
+							Made[Air.Index(Nearest)] += static_cast<float>(Total);
+						}
+					}
+				}
+			}
 		}
 
 		// ---- Smoothing: 1-2-1 blur along each axis, over moving air only ----
@@ -541,6 +752,12 @@ bool FPCGVoxelAirFlowElement::ExecuteInternal(FPCGContext* Context) const
 					}
 				}
 			}
+		}
+
+		TArray<FVector3f> Start;
+		if (bMakeCells)
+		{
+			Start = Velocity;
 		}
 
 		// ---- Face velocities (staggered grid). A face is open when every side of it in the box is moving air ----
@@ -598,7 +815,7 @@ bool FPCGVoxelAirFlowElement::ExecuteInternal(FPCGContext* Context) const
 					Open = static_cast<uint8>(Open + FaceOpen[Axis][LoFace] + FaceOpen[Axis][HiFace]);
 				}
 				Diagonal[Index] = Open;
-				Residual[Index] = -Divergence;
+				Residual[Index] = (Made.IsEmpty() ? 0.0f : Made[Index]) - Divergence;
 			});
 
 			auto ApplyA = [&](const TArray<float>& In, TArray<float>& Out)
@@ -829,7 +1046,7 @@ bool FPCGVoxelAirFlowElement::ExecuteInternal(FPCGContext* Context) const
 							continue;
 						}
 						FVector3f V = FVector3f(WindGrid);
-						float SideShelter = 0.0f;
+						FVector3f VStart = FVector3f(WindGrid);
 						FIntVector L = FloorDiv(Cell + Step, F) - Air.Origin;
 						for (int32 K = 0; K < 3; ++K, L += Step)
 						{
@@ -838,8 +1055,7 @@ bool FPCGVoxelAirFlowElement::ExecuteInternal(FPCGContext* Context) const
 								// Past the box: free wind, unless it is the floor.
 								if (Air.IsFloor(Axis, Sign))
 								{
-									V = FVector3f::ZeroVector;
-									SideShelter = 1.0f;
+									V = VStart = FVector3f::ZeroVector;
 								}
 								break;
 							}
@@ -847,17 +1063,16 @@ bool FPCGVoxelAirFlowElement::ExecuteInternal(FPCGContext* Context) const
 							if (State[Index] != Solid)
 							{
 								V = Velocity[Index];
-								SideShelter = Shelter[Index];
+								VStart = Start[Index];
 								break;
 							}
 							if (K == 2)
 							{
-								V = FVector3f::ZeroVector;
-								SideShelter = 1.0f;
+								V = VStart = FVector3f::ZeroVector;
 							}
 						}
-						const float Facing = static_cast<float>(-WindDir[Axis] * Sign);
-						CellExposure[C] = FMath::Max(CellExposure[C], FMath::Max(0.0f, Facing) * (1.0f - SideShelter));
+						const float Into = static_cast<float>(-VStart[Axis] * Sign / ReferenceSpeed);
+						CellExposure[C] = FMath::Max(CellExposure[C], FMath::Clamp(Into, 0.0f, 1.0f));
 						CellFlow[C] += V;
 						++CellSides[C];
 					}

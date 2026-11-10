@@ -137,12 +137,13 @@ first cell's values. A test checks it.
 | 1 | `Voxel \| Shift Seams` | Slides interior seams so boxes become uneven but fill the same space (section 4c). |
 | 1 | `Voxel \| Transform Grid` | Moves, turns and scales whole voxel sets about a per-set pivot; values per set from @Data (section 4e). |
 | 1 | `Voxel \| Air Flow` | Wind around a voxel set: a smooth flow field on air cells (a voxel set of its own), wind shadows, exposure per solid cell (section 4f). |
+| 1 | `Voxel \| Rasterize` | A DynMesh or a closed point path to cells: Fill, Intersect and Surround modes, on its own grid or another set's (section 4g). |
+| 1 | `Voxel \| Boolean` | Union, intersect or subtract voxel sets by cell index; Out is In, mutated (section 4h). |
 | 1 | `Voxel \| Expand` | Turns chunks back into one point per cell (section 1.2). |
 | 1 | `Voxel \| Pack Points` | Packs loose points into free cells of a voxel grid, fully or part way, without overlaps (section 4). |
 | 1 | `Voxel \| Cell Properties` | Writes per-cell attributes: open sides, surrounded, inside corners, neighbourhood, depth, column and components (section 4b). Replaces the planned `Voxel \| Neighbors`. |
-| 2 | `Voxel \| Boolean` | Union, intersect or subtract voxel sets by cell index; attributes come from the first input. |
 | 2 | `Voxel \| Dilate / Erode` | Grow or shrink by N cells. Added cells copy the nearest source cell's attributes (the CLAUDE.md inheritance rule). |
-| later | `Voxel \| Resample`, `Voxel \| From DynMesh` | Change cell size; voxelize a mesh. |
+| later | `Voxel \| Resample` | Change cell size. (`From DynMesh` became `Voxel \| Rasterize`.) |
 
 ## 3. Voxel | To DynMesh
 
@@ -540,7 +541,28 @@ dense grid. Design choices were left to me; these are them.
 7. Cell velocity = the mean of its two faces per axis.
 
 **Wind** is a vector shorthand (Constant or `@Data.Wind`, default constant (500, 0, 0)): direction, with its length as
-the speed, in `Wind Space` (World or Grid). Zero is an error.
+the speed, in `Wind Space` (World or Grid). Zero is an error unless the Sources pin has data (sources alone drive the
+air; no wind shadow then).
+
+**Sources pin** (added 2026-11-09, the designer's idea: points as force fields, instead of or on top of the wind).
+Optional, last pin. Any point data, not a voxel set; every source acts on every voxel set whose air box it overlaps.
+Each point can carry any mix of three optional attributes (names are settings); a sources input with none of them is an
+error naming all three:
+- `FlowForce` (Vector): a push, the speed added at the centre (fan, jet), in `Force Space`: World, or Point (the
+  point's rotation turns it, so aiming the point aims the fan). Added to the starting air, so the solve keeps its
+  swirling part and sends air round in a loop: a jet also pulls air in behind it.
+- `FlowOutflow` (Double): air made (positive, a vent) or taken away (negative, suction), given as the outward speed
+  at the Radius with nothing in the way. This one cannot go in the starting air, because the solve removes every source
+  and sink. It goes into the solve's right-hand side instead (total `Outflow × 4πR²`, spread over the air cells in
+  reach by falloff weight, or into the one cell holding the source if it is smaller than a cell), so the air really
+  leaves through the open box edges. Sources in solid or sealed air do nothing.
+- `FlowSwirl` (Double): swirl speed about the point's up axis, counter-clockwise from above for positive values; tilt
+  the point to tilt the vortex. Solid-body inside 0.3 R, so the centre has no spike.
+
+Reach: `Radius From Bounds` (default on) uses the point's largest scaled half-size; off reads `FlowRadius` (Double,
+required then, > 0). `Source Falloff`: Smooth `(1 - (d/r)^2)^2` (default), Linear, Constant. `Source Strength`
+multiplies all three. Sources are applied after turbulence and before smoothing. Errors: no effect attribute, zero
+bounds radius, missing or non-positive radius attribute, wrong attribute types.
 
 **Flow pin.** One point per non-solid air cell (only those within `Max Distance` face steps of a solid when that is
 above 0), ordered Z, Y, X. It is a voxel set: `@Data` gets the air cell size in the Voxel Size attribute name and a grid
@@ -550,9 +572,11 @@ transform whose cell c centre is c × air cell size, so Compress, To DynMesh and
 are in `Output Space` (World default).
 
 **Cells pin.** Only made when connected (or when there is no node, in tests). The input copied point for point, with:
-- `WindExposure` (Double, 0 to 1), for the most hit open side: how square the side faces the wind times
-  `1 - Shelter` of the air outside it. It uses the shadow and not the solved flow, because the solved flow into a wall
-  is 0 by construction; with Wake Length 0 it is facing only.
+- `WindExposure` (Double, 0 to 1), for the most hit open side: the starting air just outside it (wind less its
+  shadow, plus source pushes and swirls, after smoothing, before the solve) blowing into the side, over the reference
+  speed (the wind speed, or the strongest source when there is no wind). It uses the starting air and not the solved
+  flow, because the solved flow into a wall is 0 by construction. With only wind and Wake Strength 1 this is how square
+  the side faces the wind times `1 - Shelter`.
 - `SurfaceFlow` (Vector): the mean flow in the air just outside the point's open sides. Air cells that are solid only
   because a coarse cell also holds other voxels are stepped past (up to 3 air cells).
 
@@ -563,6 +587,71 @@ are in `Output Space` (World default).
 off the ground; no multigrid (CG cost grows with box size, fine at the sizes measured); no thermal or per-set source
 terms. A `Voxel | Sample Flow` node to sample the field at arbitrary points (trilinear) would make it easier to drive
 foliage that is not on the grid.
+
+## 4g. Voxel | Rasterize
+
+Built 2026-11-09 from the designer's request, for the Color Theory course: embed organic (non-voxel) green geometry in a
+voxel grid that surrounds it. The graph rasterizes the green onto the surrounding grid, cuts those cells out with
+Voxel | Boolean, meshes what is left, and the DynMesh boolean against the green makes it sit flush. The name is
+Rasterize, not Voxelize, because the palette contract bans the category word inside the element name; "voxelize" is in
+its search keywords.
+
+**Source** (`Mesh | Path`, default Mesh). The In pin takes both data types; an input of the other type is an error.
+- **Mesh**: DynMesh data, read in the target actor's space by convention (`Mesh In Local Space`, default on; off reads it
+  as world).
+- **Path**: point data read as one closed loop, points in order, the last joined back to the first (a repeated first
+  point is dropped). It is filled in the grid's XY plane, over the grid layers its points span, plus `Cells Below` and
+  `Cells Above`. Fewer than 3 distinct points is an error.
+
+**Modes** (bitmask, any mix, at least one; default Fill + Intersect):
+- **Fill**: cells whose centre is inside. Rays along X through each row of cell centres, nonzero winding, so it does not
+  care which way the faces point. Rays are nudged off the centre lines by a tiny odd amount so they never run along an
+  edge. A mesh that is not closed leaves rows with more crossings one way than the other; those rows skip their open run
+  and the node warns with the count (only when Fill or Surround is on).
+- **Intersect**: cells the surface passes through (exact triangle-box test; segment-square for a path). `Touch Margin`
+  (fraction of a cell, default 0) widens or narrows the cell for this test. At 0 a surface lying exactly on a cell face
+  touches neither neighbour (1e-4 of a cell counts as on the face), so a mesh built on the grid gets one layer, not two.
+- **Surround**: a shell `Surround Cells` thick (default 1) grown from the Fill and Intersect cells through cells that are
+  neither. `Surround Neighbors`: Faces (6, or 4 for a path), Faces And Edges (18, or 8), All (26, or 8; default: no gaps).
+
+Intersect and Fill are always worked out, so `RasterMode` (Integer32, optional, name a setting) holds the true bits per
+cell: 1 inside, 2 touched (a surface cell with its centre inside is 3), 4 surround (only when Surround is on).
+
+**Grid.** The optional Grid pin (last) takes a voxel set; its Voxel Size and grid transform are read through the Grid
+settings (`@Data` by default) and its cells are ignored. One Grid set serves every input, or one per input. Without
+it, `Voxel Size` (default 100) and `Grid Transform` (rotation and location; identity matches the Volume Sampler) place
+the grid. A box of more than `Max Cells` cells (default 64M; the shape's bounds plus the shell) is an error naming its
+size.
+
+**Out.** One fresh voxel set per input: plain cells ordered Z, Y, X, bounds ±Voxel Size/2, Volume Sampler seeds, the
+Voxel Size and grid transform written to `@Data`, the input's tags. It is not a modification of the input, so no
+metadata is carried.
+
+**Speed** (DebugGame build): a 260k-triangle sphere 50 cells across, all modes, 85k cells in 0.26 s.
+
+## 4h. Voxel | Boolean
+
+Built 2026-11-09 (planned as phase 2). The engine's Difference works on bounds overlap and is too sensitive for cells
+(touching faces and rounding change the answer). This matches cells by index on In's grid, so a cell is simply in or
+out.
+
+- Pins: `In` (mutated, required), `Operand` (required). All Operand inputs together are one set of cells; one output per
+  In input.
+- `Operation`: Union, Intersect, Subtract (default).
+- Operand sets are placed on each In set's grid: their Voxel Size, turned into In's grid axes, must match (error giving
+  both), and every Operand cell centre must land within Grid Tolerance of an In cell centre (error naming the cell and
+  point: "the two grids do not line up"). Any whole-cell offset or 90° turn between the grids is fine. Rasterize with In
+  on its Grid pin always lines up.
+- Out is In, mutated (CLAUDE.md rule): its points, metadata, tags and `@Data`. Chunks stay whole where none of their
+  cells changed; a cut chunk becomes plain cells (Volume Sampler seeds for the new points).
+- Union adds Operand cells In lacks, after In's own points, ordered Z, Y, X. `Added Values`:
+  - **Operand, Then Nearest** (default): the Operand cell's attributes, color, density and steepness; attributes In has
+    but the Operand lacks (or has with another type) come from the nearest In cell. Operand-only attributes are added
+    to the output; In's own cells get their default.
+  - **Nearest**: everything from the nearest In cell (by centre distance; hash grid, then a scan for far islands).
+  - **None**: attribute defaults; properties from the nearest In cell.
+  An In set with no cells has nothing to take values from, so Union outputs it unchanged with a warning.
+- **Speed** (DebugGame): a 216k-cell block against the 85k-cell sphere, Subtract 0.31 s, Union 0.39 s.
 
 ## 4d. Shared voxel grid (design, not built)
 
@@ -647,7 +736,7 @@ a cell hash.
 - `Public/Voxel/PCGVoxelGrid.h` holds the contract, validation and cell lookup.
 - `Public/Voxel/PCGVoxelMesher.h` holds the faces → mesh core. It is plain C++, so it can be tested without a graph.
   The bevel path is `Private/Voxel/PCGVoxelBevelMesher.cpp` (`PCGVoxelMesher::BuildBeveledMesh`).
-- `Public/Elements/PCGVoxelToDynMesh.h`, `PCGVoxelPackPoints.h`, `PCGVoxelCompress.h`, `PCGVoxelExpand.h`, `PCGVoxelCellProperties.h`, `PCGVoxelShiftSeams.h`, `PCGVoxelTransformGrid.h`, `PCGVoxelAirFlow.h`. All derive from `UPCGSettings`, so each overrides
+- `Public/Elements/PCGVoxelToDynMesh.h`, `PCGVoxelPackPoints.h`, `PCGVoxelCompress.h`, `PCGVoxelExpand.h`, `PCGVoxelCellProperties.h`, `PCGVoxelShiftSeams.h`, `PCGVoxelTransformGrid.h`, `PCGVoxelAirFlow.h`, `PCGVoxelRasterize.h`, `PCGVoxelBoolean.h`. All derive from `UPCGSettings`, so each overrides
   `GetType()` (or they land in `Generic`). Add the `Voxel` category to the `PCGUtils.Palette.SearchContract` test.
 - `PCGUtilsDynMesh` must not depend on `PCGUtilsVoxel`; the dependency only runs Voxel → DynMesh.
 - Tests in `Private/Tests/`:
@@ -683,7 +772,21 @@ a cell hash.
     leaves no air under the set; coarse air cells sit over the right voxels; Max Distance and Solid Distance;
     turbulence changes the flow, repeats with the seed and has no NaN; errors for zero wind, too many air cells, a bad
     Air Cell Voxels, clashing names and a missing `@Data.Wind`; the warning when the solve hits Max Iterations.
+    Sources: a vent with no wind blows out every way and slows with distance, a negative one sucks in; a vortex turns
+    counter-clockwise about Z; a World fan and a turned Point-space fan agree; a vent adds to the wind; a fan exposes
+    the cell it is aimed at; errors for no effect attribute, zero bounds radius and a missing radius attribute.
     `PCGUtilsPerf.Voxel.AirFlow` reports timings;
+  - Rasterize: a bar inside three cells gives three Fill cells, the same three Intersect cells (mode 3), a 42-cell
+    Surround shell (14 with Faces), and 45 cells with every mode; a box with faces on the grid fills its 3 cells and
+    touches none, and Touch Margin 0.2 touches both sides; a sphere's Fill matches the lattice count, no cell is in a
+    mode it cannot be in and the three modes together leave no gap; a square path fills 4x4, touches the ring of 12,
+    surrounds with 20 (16 with Faces), stacks with Cells Above and ignores a repeated first point; the Grid pin's size
+    and offset are used; errors for no modes, the wrong data type, a short path and Max Cells; an open quad intersects
+    quietly and warns under Fill. `PCGUtilsPerf.Voxel.Rasterize` reports timings (with Boolean);
+  - Boolean: Subtract and Intersect on a row keep Ids, tags and `@Data`; Union values from the Operand, the nearest In
+    cell or defaults; a chunk stays whole when untouched and becomes 7 cells when one is cut; a whole-cell grid shift
+    lines up; errors for a different Voxel Size and a half-cell shift; Rasterize on a block's grid then Subtract leaves
+    the block with the mesh's 8 cells gone;
   - Shift Seams: in a row the ends stay and neighbours still meet; a 2×2 grid stays consistent; random lumpy shapes
     after Compress Random and two passes (random, then noise) have no overlaps, no box outside the shape and the same
     total volume; the shifted set meshes to the same shell. `PCGUtilsPerf.Voxel.ShiftSeams` reports timings and how

@@ -5,6 +5,7 @@
 #include "CoreMinimal.h"
 #include "Kismet/BlueprintFunctionLibrary.h"
 #include "PCGData.h"
+#include "Data/PCGBakeSettings.h"
 #include "Data/PCGPathPoint.h"
 #include "PCGPoint.h"
 #include "ShapePath/ShapePathComponent.h"
@@ -113,6 +114,17 @@ public:
 		FName PinName = TEXT("Mesh"),
 		FName AttributeName = TEXT("AssetPath"),
 		FString Tag = TEXT(""));
+
+	/**
+	 * Loads the Static Mesh a bake wrote for these Bake Settings: {BakedAssetSavePath}/{BakedAssetSaveName}{NameSuffix}.
+	 * Use NameSuffix for the extra meshes one bake writes (e.g. "Green", "Barrier"). Returns null when the save name
+	 * or path is empty, nothing exists at that path, or the asset there is not a Static Mesh.
+	 */
+	UFUNCTION(BlueprintCallable, BlueprintPure, Category = "PCGUtils|PCG",
+		meta = (Keywords = "PCG bake settings baked static mesh asset path suffix resolve"))
+	static UStaticMesh* ResolveBakeSettingsToStaticMesh(
+		const FPCGUtilsBakeSettings& BakeSettings,
+		FString NameSuffix = TEXT(""));
 
 	/**
 	 * Assigns meshes from tagged PCG Param Data to supplied static mesh components. Candidates are

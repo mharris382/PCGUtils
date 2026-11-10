@@ -434,6 +434,24 @@ UStaticMesh* UPCGUtilsHelpers::ResolveStaticMeshFromData(
 	return nullptr;
 }
 
+UStaticMesh* UPCGUtilsHelpers::ResolveBakeSettingsToStaticMesh(
+	const FPCGUtilsBakeSettings& BakeSettings,
+	FString NameSuffix)
+{
+	const FSoftObjectPath AssetPath = BakeSettings.GetBakedAssetObjectPath(NameSuffix);
+	if (AssetPath.IsNull())
+	{
+		return nullptr;
+	}
+
+	UObject* Object = AssetPath.ResolveObject();
+	if (!Object)
+	{
+		Object = AssetPath.TryLoad();
+	}
+	return Cast<UStaticMesh>(Object);
+}
+
 void UPCGUtilsHelpers::LinkTaggedStaticMeshes(
 	const FPCGDataCollection& DataCollection,
 	const TArray<UStaticMeshComponent*>& StaticMeshComponents,

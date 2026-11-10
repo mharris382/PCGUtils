@@ -8,6 +8,9 @@
 #if WITH_AUTOMATION_TESTS
 
 #include "Elements/PCGVoxelAirFlow.h"
+#include "Elements/PCGVoxelBoolean.h"
+#include "Elements/PCGVoxelRasterize.h"
+#include "Generators/SphereGenerator.h"
 #include "Elements/PCGVoxelCompress.h"
 #include "Elements/PCGVoxelShiftSeams.h"
 #include "Elements/PCGVoxelToDynMesh.h"
@@ -305,6 +308,53 @@ bool FPCGVoxelAirFlowBenchTest::RunTest(const FString&)
 			AddInfo(FString::Printf(TEXT("%s (%d cells), air cell %d voxels: %d air points in %.3f s"),
 				*Shape.Name, Shape.Cells.Num(), AirCellVoxels, Flow ? Flow->GetNumPoints() : -1, Seconds));
 		}
+	}
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FPCGVoxelRasterizeBenchTest,
+	"PCGUtilsPerf.Voxel.Rasterize.Timings",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::ProductFilter)
+
+bool FPCGVoxelRasterizeBenchTest::RunTest(const FString&)
+{
+	using namespace PCGVoxelBenchTests;
+	// A sphere 50 cells across, finely tessellated, rasterized in every mode, then cut out of a block round it.
+	UE::Geometry::FSphereGenerator Generator;
+	Generator.Radius = 2500.0;
+	Generator.NumPhi = 256;
+	Generator.NumTheta = 512;
+	Generator.Generate();
+	UPCGDynamicMeshData* Mesh = NewObject<UPCGDynamicMeshData>();
+	Mesh->Initialize(UE::Geometry::FDynamicMesh3(&Generator));
+	const int32 Triangles = Mesh->GetDynamicMesh()->GetMeshRef().TriangleCount();
+
+	UPCGVoxelRasterizeSettings* Settings = NewObject<UPCGVoxelRasterizeSettings>();
+	Settings->bMeshInLocalSpace = false;
+	Settings->Modes = static_cast<uint8>(EPCGVoxelRasterizeModes::Fill | EPCGVoxelRasterizeModes::Intersect | EPCGVoxelRasterizeModes::Surround);
+	double Start = FPlatformTime::Seconds();
+	const TArray<FPCGTaggedData> Raster = Run<FPCGVoxelRasterizeElement>(Settings, { { PCGPinConstants::DefaultInputLabel, Mesh } });
+	const double RasterSeconds = FPlatformTime::Seconds() - Start;
+	const UPCGBasePointData* Cells = Raster.IsEmpty() ? nullptr : Cast<UPCGBasePointData>(Raster[0].Data);
+	AddInfo(FString::Printf(TEXT("Rasterize sphere (%d triangles), all modes: %d cells in %.3f s"), Triangles, Cells ? Cells->GetNumPoints() : -1, RasterSeconds));
+
+	TArray<FIntVector> BlockCells;
+	for (int32 Z = -30; Z < 30; ++Z)
+		for (int32 Y = -30; Y < 30; ++Y)
+			for (int32 X = -30; X < 30; ++X)
+				BlockCells.Add(FIntVector(X, Y, Z));
+	const UPCGPointArrayData* Block = MakeVoxels(BlockCells);
+	for (const EPCGVoxelBooleanOperation Operation : { EPCGVoxelBooleanOperation::Subtract, EPCGVoxelBooleanOperation::Union })
+	{
+		UPCGVoxelBooleanSettings* BooleanSettings = NewObject<UPCGVoxelBooleanSettings>();
+		BooleanSettings->Operation = Operation;
+		Start = FPlatformTime::Seconds();
+		const TArray<FPCGTaggedData> Out = Run<FPCGVoxelBooleanElement>(BooleanSettings,
+			{ { PCGPinConstants::DefaultInputLabel, Block }, { PCGVoxelBooleanPins::Operand, Cells } });
+		const UPCGBasePointData* Result = Out.IsEmpty() ? nullptr : Cast<UPCGBasePointData>(Out[0].Data);
+		AddInfo(FString::Printf(TEXT("Boolean %s, 216000-cell block and the sphere: %d cells in %.3f s"),
+			Operation == EPCGVoxelBooleanOperation::Subtract ? TEXT("Subtract") : TEXT("Union"), Result ? Result->GetNumPoints() : -1,
+			FPlatformTime::Seconds() - Start));
 	}
 	return true;
 }

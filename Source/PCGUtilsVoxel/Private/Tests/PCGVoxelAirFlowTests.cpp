@@ -35,10 +35,15 @@ namespace PCGVoxelAirFlowTests
 		TArray<FString> FlowTags;
 	};
 
-	FResult RunFlow(UPCGVoxelAirFlowSettings* Settings, const UPCGData* Set)
+	FResult RunFlow(UPCGVoxelAirFlowSettings* Settings, const UPCGData* Set, const UPCGData* SourceSet = nullptr)
 	{
 		FResult Result;
-		for (const FPCGTaggedData& Output : Run<FPCGVoxelAirFlowElement>(Settings, { { PCGPinConstants::DefaultInputLabel, Set } }))
+		TArray<TPair<FName, const UPCGData*>> Inputs = { { PCGPinConstants::DefaultInputLabel, Set } };
+		if (SourceSet)
+		{
+			Inputs.Emplace(PCGVoxelAirFlowPins::Sources, SourceSet);
+		}
+		for (const FPCGTaggedData& Output : Run<FPCGVoxelAirFlowElement>(Settings, Inputs))
 		{
 			if (Output.Pin == PCGVoxelAirFlowPins::Flow)
 			{
@@ -95,6 +100,60 @@ namespace PCGVoxelAirFlowTests
 			}
 		}
 		return Cells;
+	}
+
+	/** One flow source point: a box of half-size Radius at Location, turned by Rotation, with the given attributes (NAN = absent). */
+	struct FSourceSpec
+	{
+		FVector Location = FVector::ZeroVector;
+		double Radius = 250.0;
+		FRotator Rotation = FRotator::ZeroRotator;
+		FVector Force = FVector(NAN);
+		double Outflow = NAN;
+		double Swirl = NAN;
+	};
+
+	UPCGPointArrayData* MakeSources(const TArray<FSourceSpec>& Specs)
+	{
+		UPCGPointArrayData* Points = NewObject<UPCGPointArrayData>();
+		Points->SetNumPoints(Specs.Num());
+		Points->AllocateProperties(EPCGPointNativeProperties::All);
+		FPCGMetadataDomain* Elements = Points->Metadata->GetMetadataDomain(PCGMetadataDomainID::Elements);
+		auto Transforms = Points->GetTransformValueRange();
+		auto Mins = Points->GetBoundsMinValueRange();
+		auto Maxs = Points->GetBoundsMaxValueRange();
+		auto Keys = Points->GetMetadataEntryValueRange();
+		for (int32 I = 0; I < Specs.Num(); ++I)
+		{
+			const FSourceSpec& Spec = Specs[I];
+			Transforms[I] = FTransform(Spec.Rotation, Spec.Location);
+			Mins[I] = -FVector(Spec.Radius);
+			Maxs[I] = FVector(Spec.Radius);
+			Keys[I] = Elements->AddEntry();
+			if (!Spec.Force.ContainsNaN())
+			{
+				FPCGMetadataAttribute<FVector>* A = Elements->FindOrCreateAttribute<FVector>(TEXT("FlowForce"), FVector::ZeroVector, false);
+				A->SetValue(Keys[I], Spec.Force);
+			}
+			if (!FMath::IsNaN(Spec.Outflow))
+			{
+				Elements->FindOrCreateAttribute<double>(TEXT("FlowOutflow"), 0.0, false)->SetValue(Keys[I], Spec.Outflow);
+			}
+			if (!FMath::IsNaN(Spec.Swirl))
+			{
+				Elements->FindOrCreateAttribute<double>(TEXT("FlowSwirl"), 0.0, false)->SetValue(Keys[I], Spec.Swirl);
+			}
+		}
+		return Points;
+	}
+
+	/** One cell at the origin with 8 air cells of padding: room for sources in free air at x = -400. */
+	UPCGVoxelAirFlowSettings* StillAirSettings()
+	{
+		UPCGVoxelAirFlowSettings* Settings = MakeSettings();
+		Settings->Wind.Constant = FVector::ZeroVector;
+		Settings->Padding = 8;
+		return Settings;
 	}
 
 	int32 IndexOfCell(const TArray<FIntVector>& Cells, const FIntVector& Cell)
@@ -317,6 +376,122 @@ bool FPCGVoxelAirFlowErrorsTest::RunTest(const FString&)
 		Settings->MaxIterations = 1;
 		AddExpectedMessagePlain(TEXT("the solve stopped at Max Iterations (1)"), ELogVerbosity::Warning, EAutomationExpectedMessageFlags::Contains, 1);
 		TestNotNull(TEXT("An unfinished solve still gives a flow"), RunFlow(Settings, Cube).Flow);
+	}
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FPCGVoxelAirFlowSourcesTest,
+	"PCGUtils.Voxel.AirFlow.SourcesPushVentAndSwirl",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::ProductFilter)
+
+bool FPCGVoxelAirFlowSourcesTest::RunTest(const FString&)
+{
+	using namespace PCGVoxelAirFlowTests;
+	const UPCGPointArrayData* Cell = MakeVoxels({ FIntVector(0, 0, 0) });
+	{
+		// A vent at x = -400 with no wind: air leaves it in every direction.
+		FSourceSpec Vent;
+		Vent.Location = FVector(-400.0, 0.0, 0.0);
+		Vent.Outflow = 100.0;
+		const FResult Result = RunFlow(StillAirSettings(), Cell, MakeSources({ Vent }));
+		UTEST_TRUE(TEXT("Sources alone give a flow (zero wind is allowed with sources)"), Result.bFlowReads);
+		const FVector East = FlowAt(Result, FIntVector(-2, 0, 0)), West = FlowAt(Result, FIntVector(-6, 0, 0)), Up = FlowAt(Result, FIntVector(-4, 0, 2));
+		AddInfo(FString::Printf(TEXT("vent east %s west %s up %s"), *East.ToString(), *West.ToString(), *Up.ToString()));
+		TestTrue(TEXT("East of the vent the air flows east"), East.X > 10.0);
+		TestTrue(TEXT("West of the vent the air flows west"), West.X < -10.0);
+		TestTrue(TEXT("Above the vent the air rises"), Up.Z > 10.0);
+		TestTrue(TEXT("Air slows with distance from the vent"), FlowAt(Result, FIntVector(-7, 0, 0)).Size() < West.Size());
+
+		// The same source with negative outflow sucks air in.
+		Vent.Outflow = -100.0;
+		const FResult Sink = RunFlow(StillAirSettings(), Cell, MakeSources({ Vent }));
+		TestTrue(TEXT("East of a sink the air flows west, into it"), FlowAt(Sink, FIntVector(-2, 0, 0)).X < -10.0);
+	}
+	{
+		// A vortex about +Z: counter-clockwise seen from above.
+		FSourceSpec Vortex;
+		Vortex.Location = FVector(-400.0, 0.0, 0.0);
+		Vortex.Radius = 300.0;
+		Vortex.Swirl = 100.0;
+		const FResult Result = RunFlow(StillAirSettings(), Cell, MakeSources({ Vortex }));
+		UTEST_TRUE(TEXT("Swirl flow reads"), Result.bFlowReads);
+		const FVector East = FlowAt(Result, FIntVector(-2, 0, 0)), North = FlowAt(Result, FIntVector(-4, 2, 0));
+		AddInfo(FString::Printf(TEXT("swirl east %s north %s"), *East.ToString(), *North.ToString()));
+		TestTrue(TEXT("East of the vortex the air goes north (+Y)"), East.Y > 10.0);
+		TestTrue(TEXT("North of the vortex the air goes west (-X)"), North.X < -10.0);
+		TestTrue(TEXT("A vortex about Z does not lift the air"), FMath::Abs(East.Z) < 1.0);
+	}
+	{
+		// A fan pushing along world +Y, and a fan pushing along its own X turned a quarter about Z: both blow +Y.
+		FSourceSpec Fan;
+		Fan.Location = FVector(-400.0, 0.0, 0.0);
+		Fan.Force = FVector(0.0, 100.0, 0.0);
+		const FResult World = RunFlow(StillAirSettings(), Cell, MakeSources({ Fan }));
+		const FVector AtWorldFan = FlowAt(World, FIntVector(-4, 0, 0));
+		Fan.Force = FVector(100.0, 0.0, 0.0);
+		Fan.Rotation = FRotator(0.0, 90.0, 0.0);
+		UPCGVoxelAirFlowSettings* PointSpace = StillAirSettings();
+		PointSpace->ForceSpace = EPCGVoxelFlowSourceSpace::Point;
+		const FVector AtPointFan = FlowAt(RunFlow(PointSpace, Cell, MakeSources({ Fan })), FIntVector(-4, 0, 0));
+		AddInfo(FString::Printf(TEXT("fan world %s point %s"), *AtWorldFan.ToString(), *AtPointFan.ToString()));
+		TestTrue(TEXT("A world fan blows along its Force"), AtWorldFan.Y > 20.0);
+		TestTrue(TEXT("A Point-space fan blows along its turned forward"), AtPointFan.Y > 20.0 && FMath::Abs(AtPointFan.X) < 0.2 * AtPointFan.Y);
+		TestTrue(TEXT("World and turned Point-space fans agree"), AtWorldFan.Equals(AtPointFan, 1.0));
+	}
+	{
+		// Sources add to the wind.
+		FSourceSpec Vent;
+		Vent.Location = FVector(-400.0, 0.0, 0.0);
+		Vent.Outflow = 100.0;
+		UPCGVoxelAirFlowSettings* Windy = StillAirSettings();
+		Windy->Wind.Constant = FVector(100.0, 0.0, 0.0);
+		const FResult Result = RunFlow(Windy, Cell, MakeSources({ Vent }));
+		TestTrue(TEXT("Downwind of a vent the air is faster than the wind"), FlowAt(Result, FIntVector(-2, 0, 0)).X > 105.0);
+		TestTrue(TEXT("Upwind of a vent the air is slower than the wind"), FlowAt(Result, FIntVector(-6, 0, 0)).X < 95.0);
+	}
+	{
+		// With no wind, exposure is measured against the strongest source: a fan aimed at the cell hits its west side.
+		FSourceSpec Fan;
+		Fan.Location = FVector(-300.0, 0.0, 0.0);
+		Fan.Radius = 400.0;
+		Fan.Force = FVector(100.0, 0.0, 0.0);
+		const FResult Result = RunFlow(StillAirSettings(), Cell, MakeSources({ Fan }));
+		UTEST_NOT_NULL(TEXT("Cells came out"), Result.Cells);
+		const double Exposure = ValueOf<double>(Result.Cells, TEXT("WindExposure"), 0, -1.0);
+		AddInfo(FString::Printf(TEXT("fan exposure %.3f"), Exposure));
+		TestTrue(TEXT("A fan aimed at a cell exposes it"), Exposure > 0.3 && Exposure <= 1.0);
+	}
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FPCGVoxelAirFlowSourceErrorsTest,
+	"PCGUtils.Voxel.AirFlow.SourceErrors",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::ProductFilter)
+
+bool FPCGVoxelAirFlowSourceErrorsTest::RunTest(const FString&)
+{
+	using namespace PCGVoxelAirFlowTests;
+	const UPCGPointArrayData* Cell = MakeVoxels({ FIntVector(0, 0, 0) });
+	{
+		FSourceSpec Bare;
+		AddExpectedError(TEXT("Sources input 0: none of Force Attribute 'FlowForce', Outflow Attribute 'FlowOutflow' and Swirl Attribute 'FlowSwirl' exists on its points"),
+			EAutomationExpectedErrorFlags::Contains, 1, false);
+		TestNull(TEXT("A source with no effect attribute gives no flow"), RunFlow(StillAirSettings(), Cell, MakeSources({ Bare })).Flow);
+	}
+	{
+		FSourceSpec Flat;
+		Flat.Radius = 0.0;
+		Flat.Outflow = 10.0;
+		AddExpectedError(TEXT("Sources input 0: point 0: its largest scaled half-size is 0"), EAutomationExpectedErrorFlags::Contains, 1, false);
+		TestNull(TEXT("A source with no bounds gives no flow"), RunFlow(StillAirSettings(), Cell, MakeSources({ Flat })).Flow);
+	}
+	{
+		FSourceSpec Vent;
+		Vent.Outflow = 10.0;
+		UPCGVoxelAirFlowSettings* Settings = StillAirSettings();
+		Settings->bRadiusFromBounds = false;
+		AddExpectedError(TEXT("Radius Attribute 'FlowRadius' does not exist on the points."), EAutomationExpectedErrorFlags::Contains, 1, false);
+		TestNull(TEXT("A missing radius attribute gives no flow"), RunFlow(Settings, Cell, MakeSources({ Vent })).Flow);
 	}
 	return true;
 }

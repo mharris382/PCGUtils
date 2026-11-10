@@ -14,7 +14,30 @@ namespace PCGVoxelAirFlowPins
 {
 	const FName Flow = TEXT("Flow");
 	const FName Cells = TEXT("Cells");
+	const FName Sources = TEXT("Sources");
 }
+
+/** How a flow source's effect fades from its centre to its Radius. */
+UENUM(BlueprintType)
+enum class EPCGVoxelFlowFalloff : uint8
+{
+	/** Full at the centre, easing to 0 at the Radius with no hard edge: (1 - (d/r)^2)^2. */
+	Smooth,
+	/** Straight line from full at the centre to 0 at the Radius. */
+	Linear,
+	/** Full everywhere inside the Radius, nothing outside. */
+	Constant,
+};
+
+/** The axes a flow source's Force is given in. */
+UENUM(BlueprintType)
+enum class EPCGVoxelFlowSourceSpace : uint8
+{
+	/** World axes: every source pushes along its Force as written. */
+	World,
+	/** The source point's own axes: Force (1, 0, 0) pushes along the point's forward, so turning the point aims it. */
+	Point,
+};
 
 /**
  * Wind blowing past a voxel set. The air around the set is cut into air cells (one or more voxels each) and a smooth
@@ -49,7 +72,8 @@ public:
 
 	/**
 	 * The wind far from the solids: its direction, with its length as the speed (any unit; the flow comes out in the
-	 * same unit). Must not be zero. @Data mode reads a Vector (default @Data.Wind) from each set.
+	 * same unit). May be zero only when the Sources pin has data (sources alone drive the air). @Data mode reads a
+	 * Vector (default @Data.Wind) from each set.
 	 */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Wind", meta=(PCG_Overridable))
 	FPCGUtilsInputShorthandVector Wind;
@@ -69,13 +93,61 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Wind", meta=(PCG_Overridable, ClampMin="0", ClampMax="1"))
 	double WakeStrength = 0.8;
 
-	/** Swirl strength, as a fraction of the wind speed. 0 (default) is no turbulence. Seeded by the node seed. */
+	/** Swirl strength, as a fraction of the wind speed (or of the strongest source when there is no wind). 0 (default) is no turbulence. Seeded by the node seed. */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Wind", meta=(PCG_Overridable, ClampMin="0"))
 	double TurbulenceStrength = 0.0;
 
 	/** Rough size of one swirl, in world units (grid space). Must be greater than 0 when Turbulence Strength is on. */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Wind", meta=(PCG_Overridable, ClampMin="0", EditCondition="TurbulenceStrength > 0"))
 	double TurbulenceSize = 800.0;
+
+	// ---- Sources ----
+
+	/**
+	 * Sources pin. Optional point attribute (Vector): a push along this vector (fan, jet), in Force Space, with its
+	 * length as the speed it adds at the centre. The solve keeps the push but sends the air round in a loop, so a jet
+	 * also pulls air in behind it.
+	 */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Sources", meta=(PCG_Overridable))
+	FName ForceAttribute = TEXT("FlowForce");
+
+	/** The axes Force Attribute is in: World, or each source point's own rotation (turn the point to aim it). */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Sources", meta=(PCG_Overridable))
+	EPCGVoxelFlowSourceSpace ForceSpace = EPCGVoxelFlowSourceSpace::World;
+
+	/**
+	 * Sources pin. Optional point attribute (Double): air made (positive, a vent) or taken away (negative, suction)
+	 * at the source, as the outward speed the air would have at the Radius with nothing in the way. Unlike Force this
+	 * is fed into the solve itself, so the air really leaves (or arrives) through the open edges of the air box.
+	 */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Sources", meta=(PCG_Overridable))
+	FName OutflowAttribute = TEXT("FlowOutflow");
+
+	/**
+	 * Sources pin. Optional point attribute (Double): swirl speed about the source point's up axis (its local Z), turning
+	 * counter-clockwise seen from above for positive values. Tilt the point to tilt the vortex.
+	 */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Sources", meta=(PCG_Overridable))
+	FName SwirlAttribute = TEXT("FlowSwirl");
+
+	/**
+	 * On (default): a source's Radius is its point's largest scaled half-size (the box you see). Off: Radius
+	 * Attribute is read instead.
+	 */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Sources", meta=(PCG_Overridable))
+	bool bRadiusFromBounds = true;
+
+	/** Sources pin, Radius From Bounds off only. Point attribute (Double, greater than 0): how far each source reaches. Required then. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Sources", meta=(PCG_Overridable, EditCondition="!bRadiusFromBounds"))
+	FName RadiusAttribute = TEXT("FlowRadius");
+
+	/** How each source fades from its centre to its Radius. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Sources", meta=(PCG_Overridable))
+	EPCGVoxelFlowFalloff SourceFalloff = EPCGVoxelFlowFalloff::Smooth;
+
+	/** Multiplies every source's Force, Outflow and Swirl. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Sources", meta=(PCG_Overridable))
+	double SourceStrength = 1.0;
 
 	// ---- Air ----
 
@@ -163,9 +235,10 @@ public:
 	bool bWriteExposure = true;
 
 	/**
-	 * Cells points: how hard the wind hits the point's open sides (Double, 0 to 1), for its most hit side: how square
-	 * the side faces the wind, times how open the air outside it is (1 - Shelter). 1 for a wall square on to the open
-	 * wind, 0 for downwind, edge-on and fully sheltered sides. Uses the wind shadow, so Wake Length 0 gives facing only.
+	 * Cells points: how hard the air hits the point's open sides (Double, 0 to 1), for its most hit side: the starting
+	 * air (wind less its shadow, plus source pushes, before the solve bends it) blowing into that side, over the
+	 * reference speed (the wind speed, or the strongest source when there is no wind). 1 for a wall square on to the
+	 * open wind, 0 for downwind, edge-on and fully sheltered sides.
 	 */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Cells Output", meta=(PCG_Overridable, EditCondition="bWriteExposure"))
 	FName ExposureAttribute = TEXT("WindExposure");
