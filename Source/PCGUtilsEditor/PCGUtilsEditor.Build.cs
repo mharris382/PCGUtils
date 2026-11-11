@@ -21,6 +21,7 @@ public class PCGUtilsEditor : ModuleRules
 				"PCGUtilsPainter",
 				"PCGUtilsTextures",
 				"PCGUtilsFracture",
+				"PCGUtilsVoxel",
                 "PCG",
                 "SlateCore",
                 "Slate",

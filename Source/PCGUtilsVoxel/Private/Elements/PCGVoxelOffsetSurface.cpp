@@ -5,6 +5,7 @@
 #include "Algo/Sort.h"
 #include "Async/ParallelFor.h"
 #include "Data/PCGBasePointData.h"
+#include "Details/PCGUtilsInputShorthands.h"
 #include "PCGContext.h"
 #include "PCGPin.h"
 #include "Spatial/PointHashGrid3.h"
@@ -37,43 +38,58 @@ namespace PCGVoxelOffsetSurfacePrivate
 		}
 	};
 
-	/**
-	 * One pass of a box dilation (any set cell within Radius along Axis) or erosion (every cell within Radius set) along
-	 * one axis. Cells outside the box count as empty.
-	 */
-	void BoxPass(FMask& Mask, int32 Axis, int32 Radius, bool bDilate)
+	/** Counts of empty cells over boxes in O(1): a summed-volume table over a mask's box. Outside the box is empty. */
+	struct FEmptyTable
 	{
-		const int32 N = Mask.Dims[Axis];
-		const int64 Stride = Axis == 0 ? 1 : (Axis == 1 ? Mask.Dims.X : static_cast<int64>(Mask.Dims.X) * Mask.Dims.Y);
-		const int32 A = (Axis + 1) % 3;
-		const int32 B = (Axis + 2) % 3;
-		const int32 NumLines = Mask.Dims[A] * Mask.Dims[B];
-		TArray<uint8> Out;
-		Out.SetNumZeroed(Mask.Bits.Num());
-		ParallelFor(NumLines, [&](int32 Line)
+		FIntVector Dims = FIntVector::ZeroValue; // the mask's dims; the table is one larger on each axis
+		TArray<int32> Sum;
+
+		int64 At(int32 X, int32 Y, int32 Z) const
 		{
-			FIntVector Start(0);
-			Start[A] = Line % Mask.Dims[A];
-			Start[B] = Line / Mask.Dims[A];
-			const int64 Base = Mask.Index(Mask.Min + Start);
-			TArray<int32, TInlineAllocator<256>> Prefix;
-			Prefix.SetNumUninitialized(N + 1);
-			Prefix[0] = 0;
-			for (int32 I = 0; I < N; ++I)
+			return X + static_cast<int64>(Dims.X + 1) * (Y + static_cast<int64>(Dims.Y + 1) * Z);
+		}
+
+		void Build(const FMask& Mask)
+		{
+			Dims = Mask.Dims;
+			Sum.SetNumZeroed(static_cast<int64>(Dims.X + 1) * (Dims.Y + 1) * (Dims.Z + 1));
+			for (int32 Z = 0; Z < Dims.Z; ++Z)
+				for (int32 Y = 0; Y < Dims.Y; ++Y)
+					for (int32 X = 0; X < Dims.X; ++X)
+					{
+						const int32 Empty = Mask.Bits[X + static_cast<int64>(Dims.X) * (Y + static_cast<int64>(Dims.Y) * Z)] ? 0 : 1;
+						Sum[At(X + 1, Y + 1, Z + 1)] = Empty
+							+ Sum[At(X, Y + 1, Z + 1)] + Sum[At(X + 1, Y, Z + 1)] + Sum[At(X + 1, Y + 1, Z)]
+							- Sum[At(X, Y, Z + 1)] - Sum[At(X, Y + 1, Z)] - Sum[At(X + 1, Y, Z)]
+							+ Sum[At(X, Y, Z)];
+					}
+		}
+
+		/** True when any cell within Reach of Local (box, per axis) is empty. */
+		bool AnyEmpty(const FIntVector& Local, const FIntVector& Reach) const
+		{
+			const FIntVector Lo = Local - Reach;
+			const FIntVector Hi = Local + Reach + FIntVector(1);
+			if (Lo.X < 0 || Lo.Y < 0 || Lo.Z < 0 || Hi.X > Dims.X || Hi.Y > Dims.Y || Hi.Z > Dims.Z)
 			{
-				Prefix[I + 1] = Prefix[I] + (Mask.Bits[Base + I * Stride] != 0);
+				return true;
 			}
-			for (int32 I = 0; I < N; ++I)
-			{
-				const int32 Lo = I - Radius;
-				const int32 Hi = I + Radius;
-				const int32 Count = Prefix[FMath::Min(Hi, N - 1) + 1] - Prefix[FMath::Max(Lo, 0)];
-				const bool bSet = bDilate ? Count > 0 : (Lo >= 0 && Hi < N && Count == 2 * Radius + 1);
-				Out[Base + I * Stride] = bSet ? 1 : 0;
-			}
-		});
-		Mask.Bits = MoveTemp(Out);
-	}
+			const int64 Count = static_cast<int64>(Sum[At(Hi.X, Hi.Y, Hi.Z)])
+				- Sum[At(Lo.X, Hi.Y, Hi.Z)] - Sum[At(Hi.X, Lo.Y, Hi.Z)] - Sum[At(Hi.X, Hi.Y, Lo.Z)]
+				+ Sum[At(Lo.X, Lo.Y, Hi.Z)] + Sum[At(Lo.X, Hi.Y, Lo.Z)] + Sum[At(Hi.X, Lo.Y, Lo.Z)]
+				- Sum[At(Lo.X, Lo.Y, Lo.Z)];
+			return Count > 0;
+		}
+	};
+
+	/** One input cell's offset: its sign, the reach in whole cells per axis and the fraction left over per axis. */
+	struct FCellOffset
+	{
+		int32 Sign = 0;
+		FIntVector Layers = FIntVector::ZeroValue;
+		FVector Fraction = FVector::ZeroVector;
+		FVector Magnitude = FVector::ZeroVector; // in cells per axis
+	};
 
 	/** A box inside one cell, in cell units relative to the cell centre (the whole cell is -0.5 to 0.5). */
 	struct FPiece
@@ -87,16 +103,17 @@ namespace PCGVoxelOffsetSurfacePrivate
 
 	/**
 	 * The part of a cell left after taking away, for each empty neighbour (offset D among the 26), every point within
-	 * Fraction of it (box distance), as the fewest boxes a greedy merge finds. Appends nothing when nothing is left.
+	 * Fraction of it (per axis, box distance), as the fewest boxes a greedy merge finds. Appends nothing when nothing is left.
 	 */
-	void CarveCell(const FPiece& Whole, double Fraction, TConstArrayView<FIntVector> EmptyNeighbours, TArray<FPiece>& Out)
+	void CarveCell(const FPiece& Whole, const FVector& Fraction, TConstArrayView<FIntVector> EmptyNeighbours, TArray<FPiece>& Out)
 	{
 		// Breakpoints per axis: the cell's faces and the planes Fraction in from each.
 		double Cuts[3][4];
 		int32 NumCuts[3];
 		for (int32 Axis = 0; Axis < 3; ++Axis)
 		{
-			double Raw[4] = { -0.5, 0.5 - Fraction, -0.5 + Fraction, 0.5 };
+			const double F = Fraction[Axis];
+			double Raw[4] = { -0.5, 0.5 - F, -0.5 + F, 0.5 };
 			for (double& V : Raw)
 			{
 				V = FMath::Clamp(V, -0.5, 0.5);
@@ -125,7 +142,7 @@ namespace PCGVoxelOffsetSurfacePrivate
 				bool bInside = true;
 				for (int32 Axis = 0; Axis < 3 && bInside; ++Axis)
 				{
-					bInside = D[Axis] > 0 ? C[Axis] > 0.5 - Fraction : (D[Axis] < 0 ? C[Axis] < -0.5 + Fraction : true);
+					bInside = D[Axis] > 0 ? C[Axis] > 0.5 - Fraction[Axis] : (D[Axis] < 0 ? C[Axis] < -0.5 + Fraction[Axis] : true);
 				}
 				if (bInside)
 				{
@@ -152,7 +169,6 @@ namespace PCGVoxelOffsetSurfacePrivate
 					}
 					int32 I1 = I + 1;
 					while (I1 < NX && Free(I1, J, K)) { ++I1; }
-					int32 J1 = J + 1;
 					auto RowFree = [&](int32 JJ, int32 KK)
 					{
 						for (int32 II = I; II < I1; ++II)
@@ -161,8 +177,8 @@ namespace PCGVoxelOffsetSurfacePrivate
 						}
 						return true;
 					};
+					int32 J1 = J + 1;
 					while (J1 < NY && RowFree(J1, K)) { ++J1; }
-					int32 K1 = K + 1;
 					auto SlabFree = [&](int32 KK)
 					{
 						for (int32 JJ = J; JJ < J1; ++JJ)
@@ -171,6 +187,7 @@ namespace PCGVoxelOffsetSurfacePrivate
 						}
 						return true;
 					};
+					int32 K1 = K + 1;
 					while (K1 < NZ && SlabFree(K1)) { ++K1; }
 					for (int32 KK = K; KK < K1; ++KK)
 						for (int32 JJ = J; JJ < J1; ++JJ)
@@ -183,6 +200,11 @@ namespace PCGVoxelOffsetSurfacePrivate
 	}
 }
 
+UPCGVoxelOffsetSurfaceSettings::UPCGVoxelOffsetSurfaceSettings()
+{
+	AmountScaleAttribute.SetAttributeName(TEXT("AmountScale"));
+}
+
 #if WITH_EDITOR
 FText UPCGVoxelOffsetSurfaceSettings::GetDefaultNodeTitle() const
 {
@@ -192,9 +214,10 @@ FText UPCGVoxelOffsetSurfaceSettings::GetDefaultNodeTitle() const
 FText UPCGVoxelOffsetSurfaceSettings::GetNodeTooltipText() const
 {
 	return LOCTEXT("Tooltip",
-		"Moves a voxel set's surface by Amount cells. The whole part adds or removes layers of cells; the fraction moves the "
-		"open faces of each cell (its point bounds). Corners stay square, and Split Inner Corners carves inside corners on a "
-		"shrink by splitting those cells into boxes. Out is In, expanded to one point per cell.");
+		"Moves a voxel set's surface by Amount x Amount Scale (cells or world units; the scale can be per cell from a point "
+		"attribute). The whole part adds or removes layers of cells; the fraction moves the open faces of each cell (its "
+		"point bounds). Corners stay square, and Split Inner Corners carves inside corners on a shrink by splitting those "
+		"cells into boxes. Out is In, expanded to one point per cell.");
 }
 #endif
 
@@ -235,20 +258,31 @@ bool FPCGVoxelOffsetSurfaceElement::ExecuteInternal(FPCGContext* Context) const
 		PCGLog::LogErrorOnGraph(PCGVoxel::FormatError(Title, InputIndex, Message), Context);
 	};
 
-	const double Amount = Settings->Amount;
-	if (!FMath::IsFinite(Amount))
+	if (!FMath::IsFinite(Settings->Amount))
 	{
 		Fail(LOCTEXT("AmountNotFinite", "Amount is not a finite number."));
 		return true;
 	}
-	const bool bGrow = Amount > 0.0;
-	const double Magnitude = FMath::Abs(Amount);
-	const int32 Layers = FMath::FloorToInt32(Magnitude + 1e-9);
-	double Fraction = Magnitude - Layers;
-	if (Fraction < 1e-9)
+	const bool bAttributeScale = Settings->AmountScaleInput == EPCGVoxelOffsetScaleInput::Attribute;
+	if (!bAttributeScale && !FMath::IsFinite(Settings->AmountScale))
 	{
-		Fraction = 0.0;
+		Fail(LOCTEXT("ScaleNotFinite", "Amount Scale is not a finite number."));
+		return true;
 	}
+
+	static const FIntVector Faces[6] = {
+		FIntVector(1, 0, 0), FIntVector(-1, 0, 0), FIntVector(0, 1, 0), FIntVector(0, -1, 0), FIntVector(0, 0, 1), FIntVector(0, 0, -1) };
+	auto IsSurface = [](const FMask& Mask, const FIntVector& Cell)
+	{
+		for (const FIntVector& Step : Faces)
+		{
+			if (!Mask.Get(Cell + Step))
+			{
+				return true;
+			}
+		}
+		return false;
+	};
 
 	const TArray<FPCGTaggedData> Inputs = Context->InputData.GetInputsByPin(PCGPinConstants::DefaultInputLabel);
 	for (int32 InputIndex = 0; InputIndex < Inputs.Num(); ++InputIndex)
@@ -271,53 +305,177 @@ bool FPCGVoxelOffsetSurfaceElement::ExecuteInternal(FPCGContext* Context) const
 			continue;
 		}
 
-		// ---- Dense box: the set's cells, padded by the grown layers plus one for neighbour checks ----
-		const int32 Pad = (bGrow ? Layers : 0) + 1;
-		FMask Source;
-		Source.Min = Grid.MinCell - FIntVector(Pad);
-		Source.Dims = Grid.MaxCell - Grid.MinCell + FIntVector(1 + 2 * Pad);
-		const int64 Count = static_cast<int64>(Source.Dims.X) * Source.Dims.Y * Source.Dims.Z;
-		if (Count > Settings->MaxCells)
+		// ---- Amount Scale: constant, one @Data value for the set, or one value per point ----
+		TArray<double> PointScale;
+		double SetScale = Settings->AmountScale;
+		if (bAttributeScale)
 		{
-			Fail(FText::Format(LOCTEXT("TooBig", "the box of cells to work over is {0} x {1} x {2} = {3} cells (the set's bounds plus {4} "
-				"layers each side), over Max Cells ({5}). Raise Max Cells, or split the set."),
-				Source.Dims.X, Source.Dims.Y, Source.Dims.Z, FText::AsNumber(Count), Pad, FText::AsNumber(Settings->MaxCells)), InputIndex);
+			const FPCGAttributePropertyInputSelector& Selector = Settings->AmountScaleAttribute;
+			FPCGMetadataDomainID Domain = Points->GetMetadataDomainIDFromSelector(Selector);
+			if (Domain == PCGMetadataDomainID::Default)
+			{
+				Domain = Points->GetDefaultMetadataDomainID();
+			}
+			if (Domain == PCGMetadataDomainID::Data)
+			{
+				FText Reason;
+				if (!PCGUtilsInputShorthands::ReadDataDomainValue(Points, Selector, SetScale, Reason))
+				{
+					Fail(FText::Format(LOCTEXT("ScaleDataRead", "Amount Scale Attribute: {0}."), Reason), InputIndex);
+					continue;
+				}
+				if (!FMath::IsFinite(SetScale))
+				{
+					Fail(FText::Format(LOCTEXT("ScaleDataNotFinite", "Amount Scale Attribute '{0}' is not a finite number."), Selector.GetDisplayText()), InputIndex);
+					continue;
+				}
+			}
+			else if (!PCGVoxelPointIO::ReadPointValues<double>(Context, Points, Selector, PointScale, Title, InputIndex,
+				LOCTEXT("ScaleSetting", "Amount Scale Attribute"), LOCTEXT("ScaleType", "a number")))
+			{
+				continue;
+			}
+		}
+
+		// ---- Each cell's offset, in cells per axis ----
+		const FVector UnitToCells = Settings->Units == EPCGVoxelOffsetUnits::Cells ? FVector(1.0) : FVector(1.0) / Grid.VoxelSize;
+		const FVector ReserveWeight = Settings->Units == EPCGVoxelOffsetUnits::Cells ? FVector(1.0) : Grid.VoxelSize;
+		TArray<FCellOffset> Offsets;
+		Offsets.SetNum(Grid.NumCells());
+		FIntVector GrowReach = FIntVector::ZeroValue;
+		bool bAnyLayers = false;
+		bool bBadScale = false;
+		for (int32 Index = 0; Index < Grid.NumCells() && !bBadScale; ++Index)
+		{
+			const int32 Point = Grid.CellPoint[Index];
+			const double Scale = PointScale.IsEmpty() ? SetScale : PointScale[Point];
+			const double Value = Settings->Amount * Scale;
+			if (!FMath::IsFinite(Value))
+			{
+				Fail(FText::Format(LOCTEXT("ScalePointNotFinite", "Amount Scale Attribute on point {0} is {1}; Amount x Amount Scale must be a finite number."),
+					Point, FText::AsNumber(Scale)), InputIndex);
+				bBadScale = true;
+				break;
+			}
+			FCellOffset& Offset = Offsets[Index];
+			Offset.Sign = Value > 0.0 ? 1 : (Value < 0.0 ? -1 : 0);
+			for (int32 Axis = 0; Axis < 3; ++Axis)
+			{
+				// Capped so the cast cannot overflow; Max Cells stops anything near the cap.
+				const double M = FMath::Min(FMath::Abs(Value) * UnitToCells[Axis], 1.0e6);
+				const int32 L = FMath::FloorToInt32(M + 1e-9);
+				Offset.Magnitude[Axis] = M;
+				Offset.Layers[Axis] = L;
+				Offset.Fraction[Axis] = M - L < 1e-9 ? 0.0 : M - L;
+			}
+			if (Offset.Layers != FIntVector::ZeroValue && Offset.Sign != 0)
+			{
+				bAnyLayers = true;
+				if (Offset.Sign > 0)
+				{
+					GrowReach = FIntVector(FMath::Max(GrowReach.X, Offset.Layers.X), FMath::Max(GrowReach.Y, Offset.Layers.Y), FMath::Max(GrowReach.Z, Offset.Layers.Z));
+				}
+			}
+		}
+		if (bBadScale)
+		{
 			continue;
 		}
+
+		// ---- Dense box: the set's cells, padded by the grown layers plus one for neighbour checks ----
+		const FIntVector Pad = GrowReach + FIntVector(1);
+		FMask Source;
+		Source.Min = Grid.MinCell - Pad;
+		const FIntVector Dims = Grid.MaxCell - Grid.MinCell + FIntVector(1) + Pad * 2;
+		const int64 Count = static_cast<int64>(Dims.X) * Dims.Y * Dims.Z;
+		if (Count > Settings->MaxCells)
+		{
+			Fail(FText::Format(LOCTEXT("TooBig", "the box of cells to work over is {0} x {1} x {2} = {3} cells (the set's bounds plus the grown "
+				"layers and one cell each side), over Max Cells ({4}). Raise Max Cells, or split the set."),
+				Dims.X, Dims.Y, Dims.Z, FText::AsNumber(Count), FText::AsNumber(Settings->MaxCells)), InputIndex);
+			continue;
+		}
+		if (Count >= MAX_int32)
+		{
+			Fail(FText::Format(LOCTEXT("TooBigHard", "the box of cells to work over is {0} cells; this node handles under 2^31."), FText::AsNumber(Count)), InputIndex);
+			continue;
+		}
+		Source.Dims = Dims;
 		Source.Bits.SetNumZeroed(Count);
 		for (const FIntVector& Cell : Grid.Cells)
 		{
 			Source.Bits[Source.Index(Cell)] = 1;
 		}
 
-		// ---- Whole layers: box dilation or erosion by Layers cells ----
+		// ---- Whole layers: each cell reaches Layers cells (a box) ----
+		// A shrinking cell goes when an empty cell is within its reach; a growing cell fills every empty cell within its
+		// reach, and an empty cell reached by several takes the one with the most reach to spare (then the closest).
 		FMask Result = Source;
-		if (Layers > 0)
+		TArray<int32> Origin; // per dense cell: the input cell that grew into it
+		if (bAnyLayers)
 		{
-			for (int32 Axis = 0; Axis < 3; ++Axis)
+			FEmptyTable Empty;
+			Empty.Build(Source);
+			ParallelFor(Grid.NumCells(), [&](int32 Index)
 			{
-				BoxPass(Result, Axis, Layers, bGrow);
+				const FCellOffset& Offset = Offsets[Index];
+				if (Offset.Sign < 0 && Offset.Layers != FIntVector::ZeroValue && Empty.AnyEmpty(Grid.Cells[Index] - Source.Min, Offset.Layers))
+				{
+					Result.Bits[Source.Index(Grid.Cells[Index])] = 0;
+				}
+			});
+
+			TArray<float> Reserve;
+			TArray<float> Distance;
+			for (int32 Index = 0; Index < Grid.NumCells(); ++Index)
+			{
+				const FCellOffset& Offset = Offsets[Index];
+				const FIntVector From = Grid.Cells[Index];
+				if (Offset.Sign <= 0 || Offset.Layers == FIntVector::ZeroValue || !Empty.AnyEmpty(From - Source.Min, Offset.Layers))
+				{
+					continue;
+				}
+				if (Origin.IsEmpty())
+				{
+					Origin.Init(INDEX_NONE, Count);
+					Reserve.Init(-1.0f, Count);
+					Distance.Init(0.0f, Count);
+				}
+				const FIntVector L = Offset.Layers;
+				for (int32 DZ = -L.Z; DZ <= L.Z; ++DZ)
+					for (int32 DY = -L.Y; DY <= L.Y; ++DY)
+						for (int32 DX = -L.X; DX <= L.X; ++DX)
+						{
+							const FIntVector Cell = From + FIntVector(DX, DY, DZ);
+							const int64 I = Source.Index(Cell);
+							if (Source.Bits[I])
+							{
+								continue;
+							}
+							const float Spare = static_cast<float>(FMath::Min3(
+								(Offset.Magnitude.X - FMath::Abs(DX)) * ReserveWeight.X,
+								(Offset.Magnitude.Y - FMath::Abs(DY)) * ReserveWeight.Y,
+								(Offset.Magnitude.Z - FMath::Abs(DZ)) * ReserveWeight.Z));
+							const float Dist = static_cast<float>((FVector(DX, DY, DZ) * Grid.VoxelSize).SizeSquared());
+							const bool bBetter = Origin[I] == INDEX_NONE || Spare > Reserve[I] + 1e-4f
+								|| (Spare > Reserve[I] - 1e-4f && Dist < Distance[I] - 1e-3f);
+							if (bBetter)
+							{
+								Origin[I] = Index;
+								Reserve[I] = Spare;
+								Distance[I] = Dist;
+								Result.Bits[I] = 1;
+							}
+						}
 			}
 		}
 
-		static const FIntVector Faces[6] = {
-			FIntVector(1, 0, 0), FIntVector(-1, 0, 0), FIntVector(0, 1, 0), FIntVector(0, -1, 0), FIntVector(0, 0, 1), FIntVector(0, 0, -1) };
-		auto IsSurface = [&](const FMask& Mask, const FIntVector& Cell)
-		{
-			for (const FIntVector& Step : Faces)
-			{
-				if (!Mask.Get(Cell + Step))
-				{
-					return true;
-				}
-			}
-			return false;
-		};
-
-		// ---- Which result cells need values from the nearest cell of the old surface ----
-		const bool bPush = !bGrow && Layers > 0 && Settings->RemovedCells == EPCGVoxelOffsetRemovedCells::Push;
+		// ---- Result cells: whose values and whose offset each takes ----
+		const bool bPush = Settings->RemovedCells == EPCGVoxelOffsetRemovedCells::Push;
 		TArray<FIntVector> ResultCells;
-		TArray<int32> Own; // the In point on the cell, or INDEX_NONE when it needs the nearest
+		TArray<int32> OffsetOf; // index into Grid.Cells / Offsets
+		TArray<int32> Own; // the In point copied, or INDEX_NONE when it needs the nearest old surface cell (Push)
+		TArray<bool> Added;
 		for (int64 I = 0; I < Count; ++I)
 		{
 			if (!Result.Bits[I])
@@ -325,13 +483,23 @@ bool FPCGVoxelOffsetSurfaceElement::ExecuteInternal(FPCGContext* Context) const
 				continue;
 			}
 			const FIntVector Cell = Result.Cell(I);
-			int32 Point = Source.Bits[I] ? Grid.FindPoint(Cell) : INDEX_NONE;
-			if (bPush && IsSurface(Result, Cell))
+			if (Source.Bits[I])
 			{
-				Point = INDEX_NONE;
+				const int32 Index = Grid.FindCellIndex(Cell);
+				const bool bExposed = bPush && IsSurface(Result, Cell) && !IsSurface(Source, Cell);
+				ResultCells.Add(Cell);
+				OffsetOf.Add(Index);
+				Own.Add(bExposed ? INDEX_NONE : Grid.CellPoint[Index]);
+				Added.Add(false);
 			}
-			ResultCells.Add(Cell);
-			Own.Add(Point);
+			else
+			{
+				const int32 From = Origin[I];
+				ResultCells.Add(Cell);
+				OffsetOf.Add(From);
+				Own.Add(Grid.CellPoint[From]);
+				Added.Add(true);
+			}
 		}
 
 		TArray<int32> Needing;
@@ -344,7 +512,7 @@ bool FPCGVoxelOffsetSurfaceElement::ExecuteInternal(FPCGContext* Context) const
 		}
 		if (!Needing.IsEmpty())
 		{
-			// The nearest cell of a set to any cell outside it is on its surface, so only surface cells are searched.
+			// Push: the nearest cell of the old surface, by centre distance.
 			TArray<FIntVector> SurfaceCells;
 			for (const FIntVector& Cell : Grid.Cells)
 			{
@@ -391,27 +559,28 @@ bool FPCGVoxelOffsetSurfaceElement::ExecuteInternal(FPCGContext* Context) const
 		// ---- The fraction: per result cell, its box (or boxes) ----
 		TArray<FPiece> Pieces;
 		Pieces.Reserve(ResultCells.Num());
-		TArray<FIntVector, TInlineAllocator<26>> Empty;
+		TArray<FIntVector, TInlineAllocator<26>> EmptyNeighbours;
 		for (int32 Index = 0; Index < ResultCells.Num(); ++Index)
 		{
 			const FIntVector& Cell = ResultCells[Index];
+			const FCellOffset& Offset = Offsets[OffsetOf[Index]];
 			FPiece Whole;
 			Whole.Cell = Cell;
 			Whole.Source = Own[Index];
-			Whole.bFreshEntry = bGrow && !Source.Get(Cell) && Settings->AddedValues == EPCGVoxelOffsetAddedValues::None;
-			if (Fraction == 0.0)
+			Whole.bFreshEntry = Added[Index] && Settings->AddedValues == EPCGVoxelOffsetAddedValues::None;
+			if (Offset.Sign == 0 || Offset.Fraction.IsZero())
 			{
 				Pieces.Add(Whole);
 				continue;
 			}
-			const double Signed = bGrow ? Fraction : -Fraction;
-			bool bAnyEmpty = false;
+			const bool bGrow = Offset.Sign > 0;
 			for (int32 Axis = 0; Axis < 3; ++Axis)
 			{
+				const double F = bGrow ? Offset.Fraction[Axis] : -Offset.Fraction[Axis];
 				FIntVector Step(0);
 				Step[Axis] = 1;
-				if (!Result.Get(Cell + Step)) { Whole.Hi[Axis] += Signed; bAnyEmpty = true; }
-				if (!Result.Get(Cell - Step)) { Whole.Lo[Axis] -= Signed; bAnyEmpty = true; }
+				if (!Result.Get(Cell + Step)) { Whole.Hi[Axis] += F; }
+				if (!Result.Get(Cell - Step)) { Whole.Lo[Axis] -= F; }
 			}
 			if (bGrow || !Settings->bSplitInnerCorners)
 			{
@@ -421,8 +590,8 @@ bool FPCGVoxelOffsetSurfaceElement::ExecuteInternal(FPCGContext* Context) const
 				}
 				continue;
 			}
-			// Shrinking with inside corners: carve the parts within Fraction of every empty neighbour.
-			Empty.Reset();
+			// Shrinking with inside corners: carve the parts within the fraction of every empty neighbour.
+			EmptyNeighbours.Reset();
 			for (int32 Z = -1; Z <= 1; ++Z)
 				for (int32 Y = -1; Y <= 1; ++Y)
 					for (int32 X = -1; X <= 1; ++X)
@@ -430,18 +599,18 @@ bool FPCGVoxelOffsetSurfaceElement::ExecuteInternal(FPCGContext* Context) const
 						const FIntVector D(X, Y, Z);
 						if (D != FIntVector::ZeroValue && !Result.Get(Cell + D))
 						{
-							Empty.Add(D);
+							EmptyNeighbours.Add(D);
 						}
 					}
-			if (Empty.IsEmpty())
-			{
-				Pieces.Add(Whole);
-				continue;
-			}
 			FPiece Cube = Whole;
 			Cube.Lo = FVector(-0.5);
 			Cube.Hi = FVector(0.5);
-			CarveCell(Cube, Fraction, Empty, Pieces);
+			if (EmptyNeighbours.IsEmpty())
+			{
+				Pieces.Add(Cube);
+				continue;
+			}
+			CarveCell(Cube, Offset.Fraction, EmptyNeighbours, Pieces);
 		}
 
 		// ---- Write ----

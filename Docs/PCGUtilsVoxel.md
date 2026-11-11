@@ -140,6 +140,7 @@ first cell's values. A test checks it.
 | 1 | `Voxel \| Rasterize` | A DynMesh or a closed point path to cells: Fill, Intersect and Surround modes, on its own grid or another set's (section 4g). |
 | 1 | `Voxel \| Boolean` | Union, intersect or subtract voxel sets by cell index; Out is In, mutated (section 4h). |
 | 1 | `Voxel \| Offset Surface` | Moves the surface by Amount cells: whole layers added or removed, the fraction on the open faces (bounds), inside corners split (section 4i). |
+| 1 | `Voxel \| Match Rules` | Rule tiles: ordered rules (open faces, thin) that may turn to fit; turns each cell's point and writes a mesh index for a collection downstream (section 4j). |
 | 1 | `Voxel \| Expand` | Turns chunks back into one point per cell (section 1.2). |
 | 1 | `Voxel \| Pack Points` | Packs loose points into free cells of a voxel grid, fully or part way, without overlaps (section 4). |
 | 1 | `Voxel \| Cell Properties` | Writes per-cell attributes: open sides, surrounded, inside corners, neighbourhood, depth, column and components (section 4b). Replaces the planned `Voxel \| Neighbors`. |
@@ -660,10 +661,21 @@ the bounds (`BoundsMax += PositiveOpenSides * Amount`, `BoundsMin += NegativeOpe
 under one cell, and leaves inside-corner cells sticking out on a shrink. This node knows the grid, so the offset can
 be any size and corners come out right. It takes over the planned phase-2 `Dilate / Erode`.
 
-- `Amount` (cells, default 0.25): positive grows, negative shrinks. It is a box (L-infinity) offset of the whole set:
-  the whole part is a box dilation or erosion by that many layers (separable passes over a dense box, so corners
-  stay square), and the fraction then moves the open faces of the cells that are left. `-1.25` removes one layer and
-  pulls the new surface in a quarter cell; a 5x5x5 block becomes a 2.5-cell cube.
+- `Amount` (default 0.25) x `Amount Scale`: positive grows, negative shrinks. With one value for the set it is a box
+  (L-infinity) offset of the whole set: the whole part adds or removes that many layers (corners stay square), and
+  the fraction then moves the open faces of the cells that are left. `-1.25` removes one layer and pulls the new
+  surface in a quarter cell; a 5x5x5 block becomes a 2.5-cell cube.
+- `Units` (added 2026-11-10 on request): **Cells** (default; 1 is one cell width per axis) or **Absolute** (world
+  units, turned into cells per axis by Voxel Size, so non-cubic cells get per-axis layers and fractions).
+- `Amount Scale Input`: **Constant** (`Amount Scale`, default 1, so it changes nothing) or **Attribute**
+  (`Amount Scale Attribute`, default `AmountScale`, any number). A point attribute or property gives each cell its own
+  scale, for falloff and masking (0 leaves a cell alone, negative flips it; a chunk's cells share its value); an
+  `@Data` attribute gives one value for the set (read like the shorthand settings). Per cell, each cell's own value
+  decides: a shrinking cell goes when an empty cell is within its reach (box, per axis; a summed-volume table of the
+  empty cells answers it in O(1)); a growing cell fills every empty cell within its reach (stamped, so cost is cells
+  times reach cubed), and an empty cell reached by several copies the one with the most reach to spare, then the
+  closest. Added cells take the fraction of the cell that grew them. Growth fills only cells empty in the input, not
+  cells a neighbour removed. With one value everywhere this is exactly the box offset above.
 - **Fraction.** Written to the point bounds: the point stays on its cell centre and its bounds cover the box (in the
   point's frame: its rotation and scale are allowed for). Any bounds the input had are replaced. Growing never needs
   splitting (at an inside corner the two grown faces overlap inside the solid). Shrinking with `Split Inner Corners`
@@ -672,16 +684,115 @@ be any size and corners come out right. It takes over the planned phase-2 `Dilat
   (up to 3x3x3 pieces), and the kept pieces are merged greedily into the fewest boxes found (an inside edge gives 2, an
   inside corner 3). Each box is a point copied from the cell. Off: one box per cell, open faces only (the old look).
 - `Removed Cells` (negative, a cell or more): **Delete** (default) keeps each remaining cell's own values; **Push**
-  gives each cell of the new surface the values of the nearest cell of the old surface, so the surface sinks with its
+  gives each newly exposed cell the values of the nearest cell of the old surface (hash grid, then a scan), so the surface sinks with its
   look. The geometry is the same.
-- `Added Values` (positive, a cell or more): **Nearest** (default; nearest old surface cell, by centre distance: hash
-  grid, then a scan) or **None** (default attributes; native properties still from the nearest).
+- `Added Values` (positive, a cell or more): **Nearest** (default; the cell that grew into it) or **None** (default
+  attributes; native properties still from that cell).
 - Out: In, mutated (CLAUDE.md rule): metadata, tags and `@Data` kept, chunks expanded to one point per cell (the span
   attribute removed), cells ordered Z, Y, X. Without split cells it is still a valid voxel set whose bounds are surface
   offsets (`Voxel | To DynMesh` with Surface Offset From Point Bounds meshes it). With split cells a cell has several
   points, so other Voxel nodes reject it as duplicate cells: it is for spawning meshes.
 - Error when the box worked over (bounds plus grown layers plus one) is over `Max Cells` (default 64M), naming its
   size.
+
+## 4j. Voxel | Match Rules (rule tiles)
+
+Designed with the designer on 2026-11-10; first version built the same day. The 2D rule-tile idea in 3D, with a
+designer-sized vocabulary: rules say which surface shape a mesh fits and how far it may turn to be reused, the node
+finds the rotation, turns the point and writes a mesh index. Fitting and picking the actual mesh stay downstream
+(for example a PCGEx mesh collection read by index, where several equivalent meshes can share one index and be
+randomized). The mesh itself is never part of the mapping: the artist builds each mesh to one written convention
+("the edge mesh is open on +Y and +Z") and gives it the matching index.
+
+**Mesh space.** Every rule is written in the mesh's own frame: +Z is the mesh's up, and the side layouts below start
+at +Y (the designer's "Y forward"; a wall mesh is open on +Y, with X along the wall). The node tests the rule against
+the cell turned into that frame.
+
+### 4j.1 Three layers, all plain structs
+
+The customization belongs to the struct types, not to an asset, so rules work wherever a struct can live: node
+settings, graph parameters, Blueprint variables, data assets.
+
+| Layer | Struct | Holds |
+|---|---|---|
+| Rule | `FPCGVoxelRule` (base; instanced) | One condition, with `Invert`. Types so far: **Faces** and **Thin**. New types (Gap, attribute compare) are new structs, so the format does not change. |
+| Compound rule | `FPCGVoxelCompoundRule` | Rules that must all pass, plus `Turns`, `Prefer Up` and `Spin`. All its rules are tested under one shared rotation (so a later "gap on +Y" check turns with the pattern). No rules = matches every cell. |
+| Mapping | `FPCGVoxelRuleMapping` | Ordered entries: `Name`, `Enabled`, `Mesh Index`, compound rule. Tried top to bottom, first match wins. The index is on the entry, not the compound, so one compound can feed different indices in different mappings; OR is two entries with the same index. |
+
+`UPCGVoxelRuleMappingAsset` (a data asset) only wraps one mapping for sharing.
+
+### 4j.2 Rule types
+
+- **Faces.** `Up (+Z)` and `Down (-Z)`: Any / Empty (open) / Filled (closed). `Sides`: Any, None, One, Two Adjacent,
+  Two Opposite, Three, Four, or Custom (then `+Y`, `+X`, `-Y`, `-X` each Any / Empty / Filled). Canonical layouts:
+  One = +Y open; Two Adjacent = +Y and +X; Two Opposite = +Y and -Y; Three = all but -X. Up/Down x Sides gives the
+  24 shapes that are distinct when only turns about up are allowed; under all 24 rotations they fall into 10 (inside,
+  face, edge, slab, corner, U, tube, fin, cap, lone cell).
+- **Thin.** Both faces of one axis open. `Axis`: Any, Up/Down (Z), X, Y, or Either Side (X or Y). With `Invert` it
+  excludes thin cells. Your "thin tiles get the default cube" test is one entry, Thin Any, placed first.
+
+### 4j.3 Turns and orientation
+
+- `Turns`: **Exact** (as drawn), **About Up** (4 yaws; default, floors stay floors), **About Up + Flip** (8: ceiling
+  and floor share a mesh), **Any** (all 24 cube rotations: an edge mesh fits vertical edges too). Mirrors are not
+  included (they would need negative scale).
+- When several rotations match (a floor matches all 4 yaws), `Prefer Up` (default on) keeps those whose mesh up is
+  nearest world up. That gives walls the convention for free: mesh +Y out of the wall, Z up, X along it.
+- `Spin` settles what is left: **Fixed** (the first in a fixed order: identity, then the yaws, then the flips, then
+  the rest) or **Random** (one of the tied rotations per cell, from the node seed and the cell's seed; breaks up
+  tiling on floors and ceilings).
+
+### 4j.4 Text form
+
+Every layer round-trips to one line of text, for copy and paste, diffs, graph parameters and attributes (a string
+travels anywhere). The node's `Rules Source: Text` parses it; parse errors name the line and the token.
+
+```
+# Index Name: rules | settings
+0 Corner: +Z=E Sides=TwoAdjacent | Turns=Any
+1 Thin: Thin=Any | Turns=Exact
+2 Floor: +Z=E -Z=F Sides=None | Turns=Up Spin=Random
+3 Wall: +Z=F -Z=F +Y=E +X=* -Y=F -X=* | Turns=Up
+9 Default: | Turns=Exact
+```
+
+- Faces tokens: `+Z`, `-Z`, `+Y`, `+X`, `-Y`, `-X` = `E` (empty, open), `F` (filled) or `*` (any); `Sides=None |
+  One | TwoAdjacent | TwoOpposite | Three | Four | Any`. Loose face tokens form one Faces rule; braces make more,
+  `!{...}` inverts one.
+- Thin: `Thin=Any | Z | X | Y | Sides`, `!Thin=...` inverted.
+- Settings: `Turns=Exact | Up | UpFlip | Any`, `PreferUp=Yes | No`, `Spin=Fixed | Random`. Defaults: Turns Up,
+  PreferUp Yes, Spin Fixed. The name is one word and optional (`3: ...`).
+
+### 4j.5 The node
+
+- In: voxel sets (chunks are expanded, one point per cell).
+- `Rules Source`: **Inline** (a mapping struct on the node; default), **Asset** (`Rules Asset`) or **Text**
+  (`Rules Text`).
+- `Drop Inside Cells` (default on): cells with no open face are left out of every output (they are never seen).
+- `Unmatched`: **Pin** (default; to the Unmatched output, for the default cube) / **Keep** (in Out with index -1) /
+  **Drop**.
+- Out: In, mutated: metadata, tags, `@Data` kept. Each matched point is turned to grid rotation x the rule's
+  rotation, stays on its cell centre, and gets bounds covering its cell in its own (turned) frame, so non-cubic cells
+  fit. `Mesh Index Attribute` (int32, default `MeshIndex`) and `Rule Index Attribute` (int32, default `RuleIndex`,
+  the entry's position) are written, -1 when unmatched. Unmatched points keep their rotation and bounds.
+- Speed: only the open-face mask (6 bits) decides a match today, so the node solves all 64 masks once and looks each
+  cell up.
+- Validation, each its own error: no asset, an empty rule (instanced struct with no type), a negative mesh index
+  (naming the entry), a text parse error (line and token), empty or clashing attribute names.
+
+### 4j.6 Editor
+
+The compound rule and the mapping entry show their one-line text in the collapsed row header, wherever they appear.
+Planned: a 3x3x3 neighbour picker on the Faces rule, the text line editable both ways, named shape presets, and a
+preview with meshes in the asset editor.
+
+### 4j.7 Next, after the designer sees it live
+
+1. **Gap**: per open face, empty cells before the next filled one, up to `Max Gap` (one tile of air = 1); also as a
+   Cell Properties output (`GapUp`, `GapDown`). Gap rules turn with the compound. Matching then needs more than the
+   64-mask table.
+2. Edge and corner neighbours in the Faces pattern (inner corners).
+3. Attribute-compare rules (surface area, chunk volume, Depth, Component Size).
 
 ## 4d. Shared voxel grid (design, not built)
 
@@ -766,8 +877,11 @@ a cell hash.
 - `Public/Voxel/PCGVoxelGrid.h` holds the contract, validation and cell lookup.
 - `Public/Voxel/PCGVoxelMesher.h` holds the faces → mesh core. It is plain C++, so it can be tested without a graph.
   The bevel path is `Private/Voxel/PCGVoxelBevelMesher.cpp` (`PCGVoxelMesher::BuildBeveledMesh`).
-- `Public/Elements/PCGVoxelToDynMesh.h`, `PCGVoxelPackPoints.h`, `PCGVoxelCompress.h`, `PCGVoxelExpand.h`, `PCGVoxelCellProperties.h`, `PCGVoxelShiftSeams.h`, `PCGVoxelTransformGrid.h`, `PCGVoxelAirFlow.h`, `PCGVoxelRasterize.h`, `PCGVoxelBoolean.h`, `PCGVoxelOffsetSurface.h`. All derive from `UPCGSettings`, so each overrides
+- `Public/Elements/PCGVoxelToDynMesh.h`, `PCGVoxelPackPoints.h`, `PCGVoxelCompress.h`, `PCGVoxelExpand.h`, `PCGVoxelCellProperties.h`, `PCGVoxelShiftSeams.h`, `PCGVoxelTransformGrid.h`, `PCGVoxelAirFlow.h`, `PCGVoxelRasterize.h`, `PCGVoxelBoolean.h`, `PCGVoxelOffsetSurface.h`, `PCGVoxelMatchRules.h`. All derive from `UPCGSettings`, so each overrides
   `GetType()` (or they land in `Generic`). Add the `Voxel` category to the `PCGUtils.Palette.SearchContract` test.
+- `Public/Voxel/PCGVoxelRules.h` holds the rule structs (rule, compound rule, mapping, mapping asset), the 24
+  rotations, the 64-mask match table and the text form. `PCGUtilsEditor` depends on `PCGUtilsVoxel` only for the rule
+  header customization (`PCGVoxelRuleCustomization`).
 - `PCGUtilsDynMesh` must not depend on `PCGUtilsVoxel`; the dependency only runs Voxel → DynMesh.
 - Tests in `Private/Tests/`:
   - contract errors, one per invariant;
@@ -821,7 +935,15 @@ a cell hash.
     only; -0.5 removes a lone cell; an L's corner cell splits in 2 and a notched block's middle cell in 3, with the exact
     inset volume, and no split keeps the notch; -1 on 5x5x5 leaves the inner 27 (Delete keeps Ids, Push gives the new
     surface the old surface's), -1.25 gives a 2.5 cube, +1.5 on a cell a 4 cube with Ids copied (None: defaults);
-    a chunk expands with the shared face unmoved; Max Cells error;
+    a chunk expands with the shared face unmoved; Max Cells error; Absolute 25 = 0.25 cells; Amount Scale 2;
+    per-cell scales 0 / 1 / -1 on a row; per-cell whole layers grow only the scaled cell and copy it; @Data scale;
+    missing scale attribute error;
+  - Match Rules: corner, edge and face rules under Any cover a 3x3x3 block (8 / 12 / 6, inside dropped) and every
+    point's turned pattern lands on its cell; a wall faces out on mesh +Y with Z up; a chunk gives the same 26; About
+    Up matches only the 4 top corners (Unmatched pin 22; Keep and Drop), About Up + Flip all 8; Spin Fixed keeps
+    floors unturned, Random spreads yaws about up only; Thin Any / X / inverted; turned bounds on 100 x 200 x 300
+    cells cover the cell; the text form round-trips and each parse error names its token and line; errors for bad
+    text, no asset, no entries, a negative index, an untyped rule and clashing names; a rule-less entry catches all;
   - Shift Seams: in a row the ends stay and neighbours still meet; a 2×2 grid stays consistent; random lumpy shapes
     after Compress Random and two passes (random, then noise) have no overlaps, no box outside the shape and the same
     total volume; the shifted set meshes to the same shell. `PCGUtilsPerf.Voxel.ShiftSeams` reports timings and how

@@ -68,6 +68,22 @@ namespace PCGVoxelOffsetSurfaceTests
 		return Points.FilterByPredicate([&](const FOutPoint& P) { return P.Cell == Cell; }).Num();
 	}
 
+	void AddScales(UPCGBasePointData* Points, const TArray<double>& Values)
+	{
+		FPCGMetadataDomain* Domain = Points->MutableMetadata()->GetMetadataDomain(PCGMetadataDomainID::Elements);
+		FPCGMetadataAttribute<double>* Attribute = Domain->CreateAttribute<double>(TEXT("AmountScale"), 1.0, false);
+		const TConstPCGValueRange<int64> Entries = Points->GetConstMetadataEntryValueRange();
+		for (int32 Index = 0; Index < Values.Num(); ++Index)
+		{
+			Attribute->SetValue(Entries[Index], Values[Index]);
+		}
+	}
+
+	bool BoundsAre(const FOutPoint* P, const FVector& Min, const FVector& Max)
+	{
+		return P && P->Min.Equals(Min, 1e-6) && P->Max.Equals(Max, 1e-6);
+	}
+
 	double Volume(const TArray<FOutPoint>& Points)
 	{
 		double Sum = 0.0;
@@ -244,6 +260,61 @@ bool FPCGVoxelOffsetSurfaceChunksTest::RunTest(const FString& Parameters)
 	AddExpectedErrorPlain(TEXT("Max Cells"), EAutomationExpectedErrorFlags::Contains, 1);
 	const TArray<FOutPoint> TooBig = Offset(MakeVoxels(Block(4, 4, 4)), 2.0, [](UPCGVoxelOffsetSurfaceSettings& S) { S.MaxCells = 100; });
 	TestEqual(TEXT("Max Cells stops the input"), TooBig.Num(), 0);
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FPCGVoxelOffsetSurfaceScaleTest,
+	"PCGUtils.Voxel.OffsetSurface.UnitsAndScale",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+
+bool FPCGVoxelOffsetSurfaceScaleTest::RunTest(const FString& Parameters)
+{
+	using namespace PCGVoxelOffsetSurfaceTests;
+
+	// Absolute: 25 world units on 100 cells is a quarter cell.
+	const TArray<FOutPoint> Absolute = Offset(MakeVoxels({ FIntVector(0) }), 25.0,
+		[](UPCGVoxelOffsetSurfaceSettings& S) { S.Units = EPCGVoxelOffsetUnits::Absolute; });
+	TestTrue(TEXT("Absolute 25 = a quarter cell"), Absolute.Num() == 1 && BoundsAre(&Absolute[0], FVector(-75.0), FVector(75.0)));
+
+	// Constant scale multiplies.
+	const TArray<FOutPoint> Doubled = Offset(MakeVoxels({ FIntVector(0) }), 0.25,
+		[](UPCGVoxelOffsetSurfaceSettings& S) { S.AmountScale = 2.0; });
+	TestTrue(TEXT("Amount Scale 2"), Doubled.Num() == 1 && BoundsAre(&Doubled[0], FVector(-100.0), FVector(100.0)));
+
+	// Per cell: a row scaled 0, 1, -1. The first stays, the middle grows on its open sides, the last shrinks.
+	auto Attribute = [](UPCGVoxelOffsetSurfaceSettings& S) { S.AmountScaleInput = EPCGVoxelOffsetScaleInput::Attribute; };
+	UPCGPointArrayData* Row = MakeVoxels({ FIntVector(0, 0, 0), FIntVector(1, 0, 0), FIntVector(2, 0, 0) });
+	AddScales(Row, { 0.0, 1.0, -1.0 });
+	const TArray<FOutPoint> Mixed = Offset(Row, 0.25, Attribute);
+	TestEqual(TEXT("mixed: 3 points"), Mixed.Num(), 3);
+	TestTrue(TEXT("scale 0 leaves the cell alone"), BoundsAre(At(Mixed, FIntVector(0, 0, 0)), FVector(-50.0), FVector(50.0)));
+	TestTrue(TEXT("scale 1 grows its open sides"), BoundsAre(At(Mixed, FIntVector(1, 0, 0)), FVector(-50, -75, -75), FVector(50, 75, 75)));
+	TestTrue(TEXT("scale -1 shrinks its open sides"), BoundsAre(At(Mixed, FIntVector(2, 0, 0)), FVector(-50, -25, -25), FVector(25, 25, 25)));
+
+	// Per cell whole layers: only the cell scaled 1 grows a layer.
+	UPCGPointArrayData* Pair = MakeVoxels({ FIntVector(0, 0, 0), FIntVector(1, 0, 0) });
+	AddScales(Pair, { 1.0, 0.0 });
+	const TArray<FOutPoint> OneGrows = Offset(Pair, 1.0, Attribute);
+	TestEqual(TEXT("one cell's 3x3x3 plus the other"), OneGrows.Num(), 27);
+	TestNull(TEXT("the unscaled cell grows nothing"), At(OneGrows, FIntVector(2, 0, 0)));
+	if (const FOutPoint* P = At(OneGrows, FIntVector(-1, 1, 1)))
+	{
+		TestEqual(TEXT("grown cell copies the cell that grew it"), P->Id, 0);
+	}
+
+	// @Data: one scale for the whole set.
+	UPCGPointArrayData* Single = MakeVoxels({ FIntVector(0) });
+	PCGUtilsDataDomain::WriteValue(*PCGUtilsDataDomain::GetMutableDataDomain(Single), TEXT("AmountScale"), -1.0);
+	const TArray<FOutPoint> FromData = Offset(Single, 0.25, [](UPCGVoxelOffsetSurfaceSettings& S)
+	{
+		S.AmountScaleInput = EPCGVoxelOffsetScaleInput::Attribute;
+		S.AmountScaleAttribute.Update(TEXT("@Data.AmountScale"));
+	});
+	TestTrue(TEXT("@Data scale -1 shrinks"), FromData.Num() == 1 && BoundsAre(&FromData[0], FVector(-25.0), FVector(25.0)));
+
+	// A missing attribute is an error naming the setting.
+	AddExpectedErrorPlain(TEXT("Amount Scale Attribute"), EAutomationExpectedErrorFlags::Contains, 1);
+	TestEqual(TEXT("missing attribute stops the input"), Offset(MakeVoxels({ FIntVector(0) }), 0.25, Attribute).Num(), 0);
 	return true;
 }
 
