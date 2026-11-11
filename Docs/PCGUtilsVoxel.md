@@ -21,6 +21,7 @@ One point is one occupied cell, or one chunk of cells (section 1.1).
 | `@Data` | `VoxelGridTransform` | Transform | no | Grid space to world: where the grid's origin is and how it is rotated. Scale must be 1 (size lives in `VoxelSize`). |
 | point | `$Position` | | yes | The cell centre (a chunk's centre, section 1.1). |
 | point | `VoxelSpan` | Vector | no | Whole cells covered along X, Y, Z. Its presence makes the set chunked (section 1.1). |
+| point | `IsSurrounded` | Boolean | no | The point's cell or chunk shows no face (every cell sharing a face with its box is filled). `Voxel \| Cell Properties` writes it; every node that changes cells rewrites it when the input has it (section 1.3). Name: `Surrounded Attribute` in Grid; None leaves it alone. |
 | point | `$BoundsMin` / `$BoundsMax` | | no | The cell's surface offset (section 3.5). Volume Sampler writes exactly ±VoxelSize/2. |
 | point | anything else | | no | Per-cell values: material, color, UV tile, etc. |
 
@@ -95,12 +96,25 @@ in its docs:
   - **Boxes** also allows uneven boxes, which usually means fewer points.
   - **Random** makes boxes of random size, as a stylistic choice rather than an optimization (below). The palette
     lists it separately as **`Voxel | Compress Random`**: the same node with Shape preset to Random, titled to match.
-- `Max Span` (default 16, one value for every axis; Cubes and Boxes).
+- `Max Span` (default 16, one value for every axis; Cubes and Boxes). An input shorthand: a constant or
+  `@Data.CompressMaxSpan` (one per set, at least 1).
 - Method: an aligned octree. Power-of-two cubes on grid-aligned positions are merged level by level while all eight
   children are full and equal. This is fast, deterministic, and the same input always gives the same chunks.
   Boxes mode then merges neighbouring equal chunks greedily along X, then Y, then Z.
-- **Random** method: cells are visited in Z, Y, X order. Each cell not yet taken starts a box; the box draws a
-  target size per axis uniformly from 1 to `Random Max Span` (per axis, default 3×3×3) and grows one axis at a time,
+- **Random** method: cells are visited in Z, Y, X order. Each cell not yet taken starts a box, sized from that start
+  cell's values (first come, first served: cells an earlier box took are gone; the start cell does not look at the
+  values of the cells it takes). Settings (added 2026-11-10 on request; span and chance are point shorthands):
+  - `Random Size`: **Up To** (default, the original behaviour, below), **Exact** (the box is exactly `Random Span`,
+    or the start cell stays a single cell when that box does not fit; never a smaller box) or **Cubes Up To** (a side
+    drawn from 1 to the smallest axis of `Random Span`; the box is the largest cube up to that side that fits).
+  - `Random Span` (default 3×3×3; was `Random Max Span`, an IntVector, carried over in `PostLoad`): a constant, a
+    point attribute (default `CompressSpan`, a Vector; read from the start cell) or `@Data`. Every component must be
+    a whole number ≥ 1, or the input fails naming the point and value.
+  - `Random Chance` (default 1, 0 to 1): the chance a start cell becomes a box when one bigger than a cell fits there;
+    otherwise it stays a single cell. Point attribute default `CompressChance`, read from the start cell, so an
+    attribute steers where boxes form. Rolled only when below 1 and only when there is a box to make, so graphs
+    with chance 1 keep the exact tiling they had.
+  - **Up To**: the box draws a target size per axis uniformly from 1 to `Random Span` and grows one axis at a time,
   in a random axis order, while the next slab of cells is occupied, not taken and equal. Every cell earlier in that
   order is already taken, so the start is always the box's lowest corner and the boxes tile the set exactly, with
   staggered joints. Boxes come out smaller than their target where they meet empty, taken or unequal cells. An axis
@@ -112,6 +126,8 @@ in its docs:
     attributes compresses more, but cells keep only the first cell's values for unlisted ones, and the node says
     so in its tooltip;
   - the surface offset (bounds relative to the cell), so the mesh stays the same;
+  - the `Surrounded Attribute` (`IsSurrounded`) and `VoxelSpan` are not compared: they describe the box, and are
+    rewritten for every chunk, so surface and inside cells merge alike;
   - the seed is not compared. A merged chunk is seeded `PCGHelpers::ComputeSeed` of its first cell (the Volume
     Sampler's seed for that cell); a point that comes out unchanged keeps its seed.
 - Output: one point per chunk, initialized from the input so `@Data` and tags carry over. `VoxelSpan` is written
@@ -123,6 +139,17 @@ in its docs:
   expanded set matches a freshly sampled one.
 - `VoxelSpan` is removed by default (`bRemoveSpanAttribute`).
 - Expand of a plain set returns it unchanged.
+
+### 1.3 `IsSurrounded` through the pipeline
+
+Added 2026-11-10: graphs filter on `IsSurrounded` to spawn only visible voxels as instances, but nodes that changed
+cells left a stale value (a chunk kept its first cell's, an offset cell its old one). Now, when the input carries the
+Grid's `Surrounded Attribute` (default `IsSurrounded`) as a Boolean, every node that changes cells rewrites it on its
+output: true when every cell sharing a face with the point's box is filled (`PCGVoxelPointIO::RefreshSurrounded`).
+Nodes: Compress (and Random), Expand, Boolean, Offset Surface (both pins), Match Rules (both pins), Pack Points
+(Unfilled), Cell Properties (before its own outputs). "Filled" is the whole voxel set the output belongs to, not
+only the cells on that pin (Match Rules, Pack Points). Shift Seams and Transform Grid keep the cells, so the value
+carries over. A non-Boolean attribute of that name is left alone; Surrounded Attribute None turns it all off.
 
 Round trip: Expand(Compress(x)) equals x, except that point order follows cells and unlisted attributes take the
 first cell's values. A test checks it.
@@ -473,9 +500,10 @@ seam of a lumpy shape; the area test replaced it.
 | Setting | Default | Meaning |
 |---|---|---|
 | `Shift X / Y / Z` | all on | Which axes' seams move. Bricks: Compress Random with spans N×1×1, then shift X only (or all). |
-| `Strength` | 0.5 | How far a seam may move, as a fraction of half the thinnest box it shrinks (0 to 1). At 1 a box can shrink to nothing; at 0.5 every box keeps at least half its size per move. |
+| `Strength` | 0.5 | How far a seam may move, as a fraction of its `Limit` (0 to 1). A point shorthand (2026-11-10): a point attribute (default `SeamStrength`) gives each box its own, and a seam uses the weakest box on either side (0 pins every seam of that box), for masking; `@Data` one per set. |
+| `Limit` | Thinnest Box, Either Side | Added 2026-11-10 on request: the reach of one seam. **Thinnest Box, Either Side**: the full thickness (along the seam's axis, current sizes) of the thinnest box on either side, so chunks against chunks move far and anything next to a single cell moves at most a cell. **Half the Thinnest Shrinking Box**: the first version (half the thinnest box on the side that shrinks). |
 | `Source` | Random | Random: a value per seam from the node seed and the seam's lowest face cell. Noise: 3D Perlin noise at the seam's centre (world space), so nearby seams move alike. |
-| `Noise Scale` | 400 | Noise only. Feature size in world units; must be > 0 (error naming the value). |
+| `Noise Scale` | 400 | Noise only. Feature size in world units; must be > 0 (error naming the value). Input shorthand: constant or `@Data.SeamNoiseScale`. |
 
 - **Output:** the input point for point (metadata, tags, `@Data`, positions kept); only bounds change. Cells and
   spans are unchanged, so every other Voxel node still reads it. Bounds are written along each point's local axes,
@@ -661,17 +689,17 @@ the bounds (`BoundsMax += PositiveOpenSides * Amount`, `BoundsMin += NegativeOpe
 under one cell, and leaves inside-corner cells sticking out on a shrink. This node knows the grid, so the offset can
 be any size and corners come out right. It takes over the planned phase-2 `Dilate / Erode`.
 
-- `Amount` (default 0.25) x `Amount Scale`: positive grows, negative shrinks. With one value for the set it is a box
+- `Amount` (default 0.25) x `Amount Scale` (default 1). Both are point shorthands (changed 2026-11-10 on request; see
+  `PCGUtilsInputShorthands.md`): a constant, a point attribute or property (one value per cell; a chunk's cells share
+  its point's value; defaults `OffsetAmount` and `AmountScale`) or `@Data` (one value per set). Positive grows,
+  negative shrinks. With one value for the set it is a box
   (L-infinity) offset of the whole set: the whole part adds or removes that many layers (corners stay square), and
   the fraction then moves the open faces of the cells that are left. `-1.25` removes one layer and pulls the new
   surface in a quarter cell; a 5x5x5 block becomes a 2.5-cell cube.
 - `Units` (added 2026-11-10 on request): **Cells** (default; 1 is one cell width per axis) or **Absolute** (world
   units, turned into cells per axis by Voxel Size, so non-cubic cells get per-axis layers and fractions).
-- `Amount Scale Input`: **Constant** (`Amount Scale`, default 1, so it changes nothing) or **Attribute**
-  (`Amount Scale Attribute`, default `AmountScale`, any number). A point attribute or property gives each cell its own
-  scale, for falloff and masking (0 leaves a cell alone, negative flips it; a chunk's cells share its value); an
-  `@Data` attribute gives one value for the set (read like the shorthand settings). Per cell, each cell's own value
-  decides: a shrinking cell goes when an empty cell is within its reach (box, per axis; a summed-volume table of the
+- **Per-cell values** (either setting from a point attribute): falloff and masking (a scale of 0 leaves a cell
+  alone, negative flips it). Each cell's own product decides: a shrinking cell goes when an empty cell is within its reach (box, per axis; a summed-volume table of the
   empty cells answers it in O(1)); a growing cell fills every empty cell within its reach (stamped, so cost is cells
   times reach cubed), and an empty cell reached by several copies the one with the most reach to spare, then the
   closest. Added cells take the fraction of the cell that grew them. Growth fills only cells empty in the input, not
@@ -688,10 +716,16 @@ be any size and corners come out right. It takes over the planned phase-2 `Dilat
   look. The geometry is the same.
 - `Added Values` (positive, a cell or more): **Nearest** (default; the cell that grew into it) or **None** (default
   attributes; native properties still from that cell).
-- Out: In, mutated (CLAUDE.md rule): metadata, tags and `@Data` kept, chunks expanded to one point per cell (the span
-  attribute removed), cells ordered Z, Y, X. Without split cells it is still a valid voxel set whose bounds are surface
-  offsets (`Voxel | To DynMesh` with Surface Offset From Point Bounds meshes it). With split cells a cell has several
-  points, so other Voxel nodes reject it as duplicate cells: it is for spawning meshes.
+- **Two pins** (changed 2026-11-10 on request; before, split cells made Out unusable for other voxel nodes):
+  - **Out**: In, mutated (CLAUDE.md rule): metadata, tags and `@Data` kept, chunks expanded to one point per cell
+    (the span attribute removed), cells ordered Z, Y, X. Always a valid voxel set: one point per cell, its bounds the
+    open-face box (surface offsets; `Voxel | To DynMesh` with Surface Offset From Point Bounds meshes it). A cell
+    carved at an inside corner keeps its open-face box and gets `WasSplit` = true (optional Boolean output,
+    `Was Split Attribute`). `IsSurrounded` is rewritten (section 1.3).
+  - **Spawn**: the boxes to spawn meshes on. A split cell is its carved boxes (several points on one cell, each
+    `WasSplit`); other cells are their open-face box. `Spawn Only Visible` (default on) leaves out cells that show no
+    face and were not carved, so it can feed a mesh spawner directly. Not a voxel set. `IsSurrounded` is the cell's,
+    and false on carved boxes (a diagonal notch shows).
 - Error when the box worked over (bounds plus grown layers plus one) is over `Max Cells` (default 64M), naming its
   size.
 
@@ -900,7 +934,18 @@ a cell hash.
     random partial settle, no two output boxes intersect;
   - Cell Properties: open sides, depth, neighbours and column values on a block; components by connectivity; concave
     edges and corners of a notch and a crease; a chunked set gives the same values as its expanded form; output names must be set and distinct;
-  - Compress Random: boxes tile every cell exactly once, stay within Random Max Span, never mix unequal cells, and
+  - Compress Random modes: Exact 2 tiles a 6-cube in 27 cubes, Exact 4 makes one cube and leaves the rest single,
+    Exact 3x1x1 makes 72 bricks, Cubes Up To makes only cubes, chance 0 compresses nothing, chance 0.5 mixes cubes
+    and cells, a per-cell chance limits boxes to where it is 1, a per-cell span, a bad span names its point; Max Span
+    from `@Data` (and 0 refused).
+  - `IsSurrounded` (`Voxel.Surrounded.KeptByNodes`): Compress merges inside and surface cells and flags only the
+    hidden chunk (also from a stale input), Expand restores the inner 64, Boolean Subtract of a middle cell gives 57,
+    Surrounded Attribute None leaves values alone.
+  - Shift Seams reach: two 4-cell chunks move more than a cell, a chunk against a cell at most a cell, the old limit
+    at most half a chunk; a strength of 0 on a box pins its seams; a strength of 2 is refused naming the point.
+  - Offset Surface pins: an L's Out has 3 points with only the corner `WasSplit`, Spawn 4; Out feeds another offset;
+    a notched block's Out is 26 cells; Spawn Only Visible spawns 98 of a 5-cube; stale `IsSurrounded` rewritten.
+  - Compress Random: boxes tile every cell exactly once, stay within Random Span, never mix unequal cells, and
     depend only on the seed; the palette alias presets the shape;
   - Bevel: a cube's chamfer volume matches the formula at 0.1, 0.25, 0.4 and 1 (octahedron); each of the six Full
     controls touches only its own edges (frustum, octagonal prism, L, step); the scale attribute and its errors;
@@ -937,7 +982,8 @@ a cell hash.
     surface the old surface's), -1.25 gives a 2.5 cube, +1.5 on a cell a 4 cube with Ids copied (None: defaults);
     a chunk expands with the shared face unmoved; Max Cells error; Absolute 25 = 0.25 cells; Amount Scale 2;
     per-cell scales 0 / 1 / -1 on a row; per-cell whole layers grow only the scaled cell and copy it; @Data scale;
-    missing scale attribute error;
+    missing scale attribute error; per-point Amount 0 / 0.25 / -0.25; Amount x Scale both per point; Amount from
+    `$Density`; a NaN amount names its point; a text attribute is the wrong type; override pin labels kept;
   - Match Rules: corner, edge and face rules under Any cover a 3x3x3 block (8 / 12 / 6, inside dropped) and every
     point's turned pattern lands on its cell; a wall faces out on mesh +Y with Z up; a chunk gives the same 26; About
     Up matches only the 4 top corners (Unmatched pin 22; Keep and Drop), About Up + Flip all 8; Spin Fixed keeps
@@ -956,3 +1002,28 @@ a cell hash.
 - **D2.** No Set Grid node. Graphs add `@Data.VoxelSize` themselves; the shorthand's Constant mode is the fallback.
 - **D3.** Material Source defaults to Constant with the engine's default surface material.
 - **D4.** Mixed offsets on one flat surface are averaged at shared vertices (smooth slope, unchanged topology).
+
+## 7. Fix queue (from the designer, 2026-11-10)
+
+In order. The designer asked for one at a time.
+
+1. **Done 2026-11-10.** Point shorthands (constant, or a per-point attribute, or `@Data`) in PCGUtilsCore; Offset
+   Surface `Amount` and `Amount Scale` use them.
+2. **Done 2026-11-10** (section 1.3). **`IsSurrounded` kept correct by every node.** It is the attribute graphs filter on to spawn voxels as instances
+   (only surface cells and chunks). The designer reports Compress loses it. Audit every node that changes the cells (Compress,
+   Compress Random, Expand, Offset Surface, Boolean, Shift Seams...). When the input carries it, each such node should rewrite it
+   for its output: a chunk is surrounded when every cell around its box is filled.
+3. **Done 2026-11-10** (section 4i, Out and Spawn). **Offset Surface keeps the grid.** Out stays a valid voxel set (whole layers applied; the cells split at inside
+   corners flagged, e.g. `WasSplit`); a second pin carries the spawn points (the moved-face boxes and the split
+   pieces). Today split cells make Out unusable for other voxel nodes.
+4. **Done 2026-11-10** (section 1.2: Random Size, Random Span, Random Chance). **Compress Random controls.** A fixed chunk shape or size (compress to exactly this, or not at all) instead of
+   only "anything up to the maximum"; a chance per chunk; chance and size as point shorthands read from the chunk's
+   starting cell (first come, first served: cells already taken by another chunk are gone).
+5. **Done 2026-11-10** (section 4c, Limit; read as "the thinnest box on either side, full thickness"; the old limit
+   is an option). **Shift Seams across chunk sizes.** The shift limit of a cell or chunk on an axis becomes the smaller of its own
+   size and the smallest neighbouring cell or chunk on that side, not one voxel cell.
+6. **Partly done 2026-11-10.** **Shorthands across the rest of the voxel nodes**, wherever a per-point or per-set
+   value makes sense. Done: Shift Seams `Strength` (per box) and `Noise Scale` (per set), Compress `Max Span` (per
+   set). Left as plain settings for now, each a candidate on request: To DynMesh bevel amounts and UV settings (the
+   mesher would need per-cell bevels to make per point mean anything), Rasterize margins and cell counts (per mesh),
+   Air Flow solver and wake settings (one field per set), Pack Points radius and value ranges.

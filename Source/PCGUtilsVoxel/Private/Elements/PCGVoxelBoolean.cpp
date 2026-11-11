@@ -335,7 +335,7 @@ bool FPCGVoxelBooleanElement::ExecuteInternal(FPCGContext* Context) const
 						for (const FName Name : Names)
 						{
 							const FPCGMetadataAttributeBase* FromAttribute = FromDomain->GetConstAttribute(Name);
-							if (!FromAttribute || Name == Settings->Grid.SpanAttribute)
+							if (!FromAttribute || Name == Settings->Grid.SpanAttribute || Name == Settings->Grid.SurroundedAttribute)
 							{
 								continue;
 							}
@@ -371,6 +371,12 @@ bool FPCGVoxelBooleanElement::ExecuteInternal(FPCGContext* Context) const
 			}
 		}
 
+		// Last, so values copied into added cells above cannot overwrite it.
+		{
+			const FPCGVoxelCellSet Filled(Outs);
+			PCGVoxelPointIO::RefreshSurrounded(Points, Out, Settings->Grid.SurroundedAttribute, Outs,
+				[&Filled](const FIntVector& Cell) { return Filled.Contains(Cell); });
+		}
 		FPCGTaggedData& Output = Context->OutputData.TaggedData.Emplace_GetRef(Inputs[InputIndex]);
 		Output.Data = Out;
 		Output.Pin = PCGPinConstants::DefaultOutputLabel;

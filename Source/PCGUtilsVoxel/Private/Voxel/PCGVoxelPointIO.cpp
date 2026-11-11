@@ -2,6 +2,7 @@
 
 #include "Voxel/PCGVoxelPointIO.h"
 
+#include "Async/ParallelFor.h"
 #include "Data/PCGPointArrayData.h"
 #include "Data/PCGSpatialData.h"
 #include "Helpers/PCGHelpers.h"
@@ -111,4 +112,74 @@ UPCGBasePointData* PCGVoxelPointIO::WriteCells(FPCGContext* Context, const UPCGB
 		}
 	}
 	return Out;
+}
+
+FPCGVoxelCellSet::FPCGVoxelCellSet(TConstArrayView<FPCGVoxelCellOut> Boxes)
+{
+	int64 Count = 0;
+	for (const FPCGVoxelCellOut& Box : Boxes)
+	{
+		Count += static_cast<int64>(Box.Span.X) * Box.Span.Y * Box.Span.Z;
+	}
+	Cells.Reserve(static_cast<int32>(FMath::Min<int64>(Count, MAX_int32)));
+	for (const FPCGVoxelCellOut& Box : Boxes)
+	{
+		for (int32 Z = 0; Z < Box.Span.Z; ++Z)
+			for (int32 Y = 0; Y < Box.Span.Y; ++Y)
+				for (int32 X = 0; X < Box.Span.X; ++X)
+				{
+					Cells.Add(Box.First + FIntVector(X, Y, Z));
+				}
+	}
+}
+
+bool PCGVoxelPointIO::IsBoxSurrounded(const FIntVector& First, const FIntVector& Span, TFunctionRef<bool(const FIntVector&)> IsFilled)
+{
+	for (int32 Axis = 0; Axis < 3; ++Axis)
+	{
+		const int32 U = (Axis + 1) % 3;
+		const int32 V = (Axis + 2) % 3;
+		for (int32 Side = 0; Side < 2; ++Side)
+		{
+			FIntVector Cell;
+			Cell[Axis] = Side == 0 ? First[Axis] - 1 : First[Axis] + Span[Axis];
+			for (int32 A = 0; A < Span[U]; ++A)
+			{
+				for (int32 B = 0; B < Span[V]; ++B)
+				{
+					Cell[U] = First[U] + A;
+					Cell[V] = First[V] + B;
+					if (!IsFilled(Cell))
+					{
+						return false;
+					}
+				}
+			}
+		}
+	}
+	return true;
+}
+
+bool PCGVoxelPointIO::RefreshSurrounded(const UPCGBasePointData* Source, UPCGBasePointData* Out, FName Name,
+	TConstArrayView<FPCGVoxelCellOut> Cells, TFunctionRef<bool(const FIntVector&)> IsFilled)
+{
+	if (Name.IsNone() || !Source || !Out || Out->GetNumPoints() != Cells.Num())
+	{
+		return false;
+	}
+	const UPCGMetadata* Metadata = Source->ConstMetadata();
+	const FPCGMetadataDomain* Domain = Metadata ? Metadata->GetConstMetadataDomain(PCGMetadataDomainID::Elements) : nullptr;
+	const FPCGMetadataAttributeBase* Attribute = Domain ? Domain->GetConstAttribute(Name) : nullptr;
+	if (!Attribute || Attribute->GetTypeId() != PCG::Private::MetadataTypes<bool>::Id)
+	{
+		return false;
+	}
+	TArray<bool> Values;
+	Values.SetNumUninitialized(Cells.Num());
+	ParallelFor(TEXT("PCGVoxelPointIO.RefreshSurrounded"), Cells.Num(), 1024, [&](int32 Index)
+	{
+		Values[Index] = IsBoxSurrounded(Cells[Index].First, Cells[Index].Span, IsFilled);
+	});
+	WritePointAttribute<bool>(Out, Name, false, Values);
+	return true;
 }

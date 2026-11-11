@@ -194,7 +194,7 @@ bool FPCGVoxelChunkRandomTest::RunTest(const FString&)
 	{
 		UPCGVoxelCompressSettings* Settings = NewObject<UPCGVoxelCompressSettings>();
 		Settings->Shape = EPCGVoxelChunkShape::Random;
-		Settings->RandomMaxSpan = MaxSpan;
+		Settings->RandomSpan.Constant = FVector(MaxSpan);
 		Settings->Seed = Seed;
 		const TArray<FPCGTaggedData> Out = Run<FPCGVoxelCompressElement>(Settings, { { PCGPinConstants::DefaultInputLabel, Voxels } });
 		return Out.IsEmpty() ? nullptr : Cast<UPCGBasePointData>(Out[0].Data);

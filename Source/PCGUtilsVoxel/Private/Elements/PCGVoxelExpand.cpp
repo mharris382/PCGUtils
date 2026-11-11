@@ -99,8 +99,10 @@ bool FPCGVoxelExpandElement::ExecuteInternal(FPCGContext* Context) const
 				}
 			}
 		}
-		Output.Data = PCGVoxelPointIO::WriteCells(Context, Points, Grid, Cells, Settings->Grid.SpanAttribute,
+		UPCGBasePointData* Written = PCGVoxelPointIO::WriteCells(Context, Points, Grid, Cells, Settings->Grid.SpanAttribute,
 			/*bWriteSpan=*/Grid.bChunked && !Settings->bRemoveSpanAttribute);
+		PCGVoxelPointIO::RefreshSurrounded(Points, Written, Settings->Grid.SurroundedAttribute, Cells, [&Grid](const FIntVector& Cell) { return Grid.IsOccupied(Cell); });
+		Output.Data = Written;
 	}
 	return true;
 }

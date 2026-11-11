@@ -4,6 +4,9 @@
 
 #include "Details/PCGUtilsInputShorthands.h"
 
+#include "Data/PCGBasePointData.h"
+#include "Details/PCGUtilsPointShorthands.h"
+
 #include "Metadata/Accessors/IPCGAttributeAccessor.h"
 #include "Metadata/Accessors/PCGAttributeAccessorHelpers.h"
 #include "Metadata/Accessors/PCGAttributeAccessorKeys.h"
@@ -224,7 +227,8 @@ namespace PCGUtilsInputShorthands
 
 	bool IsShorthandStruct(const UScriptStruct* Struct)
 	{
-		return Struct && Struct->IsChildOf(FPCGUtilsInputShorthandBase::StaticStruct());
+		return Struct && (Struct->IsChildOf(FPCGUtilsInputShorthandBase::StaticStruct())
+			|| Struct->IsChildOf(FPCGUtilsPointShorthandBase::StaticStruct()));
 	}
 
 	void ApplyOverrideLabels(TArray<FPCGSettingsOverridableParam>& InOutParams)
@@ -352,5 +356,183 @@ PCGUTILS_FOREACH_INPUT_SHORTHAND(PCGUTILS_INPUT_SHORTHAND_IMPL)
 
 #undef PCGUTILS_INPUT_SHORTHAND_IMPL
 #undef PCGUTILS_FOREACH_INPUT_SHORTHAND
+
+// ---- Point shorthands ----
+
+namespace PCGUtilsInputShorthands
+{
+	namespace
+	{
+		FText ValueText(double Value)
+		{
+			return FMath::IsFinite(Value) ? FText::AsNumber(Value) : FText::FromString(LexToString(Value));
+		}
+
+		/** Finite (numbers) and in range; Point is INDEX_NONE for an @Data value. */
+		template <typename T>
+		bool CheckPointValue(const T& Value, int32 Point, bool bHasMin, double Min, bool bHasMax, double Max,
+			const FText& SelectorText, FText& OutError)
+		{
+			if constexpr (std::is_arithmetic_v<T>)
+			{
+				const double AsDouble = static_cast<double>(Value);
+				FText Constraint;
+				if (!FMath::IsFinite(AsDouble))
+				{
+					Constraint = LOCTEXT("MustBeFinite", "a finite number");
+				}
+				else if ((bHasMin && AsDouble < Min) || (bHasMax && AsDouble > Max))
+				{
+					Constraint = bHasMax
+						? FText::Format(LOCTEXT("PointRangeBoth", "from {0} to {1}"), FText::AsNumber(Min), FText::AsNumber(Max))
+						: FText::Format(LOCTEXT("PointRangeMin", "at least {0}"), FText::AsNumber(Min));
+				}
+				if (!Constraint.IsEmpty())
+				{
+					OutError = Point == INDEX_NONE
+						? FText::Format(LOCTEXT("DataValueBad", "'{0}' is {1}; this setting must be {2}"), SelectorText, ValueText(AsDouble), Constraint)
+						: FText::Format(LOCTEXT("PointValueBad", "'{0}' on point {1} is {2}; this setting must be {3}"),
+							SelectorText, FText::AsNumber(Point), ValueText(AsDouble), Constraint);
+					return false;
+				}
+			}
+			return true;
+		}
+
+		template <typename T>
+		bool ReadPointsImpl(const UPCGBasePointData* Points, const FPCGAttributePropertyInputSelector& InSelector,
+			bool bHasMin, double Min, bool bHasMax, double Max, TPCGUtilsPointValues<T>& Out, FText& OutError)
+		{
+			const FText SelectorText = FText::FromString(InSelector.ToString());
+			Out.PerPoint.Reset();
+			if (!Points)
+			{
+				OutError = FText::Format(LOCTEXT("NoPoints", "there are no points to read '{0}' from"), SelectorText);
+				return false;
+			}
+
+			const FPCGAttributePropertyInputSelector Selector = InSelector.CopyAndFixLast(Points);
+			const bool bIsAttribute = Selector.GetSelection() == EPCGAttributePropertySelection::Attribute;
+			const FName AttributeName = Selector.GetAttributeName();
+			if (bIsAttribute && AttributeName.IsNone())
+			{
+				OutError = LOCTEXT("PointNoAttributeName", "no attribute name is set; name the attribute to read, or switch the setting to Constant");
+				return false;
+			}
+
+			FPCGMetadataDomainID Domain = Points->GetMetadataDomainIDFromSelector(Selector);
+			if (Domain == PCGMetadataDomainID::Default)
+			{
+				Domain = Points->GetDefaultMetadataDomainID();
+			}
+			if (bIsAttribute && Domain == PCGMetadataDomainID::Data)
+			{
+				return ReadImpl<T>(Points, InSelector, Out.Single, OutError)
+					&& CheckPointValue<T>(Out.Single, INDEX_NONE, bHasMin, Min, bHasMax, Max, SelectorText, OutError);
+			}
+			if (bIsAttribute && Domain != PCGMetadataDomainID::Elements)
+			{
+				OutError = FText::Format(LOCTEXT("PointWrongDomain",
+					"'{0}' selects neither the points nor @Data; use a point attribute ('{1}') or '@Data.{1}'"),
+					SelectorText, FText::FromName(AttributeName));
+				return false;
+			}
+
+			const TUniquePtr<const IPCGAttributeAccessor> Accessor = PCGAttributeAccessorHelpers::CreateConstAccessor(Points, Selector, /*bQuiet=*/true);
+			const TUniquePtr<const IPCGAttributeAccessorKeys> Keys = PCGAttributeAccessorHelpers::CreateConstKeys(Points, Selector);
+			if (!Accessor || !Keys)
+			{
+				const UPCGMetadata* Metadata = Points->ConstMetadata();
+				const FPCGMetadataDomain* Elements = Metadata ? Metadata->GetConstMetadataDomain(PCGMetadataDomainID::Elements) : nullptr;
+				if (bIsAttribute && !(Elements && Elements->HasAttribute(AttributeName)))
+				{
+					OutError = FText::Format(LOCTEXT("PointMissing", "attribute '{0}' was not found on the points"), FText::FromName(AttributeName));
+				}
+				else
+				{
+					OutError = FText::Format(LOCTEXT("PointUnreadable", "'{0}' cannot be read from the points (check the property name or the extractor)"), SelectorText);
+				}
+				return false;
+			}
+
+			const EPCGMetadataTypes SourceType = static_cast<EPCGMetadataTypes>(Accessor->GetUnderlyingType());
+			FText Expected;
+			if (!IsReadableAs<T>(SourceType, Expected))
+			{
+				OutError = FText::Format(LOCTEXT("PointWrongType", "'{0}' is {1}; this setting needs {2}"), SelectorText, TypeText(SourceType), Expected);
+				return false;
+			}
+
+			const int32 NumPoints = Points->GetNumPoints();
+			if (NumPoints == 0)
+			{
+				return true;
+			}
+			Out.PerPoint.SetNum(NumPoints);
+			if (!Accessor->GetRange<T>(MakeArrayView(Out.PerPoint), 0, *Keys, EPCGAttributeAccessorFlags::AllowBroadcastAndConstructible))
+			{
+				Out.PerPoint.Reset();
+				OutError = FText::Format(LOCTEXT("PointReadFailed", "'{0}' ({1}) could not be read"), SelectorText, TypeText(SourceType));
+				return false;
+			}
+			for (int32 Point = 0; Point < NumPoints; ++Point)
+			{
+				if (!CheckPointValue<T>(Out.PerPoint[Point], Point, bHasMin, Min, bHasMax, Max, SelectorText, OutError))
+				{
+					Out.PerPoint.Reset();
+					return false;
+				}
+			}
+			return true;
+		}
+	}
+}
+
+namespace PCGUtilsPointShorthands
+{
+	bool IsPointShorthandStruct(const UScriptStruct* Struct)
+	{
+		return Struct && Struct->IsChildOf(FPCGUtilsPointShorthandBase::StaticStruct());
+	}
+}
+
+// _NAME, _TYPE, bHasMin, Min, bHasMax, Max
+#define PCGUTILS_FOREACH_POINT_SHORTHAND(MACRO) \
+	MACRO(Integer32, int32, false, 0, false, 0) \
+	MACRO(Integer32Abs, int32, true, 0, false, 0) \
+	MACRO(Double, double, false, 0, false, 0) \
+	MACRO(DoubleAbs, double, true, 0, false, 0) \
+	MACRO(Double01, double, true, 0, true, 1) \
+	MACRO(Vector, FVector, false, 0, false, 0)
+
+#define PCGUTILS_POINT_SHORTHAND_IMPL(_NAME, _TYPE, _HASMIN, _MIN, _HASMAX, _MAX) \
+	bool FPCGUtilsPointShorthand##_NAME::TryRead(const UPCGBasePointData* Points, TPCGUtilsPointValues<_TYPE>& OutValues, \
+		FText& OutError, const FText& SettingLabel, int32 InputIndex) const \
+	{ \
+		OutValues.PerPoint.Reset(); \
+		if (IsConstant()) \
+		{ \
+			OutValues.Single = Constant; \
+			return true; \
+		} \
+		FText Reason; \
+		if (!PCGUtilsInputShorthands::ReadPointsImpl<_TYPE>(Points, Attribute, _HASMIN, _MIN, _HASMAX, _MAX, OutValues, Reason)) \
+		{ \
+			OutError = PCGUtilsInputShorthands::FormatError(SettingLabel, InputIndex, Reason); \
+			return false; \
+		} \
+		return true; \
+	} \
+	bool FPCGUtilsPointShorthand##_NAME::SerializeFromMismatchedTag(const FPropertyTag& Tag, FStructuredArchive::FSlot Slot) \
+	{ \
+		if (!PCGUtilsInputShorthands::LoadMismatchedConstant(Tag, Slot, Constant)) { return false; } \
+		Input = EPCGUtilsPointInputValueType::Constant; \
+		return true; \
+	}
+
+PCGUTILS_FOREACH_POINT_SHORTHAND(PCGUTILS_POINT_SHORTHAND_IMPL)
+
+#undef PCGUTILS_POINT_SHORTHAND_IMPL
+#undef PCGUTILS_FOREACH_POINT_SHORTHAND
 
 #undef LOCTEXT_NAMESPACE

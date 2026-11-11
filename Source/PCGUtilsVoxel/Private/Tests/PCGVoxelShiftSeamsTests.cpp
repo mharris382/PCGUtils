@@ -19,7 +19,7 @@ namespace PCGVoxelShiftSeamsTests
 	UPCGVoxelShiftSeamsSettings* MakeSettings(float Strength, int32 Seed)
 	{
 		UPCGVoxelShiftSeamsSettings* Settings = NewObject<UPCGVoxelShiftSeamsSettings>();
-		Settings->Strength = Strength;
+		Settings->Strength.Constant = Strength;
 		Settings->Seed = Seed;
 		return Settings;
 	}
@@ -34,7 +34,7 @@ namespace PCGVoxelShiftSeamsTests
 	{
 		UPCGVoxelCompressSettings* Settings = NewObject<UPCGVoxelCompressSettings>();
 		Settings->Shape = EPCGVoxelChunkShape::Random;
-		Settings->RandomMaxSpan = FIntVector(3);
+		Settings->RandomSpan.Constant = FVector(3.0);
 		Settings->Seed = Seed;
 		const TArray<FPCGTaggedData> Out = Run<FPCGVoxelCompressElement>(Settings, { { PCGPinConstants::DefaultInputLabel, Voxels } });
 		return Out.IsEmpty() ? nullptr : Cast<UPCGBasePointData>(Out[0].Data);
@@ -140,7 +140,7 @@ bool FPCGVoxelShiftSeamsLineTest::RunTest(const FString&)
 	TestTrue(TEXT("Strength 0 leaves the bounds alone"), BoxesOf(Still) == BoxesOf(Row));
 	UPCGVoxelShiftSeamsSettings* Noise = MakeSettings(0.5f, 3);
 	Noise->Source = EPCGVoxelSeamShiftSource::Noise;
-	Noise->NoiseScale = 0.0f;
+	Noise->NoiseScale.Constant = 0.0;
 	AddExpectedError(TEXT("Noise Scale is 0"), EAutomationExpectedErrorFlags::Contains, 1, false);
 	TestNull(TEXT("Noise Scale 0 gives no output"), Shift(Noise, Row));
 	return true;
@@ -176,7 +176,7 @@ bool FPCGVoxelShiftSeamsFillTest::RunTest(const FString&)
 		UTEST_NOT_NULL(TEXT("Shifted once"), Once);
 		UPCGVoxelShiftSeamsSettings* NoiseSettings = MakeSettings(0.9f, Trial);
 		NoiseSettings->Source = EPCGVoxelSeamShiftSource::Noise;
-		NoiseSettings->NoiseScale = 250.0f;
+		NoiseSettings->NoiseScale.Constant = 250.0;
 		const UPCGBasePointData* Twice = Shift(NoiseSettings, Once);
 		UTEST_NOT_NULL(TEXT("Shifted twice"), Twice);
 
@@ -216,6 +216,97 @@ bool FPCGVoxelShiftSeamsFillTest::RunTest(const FString&)
 			TestTrue(*FString::Printf(TEXT("Some boxes changed (%s)"), *Which), Moved > 0);
 		}
 	}
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FPCGVoxelShiftSeamsLimitTest,
+	"PCGUtils.Voxel.ShiftSeams.ReachScalesWithChunks",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::ProductFilter)
+
+bool FPCGVoxelShiftSeamsLimitTest::RunTest(const FString&)
+{
+	using namespace PCGVoxelShiftSeamsTests;
+
+	// The largest seam move over many seeds, at Strength 1, between a chunk spanning 4 along X and a second box.
+	auto MaxMove = [](const FIntVector& SecondSpan, EPCGVoxelSeamLimit Limit)
+	{
+		const TArray<FIntVector> Spans = { FIntVector(4, 1, 1), SecondSpan };
+		const UPCGPointArrayData* Row = MakeVoxels({ FIntVector(0), FIntVector(4, 0, 0) }, 100.0, &Spans);
+		double Largest = 0.0;
+		for (int32 Seed = 1; Seed <= 24; ++Seed)
+		{
+			UPCGVoxelShiftSeamsSettings* Settings = MakeSettings(1.0f, Seed);
+			Settings->Limit = Limit;
+			if (const UPCGBasePointData* Out = Shift(Settings, Row))
+			{
+				if (const FBox* First = BoxAt(BoxesOf(Out), FVector(-50.0)))
+				{
+					Largest = FMath::Max(Largest, FMath::Abs(First->Max.X - 350.0));
+				}
+			}
+		}
+		return Largest;
+	};
+
+	// Two 4-cell chunks: the seam reaches past one cell (up to the full 4 cells at Strength 1).
+	const double Chunks = MaxMove(FIntVector(4, 1, 1), EPCGVoxelSeamLimit::ThinnestEitherSide);
+	TestTrue(FString::Printf(TEXT("chunk against chunk moves more than a cell (%.1f)"), Chunks), Chunks > 100.0 && Chunks <= 400.0 + 1e-6);
+
+	// A chunk against a single cell: never more than that cell, whichever way it moves.
+	const double AgainstCell = MaxMove(FIntVector(1), EPCGVoxelSeamLimit::ThinnestEitherSide);
+	TestTrue(FString::Printf(TEXT("chunk against a cell moves at most a cell (%.1f)"), AgainstCell), AgainstCell > 0.0 && AgainstCell <= 100.0 + 1e-6);
+
+	// The first version's limit: half the shrinking box, so at most 2 cells here.
+	const double Old = MaxMove(FIntVector(4, 1, 1), EPCGVoxelSeamLimit::HalfShrinkingSide);
+	TestTrue(FString::Printf(TEXT("old limit: at most half a chunk (%.1f)"), Old), Old > 0.0 && Old <= 200.0 + 1e-6);
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FPCGVoxelShiftSeamsStrengthMaskTest,
+	"PCGUtils.Voxel.ShiftSeams.StrengthPerBox",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::ProductFilter)
+
+bool FPCGVoxelShiftSeamsStrengthMaskTest::RunTest(const FString&)
+{
+	using namespace PCGVoxelShiftSeamsTests;
+
+	// Three 2-cell chunks in a row: seams at x = 150 and x = 350. A strength of 0 on the last chunk pins the second
+	// seam; the first still moves for some seed.
+	const TArray<FIntVector> Spans = { FIntVector(2, 1, 1), FIntVector(2, 1, 1), FIntVector(2, 1, 1) };
+	UPCGPointArrayData* Row = MakeVoxels({ FIntVector(0), FIntVector(2, 0, 0), FIntVector(4, 0, 0) }, 100.0, &Spans);
+	FPCGMetadataAttribute<double>* Strength = Row->Metadata->GetMetadataDomain(PCGMetadataDomainID::Elements)
+		->CreateAttribute<double>(TEXT("SeamStrength"), 1.0, false);
+	const TConstPCGValueRange<int64> Entries = Row->GetConstMetadataEntryValueRange();
+	Strength->SetValue(Entries[0], 1.0);
+	Strength->SetValue(Entries[1], 1.0);
+	Strength->SetValue(Entries[2], 0.0);
+
+	bool bFirstMoved = false;
+	bool bSecondStill = true;
+	for (int32 Seed = 1; Seed <= 12; ++Seed)
+	{
+		UPCGVoxelShiftSeamsSettings* Settings = MakeSettings(1.0f, Seed);
+		Settings->Strength.Input = EPCGUtilsPointInputValueType::Attribute;
+		const UPCGBasePointData* Out = Shift(Settings, Row);
+		if (!Out)
+		{
+			continue;
+		}
+		const TArray<FBox> Boxes = BoxesOf(Out);
+		const FBox* First = BoxAt(Boxes, FVector(-50, -50, -50));
+		const FBox* Last = BoxAt(Boxes, FVector(350, -50, -50));
+		bFirstMoved |= First && !FMath::IsNearlyEqual(First->Max.X, 150.0, 1e-6);
+		bSecondStill &= Last && FMath::IsNearlyEqual(Last->Min.X, 350.0, 1e-6);
+	}
+	TestTrue(TEXT("the seam between full-strength chunks moves"), bFirstMoved);
+	TestTrue(TEXT("a strength of 0 pins the seams of that chunk"), bSecondStill);
+
+	// A strength outside 0..1 is refused, naming the point.
+	Strength->SetValue(Entries[2], 2.0);
+	UPCGVoxelShiftSeamsSettings* Bad = MakeSettings(1.0f, 1);
+	Bad->Strength.Input = EPCGUtilsPointInputValueType::Attribute;
+	AddExpectedErrorPlain(TEXT("Strength: 'SeamStrength' on point 2 is 2"), EAutomationExpectedErrorFlags::Contains, 1);
+	TestNull(TEXT("bad strength gives no output"), Shift(Bad, Row));
 	return true;
 }
 

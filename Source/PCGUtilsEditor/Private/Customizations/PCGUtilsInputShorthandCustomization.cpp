@@ -7,6 +7,7 @@
 #include "DetailLayoutBuilder.h"
 #include "DetailWidgetRow.h"
 #include "Details/PCGUtilsInputShorthands.h"
+#include "Details/PCGUtilsPointShorthands.h"
 #include "Metadata/PCGAttributePropertySelector.h"
 #include "PCGUtilsEditorStyle.h"
 #include "PropertyEditorModule.h"
@@ -70,8 +71,23 @@ namespace
 		return Row;
 	}
 
+	/** The mode enum of a shorthand: EPCGUtilsInputValueType (@Data) or EPCGUtilsPointInputValueType (per point). */
+	const UEnum* ModeEnum(const TSharedPtr<IPropertyHandle>& InputHandle)
+	{
+		const FProperty* Property = InputHandle.IsValid() ? InputHandle->GetProperty() : nullptr;
+		if (const FEnumProperty* EnumProperty = CastField<FEnumProperty>(Property))
+		{
+			return EnumProperty->GetEnum();
+		}
+		if (const FByteProperty* ByteProperty = CastField<FByteProperty>(Property))
+		{
+			return ByteProperty->Enum;
+		}
+		return StaticEnum<EPCGUtilsInputValueType>();
+	}
+
 	/** Free-text selector field: '@Data.PathHeight', 'PathHeight', 'Size.Z'. */
-	TSharedRef<SWidget> MakeAttributeWidget(const TSharedPtr<IPropertyHandle>& AttributeHandle)
+	TSharedRef<SWidget> MakeAttributeWidget(const TSharedPtr<IPropertyHandle>& AttributeHandle, bool bPerPoint)
 	{
 		return SNew(SBox)
 			.VAlign(VAlign_Center)
@@ -79,7 +95,9 @@ namespace
 			[
 				SNew(SEditableTextBox)
 				.Font(IDetailLayoutBuilder::GetDetailFont())
-				.ToolTipText(LOCTEXT("AttributeTooltip", "@Data attribute to read, e.g. PathHeight or @Data.PathHeight. Extractors such as .Z are allowed."))
+				.ToolTipText(bPerPoint
+					? LOCTEXT("PointAttributeTooltip", "Attribute to read: a point attribute (Amount) or property ($Density) gives each point its own value; @Data.Amount gives one value for the input. Extractors such as .Z are allowed.")
+					: LOCTEXT("AttributeTooltip", "@Data attribute to read, e.g. PathHeight or @Data.PathHeight. Extractors such as .Z are allowed."))
 				.Text_Lambda([AttributeHandle]()
 				{
 					TArray<void*> RawData;
@@ -111,17 +129,17 @@ namespace
 	TSharedRef<SWidget> MakeModeToggle(const TSharedPtr<IPropertyHandle>& InputHandle)
 	{
 		const ISlateStyle& Style = FPCGUtilsEditorStyle::Get();
-		const UEnum* Enum = StaticEnum<EPCGUtilsInputValueType>();
+		const UEnum* Enum = ModeEnum(InputHandle);
 		return SNew(SButton)
 			.ButtonStyle(&Style, "PCGUtils.ActionIcon")
 			.ContentPadding(FMargin(2, 0))
 			.ToolTipText_Lambda([InputHandle, Enum]()
 			{
-				const EPCGUtilsInputValueType Current = IsAttributeMode(InputHandle)
-					? EPCGUtilsInputValueType::Attribute : EPCGUtilsInputValueType::Constant;
+				// Both mode enums use 0 for Constant and 1 for the attribute mode.
+				const int64 Current = IsAttributeMode(InputHandle) ? 1 : 0;
 				return FText::Format(LOCTEXT("ModeTooltip", "{0}: {1}\nClick to switch."),
-					Enum->GetDisplayNameTextByValue(static_cast<int64>(Current)),
-					Enum->GetToolTipTextByIndex(Enum->GetIndexByValue(static_cast<int64>(Current))));
+					Enum->GetDisplayNameTextByValue(Current),
+					Enum->GetToolTipTextByIndex(Enum->GetIndexByValue(Current)));
 			})
 			.OnClicked_Lambda([InputHandle]()
 			{
@@ -153,7 +171,8 @@ TArray<FName> FPCGUtilsInputShorthandCustomization::RegisterAll(FPropertyEditorM
 	TArray<FName> Registered;
 	for (TObjectIterator<UScriptStruct> It; It; ++It)
 	{
-		if (*It != FPCGUtilsInputShorthandBase::StaticStruct() && PCGUtilsInputShorthands::IsShorthandStruct(*It))
+		if (*It != FPCGUtilsInputShorthandBase::StaticStruct() && *It != FPCGUtilsPointShorthandBase::StaticStruct()
+			&& PCGUtilsInputShorthands::IsShorthandStruct(*It))
 		{
 			PropertyEditor.RegisterCustomPropertyTypeLayout(It->GetFName(),
 				FOnGetPropertyTypeCustomizationInstance::CreateStatic(&FPCGUtilsInputShorthandCustomization::MakeInstance));
@@ -182,6 +201,9 @@ void FPCGUtilsInputShorthandCustomization::CustomizeHeader(TSharedRef<IPropertyH
 		DisplayName = FText::FromString(FName::NameToDisplayString(Property->GetName(), /*bIsBool=*/true));
 	}
 
+	const FStructProperty* StructProperty = CastField<FStructProperty>(Property);
+	const bool bPerPoint = StructProperty && PCGUtilsPointShorthands::IsPointShorthandStruct(StructProperty->Struct);
+
 	HeaderRow
 	.NameContent()
 	[
@@ -204,7 +226,7 @@ void FPCGUtilsInputShorthandCustomization::CustomizeHeader(TSharedRef<IPropertyH
 			SNew(SBox)
 			.Visibility_Lambda([InputHandle]() { return IsAttributeMode(InputHandle) ? EVisibility::Visible : EVisibility::Collapsed; })
 			[
-				MakeAttributeWidget(AttributeHandle)
+				MakeAttributeWidget(AttributeHandle, bPerPoint)
 			]
 		]
 		+ SHorizontalBox::Slot().AutoWidth().VAlign(VAlign_Center).Padding(2, 0, 0, 0)

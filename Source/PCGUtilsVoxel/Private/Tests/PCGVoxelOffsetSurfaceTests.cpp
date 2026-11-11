@@ -21,13 +21,15 @@ namespace PCGVoxelOffsetSurfaceTests
 		int32 Id;
 	};
 
+	/** Runs the node and reads one pin: Out (the grid) by default, or Spawn. */
 	TArray<FOutPoint> Offset(const UPCGData* In, double Amount, TFunctionRef<void(UPCGVoxelOffsetSurfaceSettings&)> Edit,
-		TArray<FPCGTaggedData>* OutRaw = nullptr)
+		TArray<FPCGTaggedData>* OutRaw = nullptr, FName Pin = PCGPinConstants::DefaultOutputLabel)
 	{
 		UPCGVoxelOffsetSurfaceSettings* Settings = NewObject<UPCGVoxelOffsetSurfaceSettings>();
-		Settings->Amount = Amount;
+		Settings->Amount.Constant = Amount;
 		Edit(*Settings);
-		const TArray<FPCGTaggedData> Outputs = Run<FPCGVoxelOffsetSurfaceElement>(Settings, { { PCGPinConstants::DefaultInputLabel, In } });
+		const TArray<FPCGTaggedData> Outputs = Run<FPCGVoxelOffsetSurfaceElement>(Settings, { { PCGPinConstants::DefaultInputLabel, In } })
+			.FilterByPredicate([Pin](const FPCGTaggedData& Data) { return Data.Pin == Pin; });
 		if (OutRaw)
 		{
 			*OutRaw = Outputs;
@@ -58,6 +60,36 @@ namespace PCGVoxelOffsetSurfaceTests
 		return Offset(In, Amount, [](UPCGVoxelOffsetSurfaceSettings&) {});
 	}
 
+	/** The Spawn pin. */
+	TArray<FOutPoint> Spawn(const UPCGData* In, double Amount, TFunctionRef<void(UPCGVoxelOffsetSurfaceSettings&)> Edit,
+		TArray<FPCGTaggedData>* OutRaw = nullptr)
+	{
+		return Offset(In, Amount, Edit, OutRaw, PCGVoxelOffsetSurfacePins::Spawn);
+	}
+
+	TArray<FOutPoint> Spawn(const UPCGData* In, double Amount)
+	{
+		return Spawn(In, Amount, [](UPCGVoxelOffsetSurfaceSettings&) {});
+	}
+
+	/** Per point of the single dataset in Raw, the Boolean attribute Name (empty when missing). */
+	TArray<bool> Bools(const TArray<FPCGTaggedData>& Raw, FName Name)
+	{
+		TArray<bool> Values;
+		const UPCGBasePointData* Points = Raw.Num() == 1 ? Cast<UPCGBasePointData>(Raw[0].Data) : nullptr;
+		const FPCGMetadataDomain* Domain = Points ? Points->ConstMetadata()->GetConstMetadataDomain(PCGMetadataDomainID::Elements) : nullptr;
+		const auto* Attribute = Domain ? static_cast<const FPCGMetadataAttribute<bool>*>(Domain->GetConstAttribute(Name)) : nullptr;
+		if (Attribute)
+		{
+			const TConstPCGValueRange<int64> Entries = Points->GetConstMetadataEntryValueRange();
+			for (int32 Index = 0; Index < Points->GetNumPoints(); ++Index)
+			{
+				Values.Add(Attribute->GetValueFromItemKey(Entries[Index]));
+			}
+		}
+		return Values;
+	}
+
 	const FOutPoint* At(const TArray<FOutPoint>& Points, const FIntVector& Cell)
 	{
 		return Points.FindByPredicate([&](const FOutPoint& P) { return P.Cell == Cell; });
@@ -68,10 +100,10 @@ namespace PCGVoxelOffsetSurfaceTests
 		return Points.FilterByPredicate([&](const FOutPoint& P) { return P.Cell == Cell; }).Num();
 	}
 
-	void AddScales(UPCGBasePointData* Points, const TArray<double>& Values)
+	void AddDoubles(UPCGBasePointData* Points, FName Name, const TArray<double>& Values)
 	{
 		FPCGMetadataDomain* Domain = Points->MutableMetadata()->GetMetadataDomain(PCGMetadataDomainID::Elements);
-		FPCGMetadataAttribute<double>* Attribute = Domain->CreateAttribute<double>(TEXT("AmountScale"), 1.0, false);
+		FPCGMetadataAttribute<double>* Attribute = Domain->CreateAttribute<double>(Name, 1.0, false);
 		const TConstPCGValueRange<int64> Entries = Points->GetConstMetadataEntryValueRange();
 		for (int32 Index = 0; Index < Values.Num(); ++Index)
 		{
@@ -142,7 +174,7 @@ bool FPCGVoxelOffsetSurfaceCornersTest::RunTest(const FString& Parameters)
 	// An L of three cells: the corner cell (0,0) has the empty (1,1) diagonal. Shrinking a quarter splits it in two
 	// (an L in XY), the arms stay one box each.
 	const TArray<FIntVector> L = { FIntVector(0, 0, 0), FIntVector(1, 0, 0), FIntVector(0, 1, 0) };
-	const TArray<FOutPoint> Split = Offset(MakeVoxels(L), -0.25);
+	const TArray<FOutPoint> Split = Spawn(MakeVoxels(L), -0.25);
 	TestEqual(TEXT("split: 4 points"), Split.Num(), 4);
 	TestEqual(TEXT("corner cell in 2 boxes"), CountAt(Split, FIntVector(0, 0, 0)), 2);
 	TestEqual(TEXT("arm in 1 box"), CountAt(Split, FIntVector(1, 0, 0)), 1);
@@ -156,7 +188,7 @@ bool FPCGVoxelOffsetSurfaceCornersTest::RunTest(const FString& Parameters)
 		}
 	}
 
-	const TArray<FOutPoint> NoSplit = Offset(MakeVoxels(L), -0.25, [](UPCGVoxelOffsetSurfaceSettings& S) { S.bSplitInnerCorners = false; });
+	const TArray<FOutPoint> NoSplit = Spawn(MakeVoxels(L), -0.25, [](UPCGVoxelOffsetSurfaceSettings& S) { S.bSplitInnerCorners = false; });
 	TestEqual(TEXT("no split: 3 points"), NoSplit.Num(), 3);
 	TestNearlyEqual(TEXT("no split keeps the notch filled"), Volume(NoSplit), (0.75 * 0.75 * 0.5 + 2.0 * 0.1875) * 1e6, 1.0);
 
@@ -164,7 +196,7 @@ bool FPCGVoxelOffsetSurfaceCornersTest::RunTest(const FString& Parameters)
 	// cube of a quarter cell: 3 boxes.
 	TArray<FIntVector> Notched = Block(3, 3, 3);
 	Notched.Remove(FIntVector(2, 2, 2));
-	const TArray<FOutPoint> Carved = Offset(MakeVoxels(Notched), -0.25);
+	const TArray<FOutPoint> Carved = Spawn(MakeVoxels(Notched), -0.25);
 	TestEqual(TEXT("middle cell carved into 3 boxes"), CountAt(Carved, FIntVector(1, 1, 1)), 3);
 	double Middle = 0.0;
 	for (const FOutPoint& P : Carved)
@@ -278,13 +310,13 @@ bool FPCGVoxelOffsetSurfaceScaleTest::RunTest(const FString& Parameters)
 
 	// Constant scale multiplies.
 	const TArray<FOutPoint> Doubled = Offset(MakeVoxels({ FIntVector(0) }), 0.25,
-		[](UPCGVoxelOffsetSurfaceSettings& S) { S.AmountScale = 2.0; });
+		[](UPCGVoxelOffsetSurfaceSettings& S) { S.AmountScale.Constant = 2.0; });
 	TestTrue(TEXT("Amount Scale 2"), Doubled.Num() == 1 && BoundsAre(&Doubled[0], FVector(-100.0), FVector(100.0)));
 
 	// Per cell: a row scaled 0, 1, -1. The first stays, the middle grows on its open sides, the last shrinks.
-	auto Attribute = [](UPCGVoxelOffsetSurfaceSettings& S) { S.AmountScaleInput = EPCGVoxelOffsetScaleInput::Attribute; };
+	auto Attribute = [](UPCGVoxelOffsetSurfaceSettings& S) { S.AmountScale.Input = EPCGUtilsPointInputValueType::Attribute; };
 	UPCGPointArrayData* Row = MakeVoxels({ FIntVector(0, 0, 0), FIntVector(1, 0, 0), FIntVector(2, 0, 0) });
-	AddScales(Row, { 0.0, 1.0, -1.0 });
+	AddDoubles(Row, TEXT("AmountScale"), { 0.0, 1.0, -1.0 });
 	const TArray<FOutPoint> Mixed = Offset(Row, 0.25, Attribute);
 	TestEqual(TEXT("mixed: 3 points"), Mixed.Num(), 3);
 	TestTrue(TEXT("scale 0 leaves the cell alone"), BoundsAre(At(Mixed, FIntVector(0, 0, 0)), FVector(-50.0), FVector(50.0)));
@@ -293,7 +325,7 @@ bool FPCGVoxelOffsetSurfaceScaleTest::RunTest(const FString& Parameters)
 
 	// Per cell whole layers: only the cell scaled 1 grows a layer.
 	UPCGPointArrayData* Pair = MakeVoxels({ FIntVector(0, 0, 0), FIntVector(1, 0, 0) });
-	AddScales(Pair, { 1.0, 0.0 });
+	AddDoubles(Pair, TEXT("AmountScale"), { 1.0, 0.0 });
 	const TArray<FOutPoint> OneGrows = Offset(Pair, 1.0, Attribute);
 	TestEqual(TEXT("one cell's 3x3x3 plus the other"), OneGrows.Num(), 27);
 	TestNull(TEXT("the unscaled cell grows nothing"), At(OneGrows, FIntVector(2, 0, 0)));
@@ -307,14 +339,152 @@ bool FPCGVoxelOffsetSurfaceScaleTest::RunTest(const FString& Parameters)
 	PCGUtilsDataDomain::WriteValue(*PCGUtilsDataDomain::GetMutableDataDomain(Single), TEXT("AmountScale"), -1.0);
 	const TArray<FOutPoint> FromData = Offset(Single, 0.25, [](UPCGVoxelOffsetSurfaceSettings& S)
 	{
-		S.AmountScaleInput = EPCGVoxelOffsetScaleInput::Attribute;
-		S.AmountScaleAttribute.Update(TEXT("@Data.AmountScale"));
+		S.AmountScale.SetAttribute(TEXT("@Data.AmountScale"));
 	});
 	TestTrue(TEXT("@Data scale -1 shrinks"), FromData.Num() == 1 && BoundsAre(&FromData[0], FVector(-25.0), FVector(25.0)));
 
 	// A missing attribute is an error naming the setting.
-	AddExpectedErrorPlain(TEXT("Amount Scale Attribute"), EAutomationExpectedErrorFlags::Contains, 1);
+	AddExpectedErrorPlain(TEXT("Amount Scale: attribute 'AmountScale' was not found on the points"), EAutomationExpectedErrorFlags::Contains, 1);
 	TestEqual(TEXT("missing attribute stops the input"), Offset(MakeVoxels({ FIntVector(0) }), 0.25, Attribute).Num(), 0);
+
+	// ---- Amount itself per point ----
+	// A row with amounts 0, 0.25, -0.25: the same result as scaling 0.25 by 0, 1, -1.
+	UPCGPointArrayData* AmountRow = MakeVoxels({ FIntVector(0, 0, 0), FIntVector(1, 0, 0), FIntVector(2, 0, 0) });
+	AddDoubles(AmountRow, TEXT("OffsetAmount"), { 0.0, 0.25, -0.25 });
+	const TArray<FOutPoint> PerPoint = Offset(AmountRow, 99.0, [](UPCGVoxelOffsetSurfaceSettings& S) { S.Amount.Input = EPCGUtilsPointInputValueType::Attribute; });
+	TestEqual(TEXT("per-point amount: 3 points"), PerPoint.Num(), 3);
+	TestTrue(TEXT("amount 0 leaves the cell alone"), BoundsAre(At(PerPoint, FIntVector(0, 0, 0)), FVector(-50.0), FVector(50.0)));
+	TestTrue(TEXT("amount 0.25 grows its open sides"), BoundsAre(At(PerPoint, FIntVector(1, 0, 0)), FVector(-50, -75, -75), FVector(50, 75, 75)));
+	TestTrue(TEXT("amount -0.25 shrinks its open sides"), BoundsAre(At(PerPoint, FIntVector(2, 0, 0)), FVector(-50, -25, -25), FVector(25, 25, 25)));
+
+	// Both per point multiply: 0.5 x 0.5 is a quarter.
+	UPCGPointArrayData* Both = MakeVoxels({ FIntVector(0) });
+	AddDoubles(Both, TEXT("OffsetAmount"), { 0.5 });
+	AddDoubles(Both, TEXT("AmountScale"), { 0.5 });
+	const TArray<FOutPoint> Multiplied = Offset(Both, 99.0, [](UPCGVoxelOffsetSurfaceSettings& S)
+	{
+		S.Amount.Input = EPCGUtilsPointInputValueType::Attribute;
+		S.AmountScale.Input = EPCGUtilsPointInputValueType::Attribute;
+	});
+	TestTrue(TEXT("0.5 x 0.5 grows a quarter"), Multiplied.Num() == 1 && BoundsAre(&Multiplied[0], FVector(-75.0), FVector(75.0)));
+
+	// A property works too: $Density is 1 on every point, scaled by a constant quarter.
+	const TArray<FOutPoint> FromDensity = Offset(MakeVoxels({ FIntVector(0) }), 99.0, [](UPCGVoxelOffsetSurfaceSettings& S)
+	{
+		S.Amount.SetAttribute(TEXT("$Density"));
+		S.AmountScale.Constant = 0.25;
+	});
+	TestTrue(TEXT("$Density x 0.25 grows a quarter"), FromDensity.Num() == 1 && BoundsAre(&FromDensity[0], FVector(-75.0), FVector(75.0)));
+
+	// A value that is not finite names the point.
+	UPCGPointArrayData* Bad = MakeVoxels({ FIntVector(0), FIntVector(1, 0, 0) });
+	AddDoubles(Bad, TEXT("OffsetAmount"), { 0.25, std::numeric_limits<double>::quiet_NaN() });
+	AddExpectedErrorPlain(TEXT("Amount: 'OffsetAmount' on point 1 is"), EAutomationExpectedErrorFlags::Contains, 1);
+	TestEqual(TEXT("NaN amount stops the input"),
+		Offset(Bad, 0.0, [](UPCGVoxelOffsetSurfaceSettings& S) { S.Amount.Input = EPCGUtilsPointInputValueType::Attribute; }).Num(), 0);
+
+	// A text attribute is the wrong type.
+	UPCGPointArrayData* Text = MakeVoxels({ FIntVector(0) });
+	Text->MutableMetadata()->GetMetadataDomain(PCGMetadataDomainID::Elements)->CreateAttribute<FString>(TEXT("OffsetAmount"), TEXT("x"), false);
+	AddExpectedErrorPlain(TEXT("this setting needs a number"), EAutomationExpectedErrorFlags::Contains, 1);
+	TestEqual(TEXT("text amount stops the input"),
+		Offset(Text, 0.0, [](UPCGVoxelOffsetSurfaceSettings& S) { S.Amount.Input = EPCGUtilsPointInputValueType::Attribute; }).Num(), 0);
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FPCGVoxelOffsetSurfaceOverrideLabelTest, "PCGUtils.Voxel.OffsetSurface.OverridePinLabels",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::ProductFilter)
+
+bool FPCGVoxelOffsetSurfaceOverrideLabelTest::RunTest(const FString& Parameters)
+{
+	// Amount and AmountScale were plain numbers; their override pins keep those labels as point shorthands.
+	TSet<FName> Labels;
+	for (const FPCGSettingsOverridableParam& Param : NewObject<UPCGVoxelOffsetSurfaceSettings>()->OverridableParams())
+	{
+		Labels.Add(Param.Label);
+	}
+	for (const TCHAR* Expected : { TEXT("Amount"), TEXT("AmountAttribute"), TEXT("AmountScale"), TEXT("AmountScaleAttribute") })
+	{
+		TestTrue(FString::Printf(TEXT("override pin '%s'"), Expected), Labels.Contains(FName(Expected)));
+	}
+	TestFalse(TEXT("no bare Constant pin"), Labels.Contains(TEXT("Constant")));
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FPCGVoxelOffsetSurfacePinsTest, "PCGUtils.Voxel.OffsetSurface.GridAndSpawnPins",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+
+bool FPCGVoxelOffsetSurfacePinsTest::RunTest(const FString& Parameters)
+{
+	using namespace PCGVoxelOffsetSurfaceTests;
+
+	// An L shrunk a quarter: Out keeps one point per cell (the corner flagged, with its open-face box); Spawn has the
+	// corner's two carved boxes.
+	const TArray<FIntVector> L = { FIntVector(0, 0, 0), FIntVector(1, 0, 0), FIntVector(0, 1, 0) };
+	TArray<FPCGTaggedData> GridRaw;
+	const TArray<FOutPoint> Grid = Offset(MakeVoxels(L), -0.25, [](UPCGVoxelOffsetSurfaceSettings&) {}, &GridRaw);
+	TestEqual(TEXT("Out: one point per cell"), Grid.Num(), 3);
+	const TArray<bool> Split = Bools(GridRaw, TEXT("WasSplit"));
+	if (TestEqual(TEXT("Out: WasSplit on every point"), Split.Num(), 3))
+	{
+		for (int32 Index = 0; Index < Grid.Num(); ++Index)
+		{
+			TestEqual(FString::Printf(TEXT("Out: WasSplit of %s"), *Grid[Index].Cell.ToString()), Split[Index], Grid[Index].Cell == FIntVector(0, 0, 0));
+		}
+	}
+	if (const FOutPoint* Corner = At(Grid, FIntVector(0, 0, 0)))
+	{
+		TestTrue(TEXT("Out: the split cell keeps its open-face box"), BoundsAre(Corner, FVector(-25, -25, -25), FVector(50, 50, 25)));
+	}
+	TArray<FPCGTaggedData> SpawnRaw;
+	const TArray<FOutPoint> Pieces = Spawn(MakeVoxels(L), -0.25, [](UPCGVoxelOffsetSurfaceSettings&) {}, &SpawnRaw);
+	TestEqual(TEXT("Spawn: the corner's 2 boxes plus the arms"), Pieces.Num(), 4);
+	int32 SplitPieces = 0;
+	for (const bool bSplit : Bools(SpawnRaw, TEXT("WasSplit")))
+	{
+		SplitPieces += bSplit ? 1 : 0;
+	}
+	TestEqual(TEXT("Spawn: the 2 carved boxes are flagged"), SplitPieces, 2);
+
+	// Out is a valid voxel set again: a second offset reads it without a duplicate-cell error.
+	if (GridRaw.Num() == 1)
+	{
+		TestEqual(TEXT("Out feeds another voxel node"), Offset(GridRaw[0].Data, 0.0).Num(), 3);
+	}
+
+	// A notch inside a 3x3x3: Out has 26 cells, the middle (all six neighbours filled) flagged with a whole-cell box.
+	TArray<FIntVector> Notched = Block(3, 3, 3);
+	Notched.Remove(FIntVector(2, 2, 2));
+	const TArray<FOutPoint> NotchedGrid = Offset(MakeVoxels(Notched), -0.25);
+	TestEqual(TEXT("notched Out: 26 cells"), NotchedGrid.Num(), 26);
+	TestTrue(TEXT("notched Out: the middle keeps a whole cell"), BoundsAre(At(NotchedGrid, FIntVector(1, 1, 1)), FVector(-50.0), FVector(50.0)));
+
+	// Spawn Only Visible: a 5x5x5 grown a quarter spawns its 98 surface cells, not the hidden 27.
+	TestEqual(TEXT("5x5x5 Out: 125 cells"), Offset(MakeVoxels(Block(5, 5, 5)), 0.25).Num(), 125);
+	TestEqual(TEXT("5x5x5 Spawn: 98 visible"), Spawn(MakeVoxels(Block(5, 5, 5)), 0.25).Num(), 98);
+	TestEqual(TEXT("5x5x5 Spawn, every cell"),
+		Spawn(MakeVoxels(Block(5, 5, 5)), 0.25, [](UPCGVoxelOffsetSurfaceSettings& S) { S.bSpawnOnlyVisible = false; }).Num(), 125);
+
+	// IsSurrounded on the input is rewritten for the offset cells: -1 on 5x5x5 leaves 27, only the middle hidden.
+	UPCGPointArrayData* WithFlag = MakeVoxels(Block(5, 5, 5));
+	{
+		FPCGMetadataAttribute<bool>* Flag = WithFlag->Metadata->GetMetadataDomain(PCGMetadataDomainID::Elements)
+			->CreateAttribute<bool>(TEXT("IsSurrounded"), false, false);
+		const TConstPCGValueRange<int64> Entries = WithFlag->GetConstMetadataEntryValueRange();
+		for (int32 Index = 0; Index < WithFlag->GetNumPoints(); ++Index)
+		{
+			Flag->SetValue(Entries[Index], true); // stale: everything claims to be hidden
+		}
+	}
+	TArray<FPCGTaggedData> FlagRaw;
+	Offset(WithFlag, -1.0, [](UPCGVoxelOffsetSurfaceSettings&) {}, &FlagRaw);
+	int32 Hidden = 0;
+	const TArray<bool> Surrounded = Bools(FlagRaw, TEXT("IsSurrounded"));
+	for (const bool bHidden : Surrounded)
+	{
+		Hidden += bHidden ? 1 : 0;
+	}
+	TestTrue(TEXT("Out: 27 cells, 1 surrounded"), Surrounded.Num() == 27 && Hidden == 1);
 	return true;
 }
 

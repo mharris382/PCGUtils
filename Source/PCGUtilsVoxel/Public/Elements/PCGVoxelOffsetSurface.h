@@ -3,11 +3,18 @@
 #pragma once
 
 #include "CoreMinimal.h"
+#include "Details/PCGUtilsPointShorthands.h"
 #include "Elements/PCGVoxelSettingsBase.h"
 #include "Metadata/PCGAttributePropertySelector.h"
 #include "PCGElement.h"
 
 #include "PCGVoxelOffsetSurface.generated.h"
+
+namespace PCGVoxelOffsetSurfacePins
+{
+	/** The boxes to spawn meshes on (split pieces included, hidden cells left out). */
+	const FName Spawn = TEXT("Spawn");
+}
 
 /** What Amount is measured in. */
 UENUM(BlueprintType)
@@ -19,13 +26,11 @@ enum class EPCGVoxelOffsetUnits : uint8
 	Absolute UMETA(DisplayName="Absolute (World Units)"),
 };
 
-/** Where Amount Scale comes from. */
-UENUM(BlueprintType)
+/** Where Amount Scale came from before it became a point shorthand. Kept only to load older graphs. */
+UENUM()
 enum class EPCGVoxelOffsetScaleInput : uint8
 {
-	/** The Amount Scale number on the node (default 1: no change). */
 	Constant,
-	/** Amount Scale Attribute: a point attribute or property gives one value per cell; an @Data attribute one per set. */
 	Attribute,
 };
 
@@ -54,13 +59,16 @@ enum class EPCGVoxelOffsetAddedValues : uint8
 
 /**
  * Offsets the surface of a voxel set, like adding the open-side vectors to each cell's bounds, but aware of the grid.
- * Each cell's offset is Amount x Amount Scale (in cells or world units). The whole part adds or removes layers of cells;
+ * Each cell's offset is Amount x Amount Scale (in cells or world units); each is a constant or an attribute (one
+ * value per point, so per cell, or one @Data value per set). The whole part adds or removes layers of cells;
  * the fraction moves the cell's open faces (written to the point bounds, the point staying on its cell centre). Corners
  * stay square, as in a box offset; with Split Inner Corners a shrink carves inside corners too by splitting those cells
  * into boxes.
  *
- * Out: In, mutated: one point per cell (a chunked set is expanded), its metadata, tags and @Data kept. Split cells
- * become several points on the same cell; with them, Out is no longer a valid voxel set for other Voxel | nodes.
+ * Out: In, mutated and still a valid voxel set: one point per cell (a chunked set is expanded), metadata, tags and
+ * @Data kept, bounds moved on the open faces. Cells carved at inside corners are flagged with Was Split Attribute.
+ * Spawn: the same cells as boxes to spawn on; a split cell becomes its carved boxes (several points on one cell), and
+ * cells that can never be seen are left out.
  */
 UCLASS(BlueprintType, ClassGroup=(Procedural), Category="PCGUtils|Voxel",
 	meta=(Keywords="voxel voxels offset surface grow shrink inset outset erode dilate thicken thin bounds open sides push corner split"))
@@ -70,6 +78,8 @@ class PCGUTILSVOXEL_API UPCGVoxelOffsetSurfaceSettings : public UPCGVoxelSetting
 
 public:
 	UPCGVoxelOffsetSurfaceSettings();
+
+	virtual void PostLoad() override;
 
 #if WITH_EDITOR
 	virtual FName GetDefaultNodeName() const override { return TEXT("VoxelOffsetSurface"); }
@@ -81,31 +91,23 @@ public:
 	 * How far the surface moves (times Amount Scale), in Units. Positive grows, negative shrinks. The whole part (in
 	 * cells) adds or removes that many layers of cells; the rest moves the open faces of the cells that are left.
 	 * -1.25 cells: one layer removed, then the new surface pulled in a quarter cell.
+	 * Attribute (a number, required in that mode; default 'OffsetAmount'): a point attribute or property gives each
+	 * cell its own amount (every cell of a chunk shares its point's value); '@Data.OffsetAmount' gives one per set.
 	 */
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Settings", meta=(PCG_Overridable, UIMin="-4", UIMax="4"))
-	double Amount = 0.25;
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Settings", meta=(PCG_Overridable))
+	FPCGUtilsPointShorthandDouble Amount = FPCGUtilsPointShorthandDouble(0.25, TEXT("OffsetAmount"));
 
 	/** Cells (default): 1 is one cell width. Absolute: world units, the same distance on every axis. */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Settings", meta=(PCG_Overridable))
 	EPCGVoxelOffsetUnits Units = EPCGVoxelOffsetUnits::Cells;
 
-	/** Constant (default, 1): the same offset everywhere. Attribute: Amount is multiplied by Amount Scale Attribute. */
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Settings", meta=(PCG_Overridable))
-	EPCGVoxelOffsetScaleInput AmountScaleInput = EPCGVoxelOffsetScaleInput::Constant;
-
-	/** Multiplies Amount everywhere. */
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Settings",
-		meta=(PCG_Overridable, EditCondition="AmountScaleInput == EPCGVoxelOffsetScaleInput::Constant", EditConditionHides))
-	double AmountScale = 1.0;
-
 	/**
-	 * Required when Amount Scale Input is Attribute (a number). A point attribute or property (default 'AmountScale')
-	 * gives each cell its own scale, for falloff or masking (0 leaves a cell alone, negative flips it); every cell of a
-	 * chunk shares its point's value. An @Data attribute ('@Data.AmountScale') gives one scale for the whole set.
+	 * Multiplies Amount, for falloff or masking: 0 leaves a cell alone, negative flips it. Default constant 1 (no
+	 * change). Attribute (a number, required in that mode; default 'AmountScale'): a point attribute or property gives
+	 * each cell its own scale (every cell of a chunk shares its point's value); '@Data.AmountScale' gives one per set.
 	 */
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Settings",
-		meta=(PCG_Overridable, EditCondition="AmountScaleInput == EPCGVoxelOffsetScaleInput::Attribute", EditConditionHides))
-	FPCGAttributePropertyInputSelector AmountScaleAttribute;
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Settings", meta=(PCG_Overridable))
+	FPCGUtilsPointShorthandDouble AmountScale = FPCGUtilsPointShorthandDouble(1.0, TEXT("AmountScale"));
 
 	/** Negative offsets of a cell or more: Delete the outer layers, or Push the surface (and its values) inward. */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Settings", meta=(PCG_Overridable))
@@ -124,11 +126,36 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Settings", meta=(PCG_Overridable))
 	bool bSplitInnerCorners = true;
 
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Outputs", meta=(PCG_Overridable, InlineEditConditionToggle))
+	bool bWriteWasSplit = true;
+
+	/**
+	 * Optional output, Boolean, on Out and Spawn: true for a cell carved at an inside corner (Split Inner Corners). On
+	 * Out its point keeps the open-face box; on Spawn the cell is its carved boxes, each flagged.
+	 */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Outputs", meta=(PCG_Overridable, EditCondition="bWriteWasSplit"))
+	FName WasSplitAttribute = TEXT("WasSplit");
+
+	/**
+	 * Spawn leaves out cells that show no face and were not carved (all six neighbours filled after the offset), so it
+	 * can feed a mesh spawner directly. Off: every cell.
+	 */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Outputs", meta=(PCG_Overridable))
+	bool bSpawnOnlyVisible = true;
+
 	/** The node stops with an error when the box of cells it works over (the set's bounds, plus the added layers) has more cells than this. */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Settings", meta=(PCG_Overridable, ClampMin="1"))
 	int64 MaxCells = 64 * 1024 * 1024;
 
 protected:
+	/** Older graphs: Constant or Attribute for Amount Scale, now AmountScale.Input. */
+	UPROPERTY()
+	EPCGVoxelOffsetScaleInput AmountScaleInput_DEPRECATED = EPCGVoxelOffsetScaleInput::Constant;
+
+	/** Older graphs: the Amount Scale attribute, now AmountScale.Attribute. */
+	UPROPERTY()
+	FPCGAttributePropertyInputSelector AmountScaleAttribute_DEPRECATED;
+
 	virtual TArray<FPCGPinProperties> InputPinProperties() const override;
 	virtual TArray<FPCGPinProperties> OutputPinProperties() const override;
 	virtual FPCGElementPtr CreateElement() const override;

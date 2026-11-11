@@ -70,6 +70,11 @@ namespace PCGVoxelShiftSeamsPrivate
 	};
 }
 
+UPCGVoxelShiftSeamsSettings::UPCGVoxelShiftSeamsSettings()
+{
+	NoiseScale.Attribute.Update(TEXT("@Data.SeamNoiseScale"));
+}
+
 #if WITH_EDITOR
 FText UPCGVoxelShiftSeamsSettings::GetDefaultNodeTitle() const
 {
@@ -117,13 +122,12 @@ bool FPCGVoxelShiftSeamsElement::ExecuteInternal(FPCGContext* Context) const
 	check(Settings);
 	const FText Title = LOCTEXT("ErrorTitle", "Voxel | Shift Seams");
 	const bool bNoise = Settings->Source == EPCGVoxelSeamShiftSource::Noise;
-	if (bNoise && !(Settings->NoiseScale > 0.0f))
+	if (bNoise && Settings->NoiseScale.IsConstant() && !(Settings->NoiseScale.Constant > 0.0))
 	{
 		PCGLog::LogErrorOnGraph(PCGVoxel::FormatError(Title, INDEX_NONE, FText::Format(
-			LOCTEXT("NoiseScale", "Noise Scale is {0}; it must be greater than 0."), FText::AsNumber(Settings->NoiseScale))), Context);
+			LOCTEXT("NoiseScale", "Noise Scale is {0}; it must be greater than 0."), FText::AsNumber(Settings->NoiseScale.Constant))), Context);
 		return true;
 	}
-	const double Strength = FMath::Clamp(Settings->Strength, 0.0f, 1.0f);
 	const bool bAxisOn[3] = { Settings->bShiftX, Settings->bShiftY, Settings->bShiftZ };
 	const int32 Seed = Context->GetSeed();
 
@@ -146,6 +150,34 @@ bool FPCGVoxelShiftSeamsElement::ExecuteInternal(FPCGContext* Context) const
 		{
 			continue;
 		}
+
+		// Strength per box (or one for the set) and the noise size for the set.
+		TPCGUtilsPointValues<double> Strengths;
+		FText ReadError;
+		if (!Settings->Strength.TryRead(Points, Strengths, ReadError, LOCTEXT("StrengthLabel", "Strength")))
+		{
+			PCGLog::LogErrorOnGraph(PCGVoxel::FormatError(Title, Index, ReadError), Context);
+			continue;
+		}
+		double NoiseScale = Settings->NoiseScale.Constant;
+		if (bNoise)
+		{
+			if (!Settings->NoiseScale.TryReadDataValue(Points, NoiseScale, ReadError, LOCTEXT("NoiseScaleLabel", "Noise Scale")))
+			{
+				PCGLog::LogErrorOnGraph(PCGVoxel::FormatError(Title, Index, ReadError), Context);
+				continue;
+			}
+			if (!(NoiseScale > 0.0))
+			{
+				PCGLog::LogErrorOnGraph(PCGVoxel::FormatError(Title, Index, FText::Format(
+					LOCTEXT("NoiseScaleData", "Noise Scale ('{0}') is {1}; it must be greater than 0."),
+					Settings->NoiseScale.Attribute.GetDisplayText(), FText::AsNumber(NoiseScale))), Context);
+				continue;
+			}
+		}
+		const bool bAnyStrength = Strengths.IsPerPoint()
+			? Strengths.PerPoint.ContainsByPredicate([](double S) { return S > 0.0; })
+			: Strengths.Single > 0.0;
 
 		// The output is the input, copied point for point.
 		const int32 NumPoints = Points->GetNumPoints();
@@ -201,7 +233,7 @@ bool FPCGVoxelShiftSeamsElement::ExecuteInternal(FPCGContext* Context) const
 		TArray<FSeam> Seams;
 		TArray<int32> LowMembers, HighMembers;
 		const int32 NumCells = Grid.NumCells();
-		for (int32 Axis = 0; Axis < 3 && Strength > 0.0; ++Axis)
+		for (int32 Axis = 0; Axis < 3 && bAnyStrength; ++Axis)
 		{
 			if (!bAxisOn[Axis])
 			{
@@ -363,7 +395,7 @@ bool FPCGVoxelShiftSeamsElement::ExecuteInternal(FPCGContext* Context) const
 					Sum += FaceCentre * Area(P);
 				}
 				const FVector World = Grid.GridToWorld.TransformPositionNoScale(Sum / FMath::Max(LowArea, UE_SMALL_NUMBER));
-				Value = FMath::Clamp(FMath::PerlinNoise3D(World / Settings->NoiseScale + NoiseOffset[Axis]), -1.0f, 1.0f);
+				Value = FMath::Clamp(FMath::PerlinNoise3D(World / NoiseScale + NoiseOffset[Axis]), -1.0f, 1.0f);
 			}
 			else
 			{
@@ -371,8 +403,27 @@ bool FPCGVoxelShiftSeamsElement::ExecuteInternal(FPCGContext* Context) const
 				Value = Stream.FRandRange(-1.0, 1.0);
 			}
 
-			// + moves the seam towards the High boxes. Each side gives up at most Strength x half its thinnest box.
-			const double Shift = Value >= 0.0 ? Value * Strength * HighGive : Value * Strength * LowGive;
+			// + moves the seam towards the High boxes. LowGive and HighGive are half of each side's thinnest box.
+			double Reach;
+			if (Settings->Limit == EPCGVoxelSeamLimit::ThinnestEitherSide)
+			{
+				Reach = 2.0 * FMath::Min(LowGive, HighGive);
+			}
+			else
+			{
+				Reach = Value >= 0.0 ? HighGive : LowGive;
+			}
+			// The seam's strength: the weakest box on either side.
+			double Strength = 1.0;
+			for (const int32 P : Low)
+			{
+				Strength = FMath::Min(Strength, Strengths.Get(P));
+			}
+			for (const int32 Q : High)
+			{
+				Strength = FMath::Min(Strength, Strengths.Get(Q));
+			}
+			const double Shift = Value * Strength * Reach;
 			if (Shift == 0.0)
 			{
 				continue;

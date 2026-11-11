@@ -280,6 +280,7 @@ bool FPCGVoxelMatchRulesElement::ExecuteInternal(FPCGContext* Context) const
 		{
 			PCGVoxelPointIO::WritePointAttribute<int32>(Out, Settings->RuleIndexAttribute, INDEX_NONE, RuleIndex);
 		}
+		PCGVoxelPointIO::RefreshSurrounded(Points, Out, Settings->Grid.SurroundedAttribute, OutCells, [&Grid](const FIntVector& Cell) { return Grid.IsOccupied(Cell); });
 		FPCGTaggedData& Output = Context->OutputData.TaggedData.Emplace_GetRef(Inputs[InputIndex]);
 		Output.Data = Out;
 		Output.Pin = PCGPinConstants::DefaultOutputLabel;
@@ -295,6 +296,7 @@ bool FPCGVoxelMatchRulesElement::ExecuteInternal(FPCGContext* Context) const
 				{
 					PCGVoxelPointIO::WritePointAttribute<int32>(Rest, Settings->RuleIndexAttribute, INDEX_NONE, None);
 				}
+				PCGVoxelPointIO::RefreshSurrounded(Points, Rest, Settings->Grid.SurroundedAttribute, UnmatchedCells, [&Grid](const FIntVector& Cell) { return Grid.IsOccupied(Cell); });
 				FPCGTaggedData& RestOutput = Context->OutputData.TaggedData.Emplace_GetRef(Inputs[InputIndex]);
 				RestOutput.Data = Rest;
 				RestOutput.Pin = UnmatchedLabel;

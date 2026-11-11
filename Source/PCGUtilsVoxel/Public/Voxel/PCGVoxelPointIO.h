@@ -25,6 +25,16 @@ struct FPCGVoxelCellOut
 	FIntVector Span = FIntVector(1);
 };
 
+/** The cells covered by a list of output boxes, for neighbour questions about an output that is not a grid yet. */
+struct PCGUTILSVOXEL_API FPCGVoxelCellSet
+{
+	TSet<FIntVector> Cells;
+
+	FPCGVoxelCellSet() = default;
+	explicit FPCGVoxelCellSet(TConstArrayView<FPCGVoxelCellOut> Boxes);
+	bool Contains(const FIntVector& Cell) const { return Cells.Contains(Cell); }
+};
+
 namespace PCGVoxelPointIO
 {
 	/**
@@ -57,6 +67,19 @@ namespace PCGVoxelPointIO
 		}
 		return true;
 	}
+
+	/** True when every cell sharing a face with the box (First, Span) is filled: the box shows no face. */
+	PCGUTILSVOXEL_API bool IsBoxSurrounded(const FIntVector& First, const FIntVector& Span, TFunctionRef<bool(const FIntVector&)> IsFilled);
+
+	/**
+	 * Keeps the 'is surrounded' attribute true to the output (the voxel contract's Surrounded Attribute, see
+	 * FPCGVoxelGridReadSettings). When Source carries Name as a Boolean point attribute, it is rewritten on Out (one
+	 * point per entry of Cells, as written by WriteCells): true when IsBoxSurrounded for the point's box. IsFilled
+	 * answers for the whole voxel set the output belongs to (not only the cells on this pin). Does nothing when Name is
+	 * None or Source has no Boolean attribute of that name. Returns true when it wrote.
+	 */
+	PCGUTILSVOXEL_API bool RefreshSurrounded(const UPCGBasePointData* Source, UPCGBasePointData* Out, FName Name,
+		TConstArrayView<FPCGVoxelCellOut> Cells, TFunctionRef<bool(const FIntVector&)> IsFilled);
 
 	/** True when the points carry a point attribute with this name. */
 	PCGUTILSVOXEL_API bool HasPointAttribute(const UPCGBasePointData* Points, FName Name);

@@ -5,7 +5,6 @@
 #include "Algo/Sort.h"
 #include "Async/ParallelFor.h"
 #include "Data/PCGBasePointData.h"
-#include "Details/PCGUtilsInputShorthands.h"
 #include "PCGContext.h"
 #include "PCGPin.h"
 #include "Spatial/PointHashGrid3.h"
@@ -202,7 +201,20 @@ namespace PCGVoxelOffsetSurfacePrivate
 
 UPCGVoxelOffsetSurfaceSettings::UPCGVoxelOffsetSurfaceSettings()
 {
-	AmountScaleAttribute.SetAttributeName(TEXT("AmountScale"));
+	AmountScaleAttribute_DEPRECATED.SetAttributeName(TEXT("AmountScale"));
+}
+
+void UPCGVoxelOffsetSurfaceSettings::PostLoad()
+{
+	Super::PostLoad();
+	// Amount Scale was a number plus an Input enum and an attribute; the number loads into the shorthand's constant
+	// by itself, the attribute mode is carried over here.
+	if (AmountScaleInput_DEPRECATED == EPCGVoxelOffsetScaleInput::Attribute)
+	{
+		AmountScale.Input = EPCGUtilsPointInputValueType::Attribute;
+		AmountScale.Attribute = AmountScaleAttribute_DEPRECATED;
+		AmountScaleInput_DEPRECATED = EPCGVoxelOffsetScaleInput::Constant;
+	}
 }
 
 #if WITH_EDITOR
@@ -214,10 +226,10 @@ FText UPCGVoxelOffsetSurfaceSettings::GetDefaultNodeTitle() const
 FText UPCGVoxelOffsetSurfaceSettings::GetNodeTooltipText() const
 {
 	return LOCTEXT("Tooltip",
-		"Moves a voxel set's surface by Amount x Amount Scale (cells or world units; the scale can be per cell from a point "
-		"attribute). The whole part adds or removes layers of cells; the fraction moves the open faces of each cell (its "
+		"Moves a voxel set's surface by Amount x Amount Scale (cells or world units; each a constant, a per-cell point "
+		"attribute or an @Data value). The whole part adds or removes layers of cells; the fraction moves the open faces of each cell (its "
 		"point bounds). Corners stay square, and Split Inner Corners carves inside corners on a shrink by splitting those "
-		"cells into boxes. Out is In, expanded to one point per cell.");
+		"cells into boxes. Out keeps the grid (one point per cell, split cells flagged); Spawn has the boxes to spawn meshes on.");
 }
 #endif
 
@@ -234,8 +246,11 @@ TArray<FPCGPinProperties> UPCGVoxelOffsetSurfaceSettings::OutputPinProperties() 
 {
 	TArray<FPCGPinProperties> Pins;
 	Pins.Emplace(PCGPinConstants::DefaultOutputLabel, EPCGDataType::Point, true, true,
-		LOCTEXT("OutTooltip", "Each input offset: one point per cell (several on a split inside-corner cell), each point on its cell "
-			"centre with bounds covering its box."));
+		LOCTEXT("OutTooltip", "Each input offset, still a valid voxel set: one point per cell after the whole layers, its bounds "
+			"moved on its open faces. Cells carved at inside corners are flagged (Was Split Attribute); Is Surrounded is rewritten."));
+	Pins.Emplace(PCGVoxelOffsetSurfacePins::Spawn, EPCGDataType::Point, true, true,
+		LOCTEXT("SpawnTooltip", "Each input's points to spawn meshes on: one per box, with a split cell's carved boxes in place of its "
+			"point, and (Spawn Only Visible) without cells that show no face. Not a voxel set: a split cell has several points."));
 	return Pins;
 }
 
@@ -258,13 +273,12 @@ bool FPCGVoxelOffsetSurfaceElement::ExecuteInternal(FPCGContext* Context) const
 		PCGLog::LogErrorOnGraph(PCGVoxel::FormatError(Title, InputIndex, Message), Context);
 	};
 
-	if (!FMath::IsFinite(Settings->Amount))
+	if (Settings->Amount.IsConstant() && !FMath::IsFinite(Settings->Amount.Constant))
 	{
 		Fail(LOCTEXT("AmountNotFinite", "Amount is not a finite number."));
 		return true;
 	}
-	const bool bAttributeScale = Settings->AmountScaleInput == EPCGVoxelOffsetScaleInput::Attribute;
-	if (!bAttributeScale && !FMath::IsFinite(Settings->AmountScale))
+	if (Settings->AmountScale.IsConstant() && !FMath::IsFinite(Settings->AmountScale.Constant))
 	{
 		Fail(LOCTEXT("ScaleNotFinite", "Amount Scale is not a finite number."));
 		return true;
@@ -300,41 +314,24 @@ bool FPCGVoxelOffsetSurfaceElement::ExecuteInternal(FPCGContext* Context) const
 		}
 		if (Grid.NumCells() == 0)
 		{
-			FPCGTaggedData& Output = Context->OutputData.TaggedData.Emplace_GetRef(Inputs[InputIndex]);
-			Output.Pin = PCGPinConstants::DefaultOutputLabel;
+			Context->OutputData.TaggedData.Emplace_GetRef(Inputs[InputIndex]).Pin = PCGPinConstants::DefaultOutputLabel;
+			Context->OutputData.TaggedData.Emplace_GetRef(Inputs[InputIndex]).Pin = PCGVoxelOffsetSurfacePins::Spawn;
 			continue;
 		}
 
-		// ---- Amount Scale: constant, one @Data value for the set, or one value per point ----
-		TArray<double> PointScale;
-		double SetScale = Settings->AmountScale;
-		if (bAttributeScale)
+		// ---- Amount and Amount Scale: a constant, one @Data value for the set, or one value per point ----
+		TPCGUtilsPointValues<double> AmountValues;
+		TPCGUtilsPointValues<double> ScaleValues;
+		FText ReadError;
+		if (!Settings->Amount.TryRead(Points, AmountValues, ReadError, LOCTEXT("AmountLabel", "Amount")))
 		{
-			const FPCGAttributePropertyInputSelector& Selector = Settings->AmountScaleAttribute;
-			FPCGMetadataDomainID Domain = Points->GetMetadataDomainIDFromSelector(Selector);
-			if (Domain == PCGMetadataDomainID::Default)
-			{
-				Domain = Points->GetDefaultMetadataDomainID();
-			}
-			if (Domain == PCGMetadataDomainID::Data)
-			{
-				FText Reason;
-				if (!PCGUtilsInputShorthands::ReadDataDomainValue(Points, Selector, SetScale, Reason))
-				{
-					Fail(FText::Format(LOCTEXT("ScaleDataRead", "Amount Scale Attribute: {0}."), Reason), InputIndex);
-					continue;
-				}
-				if (!FMath::IsFinite(SetScale))
-				{
-					Fail(FText::Format(LOCTEXT("ScaleDataNotFinite", "Amount Scale Attribute '{0}' is not a finite number."), Selector.GetDisplayText()), InputIndex);
-					continue;
-				}
-			}
-			else if (!PCGVoxelPointIO::ReadPointValues<double>(Context, Points, Selector, PointScale, Title, InputIndex,
-				LOCTEXT("ScaleSetting", "Amount Scale Attribute"), LOCTEXT("ScaleType", "a number")))
-			{
-				continue;
-			}
+			Fail(ReadError, InputIndex);
+			continue;
+		}
+		if (!Settings->AmountScale.TryRead(Points, ScaleValues, ReadError, LOCTEXT("ScaleLabel", "Amount Scale")))
+		{
+			Fail(ReadError, InputIndex);
+			continue;
 		}
 
 		// ---- Each cell's offset, in cells per axis ----
@@ -348,12 +345,11 @@ bool FPCGVoxelOffsetSurfaceElement::ExecuteInternal(FPCGContext* Context) const
 		for (int32 Index = 0; Index < Grid.NumCells() && !bBadScale; ++Index)
 		{
 			const int32 Point = Grid.CellPoint[Index];
-			const double Scale = PointScale.IsEmpty() ? SetScale : PointScale[Point];
-			const double Value = Settings->Amount * Scale;
+			const double Value = AmountValues.Get(Point) * ScaleValues.Get(Point);
 			if (!FMath::IsFinite(Value))
 			{
-				Fail(FText::Format(LOCTEXT("ScalePointNotFinite", "Amount Scale Attribute on point {0} is {1}; Amount x Amount Scale must be a finite number."),
-					Point, FText::AsNumber(Scale)), InputIndex);
+				Fail(FText::Format(LOCTEXT("ProductNotFinite", "on point {0}, Amount ({1}) x Amount Scale ({2}) overflows; the product must be a finite number."),
+					Point, FText::AsNumber(AmountValues.Get(Point)), FText::AsNumber(ScaleValues.Get(Point))), InputIndex);
 				bBadScale = true;
 				break;
 			}
@@ -556,9 +552,19 @@ bool FPCGVoxelOffsetSurfaceElement::ExecuteInternal(FPCGContext* Context) const
 			});
 		}
 
-		// ---- The fraction: per result cell, its box (or boxes) ----
-		TArray<FPiece> Pieces;
-		Pieces.Reserve(ResultCells.Num());
+		// ---- The fraction: per result cell, its face box (Out) and the boxes to spawn (Spawn) ----
+		// The face box moves only the open faces: it is the cell's point on Out, a valid voxel set. On a shrink with
+		// Split Inner Corners, the cell is also carved near every empty neighbour; when that leaves anything but the
+		// face box, the cell is split: Out flags it and Spawn gets the carved boxes instead.
+		TArray<FPiece> GridPieces;
+		TArray<bool> GridSplit;
+		GridPieces.Reserve(ResultCells.Num());
+		GridSplit.Reserve(ResultCells.Num());
+		TArray<FPiece> SpawnPieces;
+		TArray<bool> SpawnSplit;
+		SpawnPieces.Reserve(ResultCells.Num());
+		SpawnSplit.Reserve(ResultCells.Num());
+		TArray<FPiece> Carved;
 		TArray<FIntVector, TInlineAllocator<26>> EmptyNeighbours;
 		for (int32 Index = 0; Index < ResultCells.Num(); ++Index)
 		{
@@ -568,97 +574,155 @@ bool FPCGVoxelOffsetSurfaceElement::ExecuteInternal(FPCGContext* Context) const
 			Whole.Cell = Cell;
 			Whole.Source = Own[Index];
 			Whole.bFreshEntry = Added[Index] && Settings->AddedValues == EPCGVoxelOffsetAddedValues::None;
-			if (Offset.Sign == 0 || Offset.Fraction.IsZero())
+			const bool bVisible = IsSurface(Result, Cell);
+
+			if (Offset.Sign != 0 && !Offset.Fraction.IsZero())
 			{
-				Pieces.Add(Whole);
-				continue;
-			}
-			const bool bGrow = Offset.Sign > 0;
-			for (int32 Axis = 0; Axis < 3; ++Axis)
-			{
-				const double F = bGrow ? Offset.Fraction[Axis] : -Offset.Fraction[Axis];
-				FIntVector Step(0);
-				Step[Axis] = 1;
-				if (!Result.Get(Cell + Step)) { Whole.Hi[Axis] += F; }
-				if (!Result.Get(Cell - Step)) { Whole.Lo[Axis] -= F; }
-			}
-			if (bGrow || !Settings->bSplitInnerCorners)
-			{
-				if ((Whole.Hi - Whole.Lo).GetMin() > 1e-6)
+				const bool bGrow = Offset.Sign > 0;
+				for (int32 Axis = 0; Axis < 3; ++Axis)
 				{
-					Pieces.Add(Whole);
+					const double F = bGrow ? Offset.Fraction[Axis] : -Offset.Fraction[Axis];
+					FIntVector Step(0);
+					Step[Axis] = 1;
+					if (!Result.Get(Cell + Step)) { Whole.Hi[Axis] += F; }
+					if (!Result.Get(Cell - Step)) { Whole.Lo[Axis] -= F; }
 				}
-				continue;
-			}
-			// Shrinking with inside corners: carve the parts within the fraction of every empty neighbour.
-			EmptyNeighbours.Reset();
-			for (int32 Z = -1; Z <= 1; ++Z)
-				for (int32 Y = -1; Y <= 1; ++Y)
-					for (int32 X = -1; X <= 1; ++X)
+				if ((Whole.Hi - Whole.Lo).GetMin() <= 1e-6)
+				{
+					continue; // shrunk to nothing: the cell is gone from both pins
+				}
+
+				if (!bGrow && Settings->bSplitInnerCorners)
+				{
+					EmptyNeighbours.Reset();
+					for (int32 Z = -1; Z <= 1; ++Z)
+						for (int32 Y = -1; Y <= 1; ++Y)
+							for (int32 X = -1; X <= 1; ++X)
+							{
+								const FIntVector D(X, Y, Z);
+								if (D != FIntVector::ZeroValue && !Result.Get(Cell + D))
+								{
+									EmptyNeighbours.Add(D);
+								}
+							}
+					if (!EmptyNeighbours.IsEmpty())
 					{
-						const FIntVector D(X, Y, Z);
-						if (D != FIntVector::ZeroValue && !Result.Get(Cell + D))
+						FPiece Cube = Whole;
+						Cube.Lo = FVector(-0.5);
+						Cube.Hi = FVector(0.5);
+						Carved.Reset();
+						CarveCell(Cube, Offset.Fraction, EmptyNeighbours, Carved);
+						const bool bSameAsFaces = Carved.Num() == 1
+							&& Carved[0].Lo.Equals(Whole.Lo, 1e-9) && Carved[0].Hi.Equals(Whole.Hi, 1e-9);
+						if (!bSameAsFaces)
 						{
-							EmptyNeighbours.Add(D);
+							GridPieces.Add(Whole);
+							GridSplit.Add(true);
+							for (const FPiece& Piece : Carved)
+							{
+								SpawnPieces.Add(Piece);
+								SpawnSplit.Add(true);
+							}
+							continue;
 						}
 					}
-			FPiece Cube = Whole;
-			Cube.Lo = FVector(-0.5);
-			Cube.Hi = FVector(0.5);
-			if (EmptyNeighbours.IsEmpty())
-			{
-				Pieces.Add(Cube);
-				continue;
-			}
-			CarveCell(Cube, Offset.Fraction, EmptyNeighbours, Pieces);
-		}
-
-		// ---- Write ----
-		TArray<FPCGVoxelCellOut> Outs;
-		Outs.Reserve(Pieces.Num());
-		for (const FPiece& Piece : Pieces)
-		{
-			Outs.Add({ Piece.Source, Piece.Cell, FIntVector(1) });
-		}
-		UPCGBasePointData* Out = PCGVoxelPointIO::WriteCells(Context, Points, Grid, Outs, Settings->Grid.SpanAttribute, /*bWriteSpan=*/false);
-
-		const FQuat GridRotation = Grid.GridToWorld.GetRotation();
-		TPCGValueRange<FTransform> Transforms = Out->GetTransformValueRange();
-		TPCGValueRange<FVector> Mins = Out->GetBoundsMinValueRange();
-		TPCGValueRange<FVector> Maxs = Out->GetBoundsMaxValueRange();
-		TPCGValueRange<int64> Entries = Out->GetMetadataEntryValueRange();
-		FPCGMetadataDomain* OutDomain = Out->MutableMetadata()->GetMetadataDomain(PCGMetadataDomainID::Elements);
-		for (int32 Index = 0; Index < Pieces.Num(); ++Index)
-		{
-			const FPiece& Piece = Pieces[Index];
-			// The box in grid axes, relative to the cell centre (where WriteCells put the point), into the point's frame.
-			const FQuat ToPoint = Transforms[Index].GetRotation().Inverse() * GridRotation;
-			const FVector Lo = Piece.Lo * Grid.VoxelSize;
-			const FVector Hi = Piece.Hi * Grid.VoxelSize;
-			FBox Local(ForceInit);
-			for (int32 Corner = 0; Corner < 8; ++Corner)
-			{
-				Local += ToPoint.RotateVector(FVector((Corner & 1) ? Hi.X : Lo.X, (Corner & 2) ? Hi.Y : Lo.Y, (Corner & 4) ? Hi.Z : Lo.Z));
-			}
-			FVector Scale = Transforms[Index].GetScale3D().GetAbs();
-			for (int32 Axis = 0; Axis < 3; ++Axis)
-			{
-				if (Scale[Axis] < UE_SMALL_NUMBER)
-				{
-					Scale[Axis] = 1.0;
 				}
 			}
-			Mins[Index] = Local.Min / Scale;
-			Maxs[Index] = Local.Max / Scale;
-			if (Piece.bFreshEntry && OutDomain)
+
+			GridPieces.Add(Whole);
+			GridSplit.Add(false);
+			// A cell that shows no face and was not carved can never be seen.
+			if (bVisible || !Settings->bSpawnOnlyVisible)
 			{
-				Entries[Index] = OutDomain->AddEntry();
+				SpawnPieces.Add(Whole);
+				SpawnSplit.Add(false);
 			}
+		}
+
+		// ---- Write: one point per piece, on its cell centre, bounds covering its box ----
+		const FQuat GridRotation = Grid.GridToWorld.GetRotation();
+		auto Emit = [&](const TArray<FPiece>& List, TArray<FPCGVoxelCellOut>& Outs) -> UPCGBasePointData*
+		{
+			Outs.Reset(List.Num());
+			for (const FPiece& Piece : List)
+			{
+				Outs.Add({ Piece.Source, Piece.Cell, FIntVector(1) });
+			}
+			UPCGBasePointData* Out = PCGVoxelPointIO::WriteCells(Context, Points, Grid, Outs, Settings->Grid.SpanAttribute, /*bWriteSpan=*/false);
+			TPCGValueRange<FTransform> Transforms = Out->GetTransformValueRange();
+			TPCGValueRange<FVector> Mins = Out->GetBoundsMinValueRange();
+			TPCGValueRange<FVector> Maxs = Out->GetBoundsMaxValueRange();
+			TPCGValueRange<int64> Entries = Out->GetMetadataEntryValueRange();
+			FPCGMetadataDomain* OutDomain = Out->MutableMetadata()->GetMetadataDomain(PCGMetadataDomainID::Elements);
+			for (int32 Index = 0; Index < List.Num(); ++Index)
+			{
+				const FPiece& Piece = List[Index];
+				// The box in grid axes, relative to the cell centre (where WriteCells put the point), into the point's frame.
+				const FQuat ToPoint = Transforms[Index].GetRotation().Inverse() * GridRotation;
+				const FVector Lo = Piece.Lo * Grid.VoxelSize;
+				const FVector Hi = Piece.Hi * Grid.VoxelSize;
+				FBox Local(ForceInit);
+				for (int32 Corner = 0; Corner < 8; ++Corner)
+				{
+					Local += ToPoint.RotateVector(FVector((Corner & 1) ? Hi.X : Lo.X, (Corner & 2) ? Hi.Y : Lo.Y, (Corner & 4) ? Hi.Z : Lo.Z));
+				}
+				FVector Scale = Transforms[Index].GetScale3D().GetAbs();
+				for (int32 Axis = 0; Axis < 3; ++Axis)
+				{
+					if (Scale[Axis] < UE_SMALL_NUMBER)
+					{
+						Scale[Axis] = 1.0;
+					}
+				}
+				Mins[Index] = Local.Min / Scale;
+				Maxs[Index] = Local.Max / Scale;
+				if (Piece.bFreshEntry && OutDomain)
+				{
+					Entries[Index] = OutDomain->AddEntry();
+				}
+			}
+			return Out;
+		};
+		auto IsFilled = [&Result](const FIntVector& Cell) { return Result.Get(Cell); };
+
+		TArray<FPCGVoxelCellOut> GridOuts;
+		UPCGBasePointData* GridOut = Emit(GridPieces, GridOuts);
+		PCGVoxelPointIO::RefreshSurrounded(Points, GridOut, Settings->Grid.SurroundedAttribute, GridOuts, IsFilled);
+		if (Settings->bWriteWasSplit)
+		{
+			PCGVoxelPointIO::WritePointAttribute<bool>(GridOut, Settings->WasSplitAttribute, false, GridSplit);
+		}
+
+		TArray<FPCGVoxelCellOut> SpawnOuts;
+		UPCGBasePointData* SpawnOut = Emit(SpawnPieces, SpawnOuts);
+		if (PCGVoxelPointIO::RefreshSurrounded(Points, SpawnOut, Settings->Grid.SurroundedAttribute, SpawnOuts, IsFilled))
+		{
+			// A carved piece shows even when its cell's six neighbours are filled (the notch is diagonal).
+			FPCGMetadataDomain* SpawnDomain = SpawnOut->MutableMetadata()->GetMetadataDomain(PCGMetadataDomainID::Elements);
+			if (FPCGMetadataAttribute<bool>* Surrounded = SpawnDomain
+				? static_cast<FPCGMetadataAttribute<bool>*>(SpawnDomain->GetMutableAttribute(Settings->Grid.SurroundedAttribute)) : nullptr)
+			{
+				const TConstPCGValueRange<int64> Entries = SpawnOut->GetConstMetadataEntryValueRange();
+				for (int32 Index = 0; Index < SpawnSplit.Num(); ++Index)
+				{
+					if (SpawnSplit[Index])
+					{
+						Surrounded->SetValue(Entries[Index], false);
+					}
+				}
+			}
+		}
+		if (Settings->bWriteWasSplit)
+		{
+			PCGVoxelPointIO::WritePointAttribute<bool>(SpawnOut, Settings->WasSplitAttribute, false, SpawnSplit);
 		}
 
 		FPCGTaggedData& Output = Context->OutputData.TaggedData.Emplace_GetRef(Inputs[InputIndex]);
-		Output.Data = Out;
+		Output.Data = GridOut;
 		Output.Pin = PCGPinConstants::DefaultOutputLabel;
+		FPCGTaggedData& SpawnOutput = Context->OutputData.TaggedData.Emplace_GetRef(Inputs[InputIndex]);
+		SpawnOutput.Data = SpawnOut;
+		SpawnOutput.Pin = PCGVoxelOffsetSurfacePins::Spawn;
 	}
 	return true;
 }

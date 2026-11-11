@@ -113,12 +113,23 @@ namespace PCGVoxelCompressPrivate
 		Boxes = MoveTemp(Joined);
 	}
 
+	/** Shape Random's per-start-cell inputs: the size mode, each point's span and chance. */
+	struct FRandomPlan
+	{
+		EPCGVoxelRandomSize Mode = EPCGVoxelRandomSize::UpTo;
+		FIntVector SingleSpan = FIntVector(3);
+		TArray<FIntVector> PointSpan; // empty: SingleSpan for every point
+		TPCGUtilsPointValues<double> Chance;
+
+		const FIntVector& SpanOf(int32 Point) const { return PointSpan.IsEmpty() ? SingleSpan : PointSpan[Point]; }
+	};
+
 	/**
-	 * Random tiling: cells in Z, Y, X order; each cell not yet taken starts a box with a random target size, grown one
-	 * axis at a time (random axis order) while the next slab of cells is occupied, free and equal to the first cell.
-	 * Every cell before the start in that order is already taken, so the start is always the box's lowest corner.
+	 * Random tiling: cells in Z, Y, X order; each cell not yet taken starts a box, sized by the plan from that start
+	 * cell's span and chance, and grown only over cells that are occupied, free and equal to the start cell. Every cell
+	 * before the start in that order is already taken, so the start is always the box's lowest corner.
 	 */
-	void RandomBoxes(const FPCGVoxelGrid& Grid, const FIntVector& MaxSpan, int32 Seed, const FPointEquality& Equal, TArray<FChunkBox>& Boxes)
+	void RandomBoxes(const FPCGVoxelGrid& Grid, const FRandomPlan& Plan, int32 Seed, const FPointEquality& Equal, TArray<FChunkBox>& Boxes)
 	{
 		FRandomStream Stream(Seed);
 		TArray<bool> Taken;
@@ -156,19 +167,71 @@ namespace PCGVoxelCompressPrivate
 			}
 			const FIntVector First = Grid.Cells[Start];
 			const int32 Rep = Grid.CellPoint[Start];
-			const FIntVector Target(Stream.RandRange(1, MaxSpan.X), Stream.RandRange(1, MaxSpan.Y), Stream.RandRange(1, MaxSpan.Z));
-			int32 Order[3] = { 0, 1, 2 };
-			for (int32 I = 2; I > 0; --I)
-			{
-				Swap(Order[I], Order[Stream.RandRange(0, I)]);
-			}
+			const FIntVector MaxSpan = Plan.SpanOf(Rep);
 
 			FIntVector Span(1);
-			for (const int32 Axis : Order)
+			if (Plan.Mode == EPCGVoxelRandomSize::UpTo)
 			{
-				while (Span[Axis] < Target[Axis] && SlabFree(First, Span, Axis, Rep))
+				// The draws are the same as before the size modes existed, so older graphs keep their layout.
+				const FIntVector Target(Stream.RandRange(1, MaxSpan.X), Stream.RandRange(1, MaxSpan.Y), Stream.RandRange(1, MaxSpan.Z));
+				int32 Order[3] = { 0, 1, 2 };
+				for (int32 I = 2; I > 0; --I)
 				{
-					++Span[Axis];
+					Swap(Order[I], Order[Stream.RandRange(0, I)]);
+				}
+				for (const int32 Axis : Order)
+				{
+					while (Span[Axis] < Target[Axis] && SlabFree(First, Span, Axis, Rep))
+					{
+						++Span[Axis];
+					}
+				}
+			}
+			else if (Plan.Mode == EPCGVoxelRandomSize::Exact)
+			{
+				for (int32 Axis = 0; Axis < 3; ++Axis)
+				{
+					while (Span[Axis] < MaxSpan[Axis] && SlabFree(First, Span, Axis, Rep))
+					{
+						++Span[Axis];
+					}
+				}
+				if (Span != MaxSpan)
+				{
+					Span = FIntVector(1); // the whole box does not fit: no compression here
+				}
+			}
+			else
+			{
+				// A cube grows a layer on X, Y and Z together, or not at all.
+				const int32 Side = Stream.RandRange(1, FMath::Min3(MaxSpan.X, MaxSpan.Y, MaxSpan.Z));
+				int32 Size = 1;
+				while (Size < Side)
+				{
+					FIntVector Trial(Size);
+					bool bFits = true;
+					for (int32 Axis = 0; Axis < 3 && bFits; ++Axis)
+					{
+						bFits = SlabFree(First, Trial, Axis, Rep);
+						++Trial[Axis];
+					}
+					if (!bFits)
+					{
+						break;
+					}
+					++Size;
+				}
+				Span = FIntVector(Size);
+			}
+
+			// The chance is rolled only when there is something to compress, and only when below 1 (so a chance of 1
+			// draws nothing and keeps older layouts).
+			if (Span != FIntVector(1))
+			{
+				const double Chance = Plan.Chance.Get(Rep);
+				if (Chance < 1.0 && !(Stream.FRand() < Chance))
+				{
+					Span = FIntVector(1);
 				}
 			}
 
@@ -184,6 +247,29 @@ namespace PCGVoxelCompressPrivate
 			}
 			Boxes.Add({ First, Span, Rep });
 		}
+	}
+
+	/** A Random Span value as whole cell counts, each at least 1. */
+	bool ToSpanVector(const FVector& Value, FIntVector& OutSpan)
+	{
+		return PCGVoxel::ToSpan(Value.X, OutSpan.X) && PCGVoxel::ToSpan(Value.Y, OutSpan.Y) && PCGVoxel::ToSpan(Value.Z, OutSpan.Z);
+	}
+}
+
+UPCGVoxelCompressSettings::UPCGVoxelCompressSettings()
+{
+	MaxSpan.Attribute.Update(TEXT("@Data.CompressMaxSpan"));
+}
+
+void UPCGVoxelCompressSettings::PostLoad()
+{
+	Super::PostLoad();
+	// Random Max Span (an FIntVector) became Random Span (a point shorthand). Zero means the old default was in use.
+	if (RandomMaxSpan_DEPRECATED != FIntVector::ZeroValue)
+	{
+		RandomSpan.Input = EPCGUtilsPointInputValueType::Constant;
+		RandomSpan.Constant = FVector(RandomMaxSpan_DEPRECATED);
+		RandomMaxSpan_DEPRECATED = FIntVector::ZeroValue;
 	}
 }
 
@@ -252,7 +338,6 @@ bool FPCGVoxelCompressElement::ExecuteInternal(FPCGContext* Context) const
 	const UPCGVoxelCompressSettings* Settings = Context->GetInputSettings<UPCGVoxelCompressSettings>();
 	check(Settings);
 	const FText Title = LOCTEXT("ErrorTitle", "Voxel | Compress");
-	const int32 MaxSpan = FMath::Max(1, Settings->MaxSpan);
 
 	const TArray<FPCGTaggedData> Inputs = Context->InputData.GetInputsByPin(PCGPinConstants::DefaultInputLabel);
 	for (int32 Index = 0; Index < Inputs.Num(); ++Index)
@@ -262,6 +347,23 @@ bool FPCGVoxelCompressElement::ExecuteInternal(FPCGContext* Context) const
 		if (!FPCGVoxelGrid::Build(Context, Points, Settings->Grid, Title, Index, Grid))
 		{
 			continue;
+		}
+
+		int32 MaxSpan = Settings->MaxSpan.Constant;
+		if (Settings->Shape != EPCGVoxelChunkShape::Random)
+		{
+			FText ReadError;
+			if (!Settings->MaxSpan.TryReadDataValue(Points, MaxSpan, ReadError, LOCTEXT("MaxSpanLabel", "Max Span")))
+			{
+				PCGLog::LogErrorOnGraph(PCGVoxel::FormatError(Title, Index, ReadError), Context);
+				continue;
+			}
+			if (MaxSpan < 1)
+			{
+				PCGLog::LogErrorOnGraph(PCGVoxel::FormatError(Title, Index, FText::Format(
+					LOCTEXT("MaxSpanBad", "Max Span is {0}; it must be at least 1."), MaxSpan)), Context);
+				continue;
+			}
 		}
 
 		// What two cells must share.
@@ -283,7 +385,8 @@ bool FPCGVoxelCompressElement::ExecuteInternal(FPCGContext* Context) const
 				Domain->GetAttributes(Names, Types);
 				for (const FName Name : Names)
 				{
-					if (Name != Settings->Grid.SpanAttribute)
+					// The span and 'is surrounded' describe the box, not the cell: they are rewritten for every chunk.
+					if (Name != Settings->Grid.SpanAttribute && Name != Settings->Grid.SurroundedAttribute)
 					{
 						Equal.Attributes.Add(Domain->GetConstAttribute(Name));
 					}
@@ -316,8 +419,42 @@ bool FPCGVoxelCompressElement::ExecuteInternal(FPCGContext* Context) const
 		TArray<FChunkBox> Boxes;
 		if (Settings->Shape == EPCGVoxelChunkShape::Random)
 		{
-			const FIntVector RandomMax(FMath::Max(1, Settings->RandomMaxSpan.X), FMath::Max(1, Settings->RandomMaxSpan.Y), FMath::Max(1, Settings->RandomMaxSpan.Z));
-			RandomBoxes(Grid, RandomMax, PCGHelpers::ComputeSeed(Context->GetSeed(), Index), Equal, Boxes);
+			FRandomPlan Plan;
+			Plan.Mode = Settings->RandomSize;
+			FText ReadError;
+			TPCGUtilsPointValues<FVector> Spans;
+			if (!Settings->RandomSpan.TryRead(Points, Spans, ReadError, LOCTEXT("SpanLabel", "Random Span"))
+				|| !Settings->RandomChance.TryRead(Points, Plan.Chance, ReadError, LOCTEXT("ChanceLabel", "Random Chance")))
+			{
+				PCGLog::LogErrorOnGraph(PCGVoxel::FormatError(Title, Index, ReadError), Context);
+				continue;
+			}
+			bool bBadSpan = false;
+			if (Spans.IsPerPoint())
+			{
+				Plan.PointSpan.SetNumUninitialized(Spans.PerPoint.Num());
+				for (int32 Point = 0; Point < Spans.PerPoint.Num() && !bBadSpan; ++Point)
+				{
+					if (Grid.PointUsed[Point] && !ToSpanVector(Spans.PerPoint[Point], Plan.PointSpan[Point]))
+					{
+						PCGLog::LogErrorOnGraph(PCGVoxel::FormatError(Title, Index, FText::Format(LOCTEXT("PointSpanBad",
+							"Random Span: '{0}' on point {1} is {2}; every component must be a whole number, at least 1."),
+							Settings->RandomSpan.Attribute.GetDisplayText(), Point, FText::FromString(Spans.PerPoint[Point].ToString()))), Context);
+						bBadSpan = true;
+					}
+				}
+			}
+			else if (!ToSpanVector(Spans.Single, Plan.SingleSpan))
+			{
+				PCGLog::LogErrorOnGraph(PCGVoxel::FormatError(Title, Index, FText::Format(LOCTEXT("SpanBad",
+					"Random Span is {0}; every component must be a whole number, at least 1."), FText::FromString(Spans.Single.ToString()))), Context);
+				bBadSpan = true;
+			}
+			if (bBadSpan)
+			{
+				continue;
+			}
+			RandomBoxes(Grid, Plan, PCGHelpers::ComputeSeed(Context->GetSeed(), Index), Equal, Boxes);
 		}
 		else
 		{
@@ -390,7 +527,10 @@ bool FPCGVoxelCompressElement::ExecuteInternal(FPCGContext* Context) const
 		}
 
 		FPCGTaggedData& Output = Context->OutputData.TaggedData.Emplace_GetRef(Inputs[Index]);
-		Output.Data = PCGVoxelPointIO::WriteCells(Context, Points, Grid, Out, Settings->Grid.SpanAttribute, /*bWriteSpan=*/true);
+		UPCGBasePointData* Written = PCGVoxelPointIO::WriteCells(Context, Points, Grid, Out, Settings->Grid.SpanAttribute, /*bWriteSpan=*/true);
+		PCGVoxelPointIO::RefreshSurrounded(Points, Written, Settings->Grid.SurroundedAttribute, Out,
+			[&Grid](const FIntVector& Cell) { return Grid.IsOccupied(Cell); });
+		Output.Data = Written;
 		Output.Pin = PCGPinConstants::DefaultOutputLabel;
 	}
 	return true;

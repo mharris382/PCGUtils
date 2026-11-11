@@ -31,8 +31,28 @@ types live in `PCGUtilsCore` (`Details/PCGUtilsInputShorthands.h`).
 Available types: `Boolean`, `Integer32`, `Integer32Abs`, `Integer64`, `Float`, `Double`, `DoubleAbs`, `Double01`,
 `Vector2`, `Vector`, `Vector4`, `Rotator`, `Name`, `String` (all `FPCGUtilsInputShorthand<Type>`).
 
-Not done yet: per-element reads (one value per point/vertex), and reading DynMesh vertex data such as position,
-normal, color or UV as if they were attributes. Both fit behind the same struct later.
+Not done yet: reading DynMesh vertex data such as position, normal, color or UV as if they were attributes.
+
+## Point shorthands (per point)
+
+Added 2026-11-10 for the voxel nodes, which work point by point (a voxel point is a cell or a chunk). A **point
+shorthand** (`FPCGUtilsPointShorthand<Type>`, `Details/PCGUtilsPointShorthands.h` in PCGUtilsCore) is a constant, or
+an **Attribute** read from each input:
+
+- a point attribute (`OffsetAmount`) or property (`$Density`): one value per point;
+- an `@Data` attribute (`@Data.OffsetAmount`): one value for the input, read exactly as the input shorthands read it.
+
+`TryRead(Points, Values, Error, Label, InputIndex)` fills a `TPCGUtilsPointValues<T>`; `Values.Get(PointIndex)` gives
+the point's value whichever way it was read. Reads are strict like the input shorthands: a missing attribute, a
+wrong type (numbers accept Integer32, Integer64, Float, Double; integers only integers), a domain that is neither the
+points nor `@Data`, or a bad value fails the input. Point values are checked one by one, so the error names the point:
+`Amount: 'OffsetAmount' on point 1 is nan; this setting must be a finite number`. Numbers must be finite; the ranged
+types (`DoubleAbs`, `Double01`, `Integer32Abs`) reject values out of range.
+
+Same override labels (`<Member>`, `<Member>Attribute`), same details row (the toggle reads Constant / Attribute), and
+a saved bare number loads into `Constant`. Available types: `Integer32`, `Integer32Abs`, `Double`, `DoubleAbs`,
+`Double01`, `Vector` (no range check; the owning node validates components); add more to the two macro lists when a
+node needs them.
 
 ## Keeping existing graphs working
 
@@ -77,6 +97,12 @@ no pin rename. A label that would collide falls back to the full property path.
 
 | Node | Setting | Type | Old storage | Migration | Project graphs checked |
 | --- | --- | --- | --- | --- | --- |
+| Voxel \| Compress (Random) | Random Span | point `Vector` (default attribute `CompressSpan`) | `FIntVector RandomMaxSpan` | `RandomMaxSpan_DEPRECATED` defaults to zero, so only a saved (non-default) value is carried into `RandomSpan.Constant` in `PostLoad`; the old `RandomMaxSpan` override pin is gone (the new pin is `RandomSpan`) | `Root_CubeTower` (saves a non-default value) and `TestScene` use Compress; load not checked yet (the editor was open); rewire any `RandomMaxSpan` override |
+| Voxel \| Compress (Random) | Random Chance | point `Double01` (default `CompressChance`) | new | none | new |
+| Voxel \| Compress | Max Span | input `Integer32Abs` (default `@Data.CompressMaxSpan`) | `int32 MaxSpan` | bare int loads into `Constant`; pin label `MaxSpan` kept | `BP_CubeToolBase`, `Root_CubeTower`, `TestScene` use Compress; load not checked yet |
+| Voxel \| Shift Seams | Strength | point `Double01` (default `SeamStrength`; a seam takes the weakest box) | `float Strength` | bare float loads into `Constant`; pin label `Strength` kept | `Root_CubeTower` uses Shift Seams; load not checked yet |
+| Voxel \| Shift Seams | Noise Scale | input `DoubleAbs` (default `@Data.SeamNoiseScale`) | `float NoiseScale` | bare float loads into `Constant`; pin label kept | `Root_CubeTower`; load not checked yet |
+| Voxel \| Offset Surface | Amount, Amount Scale | point `Double` (default attributes `OffsetAmount`, `AmountScale`) | `double Amount`; `double AmountScale` + `AmountScaleInput` enum + `AmountScaleAttribute` selector | numbers load into `Constant`; `AmountScaleInput`/`AmountScaleAttribute` → `_DEPRECATED`, carried over in `PostLoad` (no version needed: the old Attribute mode is the only thing to carry); pin labels `Amount`, `AmountScale`, `AmountScaleAttribute` kept (test `PCGUtils.Voxel.OffsetSurface.OverridePinLabels`) | none in the project yet (2026-11-10) |
 | DynMesh \| Extrude Faces | Distance | `Double` (default attribute `ExtrudeDistance`) | `Options.Distance` (float in `FGeometryScriptMeshLinearExtrudeOptions`) | `Options` → `Options_DEPRECATED`; all its fields flattened onto the node (`DirectionMode`, `Direction`, `AreaMode`, `GroupOptions`, `UVScale`, `bSolidsToShells`); pin labels unchanged | `CourseGen_Template_CutterPath`, `ExtrudeAndOffsetCutter`: Distance 1.0 kept, both `Distance` override wires still connected (2026-10-17) |
 | DynMesh \| Inset Faces | Distance | `Double` (default attribute `InsetDistance`) | `Options.Distance` (float in `FGeometryScriptMeshInsetOutsetFacesOptions`) | `Options` -> `Options_DEPRECATED`; fields flattened (`bReproject`, `bBoundaryOnly`, `Softness`, `AreaScale`, `AreaMode`, `GroupOptions`, `UVScale`); pin labels unchanged | GRAPHS_INSET |
 | DynMesh \| Bevel Edges | BevelDistance | `DoubleAbs` (default attribute `BevelDistance`) | top-level `float BevelDistance` | none: loads through `SerializeFromMismatchedTag`; pin label unchanged | GRAPHS_BEVEL |

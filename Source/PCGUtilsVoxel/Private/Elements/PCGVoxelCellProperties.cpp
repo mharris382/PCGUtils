@@ -231,6 +231,7 @@ bool FPCGVoxelCellPropertiesElement::ExecuteInternal(FPCGContext* Context) const
 			continue;
 		}
 		// WriteCells has already given every point its own metadata entry.
+		PCGVoxelPointIO::RefreshSurrounded(Points, Out, Settings->Grid.SurroundedAttribute, OutCells, [&Grid](const FIntVector& Cell) { return Grid.IsOccupied(Cell); });
 
 		const int32 NumCells = Grid.NumCells();
 		const int32 NumOut = OutCells.Num();

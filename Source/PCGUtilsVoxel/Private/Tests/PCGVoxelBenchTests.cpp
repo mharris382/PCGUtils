@@ -259,7 +259,7 @@ bool FPCGVoxelShiftSeamsBenchTest::RunTest(const FString&)
 	{
 		UPCGVoxelCompressSettings* Compress = NewObject<UPCGVoxelCompressSettings>();
 		Compress->Shape = EPCGVoxelChunkShape::Random;
-		Compress->RandomMaxSpan = Case.MaxSpan;
+		Compress->RandomSpan.Constant = FVector(Case.MaxSpan);
 		UPCGPointArrayData* Voxels = MakeVoxels(Case.Cells);
 		Voxels->Metadata->GetMetadataDomain(PCGMetadataDomainID::Elements)->DeleteAttribute(TEXT("Id")); // unique per cell: nothing would merge
 		const double T0 = FPlatformTime::Seconds();

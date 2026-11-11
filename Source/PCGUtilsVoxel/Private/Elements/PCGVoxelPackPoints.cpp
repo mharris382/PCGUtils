@@ -752,7 +752,10 @@ bool FPCGVoxelPackPointsElement::ExecuteInternal(FPCGContext* Context) const
 		}
 	}
 	FPCGTaggedData& UnfilledOutput = Context->OutputData.TaggedData.Emplace_GetRef(GridInputs[0]);
-	UnfilledOutput.Data = PCGVoxelPointIO::WriteCells(Context, GridPoints, Grid, Unfilled, Settings->Grid.SpanAttribute, bKeepChunks);
+	UPCGBasePointData* UnfilledData = PCGVoxelPointIO::WriteCells(Context, GridPoints, Grid, Unfilled, Settings->Grid.SpanAttribute, bKeepChunks);
+	// Surrounded by the whole grid, packed or not: packing fills slots, it does not change the grid.
+	PCGVoxelPointIO::RefreshSurrounded(GridPoints, UnfilledData, Settings->Grid.SurroundedAttribute, Unfilled, [&Grid](const FIntVector& Cell) { return Grid.IsOccupied(Cell); });
+	UnfilledOutput.Data = UnfilledData;
 	UnfilledOutput.Pin = PCGVoxelPackPoints::UnfilledLabel;
 	return true;
 }

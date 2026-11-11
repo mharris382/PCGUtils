@@ -80,6 +80,15 @@ struct PCGUTILSVOXEL_API FPCGVoxelGridReadSettings
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Grid", meta=(PCG_Overridable))
 	FName SpanAttribute = TEXT("VoxelSpan");
 
+	/**
+	 * Optional point attribute (Boolean): true when a point's cell or chunk shows no face (every cell sharing a face
+	 * with its box is filled), the usual filter for spawning only visible voxels. Voxel | Cell Properties writes it.
+	 * When the input carries it, every node that changes cells (merges, splits, adds or removes them) rewrites it on
+	 * its output, and Compress ignores it when deciding which cells are equal. None: never touched.
+	 */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Grid", meta=(PCG_Overridable))
+	FName SurroundedAttribute = TEXT("IsSurrounded");
+
 	/** How far a point's centre may be from where its cell (or chunk) centre should be, as a fraction of the smallest Voxel Size axis. */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Grid", meta=(PCG_Overridable, ClampMin="0", ClampMax="0.5"))
 	double GridTolerance = 0.01;
