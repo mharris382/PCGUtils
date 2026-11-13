@@ -3,6 +3,7 @@
 #pragma once
 
 #include "CoreMinimal.h"
+#include "Details/PCGUtilsPointShorthands.h"
 #include "Elements/PCGVoxelSettingsBase.h"
 #include "PCGElement.h"
 
@@ -24,6 +25,30 @@ enum class EPCGVoxelRasterizeSource : uint8
 	 * grid's XY plane, over the grid layers its points span (plus Cells Below and Cells Above).
 	 */
 	Path,
+};
+
+/**
+ * How a Path's cells follow its height. Every mode except Flat works out a flat (one layer) mask of the shape first,
+ * then gives each column the Z of the nearest point on the path (nearest in the grid's XY plane, on any segment of the
+ * path or of its hole paths, Z interpolated along that segment).
+ */
+UENUM(BlueprintType)
+enum class EPCGVoxelRasterizePathHeight : uint8
+{
+	/** The shape is filled flat and stacked over the grid layers the path's points span (plus Cells Below and Cells Above). */
+	Flat,
+	/** One full cell per column: the layer whose centre is nearest the path's Z. */
+	Snap,
+	/**
+	 * Two cells per column: the cell holding the path's Z, with its top face trimmed down to that Z (Bounds Max Z),
+	 * on top of one full cell. The column is always between 1 and 2 cells thick, its top exactly on the path.
+	 */
+	BestFit UMETA(DisplayName="Best Fit"),
+	/**
+	 * One cell per column: the cell holding the path's Z, with its top face trimmed down to that Z (Bounds Max Z).
+	 * The column's top is exactly on the path, but a cell can be anything from just over 0 to 1 cell thick.
+	 */
+	Trim,
 };
 
 /** Which cells Rasterize outputs. Each can be turned on by itself; a cell is output when it falls in any that is on. */
@@ -101,13 +126,53 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Settings", meta=(PCG_Overridable))
 	EPCGVoxelRasterizeNeighbors SurroundNeighbors = EPCGVoxelRasterizeNeighbors::All;
 
-	/** Path: extra grid layers below the lowest layer its points sit in. */
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Path", meta=(PCG_Overridable, ClampMin="0"))
+	/**
+	 * Path: Flat fills the shape flat and stacks it over the layers the path spans. Snap, Best Fit and Trim put each
+	 * column at the height of the nearest point on the path, so the cells follow the path's shape in Z.
+	 */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Path", meta=(PCG_Overridable))
+	EPCGVoxelRasterizePathHeight PathHeight = EPCGVoxelRasterizePathHeight::Flat;
+
+	/** Path, Flat height: extra grid layers below the lowest layer its points sit in. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Path",
+		meta=(PCG_Overridable, ClampMin="0", EditCondition="PathHeight == EPCGVoxelRasterizePathHeight::Flat", EditConditionHides))
 	int32 CellsBelow = 0;
 
-	/** Path: extra grid layers above the highest layer its points sit in. */
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Path", meta=(PCG_Overridable, ClampMin="0"))
+	/** Path, Flat height: extra grid layers above the highest layer its points sit in. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Path",
+		meta=(PCG_Overridable, ClampMin="0", EditCondition="PathHeight == EPCGVoxelRasterizePathHeight::Flat", EditConditionHides))
 	int32 CellsAbove = 0;
+
+	/**
+	 * Path, Snap / Best Fit / Trim height: fill every column down to the lowest cell of the whole shape, so the cells
+	 * are solid under the surface. Off (default): only the surface cells.
+	 */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Path",
+		meta=(PCG_Overridable, EditCondition="PathHeight != EPCGVoxelRasterizePathHeight::Flat", EditConditionHides))
+	bool bExtrudeDown = false;
+
+	/**
+	 * Path, any height: this many more cells under the bottom of every column (under the lowest layer for Flat, under
+	 * the surface cells for the other heights, under the lowest cell of the shape with Extrude Down). Default constant 0.
+	 * Attribute (an integer, 0 or more, required in that mode; default 'ExtraCellsBelow'): '@Data.ExtraCellsBelow'
+	 * gives one value per path. A per-point attribute is not supported yet (planned: read from the nearest path
+	 * segment, interpolated between its two points); it warns and uses 0.
+	 */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Path", meta=(PCG_Overridable))
+	FPCGUtilsPointShorthandInteger32Abs ExtraCellsBelow = FPCGUtilsPointShorthandInteger32Abs(0, TEXT("ExtraCellsBelow"));
+
+	/**
+	 * Path: inputs tagged Hole Tag are holes, not shapes. Each hole is cut out of every shape it overlaps: cells whose
+	 * centre is inside it lose Fill, its line counts as the shape's surface for Intersect and Surround, and its
+	 * segments count when the heights look for the nearest point on the path. Holes output nothing themselves, and a
+	 * Grid with one set per input then means one per shape.
+	 */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Path", meta=(PCG_Overridable, InlineEditConditionToggle))
+	bool bUseHolePaths = false;
+
+	/** Path, with hole paths on: the tag that marks an input path as a hole (required; default 'Hole'). */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Path", meta=(PCG_Overridable, EditCondition="bUseHolePaths"))
+	FName HoleTag = TEXT("Hole");
 
 	/** Mesh: DynMesh data is in the PCG target actor's local space by convention. Off reads the mesh as world space. */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Mesh", meta=(PCG_Overridable))
@@ -138,6 +203,18 @@ public:
 	 */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Output", meta=(PCG_Overridable, EditCondition="bWriteModeAttribute"))
 	FName ModeAttribute = TEXT("RasterMode");
+
+	/** Path: write the path's height over each cell to Path Z Attribute. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Output", meta=(PCG_Overridable, InlineEditConditionToggle))
+	bool bWritePathZAttribute = false;
+
+	/**
+	 * Optional output, Path only (Double): the world Z of the nearest point on the path (nearest in the grid's XY plane,
+	 * on any segment of the path or its holes, interpolated along the segment) to the cell's column. Every cell of a
+	 * column has the same value. Use it to refine the surface downstream.
+	 */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Output", meta=(PCG_Overridable, EditCondition="bWritePathZAttribute"))
+	FName PathZAttribute = TEXT("PathZ");
 
 	/** The node stops with an error when the box of cells it would scan (the shape's bounds plus the shell) has more cells than this. */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Output", meta=(PCG_Overridable, ClampMin="1"))

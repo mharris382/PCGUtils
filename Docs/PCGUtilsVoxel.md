@@ -632,6 +632,31 @@ its search keywords.
   point is dropped). It is filled in the grid's XY plane, over the grid layers its points span, plus `Cells Below` and
   `Cells Above`. Fewer than 3 distinct points is an error.
 
+**Path height** (`Path Height`, added 2026-11-12). Every mode but Flat makes the flat one-layer mask first, then gives
+each output column the Z of the nearest point on the path: nearest in the grid's XY plane, on any segment of the path
+or of its overlapping holes, Z interpolated along that segment (distances in grid units; segments bucketed on a coarse
+2D grid searched ring by ring).
+- **Flat** (default): the old behaviour, the mask stacked over the layers the points span plus `Cells Below` / `Cells Above`.
+- **Snap**: one full cell, the layer whose centre is nearest the path's Z.
+- **Trim**: one cell, the one holding the path's Z (`ceil(z - 0.5)` in cells), its `BoundsMax.Z` lowered so its top face
+  is exactly at the Z. Between just over 0 and 1 cell thick.
+- **Best Fit**: the Trim cell plus one full cell under it, so the column is 1 to 2 cells thick with its top on the path.
+- `Extrude Down` (non-Flat, default off): every column filled down to the lowest cell of the whole shape.
+- `Extra Cells Below` (`Integer32Abs` point shorthand, default constant 0, attribute `ExtraCellsBelow`): that many more
+  cells under every column's bottom, any height mode (in Flat it adds to `Cells Below`). `@Data` gives one value per
+  path. A per-point attribute warns and uses 0; planned: read it per column from the nearest segment, interpolated
+  between the segment's two points (TODO in the element).
+- `Path Z Attribute` (optional Double, default `PathZ`, off by default): the world Z of that nearest path point, the
+  same for every cell of a column, for refining the surface downstream. Must differ from `Mode Attribute`.
+
+**Hole paths** (`Use Hole Paths` + `Hole Tag`, default `Hole`, added 2026-11-12). Path inputs carrying the tag are holes:
+each is cut from every shape it overlaps (shares a cell with the shape's Fill or Intersect cells). A cell whose centre
+is in a hole loses Fill, and the shape's own line there too unless the hole's line also passes through it; the hole's
+line is Intersect where it runs through the shape, and Surround grows after the cut. Holes take part in the nearest-
+segment search, which is why they live on this node rather than in a later Boolean: a hole shapes the heights around
+it. Holes output nothing; a Grid with one set per input then means one per shape. All inputs being holes warns and
+outputs nothing; an empty Hole Tag, a hole that is not point data, or a hole with under 3 points is an error naming it.
+
 **Modes** (bitmask, any mix, at least one; default Fill + Intersect):
 - **Fill**: cells whose centre is inside. Rays along X through each row of cell centres, nonzero winding, so it does not
   care which way the faces point. Rays are nudged off the centre lines by a tiny odd amount so they never run along an
@@ -652,7 +677,7 @@ it, `Voxel Size` (default 100) and `Grid Transform` (rotation and location; iden
 the grid. A box of more than `Max Cells` cells (default 64M; the shape's bounds plus the shell) is an error naming its
 size.
 
-**Out.** One fresh voxel set per input: plain cells ordered Z, Y, X, bounds ±Voxel Size/2, Volume Sampler seeds, the
+**Out.** One fresh voxel set per input (per shape, with hole paths): plain cells ordered Z, Y, X, bounds ±Voxel Size/2 (Best Fit and Trim lower the top cell's Max Z), Volume Sampler seeds, the
 Voxel Size and grid transform written to `@Data`, the input's tags. It is not a modification of the input, so no
 metadata is carried.
 

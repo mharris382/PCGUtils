@@ -110,6 +110,7 @@ no pin rename. A label that would collide falls back to the full property path.
 | DynMesh \| Generate LODs (new node) | each `LODs[n].Value` (`DoubleAbs`), LOD 0 Decimation Ratio (`Double01`), LOD 0 Max Triangle Count (`Integer32Abs`), Reduction Per LOD (`Double01`) | defaults `LOD0Ratio`, `LOD1Ratio`, `LOD2Ratio` (new entries `LOD<n>Ratio`), `LOD0Ratio`, `LOD0MaxTriangles`, `LODReductionPerLOD` | none (new) | none. The `LODs` array is not overridable (PCG cannot override array elements); per-input values come from `@Data` | n/a |
 
 | Path \| Decompose Closed | AreaWeight, LengthWeight, MaxConcavity, MaxQuadWarp, MaxPolygonWarp, MaxInputPoints | Double / Integer32 | CourseGen experimental scalar settings | Class redirect; same-name scalar shorthand deserialization; override labels retained | Native tests; spline input wires must be replaced with point paths |
+| Voxel \| Rasterize (new setting) | ExtraCellsBelow | `Integer32Abs` point shorthand (default attribute `ExtraCellsBelow`) | none (new) | none. `@Data` = one value per path; per-point reads warn and use 0 until per-segment interpolation is built | n/a |
 
 ## Candidates
 

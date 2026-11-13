@@ -249,6 +249,134 @@ namespace PCGVoxelRasterizePrivate
 		OutFirst = FMath::FloorToInt32(From) + 1;
 		OutLast = FMath::CeilToInt32(To) - 1;
 	}
+
+	/**
+	 * Finds the nearest point, in the grid's XY plane, on any segment of a set of closed loops (in cell space), with
+	 * its Z interpolated along that segment. Distances are measured in grid units (cells times Voxel Size), so
+	 * non-square cells do not skew them. Segments are bucketed on a coarse 2D grid searched ring by ring.
+	 */
+	struct FSegmentFinder
+	{
+		struct FSegment
+		{
+			FVector2D A, B;
+			double ZA, ZB;
+		};
+		TArray<FSegment> Segments;
+		FVector2D Scale = FVector2D(1.0);
+		FVector2D Lo = FVector2D::ZeroVector;
+		double Size = 1.0;
+		FIntPoint Dims = FIntPoint(1, 1);
+		TArray<TArray<int32>> Buckets;
+
+		FSegmentFinder(const TArray<TArray<FVector>>& Loops, const FVector2D& InScale)
+			: Scale(InScale)
+		{
+			FBox2D Bounds(ForceInit);
+			for (const TArray<FVector>& Loop : Loops)
+			{
+				const int32 N = Loop.Num();
+				for (int32 Edge = 0; Edge < N; ++Edge)
+				{
+					const FVector& A = Loop[Edge];
+					const FVector& B = Loop[(Edge + 1) % N];
+					FSegment& Segment = Segments.Emplace_GetRef();
+					Segment.A = FVector2D(A.X, A.Y) * Scale;
+					Segment.B = FVector2D(B.X, B.Y) * Scale;
+					Segment.ZA = A.Z;
+					Segment.ZB = B.Z;
+					Bounds += Segment.A;
+					Bounds += Segment.B;
+				}
+			}
+			if (Segments.IsEmpty())
+			{
+				return;
+			}
+			Lo = Bounds.Min;
+			Size = 8.0 * FMath::Max(Scale.X, Scale.Y);
+			for (;;)
+			{
+				Dims.X = FMath::FloorToInt32((Bounds.Max.X - Lo.X) / Size) + 1;
+				Dims.Y = FMath::FloorToInt32((Bounds.Max.Y - Lo.Y) / Size) + 1;
+				if (static_cast<int64>(Dims.X) * Dims.Y <= (1 << 20))
+				{
+					break;
+				}
+				Size *= 2.0;
+			}
+			Buckets.SetNum(Dims.X * Dims.Y);
+			for (int32 Index = 0; Index < Segments.Num(); ++Index)
+			{
+				const FSegment& Segment = Segments[Index];
+				const FIntPoint From = BucketOf(FVector2D(FMath::Min(Segment.A.X, Segment.B.X), FMath::Min(Segment.A.Y, Segment.B.Y)));
+				const FIntPoint To = BucketOf(FVector2D(FMath::Max(Segment.A.X, Segment.B.X), FMath::Max(Segment.A.Y, Segment.B.Y)));
+				for (int32 Y = FMath::Max(From.Y, 0); Y <= FMath::Min(To.Y, Dims.Y - 1); ++Y)
+				{
+					for (int32 X = FMath::Max(From.X, 0); X <= FMath::Min(To.X, Dims.X - 1); ++X)
+					{
+						Buckets[X + Dims.X * Y].Add(Index);
+					}
+				}
+			}
+		}
+
+		FIntPoint BucketOf(const FVector2D& P) const
+		{
+			return FIntPoint(FMath::FloorToInt32((P.X - Lo.X) / Size), FMath::FloorToInt32((P.Y - Lo.Y) / Size));
+		}
+
+		/** The nearest point on the loops to Cell (cell space XY); returns it in cell space, Z interpolated. */
+		FVector Find(const FVector2D& Cell) const
+		{
+			const FVector2D Q = Cell * Scale;
+			const FIntPoint B = BucketOf(Q);
+			double Best = TNumericLimits<double>::Max();
+			FVector2D BestPoint = Q;
+			double BestZ = 0.0;
+			auto Test = [&](const FSegment& Segment)
+			{
+				const FVector2D AB = Segment.B - Segment.A;
+				const double Length = AB.SizeSquared();
+				const double T = Length > 0.0 ? FMath::Clamp(((Q - Segment.A) | AB) / Length, 0.0, 1.0) : 0.0;
+				const FVector2D P = Segment.A + AB * T;
+				const double Distance = (Q - P).SizeSquared();
+				if (Distance < Best)
+				{
+					Best = Distance;
+					BestPoint = P;
+					BestZ = FMath::Lerp(Segment.ZA, Segment.ZB, T);
+				}
+			};
+			// Buckets in ring R + 1 are at least R bucket widths from Q, so the search stops once the best is nearer.
+			const int32 MaxRing = FMath::Max(FMath::Max(FMath::Abs(B.X), FMath::Abs(B.X - (Dims.X - 1))),
+				FMath::Max(FMath::Abs(B.Y), FMath::Abs(B.Y - (Dims.Y - 1))));
+			for (int32 Ring = 0; Ring <= MaxRing; ++Ring)
+			{
+				for (int32 Y = FMath::Max(B.Y - Ring, 0); Y <= FMath::Min(B.Y + Ring, Dims.Y - 1); ++Y)
+				{
+					const bool bEdgeRow = Y == B.Y - Ring || Y == B.Y + Ring;
+					const int32 Step = bEdgeRow ? 1 : 2 * Ring;
+					for (int32 X = B.X - Ring; X <= B.X + Ring; X += Step)
+					{
+						if (X < 0 || X >= Dims.X)
+						{
+							continue;
+						}
+						for (const int32 Index : Buckets[X + Dims.X * Y])
+						{
+							Test(Segments[Index]);
+						}
+					}
+				}
+				if (Best <= FMath::Square(Ring * Size))
+				{
+					break;
+				}
+			}
+			return FVector(BestPoint / Scale, BestZ);
+		}
+	};
 }
 
 #if WITH_EDITOR
@@ -262,7 +390,8 @@ FText UPCGVoxelRasterizeSettings::GetNodeTooltipText() const
 	return LOCTEXT("Tooltip",
 		"Turns each DynMesh (Source Mesh) or closed point path (Source Path, filled in the grid's XY plane) into a voxel set. "
 		"Modes: Fill (cells whose centre is inside), Intersect (cells the surface passes through) and Surround (the shell just "
-		"outside), any mix. Connect a voxel set to Grid to put the cells on its grid, so they line up with it for Voxel | Boolean.");
+		"outside), any mix. Paths can follow their own height (Path Height) and can have holes (inputs tagged Hole Tag). "
+		"Connect a voxel set to Grid to put the cells on its grid, so they line up with it for Voxel | Boolean.");
 }
 #endif
 
@@ -270,7 +399,8 @@ TArray<FPCGPinProperties> UPCGVoxelRasterizeSettings::InputPinProperties() const
 {
 	TArray<FPCGPinProperties> Pins;
 	Pins.Emplace_GetRef(PCGPinConstants::DefaultInputLabel, EPCGDataType::Point | EPCGDataType::DynamicMesh, true, true,
-		LOCTEXT("InTooltip", "The shapes: DynMesh data when Source is Mesh, closed point paths when Source is Path. One voxel set per input."))
+		LOCTEXT("InTooltip", "The shapes: DynMesh data when Source is Mesh, closed point paths when Source is Path. One voxel set per input, "
+			"except that with Use Hole Paths on, paths tagged Hole Tag are holes cut from the other paths and output nothing."))
 		.SetRequiredPin();
 	Pins.Emplace(PCGVoxelRasterizePins::Grid, EPCGDataType::Point, true, true,
 		LOCTEXT("GridTooltip", "Optional voxel set whose grid (Voxel Size and grid transform, read through Grid settings) the cells go on: "
@@ -347,29 +477,94 @@ bool FPCGVoxelRasterizeElement::ExecuteInternal(FPCGContext* Context) const
 		return true;
 	}
 
-	const TArray<FPCGTaggedData> Inputs = Context->InputData.GetInputsByPin(PCGPinConstants::DefaultInputLabel);
-	const TArray<FPCGTaggedData> GridInputs = Context->InputData.GetInputsByPin(PCGVoxelRasterizePins::Grid);
-	if (GridInputs.Num() > 1 && GridInputs.Num() != Inputs.Num())
+	const bool b2D = Settings->Source == EPCGVoxelRasterizeSource::Path;
+	const bool bHoles = b2D && Settings->bUseHolePaths;
+	const bool bWritePathZ = b2D && Settings->bWritePathZAttribute;
+	if (bHoles && Settings->HoleTag.IsNone())
 	{
-		Fail(FText::Format(LOCTEXT("GridCount", "Grid has {0} inputs; it takes 1 (shared by every input) or one per input ({1})."),
-			GridInputs.Num(), Inputs.Num()));
+		Fail(LOCTEXT("NoHoleTag", "Hole Tag is empty while Use Hole Paths is on; give it the tag your hole paths carry or turn it off."));
+		return true;
+	}
+	if (bWritePathZ && Settings->PathZAttribute.IsNone())
+	{
+		Fail(LOCTEXT("NoPathZName", "Path Z Attribute is empty while writing it is on; give it a name or turn it off."));
+		return true;
+	}
+	if (bWritePathZ && Settings->bWriteModeAttribute && Settings->PathZAttribute == Settings->ModeAttribute)
+	{
+		Fail(FText::Format(LOCTEXT("SameNames", "Path Z Attribute and Mode Attribute are both '{0}'; they must differ (one is Double, the other Integer32)."),
+			FText::FromName(Settings->PathZAttribute)));
 		return true;
 	}
 
+	const TArray<FPCGTaggedData> Inputs = Context->InputData.GetInputsByPin(PCGPinConstants::DefaultInputLabel);
+	const TArray<FPCGTaggedData> GridInputs = Context->InputData.GetInputsByPin(PCGVoxelRasterizePins::Grid);
+
+	// ---- Shapes and holes: with hole paths on, inputs tagged Hole Tag are holes and output nothing ----
+	TArray<int32> ShapeInputs;
+	TArray<int32> HoleInputs;
+	const FString HoleTag = Settings->HoleTag.ToString();
+	for (int32 InputIndex = 0; InputIndex < Inputs.Num(); ++InputIndex)
+	{
+		(bHoles && Inputs[InputIndex].Tags.Contains(HoleTag) ? HoleInputs : ShapeInputs).Add(InputIndex);
+	}
+	if (ShapeInputs.IsEmpty() && !HoleInputs.IsEmpty())
+	{
+		PCGLog::LogWarningOnGraph(PCGVoxel::FormatError(Title, INDEX_NONE, FText::Format(
+			LOCTEXT("OnlyHoles", "all {0} inputs are tagged '{1}' (holes); there is no shape to cut them from, so nothing is output."),
+			HoleInputs.Num(), FText::FromString(HoleTag))), Context);
+		return true;
+	}
+	if (GridInputs.Num() > 1 && GridInputs.Num() != ShapeInputs.Num())
+	{
+		if (HoleInputs.IsEmpty())
+		{
+			Fail(FText::Format(LOCTEXT("GridCount", "Grid has {0} inputs; it takes 1 (shared by every input) or one per input ({1})."),
+				GridInputs.Num(), Inputs.Num()));
+		}
+		else
+		{
+			Fail(FText::Format(LOCTEXT("GridCountHoles", "Grid has {0} inputs; it takes 1 (shared by every shape) or one per shape: {1} "
+				"(the {2} inputs less the {3} tagged '{4}', which are holes)."),
+				GridInputs.Num(), ShapeInputs.Num(), Inputs.Num(), HoleInputs.Num(), FText::FromString(HoleTag)));
+		}
+		return true;
+	}
+	TArray<const UPCGBasePointData*> HolePoints;
+	TArray<bool> HoleReported;
+	for (const int32 HoleInput : HoleInputs)
+	{
+		const UPCGBasePointData* Points = Cast<const UPCGBasePointData>(Inputs[HoleInput].Data);
+		if (!Points)
+		{
+			Fail(FText::Format(LOCTEXT("HoleNotPath", "the input is tagged '{0}' (a hole) but is {1}; a hole path is point data. It is skipped."),
+				FText::FromString(HoleTag), FText::FromString(Inputs[HoleInput].Data ? Inputs[HoleInput].Data->GetClass()->GetName() : TEXT("empty"))), HoleInput);
+		}
+		HolePoints.Add(Points);
+		HoleReported.Add(false);
+	}
+
 	const bool bWarnOpen = (Modes & (BitFill | BitSurround)) != 0;
-	const bool b2D = Settings->Source == EPCGVoxelRasterizeSource::Path;
 	const TArray<FIntVector> Offsets = NeighborOffsets(Settings->SurroundNeighbors, b2D);
 	const int32 Pad = ((Modes & BitSurround) ? Settings->SurroundCells : 0) + 2;
 	const double Half = 0.5 + Settings->TouchMargin - OnFace;
+	const EPCGVoxelRasterizePathHeight PathHeight = Settings->PathHeight;
+	const bool bTrimTop = b2D && (PathHeight == EPCGVoxelRasterizePathHeight::BestFit || PathHeight == EPCGVoxelRasterizePathHeight::Trim);
 
-	for (int32 InputIndex = 0; InputIndex < Inputs.Num(); ++InputIndex)
+	for (int32 ShapeOrdinal = 0; ShapeOrdinal < ShapeInputs.Num(); ++ShapeOrdinal)
 	{
+		const int32 InputIndex = ShapeInputs[ShapeOrdinal];
+		// Per column of a Path (index into the flat mask): the path's Z in cells, its world Z, and the top cell.
+		TArray<double> ColumnZ;
+		TArray<double> ColumnWorldZ;
+		TArray<int32> ColumnTop;
+
 		// ---- Grid frame ----
 		FVector VoxelSize = Settings->VoxelSize;
 		FTransform GridToWorld(Settings->GridTransform.GetRotation(), Settings->GridTransform.GetLocation());
 		if (!GridInputs.IsEmpty())
 		{
-			const int32 GridIndex = GridInputs.Num() == 1 ? 0 : InputIndex;
+			const int32 GridIndex = GridInputs.Num() == 1 ? 0 : ShapeOrdinal;
 			const UPCGBasePointData* GridPoints = Cast<const UPCGBasePointData>(GridInputs[GridIndex].Data);
 			if (!GridPoints)
 			{
@@ -549,25 +744,56 @@ bool FPCGVoxelRasterizeElement::ExecuteInternal(FPCGContext* Context) const
 					FText::FromString(Inputs[InputIndex].Data ? Inputs[InputIndex].Data->GetClass()->GetName() : TEXT("empty"))), InputIndex);
 				continue;
 			}
-			const TConstPCGValueRange<FTransform> Transforms = PathPoints->GetConstTransformValueRange();
-			TArray<FVector> Loop;
-			for (int32 Index = 0; Index < Transforms.Num(); ++Index)
+			// A path's points in cell space, in order, without repeats in XY (and without a closing repeat of the first).
+			auto BuildLoop = [&](const UPCGBasePointData* Points, TArray<FVector>& Loop)
 			{
-				const FVector P = ToCell(Transforms[Index].GetLocation());
-				if (Loop.IsEmpty() || FVector2D(P - Loop.Last()).SizeSquared() > UE_KINDA_SMALL_NUMBER * UE_KINDA_SMALL_NUMBER)
+				Loop.Reset();
+				const TConstPCGValueRange<FTransform> Transforms = Points->GetConstTransformValueRange();
+				for (int32 Index = 0; Index < Transforms.Num(); ++Index)
 				{
-					Loop.Add(P);
+					const FVector P = ToCell(Transforms[Index].GetLocation());
+					if (Loop.IsEmpty() || FVector2D(P - Loop.Last()).SizeSquared() > UE_KINDA_SMALL_NUMBER * UE_KINDA_SMALL_NUMBER)
+					{
+						Loop.Add(P);
+					}
 				}
-			}
-			if (Loop.Num() > 1 && FVector2D(Loop[0] - Loop.Last()).SizeSquared() <= UE_KINDA_SMALL_NUMBER * UE_KINDA_SMALL_NUMBER)
-			{
-				Loop.Pop();
-			}
+				if (Loop.Num() > 1 && FVector2D(Loop[0] - Loop.Last()).SizeSquared() <= UE_KINDA_SMALL_NUMBER * UE_KINDA_SMALL_NUMBER)
+				{
+					Loop.Pop();
+				}
+			};
+			TArray<FVector> Loop;
+			BuildLoop(PathPoints, Loop);
 			if (Loop.Num() < 3)
 			{
 				Fail(FText::Format(LOCTEXT("ShortPath", "the path has {0} distinct points in the grid's XY plane; a closed loop needs at least 3."),
 					Loop.Num()), InputIndex);
 				continue;
+			}
+
+			// Extra Cells Below: a constant, or one value per path from @Data.
+			int32 ExtraBelow = 0;
+			{
+				TPCGUtilsPointValues<int32> ExtraValues;
+				FText ReadError;
+				if (!Settings->ExtraCellsBelow.TryRead(PathPoints, ExtraValues, ReadError, LOCTEXT("ExtraLabel", "Extra Cells Below")))
+				{
+					Fail(ReadError, InputIndex);
+					continue;
+				}
+				if (ExtraValues.IsPerPoint())
+				{
+					// TODO: per-point Extra Cells Below, read for each column from the nearest path segment (interpolated
+					// between its two points), as the heights are.
+					PCGLog::LogWarningOnGraph(PCGVoxel::FormatError(Title, InputIndex, FText::Format(
+						LOCTEXT("ExtraPerPoint", "Extra Cells Below reads '{0}' per point, which is not supported yet; it is 0 for this path. "
+							"Use an @Data attribute for one value per path."),
+						Settings->ExtraCellsBelow.Attribute.GetDisplayText())), Context);
+				}
+				else
+				{
+					ExtraBelow = ExtraValues.Single;
+				}
 			}
 
 			FVector Lo(UE_BIG_NUMBER), Hi(-UE_BIG_NUMBER);
@@ -576,33 +802,35 @@ bool FPCGVoxelRasterizeElement::ExecuteInternal(FPCGContext* Context) const
 				Lo = Lo.ComponentMin(P);
 				Hi = Hi.ComponentMax(P);
 			}
-			const int32 ZLow = FMath::RoundToInt32(Lo.Z) - Settings->CellsBelow;
+			const int32 ZLow = FMath::RoundToInt32(Lo.Z) - Settings->CellsBelow - ExtraBelow;
 			const int32 ZHigh = FMath::RoundToInt32(Hi.Z) + Settings->CellsAbove;
 			const FIntVector Min(FMath::FloorToInt32(Lo.X) - Pad, FMath::FloorToInt32(Lo.Y) - Pad, 0);
 			const FIntVector Max(FMath::CeilToInt32(Hi.X) + Pad, FMath::CeilToInt32(Hi.Y) + Pad, 0);
-			// The flat mask first; layers are copied at the end.
+			// The flat mask first; layers are copied (Flat) or columns raised (the other heights) at the end.
 			if (!InitBox(Box, Min, Max, Settings->MaxCells, BoxCount))
 			{
 				TooBig();
 				continue;
 			}
-			const int64 Layers = static_cast<int64>(ZHigh - ZLow + 1);
-			if (BoxCount * Layers > Settings->MaxCells)
+			const int64 FlatLayers = static_cast<int64>(ZHigh - ZLow + 1);
+			if (PathHeight == EPCGVoxelRasterizePathHeight::Flat && BoxCount * FlatLayers > Settings->MaxCells)
 			{
-				Box.Dims.Z = static_cast<int32>(Layers);
-				BoxCount *= Layers;
+				Box.Dims.Z = static_cast<int32>(FlatLayers);
+				BoxCount *= FlatLayers;
 				TooBig();
 				continue;
 			}
 
-			const int32 N = Loop.Num();
-			// Intersect and Fill are always worked out, so the mode bits are complete.
+			// Marks a loop into Mask (laid out as the flat Box): EdgeBit on the cells its line passes through, FillBit on
+			// the cells whose centre it winds round.
+			auto RasterLoop = [&](const TArray<FVector>& Points, TArray<uint8>& Mask, uint8 FillBit, uint8 EdgeBit)
 			{
+				const int32 N = Points.Num();
 				const FVector2D H(Half);
 				for (int32 Edge = 0; Edge < N; ++Edge)
 				{
-					const FVector2D A(Loop[Edge]);
-					const FVector2D B(Loop[(Edge + 1) % N]);
+					const FVector2D A(Points[Edge]);
+					const FVector2D B(Points[(Edge + 1) % N]);
 					const int32 X0 = FMath::Max(FMath::FloorToInt32(FMath::Min(A.X, B.X) - Half), Box.Min.X);
 					const int32 X1 = FMath::Min(FMath::CeilToInt32(FMath::Max(A.X, B.X) + Half), Box.Min.X + Box.Dims.X - 1);
 					const int32 Y0 = FMath::Max(FMath::FloorToInt32(FMath::Min(A.Y, B.Y) - Half), Box.Min.Y);
@@ -614,18 +842,16 @@ bool FPCGVoxelRasterizeElement::ExecuteInternal(FPCGContext* Context) const
 							const FVector2D Center(X, Y);
 							if (SegmentOverlapsSquare(H, A - Center, B - Center))
 							{
-								Box.Bits[Box.Index(X, Y, 0)] |= BitIntersect;
+								Mask[Box.Index(X, Y, 0)] |= EdgeBit;
 							}
 						}
 					}
 				}
-			}
-			{
 				TArray<FHit> Hits;
 				for (int32 Edge = 0; Edge < N; ++Edge)
 				{
-					const FVector& A = Loop[Edge];
-					const FVector& B = Loop[(Edge + 1) % N];
+					const FVector& A = Points[Edge];
+					const FVector& B = Points[(Edge + 1) % N];
 					const int32 Y0 = FMath::Max(FMath::CeilToInt32(FMath::Min(A.Y, B.Y) - RayNudgeA), Box.Min.Y);
 					const int32 Y1 = FMath::Min(FMath::FloorToInt32(FMath::Max(A.Y, B.Y) - RayNudgeA), Box.Min.Y + Box.Dims.Y - 1);
 					for (int32 Y = Y0; Y <= Y1; ++Y)
@@ -645,23 +871,168 @@ bool FPCGVoxelRasterizeElement::ExecuteInternal(FPCGContext* Context) const
 					CellRange(From, To, First, Last);
 					for (int32 X = FMath::Max(First, Box.Min.X); X <= FMath::Min(Last, Box.Min.X + Box.Dims.X - 1); ++X)
 					{
-						Box.Bits[Box.Index(X, Row + Box.Min.Y, 0)] |= BitFill;
+						Mask[Box.Index(X, Row + Box.Min.Y, 0)] |= FillBit;
 					}
 				});
+			};
+
+			// Intersect and Fill are always worked out, so the mode bits are complete.
+			RasterLoop(Loop, Box.Bits, BitFill, BitIntersect);
+
+			// The loops whose segments the heights look at: the path, then every hole that overlaps it.
+			TArray<TArray<FVector>> SurfaceLoops;
+			SurfaceLoops.Add(Loop);
+
+			if (!HoleInputs.IsEmpty())
+			{
+				constexpr uint8 HoleInside = 1;
+				constexpr uint8 HoleEdge = 2;
+				TArray<uint8> HoleMask;
+				HoleMask.SetNumZeroed(Box.Bits.Num());
+				TArray<uint8> OneHole;
+				TArray<FVector> HoleLoop;
+				for (int32 Hole = 0; Hole < HoleInputs.Num(); ++Hole)
+				{
+					if (!HolePoints[Hole])
+					{
+						continue;
+					}
+					BuildLoop(HolePoints[Hole], HoleLoop);
+					if (HoleLoop.Num() < 3)
+					{
+						if (!HoleReported[Hole])
+						{
+							Fail(FText::Format(LOCTEXT("ShortHole", "this hole path (tagged '{0}') has {1} distinct points in the grid's XY plane; "
+								"a closed loop needs at least 3. It is skipped."), FText::FromString(HoleTag), HoleLoop.Num()), HoleInputs[Hole]);
+							HoleReported[Hole] = true;
+						}
+						continue;
+					}
+					OneHole.Reset();
+					OneHole.SetNumZeroed(Box.Bits.Num());
+					RasterLoop(HoleLoop, OneHole, HoleInside, HoleEdge);
+					bool bOverlaps = false;
+					for (int32 Index = 0; Index < OneHole.Num() && !bOverlaps; ++Index)
+					{
+						bOverlaps = OneHole[Index] != 0 && (Box.Bits[Index] & (BitFill | BitIntersect)) != 0;
+					}
+					if (!bOverlaps)
+					{
+						continue;
+					}
+					for (int32 Index = 0; Index < OneHole.Num(); ++Index)
+					{
+						HoleMask[Index] |= OneHole[Index];
+					}
+					SurfaceLoops.Add(HoleLoop);
+				}
+				// Cut the holes. A cell whose centre is in a hole loses Fill, and loses the path's own line too unless the
+				// hole's line passes through it (that part of the path's line lies inside the hole). A hole's line is
+				// surface wherever it runs through the shape.
+				for (int32 Index = 0; Index < Box.Bits.Num(); ++Index)
+				{
+					uint8& Bits = Box.Bits[Index];
+					if ((HoleMask[Index] & HoleEdge) && (Bits & (BitFill | BitIntersect)))
+					{
+						Bits |= BitIntersect;
+					}
+					if (HoleMask[Index] & HoleInside)
+					{
+						Bits &= ~BitFill;
+						if (!(HoleMask[Index] & HoleEdge))
+						{
+							Bits &= ~BitIntersect;
+						}
+					}
+				}
 			}
+
 			if (Modes & BitSurround)
 			{
 				GrowSurround(Box, Offsets, Settings->SurroundCells);
 			}
 
-			// Stack the flat mask into its layers.
-			FCellBox Stacked;
-			Stacked.Min = FIntVector(Box.Min.X, Box.Min.Y, ZLow);
-			Stacked.Dims = FIntVector(Box.Dims.X, Box.Dims.Y, static_cast<int32>(Layers));
-			Stacked.Bits.SetNumUninitialized(Box.Bits.Num() * static_cast<int32>(Layers));
-			for (int32 Layer = 0; Layer < Layers; ++Layer)
+			// ---- Heights: the nearest point on the path (or a hole) under every output column ----
+			const int32 NumColumns = Box.Bits.Num();
+			if (PathHeight != EPCGVoxelRasterizePathHeight::Flat || bWritePathZ)
 			{
-				FMemory::Memcpy(Stacked.Bits.GetData() + static_cast<int64>(Layer) * Box.Bits.Num(), Box.Bits.GetData(), Box.Bits.Num());
+				const FSegmentFinder Finder(SurfaceLoops, FVector2D(VoxelSize.X, VoxelSize.Y));
+				ColumnZ.SetNumZeroed(NumColumns);
+				ColumnWorldZ.SetNumZeroed(NumColumns);
+				ParallelFor(NumColumns, [&](int32 Column)
+				{
+					if (!(Box.Bits[Column] & Modes))
+					{
+						return;
+					}
+					const FIntVector Cell = Box.Cell(Column);
+					const FVector Nearest = Finder.Find(FVector2D(Cell.X, Cell.Y));
+					ColumnZ[Column] = Nearest.Z;
+					ColumnWorldZ[Column] = GridToWorld.TransformPositionNoScale(Nearest * VoxelSize).Z;
+				});
+			}
+
+			FCellBox Stacked;
+			if (PathHeight == EPCGVoxelRasterizePathHeight::Flat)
+			{
+				// Stack the flat mask into its layers.
+				Stacked.Min = FIntVector(Box.Min.X, Box.Min.Y, ZLow);
+				Stacked.Dims = FIntVector(Box.Dims.X, Box.Dims.Y, static_cast<int32>(FlatLayers));
+				Stacked.Bits.SetNumUninitialized(Box.Bits.Num() * static_cast<int32>(FlatLayers));
+				for (int32 Layer = 0; Layer < FlatLayers; ++Layer)
+				{
+					FMemory::Memcpy(Stacked.Bits.GetData() + static_cast<int64>(Layer) * Box.Bits.Num(), Box.Bits.GetData(), Box.Bits.Num());
+				}
+			}
+			else
+			{
+				// Raise each column to the path. Its top cell holds the path's Z: Snap takes the nearest layer, Best Fit
+				// and Trim the cell the Z is in (its top face is trimmed to the Z on output); Best Fit adds a full cell under it.
+				ColumnTop.SetNumZeroed(NumColumns);
+				TArray<int32> ColumnBottom;
+				ColumnBottom.SetNumZeroed(NumColumns);
+				int32 LowestBottom = TNumericLimits<int32>::Max();
+				int32 HighestTop = TNumericLimits<int32>::Lowest();
+				for (int32 Column = 0; Column < NumColumns; ++Column)
+				{
+					if (!(Box.Bits[Column] & Modes))
+					{
+						continue;
+					}
+					const double Z = ColumnZ[Column];
+					const int32 Top = PathHeight == EPCGVoxelRasterizePathHeight::Snap ? FMath::RoundToInt32(Z) : FMath::CeilToInt32(Z - 0.5);
+					const int32 Bottom = PathHeight == EPCGVoxelRasterizePathHeight::BestFit ? Top - 1 : Top;
+					ColumnTop[Column] = Top;
+					ColumnBottom[Column] = Bottom;
+					LowestBottom = FMath::Min(LowestBottom, Bottom);
+					HighestTop = FMath::Max(HighestTop, Top);
+				}
+				if (LowestBottom <= HighestTop)
+				{
+					const int64 Layers = static_cast<int64>(HighestTop) - (static_cast<int64>(LowestBottom) - ExtraBelow) + 1;
+					if (BoxCount * Layers > Settings->MaxCells || BoxCount * Layers > (1ll << 30))
+					{
+						Box.Dims.Z = static_cast<int32>(FMath::Min<int64>(Layers, TNumericLimits<int32>::Max()));
+						BoxCount *= Layers;
+						TooBig();
+						continue;
+					}
+					Stacked.Min = FIntVector(Box.Min.X, Box.Min.Y, LowestBottom - ExtraBelow);
+					Stacked.Dims = FIntVector(Box.Dims.X, Box.Dims.Y, static_cast<int32>(Layers));
+					Stacked.Bits.SetNumZeroed(Box.Bits.Num() * static_cast<int32>(Layers));
+					for (int32 Column = 0; Column < NumColumns; ++Column)
+					{
+						if (!(Box.Bits[Column] & Modes))
+						{
+							continue;
+						}
+						const int32 From = (Settings->bExtrudeDown ? LowestBottom : ColumnBottom[Column]) - ExtraBelow;
+						for (int32 Z = From; Z <= ColumnTop[Column]; ++Z)
+						{
+							Stacked.Bits[Column + NumColumns * (Z - Stacked.Min.Z)] = Box.Bits[Column];
+						}
+					}
+				}
 			}
 			Box = MoveTemp(Stacked);
 		}
@@ -685,6 +1056,7 @@ bool FPCGVoxelRasterizeElement::ExecuteInternal(FPCGContext* Context) const
 		Out->SetNumPoints(NumOut);
 		Out->AllocateProperties(EPCGPointNativeProperties::Transform | EPCGPointNativeProperties::BoundsMin
 			| EPCGPointNativeProperties::BoundsMax | EPCGPointNativeProperties::Seed | EPCGPointNativeProperties::MetadataEntry);
+		const int32 LayerSize = Box.Dims.X * Box.Dims.Y;
 		const FQuat GridRotation = GridToWorld.GetRotation();
 		TPCGValueRange<FTransform> OutTransforms = Out->GetTransformValueRange();
 		TPCGValueRange<FVector> Mins = Out->GetBoundsMinValueRange();
@@ -697,6 +1069,15 @@ bool FPCGVoxelRasterizeElement::ExecuteInternal(FPCGContext* Context) const
 			OutTransforms[P] = FTransform(GridRotation, GridToWorld.TransformPositionNoScale(FVector(Cell) * VoxelSize));
 			Mins[P] = -VoxelSize * 0.5;
 			Maxs[P] = VoxelSize * 0.5;
+			if (bTrimTop)
+			{
+				// Best Fit and Trim: the column's top cell ends exactly at the path's Z.
+				const int32 Column = Emit[P] % LayerSize;
+				if (Cell.Z == ColumnTop[Column])
+				{
+					Maxs[P].Z = (ColumnZ[Column] - Cell.Z) * VoxelSize.Z;
+				}
+			}
 			Seeds[P] = PCGHelpers::ComputeSeed(Cell.X, Cell.Y, Cell.Z);
 			Entries[P] = PCGInvalidEntryKey;
 		});
@@ -710,6 +1091,16 @@ bool FPCGVoxelRasterizeElement::ExecuteInternal(FPCGContext* Context) const
 				Values[P] = Box.Bits[Emit[P]];
 			}
 			PCGVoxelPointIO::WritePointAttribute<int32>(Out, Settings->ModeAttribute, 0, Values);
+		}
+		if (bWritePathZ)
+		{
+			TArray<double> Values;
+			Values.SetNumUninitialized(NumOut);
+			for (int32 P = 0; P < NumOut; ++P)
+			{
+				Values[P] = ColumnWorldZ[Emit[P] % LayerSize];
+			}
+			PCGVoxelPointIO::WritePointAttribute<double>(Out, Settings->PathZAttribute, 0.0, Values);
 		}
 		if (FPCGMetadataDomain* Domain = PCGUtilsDataDomain::GetMutableDataDomain(Out))
 		{

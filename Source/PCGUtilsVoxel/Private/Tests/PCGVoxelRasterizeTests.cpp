@@ -294,6 +294,216 @@ bool FPCGVoxelRasterizePathTest::RunTest(const FString&)
 	return true;
 }
 
+namespace PCGVoxelRasterizeTests
+{
+	/** Runs Rasterize on paths, each with an optional tag (empty for none). */
+	TArray<FPCGTaggedData> RasterizeTagged(UPCGVoxelRasterizeSettings* Settings, const TArray<TPair<const UPCGData*, FString>>& Shapes)
+	{
+		struct FExposed : FPCGVoxelRasterizeElement
+		{
+			using FPCGVoxelRasterizeElement::ExecuteInternal;
+		};
+		FPCGContext Context;
+		Context.InputData.TaggedData.Emplace_GetRef().Data = Settings;
+		for (const TPair<const UPCGData*, FString>& Shape : Shapes)
+		{
+			FPCGTaggedData& Tagged = Context.InputData.TaggedData.Emplace_GetRef();
+			Tagged.Data = Shape.Key;
+			Tagged.Pin = PCGPinConstants::DefaultInputLabel;
+			if (!Shape.Value.IsEmpty())
+			{
+				Tagged.Tags.Add(Shape.Value);
+			}
+		}
+		FExposed().ExecuteInternal(&Context);
+		return Context.OutputData.TaggedData;
+	}
+
+	UPCGVoxelRasterizeSettings* PathRasterizer(uint8 Modes)
+	{
+		UPCGVoxelRasterizeSettings* Settings = Rasterizer(Modes);
+		Settings->Source = EPCGVoxelRasterizeSource::Path;
+		return Settings;
+	}
+
+	double BoundsMaxZAt(const UPCGBasePointData* Points, const TMap<FIntVector, int32>& Cells, const FIntVector& Cell)
+	{
+		const int32* Point = Cells.Find(Cell);
+		return Point ? Points->GetConstBoundsMaxValueRange()[*Point].Z : -1000.0;
+	}
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FPCGVoxelRasterizePathHolesTest,
+	"PCGUtils.Voxel.Rasterize.PathHoles",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::ProductFilter)
+
+bool FPCGVoxelRasterizePathHolesTest::RunTest(const FString&)
+{
+	using namespace PCGVoxelRasterizeTests;
+
+	// Cells -2..4 (7 x 7) inside the shape, cells 0..2 (3 x 3) inside the hole; the hole's line runs through its outer ring.
+	const UPCGData* Shape = PathPoints({ FVector(-240, -240, 0), FVector(440, -240, 0), FVector(440, 440, 0), FVector(-240, 440, 0) });
+	const UPCGData* Hole = PathPoints({ FVector(-40, -40, 0), FVector(240, -40, 0), FVector(240, 240, 0), FVector(-40, 240, 0) });
+	const UPCGData* FarHole = PathPoints({ FVector(5000, 5000, 0), FVector(5300, 5000, 0), FVector(5300, 5300, 0) });
+
+	{
+		UPCGVoxelRasterizeSettings* Settings = PathRasterizer(Fill);
+		const TArray<FPCGTaggedData> Outputs = RasterizeTagged(Settings, { { Shape, FString() }, { Hole, TEXT("Hole") } });
+		TestEqual(TEXT("Hole paths off: two outputs"), Outputs.Num(), 2);
+		TestEqual(TEXT("Hole paths off: the hole-tagged path is a shape of its own"), CellsOf(PointsOf(Outputs, 1)).Num(), 9);
+	}
+	{
+		UPCGVoxelRasterizeSettings* Settings = PathRasterizer(Fill);
+		Settings->bUseHolePaths = true;
+		const TArray<FPCGTaggedData> Outputs = RasterizeTagged(Settings, { { Shape, FString() }, { Hole, TEXT("Hole") }, { FarHole, TEXT("Hole") } });
+		TestEqual(TEXT("Holes output nothing"), Outputs.Num(), 1);
+		TestEqual(TEXT("Fill: 49 less the 9 in the hole"), CellsOf(PointsOf(Outputs)).Num(), 40);
+	}
+	{
+		UPCGVoxelRasterizeSettings* Settings = PathRasterizer(Fill | Intersect);
+		Settings->bUseHolePaths = true;
+		const UPCGBasePointData* Points = PointsOf(RasterizeTagged(Settings, { { Shape, FString() }, { Hole, TEXT("Hole") } }));
+		const TMap<FIntVector, int32> Cells = CellsOf(Points);
+		TestEqual(TEXT("Fill and Intersect: the hole's line ring stays as surface"), Cells.Num(), 48);
+		TestEqual(TEXT("The hole's middle is gone"), ModeAt(Points, Cells, FIntVector(1, 1, 0)), -1);
+		TestEqual(TEXT("The hole's line cells are surface, centre in the hole"), ModeAt(Points, Cells, FIntVector(0, 0, 0)), 2);
+		TestEqual(TEXT("Inside the shape, off the hole"), ModeAt(Points, Cells, FIntVector(-1, -1, 0)), 1);
+	}
+	{
+		UPCGVoxelRasterizeSettings* Settings = PathRasterizer(Fill);
+		Settings->bUseHolePaths = true;
+		Settings->HoleTag = TEXT("Cutout");
+		const TArray<FPCGTaggedData> Outputs = RasterizeTagged(Settings, { { Shape, FString() }, { Hole, TEXT("Cutout") } });
+		TestEqual(TEXT("A custom Hole Tag"), CellsOf(PointsOf(Outputs)).Num(), 40);
+	}
+	{
+		// A hole's segments count for the heights: a raised hole pulls the cells next to it up.
+		const UPCGData* RaisedHole = PathPoints({ FVector(-40, -40, 300), FVector(240, -40, 300), FVector(240, 240, 300), FVector(-40, 240, 300) });
+		UPCGVoxelRasterizeSettings* Settings = PathRasterizer(Fill);
+		Settings->bUseHolePaths = true;
+		Settings->PathHeight = EPCGVoxelRasterizePathHeight::Snap;
+		const TMap<FIntVector, int32> Cells = CellsOf(PointsOf(RasterizeTagged(Settings, { { Shape, FString() }, { RaisedHole, TEXT("Hole") } })));
+		TestTrue(TEXT("Next to the hole: at the hole's height"), Cells.Contains(FIntVector(-1, 1, 3)));
+		TestTrue(TEXT("Next to the shape's edge: at its height"), Cells.Contains(FIntVector(-2, 1, 0)));
+	}
+	{
+		UPCGVoxelRasterizeSettings* Settings = PathRasterizer(Fill);
+		Settings->bUseHolePaths = true;
+		AddExpectedMessage(TEXT("there is no shape to cut them from"), ELogVerbosity::Warning, EAutomationExpectedMessageFlags::Contains, 1, false);
+		TestEqual(TEXT("Only holes: nothing"), RasterizeTagged(Settings, { { Hole, TEXT("Hole") } }).Num(), 0);
+	}
+	{
+		UPCGVoxelRasterizeSettings* Settings = PathRasterizer(Fill);
+		Settings->bUseHolePaths = true;
+		Settings->HoleTag = NAME_None;
+		AddExpectedError(TEXT("Hole Tag is empty while Use Hole Paths is on"), EAutomationExpectedErrorFlags::Contains, 1, false);
+		RasterizeTagged(Settings, { { Shape, FString() } });
+	}
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FPCGVoxelRasterizePathHeightTest,
+	"PCGUtils.Voxel.Rasterize.PathHeight",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::ProductFilter)
+
+bool FPCGVoxelRasterizePathHeightTest::RunTest(const FString&)
+{
+	using namespace PCGVoxelRasterizeTests;
+
+	// 4 x 4 cells, flat at Z 130 (1.3 cells) and at Z 170 (1.7 cells).
+	const UPCGData* Low = PathPoints({ FVector(-140, -140, 130), FVector(240, -140, 130), FVector(240, 240, 130), FVector(-140, 240, 130) });
+	const UPCGData* High = PathPoints({ FVector(-140, -140, 170), FVector(240, -140, 170), FVector(240, 240, 170), FVector(-140, 240, 170) });
+	auto HeightRun = [&](EPCGVoxelRasterizePathHeight Height, const UPCGData* Path, UPCGVoxelRasterizeSettings* Settings = nullptr)
+	{
+		if (!Settings)
+		{
+			Settings = PathRasterizer(Fill);
+		}
+		Settings->PathHeight = Height;
+		return Rasterize(Settings, Path);
+	};
+	{
+		const UPCGBasePointData* Points = PointsOf(HeightRun(EPCGVoxelRasterizePathHeight::Snap, Low));
+		const TMap<FIntVector, int32> Cells = CellsOf(Points);
+		TestEqual(TEXT("Snap: one layer"), Cells.Num(), 16);
+		TestTrue(TEXT("Snap 1.3: layer 1"), Cells.Contains(FIntVector(0, 0, 1)));
+		TestEqual(TEXT("Snap: full cell"), BoundsMaxZAt(Points, Cells, FIntVector(0, 0, 1)), 50.0, 1e-6);
+		TestTrue(TEXT("Snap 1.7: layer 2"), CellsOf(PointsOf(HeightRun(EPCGVoxelRasterizePathHeight::Snap, High))).Contains(FIntVector(0, 0, 2)));
+	}
+	{
+		const UPCGBasePointData* Points = PointsOf(HeightRun(EPCGVoxelRasterizePathHeight::Trim, Low));
+		const TMap<FIntVector, int32> Cells = CellsOf(Points);
+		TestEqual(TEXT("Trim: one layer"), Cells.Num(), 16);
+		TestEqual(TEXT("Trim 1.3: the cell's top at 130"), BoundsMaxZAt(Points, Cells, FIntVector(0, 0, 1)), 30.0, 1e-6);
+		const UPCGBasePointData* HighPoints = PointsOf(HeightRun(EPCGVoxelRasterizePathHeight::Trim, High));
+		const TMap<FIntVector, int32> HighCells = CellsOf(HighPoints);
+		TestEqual(TEXT("Trim 1.7: layer 2, top at 170"), BoundsMaxZAt(HighPoints, HighCells, FIntVector(0, 0, 2)), -30.0, 1e-6);
+	}
+	{
+		const UPCGBasePointData* Points = PointsOf(HeightRun(EPCGVoxelRasterizePathHeight::BestFit, Low));
+		const TMap<FIntVector, int32> Cells = CellsOf(Points);
+		TestEqual(TEXT("Best Fit: two layers"), Cells.Num(), 32);
+		TestEqual(TEXT("Best Fit: the top cell ends at 130"), BoundsMaxZAt(Points, Cells, FIntVector(0, 0, 1)), 30.0, 1e-6);
+		TestEqual(TEXT("Best Fit: a full cell under it"), BoundsMaxZAt(Points, Cells, FIntVector(0, 0, 0)), 50.0, 1e-6);
+	}
+
+	// A one-cell strip (cells 0..4) rising 1 cell per cell: the path is at 40, 140, ... 440 over the cell centres.
+	const UPCGData* Ramp = PathPoints({ FVector(-40, -20, 0), FVector(440, -20, 480), FVector(440, 20, 480), FVector(-40, 20, 0) });
+	{
+		UPCGVoxelRasterizeSettings* Settings = PathRasterizer(Fill);
+		Settings->bWritePathZAttribute = true;
+		const UPCGBasePointData* Points = PointsOf(HeightRun(EPCGVoxelRasterizePathHeight::Snap, Ramp, Settings));
+		const TMap<FIntVector, int32> Cells = CellsOf(Points);
+		TestEqual(TEXT("Ramp: one cell per column"), Cells.Num(), 5);
+		for (int32 X = 0; X < 5; ++X)
+		{
+			TestTrue(FString::Printf(TEXT("Ramp: column %d at layer %d"), X, X), Cells.Contains(FIntVector(X, 0, X)));
+			const int32* Point = Cells.Find(FIntVector(X, 0, X));
+			TestEqual(FString::Printf(TEXT("Ramp: Path Z of column %d"), X),
+				Point ? ValueOf<double>(Points, TEXT("PathZ"), *Point, -1.0) : -1.0, 40.0 + 100.0 * X, 1e-6);
+		}
+	}
+	{
+		UPCGVoxelRasterizeSettings* Settings = PathRasterizer(Fill);
+		Settings->bExtrudeDown = true;
+		TestEqual(TEXT("Extrude Down: every column to the lowest layer"),
+			CellsOf(PointsOf(HeightRun(EPCGVoxelRasterizePathHeight::Snap, Ramp, Settings))).Num(), 1 + 2 + 3 + 4 + 5);
+	}
+	{
+		UPCGVoxelRasterizeSettings* Settings = PathRasterizer(Fill);
+		Settings->bExtrudeDown = true;
+		Settings->ExtraCellsBelow.Constant = 1;
+		const TMap<FIntVector, int32> Cells = CellsOf(PointsOf(HeightRun(EPCGVoxelRasterizePathHeight::Snap, Ramp, Settings)));
+		TestEqual(TEXT("Extrude Down, 1 extra cell"), Cells.Num(), 2 + 3 + 4 + 5 + 6);
+		TestTrue(TEXT("The extra cell is under the lowest layer"), Cells.Contains(FIntVector(4, 0, -1)));
+	}
+	{
+		UPCGVoxelRasterizeSettings* Settings = PathRasterizer(Fill);
+		Settings->ExtraCellsBelow.Constant = 1;
+		TestEqual(TEXT("1 extra cell under each surface cell"), CellsOf(PointsOf(HeightRun(EPCGVoxelRasterizePathHeight::Snap, Ramp, Settings))).Num(), 10);
+	}
+	{
+		UPCGPointArrayData* RampData = PathPoints({ FVector(-40, -20, 0), FVector(440, -20, 480), FVector(440, 20, 480), FVector(-40, 20, 0) });
+		PCGUtilsDataDomain::WriteValue(*PCGUtilsDataDomain::GetMutableDataDomain(RampData), TEXT("ExtraCellsBelow"), 2);
+		UPCGVoxelRasterizeSettings* Settings = PathRasterizer(Fill);
+		Settings->ExtraCellsBelow.SetAttribute(TEXT("@Data.ExtraCellsBelow"));
+		TestEqual(TEXT("@Data Extra Cells Below 2"), CellsOf(PointsOf(HeightRun(EPCGVoxelRasterizePathHeight::Snap, RampData, Settings))).Num(), 15);
+	}
+	{
+		UPCGVoxelRasterizeSettings* Settings = PathRasterizer(Fill);
+		Settings->ExtraCellsBelow.Constant = 2;
+		TestEqual(TEXT("Flat: Extra Cells Below adds layers"), CellsOf(PointsOf(HeightRun(EPCGVoxelRasterizePathHeight::Flat, Low, Settings))).Num(), 16 * 3);
+	}
+	{
+		UPCGVoxelRasterizeSettings* Settings = PathRasterizer(Fill);
+		Settings->bWritePathZAttribute = true;
+		Settings->PathZAttribute = TEXT("RasterMode");
+		AddExpectedError(TEXT("Path Z Attribute and Mode Attribute are both 'RasterMode'"), EAutomationExpectedErrorFlags::Contains, 1, false);
+		Rasterize(Settings, Low);
+	}
+	return true;
+}
+
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(FPCGVoxelRasterizeGridAndErrorsTest,
 	"PCGUtils.Voxel.Rasterize.GridAndErrors",
 	EAutomationTestFlags::EditorContext | EAutomationTestFlags::ProductFilter)
