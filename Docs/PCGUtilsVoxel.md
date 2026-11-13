@@ -167,6 +167,7 @@ first cell's values. A test checks it.
 | 1 | `Voxel \| Rasterize` | A DynMesh or a closed point path to cells: Fill, Intersect and Surround modes, on its own grid or another set's (section 4g). |
 | 1 | `Voxel \| Boolean` | Union, intersect or subtract voxel sets by cell index; Out is In, mutated (section 4h). |
 | 1 | `Voxel \| Offset Surface` | Moves the surface by Amount cells: whole layers added or removed, the fraction on the open faces (bounds), inside corners split (section 4i). |
+| 1 | `Voxel \| Extrude` | Grows each cell along Direction × Amount (whole cells, rounded up), or with a negative Amount removes it and the cells beyond; separate runs per axis or a box; added cells numbered by step (section 4k). |
 | 1 | `Voxel \| Match Rules` | Rule tiles: ordered rules (open faces, thin) that may turn to fit; turns each cell's point and writes a mesh index for a collection downstream (section 4j). |
 | 1 | `Voxel \| Expand` | Turns chunks back into one point per cell (section 1.2). |
 | 1 | `Voxel \| Pack Points` | Packs loose points into free cells of a voxel grid, fully or part way, without overlaps (section 4). |
@@ -231,10 +232,33 @@ The offset changes only the **outer surface**:
 - Each surface vertex moves along the normals of the surface faces that meet at it, by those faces' offsets. This
   works like Blender's Manifold Extrude: the shell grows or shrinks and stays closed, and its topology is the same as
   the un-offset mesh.
-- Where neighbouring cells on one flat surface have different offsets, the shared vertex takes their average. The
-  surface then slopes between them instead of stepping. Topology never depends on the offset.
-- An offset ≤ −VoxelSize/2 on any side would turn the shell inside out. That is an error naming the point index,
-  the side and the value.
+- Where neighbouring cells have different offsets, `Offset Blend` decides (added 2026-11-13):
+  - **Exact (Point Boxes)** (default): every face keeps its own point's offsets, so the mesh has the shape you get by
+    spawning each point's bounds as a box instance. A Rasterize Best Fit/Trim surface keeps its steps. Corners join only
+    where they land at the same place. Each edge whose corners part from its partner's gets a stitch: a riser quad, or a
+    triangle when one end still meets. Where three or more stitches meet at one lattice point, the small hole left
+    is fanned shut. The mesh stays closed and manifold. Stitches along a step's side line, and those fans, are
+    zero-area slivers; their normals are set from their direction or a neighbour. Faces with a stitch are never
+    collapsed. Corner rule: along its own axis a face moves by its point's offset; along each in-plane axis a corner
+    follows that side's edge: convex (own side face) uses the point's own offset, concave (wall in front) the wall's
+    offset, flat (the next cell continues) stays on the cell boundary. With equal offsets everywhere this is identical
+    to Average.
+  - **Average (Smoothed)**: the shared vertex takes the average, so the surface slopes between cells instead of
+    stepping. Topology never depends on the offset.
+- A point turns inside out only when its two faces on one axis cross: `BoundsMax ≤ BoundsMin` (after scale) with both
+  sides showing, or a shown face reaching past the natural side of a hidden one. A single face passing the cell's
+  centre is fine (Max.Z 0, Min.Z −20 is a valid 20-unit slab). Crossing points are repaired, never refused (changed
+  2026-11-13; it used to be an error that dropped the whole set, and it wrongly tested each side against the centre):
+  `Offset Repair` picks what a crossing point becomes, always placed halfway between the crossed faces (or against
+  the hidden side when only one side shows):
+  - **Thin Slab** (default): closed, 1/1000 of a cell thick. Renders as a two-sided plane; safe downstream.
+  - **Zero Thickness**: closed, both faces exactly together; the side walls are zero-area triangles, which DynMesh
+    Boolean, Bevel and normal recompute can trip over.
+  - **One-Sided Plane**: only the + face of that axis (the - face if only that one shows) is kept; the opposite face
+    and side walls are dropped (`FPCGVoxelMeshInput::DroppedFaces`), so the mesh is open there and the plane is seen
+    from one side. A point crossed on several axes falls back to Zero Thickness.
+  One warning per input gives the count, the repair used, and the first five points with axis, face positions and
+  thickness. Added 2026-11-13 so the designer can compare the three in a graph.
 
 ### 3.5b Shape: Bevel
 `Shape: Blocks | Bevel`. Default Blocks. Bevel cuts the surface's edges at an angle while the set is still voxels,
@@ -754,6 +778,30 @@ be any size and corners come out right. It takes over the planned phase-2 `Dilat
 - Error when the box worked over (bounds plus grown layers plus one) is over `Max Cells` (default 64M), naming its
   size.
 
+## 4k. Voxel | Extrude
+
+Grows or cuts each cell along a direction (added 2026-11-13, from the designer's spec). Out is In, mutated, and still
+a voxel set: one point per cell (a chunked set is expanded), metadata, tags and @Data kept, `IsSurrounded` rewritten.
+Cells are in Z, Y, X order.
+
+- **Direction** (point shorthand, Vector, default constant (0, 0, 1), attribute `ExtrudeDirection`) and **Amount**
+  (point shorthand, Double, default constant 1, attribute `ExtrudeAmount`). Per axis, steps = |Direction × Amount|
+  rounded up to whole cells, with a 1e-6 tolerance so 2.0000001 stays 2. Fractions round away from zero for
+  negatives too, so -1.5 removes 2. Each axis goes the way Direction's sign points, so one call never grows up and down.
+- **Amount > 0** adds that many cells beyond the cell. **Amount < 0** removes the cell itself and that many beyond it
+  (-1: itself and its neighbour). **0**, or Direction (0, 0, 0), does nothing, so no setting removes only the cell.
+- **Separate Axes** (default on): each axis is its own straight run (1, 0, 1 makes an L: two runs, not the square
+  between them). Off: the whole box between the cell and its steps.
+- Added cells never replace filled cells. Where several cells grow into one, the smallest step wins (ties: the first in
+  cell order). Removals win over additions: they are applied to the union of the input and the added cells.
+- **Added Values**: Nearest (default) copies the cell it grew from, so all attributes and properties follow; None gives
+  a fresh entry (attribute defaults; native properties still copied). Added cells get whole-cell bounds, so a trimmed
+  top (Rasterize Best Fit/Trim) is not copied upward. The trimmed cell keeps its own bounds.
+- **Extrude Step Attribute** (optional Integer32, default `ExtrudeStep`, off by default): 1, 2, 3... out along a run
+  (with Separate Axes off: the largest axis distance), 0 for every cell that was already there.
+- Error when the cells would add or remove more than `Max Cells` (default 64M) in total.
+- Tests: `PCGUtils.Voxel.Extrude.Grow`, `.Remove`.
+
 ## 4j. Voxel | Match Rules (rule tiles)
 
 Designed with the designer on 2026-11-10; first version built the same day. The 2D rule-tile idea in 3D, with a
@@ -1026,7 +1074,7 @@ a cell hash.
   Target Actor.
 - **D2.** No Set Grid node. Graphs add `@Data.VoxelSize` themselves; the shorthand's Constant mode is the fallback.
 - **D3.** Material Source defaults to Constant with the engine's default surface material.
-- **D4.** Mixed offsets on one flat surface are averaged at shared vertices (smooth slope, unchanged topology).
+- **D4.** Mixed offsets: Exact (default since 2026-11-13) keeps each point's box with riser stitches; Average shares averaged vertices (smooth slope, unchanged topology).
 
 ## 7. Fix queue (from the designer, 2026-11-10)
 

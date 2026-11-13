@@ -121,12 +121,25 @@ namespace PCGVoxelToDynMeshPrivate
 	}
 
 	/**
-	 * Every used point's offset must keep its surface the right way out: greater than minus half its extent. Only sides
-	 * that show count; offsets on hidden sides (for example seams moved by Voxel | Shift Seams) change nothing.
+	 * Keeps every used point's surface the right way out. On each axis a point's two faces sit at Half + OffsetMax and
+	 * -(Half + OffsetMin) from its centre; the point turns inside out only when they cross (thickness 0 or less), not
+	 * when one face passes the centre. Only sides that show count: a hidden side has no face, so the opposite face is
+	 * measured against the natural box side there (its offset, for example a seam moved by Voxel | Shift Seams,
+	 * changes nothing).
+	 *
+	 * A point that crosses is repaired, not refused, as Repair says: its faces meet halfway between the crossed faces
+	 * (or, with one side hidden, the shown face comes back to the hidden side), a thousandth of a cell apart for Thin
+	 * Slab, together for Zero Thickness; One-Sided Plane also drops the opposite face and the side walls (OutDropped).
+	 * One warning per input names how many points were repaired and the first few exactly.
 	 */
-	bool ValidateOffsets(FPCGContext* Context, const FPCGVoxelGrid& Grid, const TArray<FVector>& OffsetMin, const TArray<FVector>& OffsetMax,
-		const FText& Title, int32 InputIndex)
+	void RepairInvertedOffsets(FPCGContext* Context, const FPCGVoxelGrid& Grid, EPCGVoxelOffsetRepair Repair,
+		TArray<FVector>& OffsetMin, TArray<FVector>& OffsetMax, TArray<uint8>& OutDropped, const FText& Title, int32 InputIndex)
 	{
+		constexpr int32 MaxListed = 5;
+		const TCHAR* AxisNames[3] = { TEXT("X"), TEXT("Y"), TEXT("Z") };
+		int32 NumRepaired = 0;
+		int32 NumFellBack = 0;
+		TArray<FString> Listed;
 		for (int32 Point = 0; Point < Grid.NumPoints(); ++Point)
 		{
 			if (!Grid.PointUsed[Point])
@@ -134,22 +147,97 @@ namespace PCGVoxelToDynMeshPrivate
 				continue;
 			}
 			const FVector Half = Grid.BoxHalfSize(Grid.PointSpan[Point]);
+			int32 RepairedAxes = 0;
+			int32 RepairedAxis = INDEX_NONE;
+			bool bKeepMax = true;
 			for (int32 Axis = 0; Axis < 3; ++Axis)
 			{
-				for (const bool bMax : { false, true })
+				const bool bMinShows = SideHasSurface(Grid, Point, Axis, false);
+				const bool bMaxShows = SideHasSurface(Grid, Point, Axis, true);
+				if (!bMinShows && !bMaxShows)
 				{
-					const double Offset = bMax ? OffsetMax[Point][Axis] : OffsetMin[Point][Axis];
-					if (Offset <= -Half[Axis] && SideHasSurface(Grid, Point, Axis, bMax))
-					{
-						PCGLog::LogErrorOnGraph(PCGVoxel::FormatError(Title, InputIndex, FText::Format(
-							LOCTEXT("OffsetTooDeep", "point {0}: its surface offset on the {1} side is {2}; it must be greater than {3} (minus half its extent on that axis), or the surface turns inside out."),
-							FText::AsNumber(Point), FText::FromString(SideName(Axis, bMax)), FText::AsNumber(Offset), FText::AsNumber(-Half[Axis]))), Context);
-						return false;
-					}
+					continue;
 				}
+				// Face positions from the point's centre along the axis (a hidden side stays at the natural box side).
+				const double MaxFace = Half[Axis] + (bMaxShows ? OffsetMax[Point][Axis] : 0.0);
+				const double MinFace = -Half[Axis] - (bMinShows ? OffsetMin[Point][Axis] : 0.0);
+				const double Thickness = MaxFace - MinFace;
+				if (Thickness > 0.0)
+				{
+					continue;
+				}
+				const double MinThickness = Repair == EPCGVoxelOffsetRepair::ThinSlab ? 1e-3 * Grid.VoxelSize[Axis] : 0.0;
+				double NewMax = MaxFace;
+				double NewMin = MinFace;
+				if (bMinShows && bMaxShows)
+				{
+					const double Middle = 0.5 * (MaxFace + MinFace);
+					NewMax = Middle + 0.5 * MinThickness;
+					NewMin = Middle - 0.5 * MinThickness;
+				}
+				else if (bMaxShows)
+				{
+					NewMax = MinFace + MinThickness;
+				}
+				else
+				{
+					NewMin = MaxFace - MinThickness;
+				}
+				if (bMaxShows)
+				{
+					OffsetMax[Point][Axis] = NewMax - Half[Axis];
+				}
+				if (bMinShows)
+				{
+					OffsetMin[Point][Axis] = -NewMin - Half[Axis];
+				}
+				if (Listed.Num() < MaxListed)
+				{
+					Listed.Add(FString::Printf(TEXT("point %d on %s: its +%s face at %g and -%s face at %g from its centre (%s) leave it %g thick"),
+						Point, AxisNames[Axis], AxisNames[Axis], MaxFace, AxisNames[Axis], MinFace,
+						bMinShows && bMaxShows ? TEXT("both sides show") : (bMaxShows ? TEXT("only the + side shows") : TEXT("only the - side shows")),
+						Thickness));
+				}
+				++RepairedAxes;
+				RepairedAxis = Axis;
+				bKeepMax = bMaxShows;
+			}
+			if (RepairedAxes == 0)
+			{
+				continue;
+			}
+			++NumRepaired;
+			if (Repair == EPCGVoxelOffsetRepair::OneSidedPlane)
+			{
+				if (RepairedAxes > 1)
+				{
+					++NumFellBack;
+					continue;
+				}
+				if (OutDropped.IsEmpty())
+				{
+					OutDropped.SetNumZeroed(Grid.NumPoints());
+				}
+				// Keep the one face; drop the opposite face and the four walls round it.
+				const int32 KeptDir = RepairedAxis * 2 + (bKeepMax ? 0 : 1);   // the mesher numbers + sides even, - sides odd
+				OutDropped[Point] = static_cast<uint8>(0x3F & ~(1 << KeptDir));
 			}
 		}
-		return true;
+		if (NumRepaired > 0)
+		{
+			const FText RepairName = Repair == EPCGVoxelOffsetRepair::ThinSlab ? LOCTEXT("RepairSlab", "collapsed to a slab a thousandth of a cell thick")
+				: (Repair == EPCGVoxelOffsetRepair::ZeroThickness ? LOCTEXT("RepairZero", "collapsed to zero thickness")
+				: LOCTEXT("RepairPlane", "turned into a one-sided plane"));
+			const FText FellBack = NumFellBack > 0
+				? FText::Format(LOCTEXT("FellBack", " {0} of them cross on more than one axis, so they were collapsed to zero thickness instead."), FText::AsNumber(NumFellBack))
+				: FText::GetEmpty();
+			PCGLog::LogWarningOnGraph(PCGVoxel::FormatError(Title, InputIndex, FText::Format(
+				LOCTEXT("OffsetsRepaired", "{0} of {1} points have a surface offset that crosses their own opposite face (a thickness of 0 or less on an axis), "
+					"which would turn them inside out; each was {2} (Offset Repair).{3} {4}{5}"),
+				FText::AsNumber(NumRepaired), FText::AsNumber(Grid.NumPoints()), RepairName, FellBack, FText::FromString(FString::Join(Listed, TEXT("; "))),
+				NumRepaired > Listed.Num() ? FText::Format(LOCTEXT("AndMore", "; and {0} more."), FText::AsNumber(NumRepaired - Listed.Num())) : FText::FromString(TEXT(".")))),
+				Context);
+		}
 	}
 }
 
@@ -338,9 +426,9 @@ bool FPCGVoxelToDynMeshElement::ExecuteInternal(FPCGContext* Context) const
 			MeshInput.OffsetMin.Init(FVector(Distance), Grid.NumPoints());
 			MeshInput.OffsetMax.Init(FVector(Distance), Grid.NumPoints());
 		}
-		if (!MeshInput.OffsetMin.IsEmpty() && !ValidateOffsets(Context, Grid, MeshInput.OffsetMin, MeshInput.OffsetMax, Title, Index))
+		if (!MeshInput.OffsetMin.IsEmpty())
 		{
-			continue;
+			RepairInvertedOffsets(Context, Grid, Settings->OffsetRepair, MeshInput.OffsetMin, MeshInput.OffsetMax, MeshInput.DroppedFaces, Title, Index);
 		}
 
 		// Materials.
@@ -479,6 +567,7 @@ bool FPCGVoxelToDynMeshElement::ExecuteInternal(FPCGContext* Context) const
 		FPCGVoxelMeshOptions Options;
 		Options.bCollapseCoplanarFaces = Settings->bCollapseCoplanarFaces && !bBevel;
 		Options.bBevel = bBevel;
+		Options.bExactOffsets = Settings->OffsetBlend == EPCGVoxelOffsetBlend::Exact;
 		FMemory::Memcpy(Options.BevelAmount, BevelAmounts, sizeof(BevelAmounts));
 		Options.ColorTransition = Settings->ColorTransition;
 		Options.UVMode = Settings->UVMode;

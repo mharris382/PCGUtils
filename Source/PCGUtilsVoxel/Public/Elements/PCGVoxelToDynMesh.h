@@ -47,6 +47,43 @@ enum class EPCGVoxelSurfaceOffset : uint8
 	Constant,
 };
 
+/**
+ * How Blocks repairs a point whose surface offsets make its two faces on an axis cross (which would turn it inside
+ * out). Every choice puts the result halfway between the two crossed faces, or against the hidden side when only one
+ * side shows.
+ */
+UENUM(BlueprintType)
+enum class EPCGVoxelOffsetRepair : uint8
+{
+	/** A closed slab a thousandth of a cell thick. Looks like a two-sided plane; safe for DynMesh Boolean, Bevel and normals. */
+	ThinSlab UMETA(DisplayName="Thin Slab"),
+	/**
+	 * The two faces exactly on top of each other: a two-sided plane, still closed, but its side walls become
+	 * zero-area triangles, which later DynMesh steps (Boolean, Bevel, normals) can trip over.
+	 */
+	ZeroThickness UMETA(DisplayName="Zero Thickness"),
+	/**
+	 * Only the face on the + side of the axis is kept (the - side when only that one shows); its side walls and the
+	 * opposite face are left out. A true one-sided plane, seen from that side only, and the mesh is open there. A point
+	 * crossed on more than one axis falls back to Zero Thickness.
+	 */
+	OneSidedPlane UMETA(DisplayName="One-Sided Plane"),
+};
+
+/** What Blocks does where neighbouring points' surface offsets differ. */
+UENUM(BlueprintType)
+enum class EPCGVoxelOffsetBlend : uint8
+{
+	/**
+	 * Every face keeps its own point's offsets, giving the same shape as spawning each point's bounds as a box:
+	 * neighbours at different heights make a step, joined by a riser wall. Still one closed mesh. Along a step's side
+	 * the walls meet in zero-area slivers.
+	 */
+	Exact UMETA(DisplayName="Exact (Point Boxes)"),
+	/** Shared vertices take the average of the faces meeting there, so steps become slopes. No extra walls. */
+	Average UMETA(DisplayName="Average (Smoothed)"),
+};
+
 /** The overall form of a voxel mesh. */
 UENUM(BlueprintType)
 enum class EPCGVoxelMeshShape : uint8
@@ -131,16 +168,38 @@ public:
 
 	/**
 	 * Blocks only. Moves the outer surface off the cell faces, like Blender's manifold extrude: only the surface moves
-	 * and it stays closed. Where neighbouring cells on one flat surface differ, their shared vertices take the average.
+	 * and it stays closed. Where neighbouring cells differ, Offset Blend says whether they step or slope.
+	 * A point whose offsets make its own opposite faces cross (Bounds Max at or below Bounds Min on an axis, both sides
+	 * showing) is not refused: Offset Repair says what it becomes, and the node warns naming it.
 	 */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Geometry", meta=(PCG_Overridable,
 		EditCondition="Shape == EPCGVoxelMeshShape::Blocks", EditConditionHides))
 	EPCGVoxelSurfaceOffset SurfaceOffset = EPCGVoxelSurfaceOffset::None;
 
-	/** Constant only. Distance every face moves outward; negative moves inward. Must be greater than minus half the smallest cell axis. */
+	/**
+	 * Constant only. Distance every face moves outward; negative moves inward. An inset deep enough to make a point's
+	 * opposite faces cross (more than half its extent when both sides show) is repaired (Offset Repair), with a warning.
+	 */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Geometry", meta=(PCG_Overridable,
 		EditCondition="Shape == EPCGVoxelMeshShape::Blocks && SurfaceOffset == EPCGVoxelSurfaceOffset::Constant", EditConditionHides))
 	FPCGUtilsInputShorthandDouble SurfaceOffsetDistance{0.0};
+
+	/**
+	 * Surface offsets only. Exact (default) matches each point's bounds like box instances: neighbours at different
+	 * heights make steps with riser walls. Average slopes across them by sharing averaged vertices. With equal offsets
+	 * everywhere (Constant) both give the same mesh.
+	 */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Geometry", meta=(PCG_Overridable,
+		EditCondition="Shape == EPCGVoxelMeshShape::Blocks && SurfaceOffset != EPCGVoxelSurfaceOffset::None", EditConditionHides))
+	EPCGVoxelOffsetBlend OffsetBlend = EPCGVoxelOffsetBlend::Exact;
+
+	/**
+	 * Surface offsets only. What a point becomes when its offsets make its two faces on an axis cross (Bounds Max at
+	 * or below Bounds Min, both sides showing). The node warns either way, naming the points.
+	 */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Geometry", meta=(PCG_Overridable,
+		EditCondition="Shape == EPCGVoxelMeshShape::Blocks && SurfaceOffset != EPCGVoxelSurfaceOffset::None", EditConditionHides))
+	EPCGVoxelOffsetRepair OffsetRepair = EPCGVoxelOffsetRepair::ThinSlab;
 
 	/**
 	 * How many bevel amounts to set. Every amount is a fraction of a cell, from 0 (square) to 1 (the cut runs a whole

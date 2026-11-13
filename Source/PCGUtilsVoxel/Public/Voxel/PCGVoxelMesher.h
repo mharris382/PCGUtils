@@ -65,10 +65,16 @@ struct PCGUTILSVOXEL_API FPCGVoxelMeshInput
 
 	/**
 	 * How far each point's surface moves outward on its -X/-Y/-Z sides (OffsetMin) and +X/+Y/+Z sides (OffsetMax).
-	 * Empty: no offset. Every value must be greater than minus half the point's extent on that axis.
+	 * Empty: no offset. A point's two faces on an axis must not cross (the ToDynMesh element repairs those that do).
 	 */
 	TArray<FVector> OffsetMin;
 	TArray<FVector> OffsetMax;
+
+	/**
+	 * Faces to leave out, per point: bit Dir (0 +X, 1 -X, 2 +Y, 3 -Y, 4 +Z, 5 -Z) drops that side's surface faces on
+	 * every cell of the point, leaving the mesh open there. Empty: nothing dropped.
+	 */
+	TArray<uint8> DroppedFaces;
 
 	/** Per Attribute Value only. Polygroup ID of each point's faces (0 or greater). Empty: every face uses group 0. */
 	TArray<int32> Polygroup;
@@ -87,6 +93,14 @@ namespace PCGVoxelBevel
 struct PCGUTILSVOXEL_API FPCGVoxelMeshOptions
 {
 	bool bCollapseCoplanarFaces = false;
+
+	/**
+	 * With offsets: every face keeps its own point's offsets exactly, like a box per point, instead of sharing the
+	 * average where neighbours differ. Where two faces' corners then part, a wall (a riser) joins them, so a step
+	 * between two heights stays a step and the mesh stays closed. Walls along a step's side line are zero-area slivers.
+	 */
+	bool bExactOffsets = false;
+
 	EPCGVoxelColorTransition ColorTransition = EPCGVoxelColorTransition::Hard;
 	EPCGVoxelUVMode UVMode = EPCGVoxelUVMode::GridProjection;
 	double UVScale = 1.0;

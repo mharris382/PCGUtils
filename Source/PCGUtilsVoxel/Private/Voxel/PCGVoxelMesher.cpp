@@ -164,8 +164,10 @@ void PCGVoxelMesher::BuildMesh(const FPCGVoxelMeshInput& Input, const FPCGVoxelM
 	const bool bColors = Input.Color.Num() == Grid.NumPoints();
 	const bool bMaterials = Input.MaterialSlot.Num() == Grid.NumPoints();
 	const bool bOffsets = Input.OffsetMin.Num() == Grid.NumPoints() && Input.OffsetMax.Num() == Grid.NumPoints();
+	const bool bDropFaces = Input.DroppedFaces.Num() == Grid.NumPoints();
 	const bool bAtlas = Options.UVMode == EPCGVoxelUVMode::AtlasFromAttribute && Input.AtlasRect.Num() == Grid.NumPoints();
 	const bool bCollapse = Options.bCollapseCoplanarFaces && Options.UVMode != EPCGVoxelUVMode::AtlasFromAttribute;
+	const bool bExact = bOffsets && Options.bExactOffsets;
 
 	auto SlotOf = [&](int32 Point) { return bMaterials ? Input.MaterialSlot[Point] : 0; };
 	auto OffsetOf = [&](int32 Point, int32 Dir) -> double
@@ -194,6 +196,10 @@ void PCGVoxelMesher::BuildMesh(const FPCGVoxelMeshInput& Input, const FPCGVoxelM
 			{
 				Mask |= 1 << Dir;
 			}
+		}
+		if (bDropFaces)
+		{
+			Mask &= ~Input.DroppedFaces[Grid.CellPoint[CellIndex]];
 		}
 		FaceMask[CellIndex] = Mask;
 	});
@@ -233,6 +239,51 @@ void PCGVoxelMesher::BuildMesh(const FPCGVoxelMeshInput& Input, const FPCGVoxelM
 		return CellIndex == INDEX_NONE ? INDEX_NONE : FaceOfCell(CellIndex, Dir);
 	};
 	EndStage(0);
+
+	// ---- 1b. Exact offsets: each face corner's own position. Along the face's axis the face moves by its point's
+	// offset. Along each in-plane axis the corner follows the edge on that side: a convex edge (the cell's own side
+	// face) moves by the point's offset on that side, a concave edge (a wall in front) by that wall's offset, and a
+	// flat edge (the next cell's face continues) stays on the cell boundary.
+	TArray<FVector> CornerPos;
+	if (bExact)
+	{
+		CornerPos.SetNumUninitialized(NumFaces * 4);
+		ParallelForTemplate(TEXT("PCGVoxelMesher.ExactCorners"), NumFaces, 4096, [&](int32 FaceID)
+		{
+			const FFace& Face = Faces[FaceID];
+			const int32 Axis = DirAxis(Face.Dir);
+			FIntVector OutOfFace(0);
+			OutOfFace[Axis] = DirSign(Face.Dir);
+			double Shift[4];
+			for (int32 Edge = 0; Edge < 4; ++Edge)
+			{
+				const int32 TAxis = (Edge == 0 || Edge == 2) ? PlaneV(Axis) : PlaneU(Axis);
+				const int32 TSign = (Edge == 0 || Edge == 3) ? -1 : 1;
+				FIntVector Across(0);
+				Across[TAxis] = TSign;
+				const FIntVector Side = Face.Cell + Across;
+				if (Grid.FindCellIndex(Side) == INDEX_NONE)
+				{
+					Shift[Edge] = TSign * OffsetOf(Face.Point, MakeDir(TAxis, TSign));
+				}
+				else
+				{
+					const int32 DiagonalCell = Grid.FindCellIndex(Side + OutOfFace);
+					Shift[Edge] = DiagonalCell == INDEX_NONE ? 0.0
+						: -TSign * OffsetOf(Grid.CellPoint[DiagonalCell], MakeDir(TAxis, -TSign));
+				}
+			}
+			for (int32 Corner = 0; Corner < 4; ++Corner)
+			{
+				FVector Position = (FVector(CornerLattice(Face, Corner)) - FVector(0.5)) * Grid.VoxelSize;
+				Position[Axis] += DirSign(Face.Dir) * OffsetOf(Face.Point, Face.Dir);
+				Position[PlaneU(Axis)] += Shift[CornerDU[Corner] ? 1 : 3];
+				Position[PlaneV(Axis)] += Shift[CornerDV[Corner] ? 2 : 0];
+				CornerPos[FaceID * 4 + Corner] = Position;
+			}
+		});
+	}
+	const double ExactTolerance = 1e-6 * Grid.VoxelSize.GetMax();
 
 	// ---- 2. Vertices: join the corners of faces that continue each other across an edge. Where cells touch only
 	// along an edge, each face continues onto its own cell's faces, which splits the vertices there.
@@ -287,19 +338,54 @@ void PCGVoxelMesher::BuildMesh(const FPCGVoxelMeshInput& Input, const FPCGVoxelM
 		}
 	});
 
+	// Exact offsets: two corners join only where they are at the same place. An edge whose corners part from its
+	// partner's becomes a stitch (a riser between the two), made once per pair; its faces are never collapsed.
+	struct FStitch { int32 Face; int32 Edge; FIntPoint PartnerUse; };
+	TArray<FStitch> Stitches;
+	TArray<bool> FaceSplit;
+	if (bExact)
+	{
+		FaceSplit.Init(false, NumFaces);
+	}
 	FUnionFind Corners(NumFaces * 4);
 	for (int32 FaceEdge = 0; FaceEdge < NumFaces * 4; ++FaceEdge)
 	{
 		const FIntPoint Join = EdgeJoin[FaceEdge];
 		const int32 FaceID = FaceEdge / 4;
 		const int32 Edge = FaceEdge % 4;
+		const int32 UseA = FaceID * 4 + Edge;
+		const int32 UseB = FaceID * 4 + (Edge + 1) % 4;
+		if (bExact && Join.X != INDEX_NONE && Join.Y != INDEX_NONE)
+		{
+			const bool bJoinA = CornerPos[UseA].Equals(CornerPos[Join.X], ExactTolerance);
+			const bool bJoinB = CornerPos[UseB].Equals(CornerPos[Join.Y], ExactTolerance);
+			if (bJoinA)
+			{
+				Corners.Union(UseA, Join.X);
+			}
+			if (bJoinB)
+			{
+				Corners.Union(UseB, Join.Y);
+			}
+			if (!bJoinA || !bJoinB)
+			{
+				const int32 Partner = Join.X / 4;
+				FaceSplit[FaceID] = true;
+				FaceSplit[Partner] = true;
+				if (FaceID < Partner)
+				{
+					Stitches.Add({ FaceID, Edge, Join });
+				}
+			}
+			continue;
+		}
 		if (Join.X != INDEX_NONE)
 		{
-			Corners.Union(FaceID * 4 + Edge, Join.X);
+			Corners.Union(UseA, Join.X);
 		}
 		if (Join.Y != INDEX_NONE)
 		{
-			Corners.Union(FaceID * 4 + (Edge + 1) % 4, Join.Y);
+			Corners.Union(UseB, Join.Y);
 		}
 	}
 	EdgeJoin.Empty();
@@ -310,6 +396,7 @@ void PCGVoxelMesher::BuildMesh(const FPCGVoxelMeshInput& Input, const FPCGVoxelM
 	RootToVertex.Init(INDEX_NONE, NumFaces * 4);
 	TArray<FIntVector> VertexLattice;
 	VertexLattice.Reserve(NumFaces);
+	TArray<int32> VertexFirstUse;
 	for (int32 Use = 0; Use < NumFaces * 4; ++Use)
 	{
 		const int32 Root = Corners.Find(Use);
@@ -317,6 +404,10 @@ void PCGVoxelMesher::BuildMesh(const FPCGVoxelMeshInput& Input, const FPCGVoxelM
 		{
 			RootToVertex[Root] = VertexLattice.Num();
 			VertexLattice.Add(CornerLattice(Faces[Use / 4], Use % 4));
+			if (bExact)
+			{
+				VertexFirstUse.Add(Use);
+			}
 		}
 		VertexOfCorner[Use] = RootToVertex[Root];
 	}
@@ -333,7 +424,15 @@ void PCGVoxelMesher::BuildMesh(const FPCGVoxelMeshInput& Input, const FPCGVoxelM
 	{
 		VertexGrid[Vertex] = (FVector(VertexLattice[Vertex]) - FVector(0.5)) * Grid.VoxelSize;
 	}
-	if (bOffsets)
+	if (bExact)
+	{
+		for (int32 Vertex = 0; Vertex < NumVertices; ++Vertex)
+		{
+			VertexGrid[Vertex] = CornerPos[VertexFirstUse[Vertex]];
+		}
+		CornerPos.Empty();
+	}
+	else if (bOffsets)
 	{
 		TArray<double> Sum;
 		TArray<int32> Count;
@@ -502,6 +601,10 @@ void PCGVoxelMesher::BuildMesh(const FPCGVoxelMeshInput& Input, const FPCGVoxelM
 		{
 			const FFace& FaceA = Faces[A];
 			const FFace& FaceB = Faces[B];
+			if (bExact && (FaceSplit[A] || FaceSplit[B]))
+			{
+				return false;   // a face with a stitch keeps its own corners
+			}
 			if (FaceA.Point == FaceB.Point && !bSmooth)
 			{
 				return true;
@@ -927,6 +1030,171 @@ void PCGVoxelMesher::BuildMesh(const FPCGVoxelMeshInput& Input, const FPCGVoxelM
 		}
 	}
 
+	// 6b'. Exact offsets: the stitches, then the small holes left where three or more stitches meet at one lattice
+	// point. Each stitch takes the attributes of its owner face: the one standing further out when the two faces
+	// share a direction (the riser belongs to the taller box), else the first.
+	struct FExtraTri { int32 TriangleID; int32 Owner; int32 Dir; int32 Source; };
+	TArray<FExtraTri> ExtraTris;
+	auto GroupOfFace = [&](int32 FaceID, int32 Dir) -> int32
+	{
+		const int32 Point = Faces[FaceID].Point;
+		switch (Options.Polygroups)
+		{
+		case EPCGVoxelPolygroupMode::PerFaceDirection:   return Dir;
+		case EPCGVoxelPolygroupMode::PerMaterial:        return SlotOf(Point);
+		case EPCGVoxelPolygroupMode::PerCollapsedRegion: return Faces[FaceID].Region;
+		case EPCGVoxelPolygroupMode::PerAttributeValue:  return Input.Polygroup.IsEmpty() ? 0 : Input.Polygroup[Point];
+		default: return 0;
+		}
+	};
+	TArray<int32> GridVertexOfMesh;
+	if (bExact && !Stitches.IsEmpty())
+	{
+		for (const FStitch& Stitch : Stitches)
+		{
+			const FFace& Face = Faces[Stitch.Face];
+			const int32 PartnerID = Stitch.PartnerUse.X / 4;
+			const FFace& Partner = Faces[PartnerID];
+			const bool bReverse = (DirSign(Face.Dir) < 0) != bFlip;
+			// The face walks its edge from A to B; the stitch walks B, A, then the partner's A', B'.
+			const int32 UseA = Stitch.Face * 4 + (bReverse ? (Stitch.Edge + 1) % 4 : Stitch.Edge);
+			const int32 UseB = Stitch.Face * 4 + (bReverse ? Stitch.Edge : (Stitch.Edge + 1) % 4);
+			const int32 UsePA = bReverse ? Stitch.PartnerUse.Y : Stitch.PartnerUse.X;
+			const int32 UsePB = bReverse ? Stitch.PartnerUse.X : Stitch.PartnerUse.Y;
+			const int32 GA = VertexOfCorner[UseA], GB = VertexOfCorner[UseB], GPA = VertexOfCorner[UsePA], GPB = VertexOfCorner[UsePB];
+
+			int32 Owner = Stitch.Face;
+			if (Partner.Dir == Face.Dir && OffsetOf(Partner.Point, Partner.Dir) > OffsetOf(Face.Point, Face.Dir))
+			{
+				Owner = PartnerID;
+			}
+			// Outward direction: the math cross of the emitted order points outward unless the engine flips.
+			FVector Normal(0.0);
+			auto Cross = [&](int32 X, int32 Y, int32 Z) { return (VertexGrid[Y] - VertexGrid[X]).Cross(VertexGrid[Z] - VertexGrid[X]); };
+			TArray<FIntVector, TInlineAllocator<2>> Tris;
+			if (GA != GPA && GB != GPB)
+			{
+				Tris.Add(FIntVector(GB, GA, GPA));
+				Tris.Add(FIntVector(GB, GPA, GPB));
+			}
+			else if (GA == GPA)
+			{
+				Tris.Add(FIntVector(GB, GA, GPB));
+			}
+			else
+			{
+				Tris.Add(FIntVector(GB, GA, GPA));
+			}
+			for (const FIntVector& T : Tris)
+			{
+				Normal += Cross(T.X, T.Y, T.Z);
+			}
+			if (bFlip)
+			{
+				Normal = -Normal;
+			}
+			int32 Dir = Faces[Owner].Dir;
+			if (Normal.SizeSquared() > FMath::Square(1e-9 * Grid.VoxelSize.GetMax() * Grid.VoxelSize.GetMax()))
+			{
+				const FVector Abs = Normal.GetAbs();
+				const int32 Axis = Abs.X >= Abs.Y && Abs.X >= Abs.Z ? 0 : (Abs.Y >= Abs.Z ? 1 : 2);
+				Dir = MakeDir(Axis, Normal[Axis] > 0.0 ? 1 : -1);
+			}
+			const int32 Group = GroupOfFace(Owner, Dir);
+			for (const FIntVector& T : Tris)
+			{
+				if (MeshVertex[T.X] == INDEX_NONE || MeshVertex[T.Y] == INDEX_NONE || MeshVertex[T.Z] == INDEX_NONE)
+				{
+					continue;
+				}
+				const int32 TID = OutMesh.AppendTriangle(MeshVertex[T.X], MeshVertex[T.Y], MeshVertex[T.Z], Group);
+				if (TID >= 0)
+				{
+					ExtraTris.Add({ TID, Owner, Dir, INDEX_NONE });
+				}
+			}
+		}
+
+		// Holes whose edges all sit at one lattice point: fan them closed (zero area; they only seal the mesh).
+		GridVertexOfMesh.Init(INDEX_NONE, OutMesh.MaxVertexID());
+		for (int32 Vertex = 0; Vertex < NumVertices; ++Vertex)
+		{
+			if (MeshVertex[Vertex] != INDEX_NONE)
+			{
+				GridVertexOfMesh[MeshVertex[Vertex]] = Vertex;
+			}
+		}
+		TMap<int32, int32> HoleNext;     // hole-direction edge start -> end
+		TMap<int32, int32> HoleSource;   // hole edge start -> the triangle beside it
+		TSet<int32> Ambiguous;
+		for (const int32 EdgeID : OutMesh.BoundaryEdgeIndicesItr())
+		{
+			const UE::Geometry::FIndex2i V = OutMesh.GetOrientedBoundaryEdgeV(EdgeID);
+			const int32 GA = GridVertexOfMesh.IsValidIndex(V.A) ? GridVertexOfMesh[V.A] : INDEX_NONE;
+			const int32 GB = GridVertexOfMesh.IsValidIndex(V.B) ? GridVertexOfMesh[V.B] : INDEX_NONE;
+			if (GA == INDEX_NONE || GB == INDEX_NONE || VertexLattice[GA] != VertexLattice[GB])
+			{
+				continue;
+			}
+			// The triangle walks A to B; the hole walks B to A.
+			if (HoleNext.Contains(V.B))
+			{
+				Ambiguous.Add(V.B);
+				continue;
+			}
+			HoleNext.Add(V.B, V.A);
+			HoleSource.Add(V.B, OutMesh.GetEdgeT(EdgeID).A);
+		}
+		TSet<int32> Visited;
+		for (const TPair<int32, int32>& Start : HoleNext)
+		{
+			if (Visited.Contains(Start.Key) || Ambiguous.Contains(Start.Key))
+			{
+				continue;
+			}
+			TArray<int32, TInlineAllocator<16>> Loop;
+			int32 At = Start.Key;
+			bool bClosed = false;
+			while (Loop.Num() < 64)
+			{
+				Loop.Add(At);
+				const int32* Next = HoleNext.Find(At);
+				if (!Next || Ambiguous.Contains(At))
+				{
+					break;
+				}
+				if (*Next == Start.Key)
+				{
+					bClosed = true;
+					break;
+				}
+				if (Loop.Contains(*Next))
+				{
+					break;
+				}
+				At = *Next;
+			}
+			for (const int32 V : Loop)
+			{
+				Visited.Add(V);
+			}
+			if (!bClosed || Loop.Num() < 3)
+			{
+				continue;
+			}
+			const int32 Source = HoleSource.FindChecked(Loop[0]);
+			const int32 Group = OutMesh.GetTriangleGroup(Source);
+			for (int32 Index = 1; Index + 1 < Loop.Num(); ++Index)
+			{
+				const int32 TID = OutMesh.AppendTriangle(Loop[0], Loop[Index], Loop[Index + 1], Group);
+				if (TID >= 0)
+				{
+					ExtraTris.Add({ TID, INDEX_NONE, 0, Source });
+				}
+			}
+		}
+	}
+
 	// 6c. Attributes. Overlay elements are shared through flat arrays: by (vertex, direction) for normals, grid
 	// UVs and hard colors, by smooth entry for smooth colors.
 	OutMesh.EnableAttributes();
@@ -1117,10 +1385,109 @@ void PCGVoxelMesher::BuildMesh(const FPCGVoxelMeshInput& Input, const FPCGVoxelM
 		}
 		++NumRegionsEmitted;
 	}
+
+	// Stitches and hole fills: their own elements, so their edges stay hard. A stitch is grid-projected on its
+	// direction and colored like its owner; a hole fill copies the triangle beside it.
+	TArray<FVector3f> ExtraNormal;
+	ExtraNormal.SetNumUninitialized(ExtraTris.Num());
+	for (int32 Extra = 0; Extra < ExtraTris.Num(); ++Extra)
+	{
+		const FExtraTri& Tri = ExtraTris[Extra];
+		const UE::Geometry::FIndex3i V = OutMesh.GetTriangle(Tri.TriangleID);
+		if (Tri.Owner == INDEX_NONE)
+		{
+			const int32 Source = Tri.Source;
+			MaterialIDs->SetValue(Tri.TriangleID, MaterialIDs->GetValue(Source));
+			const UE::Geometry::FIndex3i SourceNormals = Normals->GetTriangle(Source);
+			// An overlay element belongs to one vertex, so each corner gets its own.
+			const FVector3f SourceNormal = Normals->GetElement(SourceNormals.A);
+			Normals->SetTriangle(Tri.TriangleID, UE::Geometry::FIndex3i(Normals->AppendElement(SourceNormal),
+				Normals->AppendElement(SourceNormal), Normals->AppendElement(SourceNormal)));
+			ExtraNormal[Extra] = FVector3f::ZeroVector;   // taken from the source after the recompute
+			if (UVs && UVs->IsSetTriangle(Source))
+			{
+				const FVector2f UV = UVs->GetElement(UVs->GetTriangle(Source).A);
+				UVs->SetTriangle(Tri.TriangleID, UE::Geometry::FIndex3i(UVs->AppendElement(UV), UVs->AppendElement(UV), UVs->AppendElement(UV)));
+			}
+			if (Colors && Colors->IsSetTriangle(Source))
+			{
+				const FVector4f Color = Colors->GetElement(Colors->GetTriangle(Source).A);
+				Colors->SetTriangle(Tri.TriangleID, UE::Geometry::FIndex3i(Colors->AppendElement(Color), Colors->AppendElement(Color), Colors->AppendElement(Color)));
+			}
+			continue;
+		}
+		const int32 Point = Faces[Tri.Owner].Point;
+		MaterialIDs->SetValue(Tri.TriangleID, SlotOf(Point));
+		const FVector3f Normal = FVector3f(DirVector(Tri.Dir));
+		ExtraNormal[Extra] = FVector3f(Options.OutputSpace.InverseTransformVector(GridToWorld.TransformVectorNoScale(DirVector(Tri.Dir))).GetSafeNormal());
+		UE::Geometry::FIndex3i NormalIDs, UVIDs, ColorIDs;
+		FVector2d Projected[3];
+		FVector2d UVOrigin(TNumericLimits<double>::Max());
+		for (int32 K = 0; K < 3; ++K)
+		{
+			const int32 GridVertex = GridVertexOfMesh.IsValidIndex(V[K]) ? GridVertexOfMesh[V[K]] : INDEX_NONE;
+			const FVector Cells = GridVertex == INDEX_NONE ? FVector(0.0) : VertexGrid[GridVertex] / Grid.VoxelSize;
+			Projected[K] = Project(Cells, Tri.Dir);
+			UVOrigin = FVector2d(FMath::Min(UVOrigin.X, Projected[K].X), FMath::Min(UVOrigin.Y, Projected[K].Y));
+		}
+		for (int32 K = 0; K < 3; ++K)
+		{
+			NormalIDs[K] = Normals->AppendElement(Normal);
+			if (UVs)
+			{
+				FVector2f UV;
+				switch (Options.UVMode)
+				{
+				case EPCGVoxelUVMode::GridProjection: UV = FVector2f(Projected[K] * Options.UVScale); break;
+				case EPCGVoxelUVMode::AtlasFromAttribute:
+				{
+					const FVector2d Local = Projected[K] - UVOrigin;
+					const FVector4f Rect = bAtlas ? Input.AtlasRect[Point] : FVector4f(0.0f, 0.0f, 1.0f, 1.0f);
+					UV = FVector2f(Rect.X + Local.X * (Rect.Z - Rect.X), Rect.Y + Local.Y * (Rect.W - Rect.Y));
+					break;
+				}
+				default: UV = FVector2f(Projected[K] - UVOrigin); break;
+				}
+				UVIDs[K] = UVs->AppendElement(UV);
+			}
+			if (Colors)
+			{
+				ColorIDs[K] = Colors->AppendElement(Input.Color[Point]);
+			}
+		}
+		Normals->SetTriangle(Tri.TriangleID, NormalIDs);
+		if (UVs)
+		{
+			UVs->SetTriangle(Tri.TriangleID, UVIDs);
+		}
+		if (Colors)
+		{
+			Colors->SetTriangle(Tri.TriangleID, ColorIDs);
+		}
+	}
 	EndStage(5);
 
 	// Offsets and non-uniform output scale bend faces off their axis; recompute the normals over the same hard splits.
 	UE::Geometry::FMeshNormals::QuickRecomputeOverlayNormals(OutMesh);
+	// Zero-area stitches and fills come out of the recompute with no normal: give them their direction, or the
+	// normal of the triangle beside them.
+	for (int32 Extra = 0; Extra < ExtraTris.Num(); ++Extra)
+	{
+		const FExtraTri& Tri = ExtraTris[Extra];
+		const UE::Geometry::FIndex3i NormalIDs = Normals->GetTriangle(Tri.TriangleID);
+		FVector3f Fallback = ExtraNormal[Extra];
+		if (Tri.Owner == INDEX_NONE)
+		{
+			Fallback = Normals->GetElement(Normals->GetTriangle(Tri.Source).A);
+		}
+		for (int32 K = 0; K < 3; ++K)
+		{
+			if (Normals->GetElement(NormalIDs[K]).SizeSquared() < 0.25f)
+			{
+				Normals->SetElement(NormalIDs[K], Fallback);
+			}
+		}
+	}
 	EndStage(6);
 
 	if (OutStats)

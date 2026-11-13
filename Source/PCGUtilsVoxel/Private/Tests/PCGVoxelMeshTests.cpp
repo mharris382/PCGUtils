@@ -185,6 +185,7 @@ bool FPCGVoxelMeshOffsetTest::RunTest(const FString&)
 	Voxels->GetBoundsMaxValueRange()[1] = FVector(60, 50, 70);
 	UPCGVoxelToDynMeshSettings* Settings = MakeSettings();
 	Settings->SurfaceOffset = EPCGVoxelSurfaceOffset::FromPointBounds;
+	Settings->OffsetBlend = EPCGVoxelOffsetBlend::Average;
 	const UE::Geometry::FDynamicMesh3* Result = MeshOf(Mesh(Settings, Voxels));
 	UTEST_NOT_NULL(TEXT("Meshed"), Result);
 	TestEqual(TEXT("Still closed"), OpenEdges(*Result), 0);
@@ -194,11 +195,194 @@ bool FPCGVoxelMeshOffsetTest::RunTest(const FString&)
 		FMath::IsNearlyEqual(Bounds.Max.X, 160.0, 0.01) && FMath::IsNearlyEqual(Bounds.Max.Z, 70.0, 0.01));
 	TestTrue(TEXT("The first cell's far side did not move"), FMath::IsNearlyEqual(Bounds.Min.X, -50.0, 0.01));
 
-	// A Constant inset too deep turns the surface inside out: refused with the exact side.
+	// A Constant inset deep enough to cross opposite faces (Y and Z here, both sides showing) is repaired, not refused.
 	Settings->SurfaceOffset = EPCGVoxelSurfaceOffset::Constant;
 	Settings->SurfaceOffsetDistance.Constant = -60.0;
-	AddExpectedError(TEXT("point 0: its surface offset on the -X side is -60"), EAutomationExpectedErrorFlags::Contains, 1, false);
-	TestEqual(TEXT("Too deep an inset gives no mesh"), Mesh(Settings, Voxels).Num(), 0);
+	AddExpectedMessage(TEXT("2 of 2 points have a surface offset that crosses their own opposite face"), ELogVerbosity::Warning,
+		EAutomationExpectedMessageFlags::Contains, 1, false);
+	const UE::Geometry::FDynamicMesh3* Repaired = MeshOf(Mesh(Settings, Voxels));
+	UTEST_NOT_NULL(TEXT("Too deep an inset still meshes"), Repaired);
+	const FBox RepairedBounds(Repaired->GetBounds());
+	TestTrue(*FString::Printf(TEXT("Repaired points collapse to a thin slab in Y (%s)"), *RepairedBounds.ToString()),
+		RepairedBounds.Max.Y - RepairedBounds.Min.Y <= 0.11 && RepairedBounds.Max.Y >= RepairedBounds.Min.Y);
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FPCGVoxelMeshExactOffsetTest,
+	"PCGUtils.Voxel.ToDynMesh.ExactOffsetsMatchPointBoxes",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::ProductFilter)
+
+bool FPCGVoxelMeshExactOffsetTest::RunTest(const FString&)
+{
+	using namespace PCGVoxelMeshTests;
+	UPCGVoxelToDynMeshSettings* Settings = MakeSettings();
+	Settings->SurfaceOffset = EPCGVoxelSurfaceOffset::FromPointBounds;
+	TestTrue(TEXT("Exact is the default"), Settings->OffsetBlend == EPCGVoxelOffsetBlend::Exact);
+
+	// The bar from the averaging test: the second box is 110 x 100 x 120, the first stays a cube with a flat top.
+	{
+		UPCGPointArrayData* Voxels = MakeVoxels({ FIntVector(0, 0, 0), FIntVector(1, 0, 0) });
+		Voxels->GetBoundsMaxValueRange()[1] = FVector(60, 50, 70);
+		const UE::Geometry::FDynamicMesh3* Result = MeshOf(Mesh(Settings, Voxels));
+		UTEST_NOT_NULL(TEXT("Bar meshed"), Result);
+		TestEqual(TEXT("Exact bar: no open edges"), OpenEdges(*Result), 0);
+		TestTrue(TEXT("Exact bar: the mesh is valid"), Result->CheckValidity(UE::Geometry::FDynamicMesh3::FValidityOptions(), UE::Geometry::EValidityCheckFailMode::ReturnOnly));
+		TestTrue(*FString::Printf(TEXT("Exact bar: encloses 1000000 + 110 x 100 x 120 (%.0f)"), Volume(*Result)),
+			FMath::IsNearlyEqual(Volume(*Result), 2320000.0, 2.32));
+		double FirstTop = -1e9;
+		for (const int32 VertexID : Result->VertexIndicesItr())
+		{
+			const FVector3d Vertex = Result->GetVertex(VertexID);
+			if (Vertex.X < 49.0)
+			{
+				FirstTop = FMath::Max(FirstTop, Vertex.Z);
+			}
+		}
+		TestTrue(*FString::Printf(TEXT("The first cell's top stays flat at 50 (%.3f)"), FirstTop), FMath::IsNearlyEqual(FirstTop, 50.0, 0.01));
+	}
+
+	// Columns of different heights round a shared corner (2 x 3), and a two-cell column beside a one-cell one (the
+	// Best Fit shape): every mesh is closed and encloses exactly the union of the point boxes.
+	struct FCase { const TCHAR* Name; TArray<FIntVector> Cells; TArray<double> MaxZ; };
+	const TArray<FCase> Cases = {
+		{ TEXT("Six columns"), { {0,0,0}, {1,0,0}, {2,0,0}, {0,1,0}, {1,1,0}, {2,1,0} }, { 10, 30, -20, 40, 0, 20 } },
+		{ TEXT("Step under a column"), { {0,0,0}, {0,0,1}, {1,0,0} }, { 50, -20, 30 } },
+		{ TEXT("Three heights at one corner"), { {0,0,0}, {1,0,0}, {0,1,0}, {1,1,0} }, { 10, 20, 30, 50 } },
+	};
+	for (const FCase& Case : Cases)
+	{
+		for (const bool bCollapse : { false, true })
+		{
+			UPCGPointArrayData* Voxels = MakeVoxels(Case.Cells);
+			double Expected = 0.0;
+			for (int32 Index = 0; Index < Case.Cells.Num(); ++Index)
+			{
+				Voxels->GetBoundsMaxValueRange()[Index].Z = Case.MaxZ[Index];
+				Expected += 100.0 * 100.0 * (Case.MaxZ[Index] + 50.0);
+			}
+			Settings->bCollapseCoplanarFaces = bCollapse;
+			Settings->VertexColorSource = EPCGVoxelColorSource::Attribute;
+			const UE::Geometry::FDynamicMesh3* Result = MeshOf(Mesh(Settings, Voxels));
+			const FString What = FString::Printf(TEXT("%s%s"), Case.Name, bCollapse ? TEXT(" (collapsed)") : TEXT(""));
+			UTEST_NOT_NULL(*What, Result);
+			TestEqual(*FString::Printf(TEXT("%s: no open edges"), *What), OpenEdges(*Result), 0);
+			TestTrue(*FString::Printf(TEXT("%s: the mesh is valid"), *What), Result->CheckValidity(UE::Geometry::FDynamicMesh3::FValidityOptions(), UE::Geometry::EValidityCheckFailMode::ReturnOnly));
+			TestTrue(*FString::Printf(TEXT("%s: encloses the point boxes, %.0f (%.0f)"), *What, Expected, Volume(*Result)),
+				FMath::IsNearlyEqual(Volume(*Result), Expected, Expected * 1e-6));
+			bool bNormalsSet = true;
+			const UE::Geometry::FDynamicMeshNormalOverlay* Normals = Result->Attributes()->PrimaryNormals();
+			for (const int32 TriangleID : Result->TriangleIndicesItr())
+			{
+				const UE::Geometry::FIndex3i Elements = Normals->GetTriangle(TriangleID);
+				for (int32 K = 0; K < 3; ++K)
+				{
+					bNormalsSet &= Elements[K] >= 0 && FMath::IsNearlyEqual(Normals->GetElement(Elements[K]).Size(), 1.0f, 1e-3f);
+				}
+			}
+			TestTrue(*FString::Printf(TEXT("%s: every triangle has unit normals"), *What), bNormalsSet);
+		}
+	}
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FPCGVoxelMeshOffsetPastCentreTest,
+	"PCGUtils.Voxel.ToDynMesh.SurfaceOffsetPastCentreIsValid",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::ProductFilter)
+
+bool FPCGVoxelMeshOffsetPastCentreTest::RunTest(const FString&)
+{
+	using namespace PCGVoxelMeshTests;
+	UPCGVoxelToDynMeshSettings* Settings = MakeSettings();
+	Settings->SurfaceOffset = EPCGVoxelSurfaceOffset::FromPointBounds;
+
+	// Bounds Max Z 0, Min Z -50: the top face is at the centre, but the cell is a valid 50-unit slab. No warning.
+	{
+		UPCGPointArrayData* Voxels = MakeVoxels({ FIntVector(0, 0, 0), FIntVector(1, 0, 0) });
+		Voxels->GetBoundsMaxValueRange()[0].Z = 0.0;
+		const UE::Geometry::FDynamicMesh3* Result = MeshOf(Mesh(Settings, Voxels));
+		UTEST_NOT_NULL(TEXT("A top face at the centre meshes"), Result);
+		TestEqual(TEXT("Still closed"), OpenEdges(*Result), 0);
+		const FBox Bounds(Result->GetBounds());
+		TestTrue(*FString::Printf(TEXT("The slab spans -50 to 50 overall (%s)"), *Bounds.ToString()),
+			FMath::IsNearlyEqual(Bounds.Min.Z, -50.0, 0.01) && FMath::IsNearlyEqual(Bounds.Max.Z, 50.0, 0.01));
+	}
+	// Bounds Max Z -30 under Min Z 10 on one cell of many: that cell is repaired, the rest mesh as given.
+	{
+		UPCGPointArrayData* Voxels = MakeVoxels({ FIntVector(0, 0, 0), FIntVector(3, 0, 0), FIntVector(6, 0, 0) });
+		Voxels->GetBoundsMaxValueRange()[1].Z = -30.0;
+		Voxels->GetBoundsMinValueRange()[1].Z = 10.0;
+		AddExpectedMessage(TEXT("thick (Offset Repair). point 1 on Z: its +Z face at -30 and -Z face at 10"), ELogVerbosity::Warning,
+			EAutomationExpectedMessageFlags::Contains, 1, false);
+		const UE::Geometry::FDynamicMesh3* Result = MeshOf(Mesh(Settings, Voxels));
+		UTEST_NOT_NULL(TEXT("One inverted cell does not stop the set"), Result);
+		TestEqual(TEXT("Still closed"), OpenEdges(*Result), 0);
+		TestEqual(TEXT("All three cells meshed (24 vertices)"), Result->VertexCount(), 24);
+		double RepairedTop = -1e9;
+		double RepairedBottom = 1e9;
+		for (const int32 VertexID : Result->VertexIndicesItr())
+		{
+			const FVector3d Vertex = Result->GetVertex(VertexID);
+			if (Vertex.X > 240.0 && Vertex.X < 360.0)
+			{
+				RepairedTop = FMath::Max(RepairedTop, Vertex.Z);
+				RepairedBottom = FMath::Min(RepairedBottom, Vertex.Z);
+			}
+		}
+		TestTrue(*FString::Printf(TEXT("The repaired cell is a thin slab at Z -10 (%.3f to %.3f)"), RepairedBottom, RepairedTop),
+			RepairedBottom < RepairedTop && FMath::IsNearlyEqual(0.5 * (RepairedTop + RepairedBottom), -10.0, 0.01) && RepairedTop - RepairedBottom <= 0.11);
+	}
+	// The other repairs on the same inverted cell.
+	auto InvertedSet = []()
+	{
+		UPCGPointArrayData* Voxels = MakeVoxels({ FIntVector(0, 0, 0), FIntVector(3, 0, 0), FIntVector(6, 0, 0) });
+		Voxels->GetBoundsMaxValueRange()[1].Z = -30.0;
+		Voxels->GetBoundsMinValueRange()[1].Z = 10.0;
+		return Voxels;
+	};
+	{
+		Settings->OffsetRepair = EPCGVoxelOffsetRepair::ZeroThickness;
+		AddExpectedMessage(TEXT("collapsed to zero thickness"), ELogVerbosity::Warning, EAutomationExpectedMessageFlags::Contains, 1, false);
+		const UE::Geometry::FDynamicMesh3* Result = MeshOf(Mesh(Settings, InvertedSet()));
+		UTEST_NOT_NULL(TEXT("Zero Thickness meshes"), Result);
+		TestEqual(TEXT("Zero Thickness: still closed"), OpenEdges(*Result), 0);
+		TestEqual(TEXT("Zero Thickness: all three cells (24 vertices)"), Result->VertexCount(), 24);
+		bool bFlat = true;
+		for (const int32 VertexID : Result->VertexIndicesItr())
+		{
+			const FVector3d Vertex = Result->GetVertex(VertexID);
+			if (Vertex.X > 240.0 && Vertex.X < 360.0)
+			{
+				bFlat &= FMath::IsNearlyEqual(Vertex.Z, -10.0, 1e-6);
+			}
+		}
+		TestTrue(TEXT("Zero Thickness: the repaired cell lies flat at Z -10"), bFlat);
+	}
+	{
+		Settings->OffsetRepair = EPCGVoxelOffsetRepair::OneSidedPlane;
+		AddExpectedMessage(TEXT("turned into a one-sided plane"), ELogVerbosity::Warning, EAutomationExpectedMessageFlags::Contains, 1, false);
+		const UE::Geometry::FDynamicMesh3* Result = MeshOf(Mesh(Settings, InvertedSet()));
+		UTEST_NOT_NULL(TEXT("One-Sided Plane meshes"), Result);
+		TestEqual(TEXT("One-Sided Plane: two cubes and one quad (8 + 8 + 4 vertices)"), Result->VertexCount(), 20);
+		TestEqual(TEXT("One-Sided Plane: 12 + 12 + 2 triangles"), Result->TriangleCount(), 26);
+		TestEqual(TEXT("One-Sided Plane: the quad's 4 edges are open"), OpenEdges(*Result), 4);
+		// Normal sign follows the engine's winding, so compare with a top face of an untouched cube.
+		double PlaneNormalZ = 0.0;
+		double TopNormalZ = 0.0;
+		for (const int32 TriangleID : Result->TriangleIndicesItr())
+		{
+			const FVector3d Centroid = Result->GetTriCentroid(TriangleID);
+			if (Centroid.X > 240.0 && Centroid.X < 360.0)
+			{
+				PlaneNormalZ = Result->GetTriNormal(TriangleID).Z;
+			}
+			else if (Centroid.X < 60.0 && FMath::IsNearlyEqual(Centroid.Z, 50.0, 0.01))
+			{
+				TopNormalZ = Result->GetTriNormal(TriangleID).Z;
+			}
+		}
+		const bool bFacesUp = FMath::Abs(PlaneNormalZ) > 0.99 && PlaneNormalZ * TopNormalZ > 0.0;
+		TestTrue(TEXT("One-Sided Plane: the kept face is the +Z one"), bFacesUp);
+	}
 	return true;
 }
 
