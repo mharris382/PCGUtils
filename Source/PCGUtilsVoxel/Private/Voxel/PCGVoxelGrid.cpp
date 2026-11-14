@@ -239,105 +239,153 @@ bool FPCGVoxelGrid::Build(FPCGContext* Context, const UPCGBasePointData* Points,
 		OutGrid.FinalizeCells();
 		return true;
 	}
-	OutGrid.InitStorage(Min, Max, NumCovered);
-
-	// Pass 2: claim cells in point order, settling clashes as Duplicate Cells says. Without chunks every point is
-	// one cell, so a clash involves exactly one other point and needs no bookkeeping.
-	if (!OutGrid.bChunked)
+	const bool bMove = Settings.DuplicateCells == EPCGVoxelDuplicateCells::MoveToFreeCell;
+	const int32 MoveRadius = FMath::Clamp(Settings.MoveRadius, 1, 16);
+	if (bMove)
 	{
-		for (int32 PointIndex = 0; PointIndex < NumPoints; ++PointIndex)
-		{
-			const FIntVector Cell = OutGrid.PointFirst[PointIndex];
-			if (int32* Other = OutGrid.FindSlot(Cell))
-			{
-				if (Settings.DuplicateCells == EPCGVoxelDuplicateCells::Error)
-				{
-					PCGLog::LogErrorOnGraph(PCGVoxel::FormatError(NodeTitle, InputIndex, FText::Format(
-						LOCTEXT("Duplicate", "points {0} and {1} both cover cell {2}; each cell can hold one point (Duplicate Cells is Error)."),
-						FText::AsNumber(*Other), FText::AsNumber(PointIndex), CellText(Cell))), Context);
-					return false;
-				}
-				if (Settings.DuplicateCells == EPCGVoxelDuplicateCells::KeepFirst)
-				{
-					OutGrid.PointUsed[PointIndex] = false;
-				}
-				else
-				{
-					OutGrid.PointUsed[*Other] = false;
-					*Other = PointIndex;
-				}
-				continue;
-			}
-			OutGrid.SetSlot(Cell, PointIndex);
-		}
-		OutGrid.FinalizeCells();
-		return true;
+		// Room around the occupied box for points that move out of it.
+		Min -= FIntVector(MoveRadius);
+		Max += FIntVector(MoveRadius);
 	}
+	OutGrid.InitStorage(Min, Max, NumCovered);
+	OutGrid.NumIgnoredPoints = 0;
+	OutGrid.NumMovedPoints = 0;
 
+	auto ForEachCell = [](const FIntVector& First, const FIntVector& Span, auto&& Fn)
+	{
+		for (int32 Z = 0; Z < Span.Z; ++Z)
+		{
+			for (int32 Y = 0; Y < Span.Y; ++Y)
+			{
+				for (int32 X = 0; X < Span.X; ++X)
+				{
+					Fn(First + FIntVector(X, Y, Z));
+				}
+			}
+		}
+	};
+
+	// Pass 2: claim cells in point order, settling clashes as Duplicate Cells says. Points that lose a clash under
+	// Keep First / Move To Free Cell are collected (in point order) for pass 3.
+	TArray<int32> Losers;
 	TArray<int32> Clashing;
 	for (int32 PointIndex = 0; PointIndex < NumPoints; ++PointIndex)
 	{
 		const FIntVector First = OutGrid.PointFirst[PointIndex];
 		const FIntVector Span = OutGrid.PointSpan[PointIndex];
 		Clashing.Reset();
-		for (int32 Z = 0; Z < Span.Z; ++Z)
+		bool bFailed = false;
+		ForEachCell(First, Span, [&](const FIntVector& Cell)
 		{
-			for (int32 Y = 0; Y < Span.Y; ++Y)
+			if (bFailed)
 			{
-				for (int32 X = 0; X < Span.X; ++X)
-				{
-					const FIntVector Cell = First + FIntVector(X, Y, Z);
-					if (const int32* Other = OutGrid.FindSlot(Cell))
-					{
-						if (Settings.DuplicateCells == EPCGVoxelDuplicateCells::Error)
-						{
-							PCGLog::LogErrorOnGraph(PCGVoxel::FormatError(NodeTitle, InputIndex, FText::Format(
-								LOCTEXT("Duplicate", "points {0} and {1} both cover cell {2}; each cell can hold one point (Duplicate Cells is Error)."),
-								FText::AsNumber(*Other), FText::AsNumber(PointIndex), CellText(Cell))), Context);
-							return false;
-						}
-						Clashing.AddUnique(*Other);
-					}
-				}
+				return;
 			}
+			if (const int32* Other = OutGrid.FindSlot(Cell))
+			{
+				if (Settings.DuplicateCells == EPCGVoxelDuplicateCells::Error)
+				{
+					PCGLog::LogErrorOnGraph(PCGVoxel::FormatError(NodeTitle, InputIndex, FText::Format(
+						LOCTEXT("Duplicate", "points {0} and {1} both cover cell {2}; each cell can hold one point (Duplicate Cells is Error)."),
+						FText::AsNumber(*Other), FText::AsNumber(PointIndex), CellText(Cell))), Context);
+					bFailed = true;
+					return;
+				}
+				Clashing.AddUnique(*Other);
+			}
+		});
+		if (bFailed)
+		{
+			return false;
 		}
 
 		if (!Clashing.IsEmpty())
 		{
-			if (Settings.DuplicateCells == EPCGVoxelDuplicateCells::KeepFirst)
+			if (Settings.DuplicateCells != EPCGVoxelDuplicateCells::KeepLast)
 			{
 				OutGrid.PointUsed[PointIndex] = false;
+				Losers.Add(PointIndex);
 				continue;
 			}
 			for (const int32 Other : Clashing)
 			{
 				OutGrid.PointUsed[Other] = false;
-				const FIntVector OtherFirst = OutGrid.PointFirst[Other];
-				const FIntVector OtherSpan = OutGrid.PointSpan[Other];
-				for (int32 Z = 0; Z < OtherSpan.Z; ++Z)
+				++OutGrid.NumIgnoredPoints;
+				ForEachCell(OutGrid.PointFirst[Other], OutGrid.PointSpan[Other], [&](const FIntVector& Cell) { OutGrid.ClearSlot(Cell); });
+			}
+		}
+		ForEachCell(First, Span, [&](const FIntVector& Cell) { OutGrid.SetSlot(Cell, PointIndex); });
+	}
+
+	// Pass 3: Move To Free Cell moves each loser to the free spot nearest its own centre within Move Radius, once
+	// every point that kept its place has claimed it (so a moved point never takes a later point's own cell).
+	if (bMove && !Losers.IsEmpty())
+	{
+		TArray<FIntVector> Offsets;
+		for (int32 Z = -MoveRadius; Z <= MoveRadius; ++Z)
+		{
+			for (int32 Y = -MoveRadius; Y <= MoveRadius; ++Y)
+			{
+				for (int32 X = -MoveRadius; X <= MoveRadius; ++X)
 				{
-					for (int32 Y = 0; Y < OtherSpan.Y; ++Y)
+					if (X != 0 || Y != 0 || Z != 0)
 					{
-						for (int32 X = 0; X < OtherSpan.X; ++X)
-						{
-							OutGrid.ClearSlot(OtherFirst + FIntVector(X, Y, Z));
-						}
+						Offsets.Add(FIntVector(X, Y, Z));
 					}
 				}
 			}
 		}
-		for (int32 Z = 0; Z < Span.Z; ++Z)
+		for (const int32 PointIndex : Losers)
 		{
-			for (int32 Y = 0; Y < Span.Y; ++Y)
+			const FIntVector First = OutGrid.PointFirst[PointIndex];
+			const FIntVector Span = OutGrid.PointSpan[PointIndex];
+			// Where the point actually sits, in cells, so an overlapping point moves towards the side it leans to.
+			const FVector Local = OutGrid.GridToWorld.InverseTransformPositionNoScale(Transforms[PointIndex].GetLocation());
+			const FVector FirstExact = Local / OutGrid.VoxelSize - (FVector(Span) - FVector(1.0)) * 0.5;
+			double BestDistance = TNumericLimits<double>::Max();
+			FIntVector Best = First;
+			for (const FIntVector& Offset : Offsets)
 			{
-				for (int32 X = 0; X < Span.X; ++X)
+				const FIntVector Candidate = First + Offset;
+				const double Distance = ((FVector(Candidate) - FirstExact) * OutGrid.VoxelSize).SizeSquared();
+				if (Distance >= BestDistance - UE_KINDA_SMALL_NUMBER)
 				{
-					OutGrid.SetSlot(First + FIntVector(X, Y, Z), PointIndex);
+					continue;
+				}
+				bool bFree = true;
+				ForEachCell(Candidate, Span, [&](const FIntVector& Cell)
+				{
+					bFree = bFree && Cell.X >= Min.X && Cell.Y >= Min.Y && Cell.Z >= Min.Z
+						&& Cell.X <= Max.X && Cell.Y <= Max.Y && Cell.Z <= Max.Z && !OutGrid.FindSlot(Cell);
+				});
+				if (bFree)
+				{
+					BestDistance = Distance;
+					Best = Candidate;
 				}
 			}
+			if (Best == First)
+			{
+				++OutGrid.NumIgnoredPoints;
+				continue;
+			}
+			OutGrid.PointFirst[PointIndex] = Best;
+			OutGrid.PointUsed[PointIndex] = true;
+			++OutGrid.NumMovedPoints;
+			ForEachCell(Best, Span, [&](const FIntVector& Cell) { OutGrid.SetSlot(Cell, PointIndex); });
 		}
 	}
+	else
+	{
+		OutGrid.NumIgnoredPoints += Losers.Num();
+	}
 
+	if (OutGrid.NumIgnoredPoints > 0 && bMove)
+	{
+		PCGLog::LogWarningOnGraph(PCGVoxel::FormatError(NodeTitle, InputIndex, FText::Format(
+			LOCTEXT("DuplicateNoRoom", "{0} point(s) shared a cell with another point and were ignored: no free cell within Move Radius {1}."),
+			FText::AsNumber(OutGrid.NumIgnoredPoints), FText::AsNumber(MoveRadius))), Context);
+	}
 	OutGrid.FinalizeCells();
 	return true;
 }
@@ -530,6 +578,23 @@ void FPCGVoxelGrid::ComputeSurfaceOffsets(const UPCGBasePointData* Points, TArra
 		const FVector Half = BoxHalfSize(PointSpan[Point]);
 		OutMinSide[Point] = -Mins[Point] * Scale - Half;
 		OutMaxSide[Point] = Maxs[Point] * Scale - Half;
+	}
+
+	// A point Duplicate Cells ignored still describes part of its cell (Offset Surface writes a carved cell as several
+	// boxes on one cell): the point that has the cell reaches as far as any of them, so the cell is the box around them.
+	for (int32 Point = 0; Point < Num; ++Point)
+	{
+		if (PointUsed.IsValidIndex(Point) && PointUsed[Point])
+		{
+			continue;
+		}
+		const int32 Owner = FindPoint(PointFirst[Point]);
+		if (Owner == INDEX_NONE || PointFirst[Owner] != PointFirst[Point] || PointSpan[Owner] != PointSpan[Point])
+		{
+			continue;
+		}
+		OutMinSide[Owner] = OutMinSide[Owner].ComponentMax(OutMinSide[Point]);
+		OutMaxSide[Owner] = OutMaxSide[Owner].ComponentMax(OutMaxSide[Point]);
 	}
 }
 

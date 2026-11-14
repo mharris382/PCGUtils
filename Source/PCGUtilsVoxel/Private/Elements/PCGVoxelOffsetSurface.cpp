@@ -3,6 +3,7 @@
 #include "Elements/PCGVoxelOffsetSurface.h"
 
 #include "Algo/Sort.h"
+#include "Algo/StableSort.h"
 #include "Async/ParallelFor.h"
 #include "Data/PCGBasePointData.h"
 #include "PCGContext.h"
@@ -229,7 +230,7 @@ FText UPCGVoxelOffsetSurfaceSettings::GetNodeTooltipText() const
 		"Moves a voxel set's surface by Amount x Amount Scale (cells or world units; each a constant, a per-cell point "
 		"attribute or an @Data value). The whole part adds or removes layers of cells; the fraction moves the open faces of each cell (its "
 		"point bounds). Corners stay square, and Split Inner Corners carves inside corners on a shrink by splitting those "
-		"cells into boxes. Out keeps the grid (one point per cell, split cells flagged); Spawn has the boxes to spawn meshes on.");
+		"cells into boxes (several points on one cell, flagged). Axes limits the offset to some grid axes (X | Y leaves Z alone).");
 }
 #endif
 
@@ -246,11 +247,9 @@ TArray<FPCGPinProperties> UPCGVoxelOffsetSurfaceSettings::OutputPinProperties() 
 {
 	TArray<FPCGPinProperties> Pins;
 	Pins.Emplace(PCGPinConstants::DefaultOutputLabel, EPCGDataType::Point, true, true,
-		LOCTEXT("OutTooltip", "Each input offset, still a valid voxel set: one point per cell after the whole layers, its bounds "
-			"moved on its open faces. Cells carved at inside corners are flagged (Was Split Attribute); Is Surrounded is rewritten."));
-	Pins.Emplace(PCGVoxelOffsetSurfacePins::Spawn, EPCGDataType::Point, true, true,
-		LOCTEXT("SpawnTooltip", "Each input's points to spawn meshes on: one per box, with a split cell's carved boxes in place of its "
-			"point, and (Spawn Only Visible) without cells that show no face. Not a voxel set: a split cell has several points."));
+		LOCTEXT("OutTooltip", "Each input offset, still a voxel set: one point per box after the whole layers, its bounds moved on "
+			"its open faces. A cell carved at an inside corner is its carved boxes (several points on one cell, flagged with Was Split "
+			"Attribute). Is Surrounded is rewritten; filter on it to spawn only visible boxes."));
 	return Pins;
 }
 
@@ -315,7 +314,6 @@ bool FPCGVoxelOffsetSurfaceElement::ExecuteInternal(FPCGContext* Context) const
 		if (Grid.NumCells() == 0)
 		{
 			Context->OutputData.TaggedData.Emplace_GetRef(Inputs[InputIndex]).Pin = PCGPinConstants::DefaultOutputLabel;
-			Context->OutputData.TaggedData.Emplace_GetRef(Inputs[InputIndex]).Pin = PCGVoxelOffsetSurfacePins::Spawn;
 			continue;
 		}
 
@@ -337,6 +335,12 @@ bool FPCGVoxelOffsetSurfaceElement::ExecuteInternal(FPCGContext* Context) const
 		// ---- Each cell's offset, in cells per axis ----
 		const FVector UnitToCells = Settings->Units == EPCGVoxelOffsetUnits::Cells ? FVector(1.0) : FVector(1.0) / Grid.VoxelSize;
 		const FVector ReserveWeight = Settings->Units == EPCGVoxelOffsetUnits::Cells ? FVector(1.0) : Grid.VoxelSize;
+		// Axes: an axis left out gets no offset at all (no layers, no face movement, no carving along it).
+		bool AxisOn[3];
+		for (int32 Axis = 0; Axis < 3; ++Axis)
+		{
+			AxisOn[Axis] = (Settings->Axes & (1 << Axis)) != 0;
+		}
 		TArray<FCellOffset> Offsets;
 		Offsets.SetNum(Grid.NumCells());
 		FIntVector GrowReach = FIntVector::ZeroValue;
@@ -358,7 +362,7 @@ bool FPCGVoxelOffsetSurfaceElement::ExecuteInternal(FPCGContext* Context) const
 			for (int32 Axis = 0; Axis < 3; ++Axis)
 			{
 				// Capped so the cast cannot overflow; Max Cells stops anything near the cap.
-				const double M = FMath::Min(FMath::Abs(Value) * UnitToCells[Axis], 1.0e6);
+				const double M = AxisOn[Axis] ? FMath::Min(FMath::Abs(Value) * UnitToCells[Axis], 1.0e6) : 0.0;
 				const int32 L = FMath::FloorToInt32(M + 1e-9);
 				Offset.Magnitude[Axis] = M;
 				Offset.Layers[Axis] = L;
@@ -448,10 +452,17 @@ bool FPCGVoxelOffsetSurfaceElement::ExecuteInternal(FPCGContext* Context) const
 							{
 								continue;
 							}
-							const float Spare = static_cast<float>(FMath::Min3(
-								(Offset.Magnitude.X - FMath::Abs(DX)) * ReserveWeight.X,
-								(Offset.Magnitude.Y - FMath::Abs(DY)) * ReserveWeight.Y,
-								(Offset.Magnitude.Z - FMath::Abs(DZ)) * ReserveWeight.Z));
+							// Reach left over on the axes the offset uses (an unused axis has no reach to spare).
+							const FIntVector D(DX, DY, DZ);
+							double SpareMin = TNumericLimits<double>::Max();
+							for (int32 Axis = 0; Axis < 3; ++Axis)
+							{
+								if (AxisOn[Axis])
+								{
+									SpareMin = FMath::Min(SpareMin, (Offset.Magnitude[Axis] - FMath::Abs(D[Axis])) * ReserveWeight[Axis]);
+								}
+							}
+							const float Spare = static_cast<float>(SpareMin);
 							const float Dist = static_cast<float>((FVector(DX, DY, DZ) * Grid.VoxelSize).SizeSquared());
 							const bool bBetter = Origin[I] == INDEX_NONE || Spare > Reserve[I] + 1e-4f
 								|| (Spare > Reserve[I] - 1e-4f && Dist < Distance[I] - 1e-3f);
@@ -552,18 +563,15 @@ bool FPCGVoxelOffsetSurfaceElement::ExecuteInternal(FPCGContext* Context) const
 			});
 		}
 
-		// ---- The fraction: per result cell, its face box (Out) and the boxes to spawn (Spawn) ----
-		// The face box moves only the open faces: it is the cell's point on Out, a valid voxel set. On a shrink with
-		// Split Inner Corners, the cell is also carved near every empty neighbour; when that leaves anything but the
-		// face box, the cell is split: Out flags it and Spawn gets the carved boxes instead.
-		TArray<FPiece> GridPieces;
-		TArray<bool> GridSplit;
-		GridPieces.Reserve(ResultCells.Num());
-		GridSplit.Reserve(ResultCells.Num());
-		TArray<FPiece> SpawnPieces;
-		TArray<bool> SpawnSplit;
-		SpawnPieces.Reserve(ResultCells.Num());
-		SpawnSplit.Reserve(ResultCells.Num());
+		// ---- The fraction: per result cell, its box (or boxes) ----
+		// The face box moves only the open faces. On a shrink with Split Inner Corners, the cell is also carved near
+		// every empty neighbour; when that leaves anything but the face box, the cell is written as its carved boxes
+		// instead (several points on one cell, the largest first so a node reading one point per cell gets the most of
+		// it; the box around them is the face box, which is what meshing reads).
+		TArray<FPiece> Pieces;
+		TArray<bool> PieceSplit;
+		Pieces.Reserve(ResultCells.Num());
+		PieceSplit.Reserve(ResultCells.Num());
 		TArray<FPiece> Carved;
 		TArray<FIntVector, TInlineAllocator<26>> EmptyNeighbours;
 		for (int32 Index = 0; Index < ResultCells.Num(); ++Index)
@@ -574,7 +582,6 @@ bool FPCGVoxelOffsetSurfaceElement::ExecuteInternal(FPCGContext* Context) const
 			Whole.Cell = Cell;
 			Whole.Source = Own[Index];
 			Whole.bFreshEntry = Added[Index] && Settings->AddedValues == EPCGVoxelOffsetAddedValues::None;
-			const bool bVisible = IsSurface(Result, Cell);
 
 			if (Offset.Sign != 0 && !Offset.Fraction.IsZero())
 			{
@@ -589,7 +596,7 @@ bool FPCGVoxelOffsetSurfaceElement::ExecuteInternal(FPCGContext* Context) const
 				}
 				if ((Whole.Hi - Whole.Lo).GetMin() <= 1e-6)
 				{
-					continue; // shrunk to nothing: the cell is gone from both pins
+					continue; // shrunk to nothing: the cell is gone
 				}
 
 				if (!bGrow && Settings->bSplitInnerCorners)
@@ -614,14 +621,14 @@ bool FPCGVoxelOffsetSurfaceElement::ExecuteInternal(FPCGContext* Context) const
 						CarveCell(Cube, Offset.Fraction, EmptyNeighbours, Carved);
 						const bool bSameAsFaces = Carved.Num() == 1
 							&& Carved[0].Lo.Equals(Whole.Lo, 1e-9) && Carved[0].Hi.Equals(Whole.Hi, 1e-9);
-						if (!bSameAsFaces)
+						if (!bSameAsFaces && !Carved.IsEmpty())
 						{
-							GridPieces.Add(Whole);
-							GridSplit.Add(true);
+							auto VolumeOf = [](const FPiece& P) { const FVector Size = P.Hi - P.Lo; return Size.X * Size.Y * Size.Z; };
+							Algo::StableSort(Carved, [&](const FPiece& A, const FPiece& B) { return VolumeOf(A) > VolumeOf(B) + 1e-12; });
 							for (const FPiece& Piece : Carved)
 							{
-								SpawnPieces.Add(Piece);
-								SpawnSplit.Add(true);
+								Pieces.Add(Piece);
+								PieceSplit.Add(true);
 							}
 							continue;
 						}
@@ -629,14 +636,8 @@ bool FPCGVoxelOffsetSurfaceElement::ExecuteInternal(FPCGContext* Context) const
 				}
 			}
 
-			GridPieces.Add(Whole);
-			GridSplit.Add(false);
-			// A cell that shows no face and was not carved can never be seen.
-			if (bVisible || !Settings->bSpawnOnlyVisible)
-			{
-				SpawnPieces.Add(Whole);
-				SpawnSplit.Add(false);
-			}
+			Pieces.Add(Whole);
+			PieceSplit.Add(false);
 		}
 
 		// ---- Write: one point per piece, on its cell centre, bounds covering its box ----
@@ -685,27 +686,19 @@ bool FPCGVoxelOffsetSurfaceElement::ExecuteInternal(FPCGContext* Context) const
 		};
 		auto IsFilled = [&Result](const FIntVector& Cell) { return Result.Get(Cell); };
 
-		TArray<FPCGVoxelCellOut> GridOuts;
-		UPCGBasePointData* GridOut = Emit(GridPieces, GridOuts);
-		PCGVoxelPointIO::RefreshSurrounded(Points, GridOut, Settings->Grid.SurroundedAttribute, GridOuts, IsFilled);
-		if (Settings->bWriteWasSplit)
+		TArray<FPCGVoxelCellOut> Outs;
+		UPCGBasePointData* Out = Emit(Pieces, Outs);
+		if (PCGVoxelPointIO::RefreshSurrounded(Points, Out, Settings->Grid.SurroundedAttribute, Outs, IsFilled))
 		{
-			PCGVoxelPointIO::WritePointAttribute<bool>(GridOut, Settings->WasSplitAttribute, false, GridSplit);
-		}
-
-		TArray<FPCGVoxelCellOut> SpawnOuts;
-		UPCGBasePointData* SpawnOut = Emit(SpawnPieces, SpawnOuts);
-		if (PCGVoxelPointIO::RefreshSurrounded(Points, SpawnOut, Settings->Grid.SurroundedAttribute, SpawnOuts, IsFilled))
-		{
-			// A carved piece shows even when its cell's six neighbours are filled (the notch is diagonal).
-			FPCGMetadataDomain* SpawnDomain = SpawnOut->MutableMetadata()->GetMetadataDomain(PCGMetadataDomainID::Elements);
-			if (FPCGMetadataAttribute<bool>* Surrounded = SpawnDomain
-				? static_cast<FPCGMetadataAttribute<bool>*>(SpawnDomain->GetMutableAttribute(Settings->Grid.SurroundedAttribute)) : nullptr)
+			// A carved box shows even when its cell's six neighbours are filled (the notch is diagonal).
+			FPCGMetadataDomain* OutDomain = Out->MutableMetadata()->GetMetadataDomain(PCGMetadataDomainID::Elements);
+			if (FPCGMetadataAttribute<bool>* Surrounded = OutDomain
+				? static_cast<FPCGMetadataAttribute<bool>*>(OutDomain->GetMutableAttribute(Settings->Grid.SurroundedAttribute)) : nullptr)
 			{
-				const TConstPCGValueRange<int64> Entries = SpawnOut->GetConstMetadataEntryValueRange();
-				for (int32 Index = 0; Index < SpawnSplit.Num(); ++Index)
+				const TConstPCGValueRange<int64> Entries = Out->GetConstMetadataEntryValueRange();
+				for (int32 Index = 0; Index < PieceSplit.Num(); ++Index)
 				{
-					if (SpawnSplit[Index])
+					if (PieceSplit[Index])
 					{
 						Surrounded->SetValue(Entries[Index], false);
 					}
@@ -714,15 +707,12 @@ bool FPCGVoxelOffsetSurfaceElement::ExecuteInternal(FPCGContext* Context) const
 		}
 		if (Settings->bWriteWasSplit)
 		{
-			PCGVoxelPointIO::WritePointAttribute<bool>(SpawnOut, Settings->WasSplitAttribute, false, SpawnSplit);
+			PCGVoxelPointIO::WritePointAttribute<bool>(Out, Settings->WasSplitAttribute, false, PieceSplit);
 		}
 
 		FPCGTaggedData& Output = Context->OutputData.TaggedData.Emplace_GetRef(Inputs[InputIndex]);
-		Output.Data = GridOut;
+		Output.Data = Out;
 		Output.Pin = PCGPinConstants::DefaultOutputLabel;
-		FPCGTaggedData& SpawnOutput = Context->OutputData.TaggedData.Emplace_GetRef(Inputs[InputIndex]);
-		SpawnOutput.Data = SpawnOut;
-		SpawnOutput.Pin = PCGVoxelOffsetSurfacePins::Spawn;
 	}
 	return true;
 }

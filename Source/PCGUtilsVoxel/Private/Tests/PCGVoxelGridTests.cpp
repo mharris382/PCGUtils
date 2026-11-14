@@ -73,25 +73,68 @@ bool FPCGVoxelGridErrorsTest::RunTest(const FString&)
 	{
 		UPCGPointArrayData* Points = MakeVoxels({ FIntVector(0), FIntVector(3, 0, 0) });
 		Points->GetTransformValueRange()[1].SetLocation(FVector(320, 0, 0));
-		AddExpectedError(TEXT("point 1 is off the grid"), EAutomationExpectedErrorFlags::Contains, 1, false);
-		TestFalse(TEXT("An off-grid point fails"), BuildGrid(Points, Grid));
-
-		FPCGVoxelGridReadSettings Snap;
-		Snap.OffGridPoints = EPCGVoxelOffGridPoints::Snap;
-		TestTrue(TEXT("Snap accepts it"), BuildGrid(Points, Grid, Snap));
+		TestTrue(TEXT("Snap (default) accepts an off-grid point"), BuildGrid(Points, Grid));
 		TestEqual(TEXT("and puts it in the nearest cell"), Grid.FindPoint(FIntVector(3, 0, 0)), 1);
+
+		FPCGVoxelGridReadSettings Strict;
+		Strict.OffGridPoints = EPCGVoxelOffGridPoints::Error;
+		AddExpectedError(TEXT("point 1 is off the grid"), EAutomationExpectedErrorFlags::Contains, 1, false);
+		TestFalse(TEXT("Error fails it"), BuildGrid(Points, Grid, Strict));
 	}
 	// Two points in one cell.
 	{
 		UPCGPointArrayData* Points = MakeVoxels({ FIntVector(0), FIntVector(1, 0, 0), FIntVector(0) });
+		TestTrue(TEXT("Keep First (default) accepts a duplicate cell"), BuildGrid(Points, Grid));
+		TestEqual(TEXT("and the earlier point has the cell"), Grid.FindPoint(FIntVector(0)), 0);
+		TestFalse(TEXT("and the later point is ignored"), Grid.PointUsed[2]);
+		TestEqual(TEXT("and it is counted"), Grid.NumIgnoredPoints, 1);
+
+		FPCGVoxelGridReadSettings Strict;
+		Strict.DuplicateCells = EPCGVoxelDuplicateCells::Error;
 		AddExpectedError(TEXT("points 0 and 2 both cover cell (0, 0, 0)"), EAutomationExpectedErrorFlags::Contains, 1, false);
-		TestFalse(TEXT("A duplicate cell fails"), BuildGrid(Points, Grid));
+		TestFalse(TEXT("Error fails it"), BuildGrid(Points, Grid, Strict));
 
 		FPCGVoxelGridReadSettings KeepLast;
 		KeepLast.DuplicateCells = EPCGVoxelDuplicateCells::KeepLast;
 		TestTrue(TEXT("Keep Last accepts it"), BuildGrid(Points, Grid, KeepLast));
 		TestEqual(TEXT("and the later point has the cell"), Grid.FindPoint(FIntVector(0)), 2);
 		TestFalse(TEXT("and the earlier point is dropped"), Grid.PointUsed[0]);
+	}
+	// Move To Free Cell: the later point moves to the free cell nearest where it actually sits.
+	{
+		UPCGPointArrayData* Points = MakeVoxels({ FIntVector(0), FIntVector(1, 0, 0), FIntVector(0) });
+		// Point 2 leans towards +Y (still within its cell), so +Y is its nearest free cell; +X is taken by point 1.
+		Points->GetTransformValueRange()[2].SetLocation(FVector(0, 30, 0));
+		FPCGVoxelGridReadSettings Move;
+		Move.DuplicateCells = EPCGVoxelDuplicateCells::MoveToFreeCell;
+		TestTrue(TEXT("Move To Free Cell accepts it"), BuildGrid(Points, Grid, Move));
+		TestEqual(TEXT("and the earlier point keeps the cell"), Grid.FindPoint(FIntVector(0)), 0);
+		TestEqual(TEXT("and the later point moves towards where it leans"), Grid.FindPoint(FIntVector(0, 1, 0)), 2);
+		TestTrue(TEXT("and it is used"), Grid.PointUsed[2]);
+		TestEqual(TEXT("and counted as moved"), Grid.NumMovedPoints, 1);
+		TestEqual(TEXT("Three cells"), Grid.NumCells(), 3);
+
+		// A point never moves into a cell a later point owns: point 1 overlaps 0 and the only near free cells
+		// along X are claimed by later points, so it goes elsewhere.
+		UPCGPointArrayData* Packed = MakeVoxels({ FIntVector(0), FIntVector(0), FIntVector(1, 0, 0), FIntVector(-1, 0, 0) });
+		Packed->GetTransformValueRange()[1].SetLocation(FVector(40, 0, 0));
+		TestTrue(TEXT("Packed: reads"), BuildGrid(Packed, Grid, Move));
+		TestEqual(TEXT("Packed: later points keep their own cells (+X)"), Grid.FindPoint(FIntVector(1, 0, 0)), 2);
+		TestEqual(TEXT("Packed: later points keep their own cells (-X)"), Grid.FindPoint(FIntVector(-1, 0, 0)), 3);
+		TestEqual(TEXT("Packed: the moved point still finds a cell"), Grid.NumCells(), 4);
+		TestEqual(TEXT("Packed: nothing ignored"), Grid.NumIgnoredPoints, 0);
+
+		// Nowhere free within Move Radius: ignored, as Keep First.
+		TArray<FIntVector> Block;
+		for (int32 Z = -1; Z <= 1; ++Z) for (int32 Y = -1; Y <= 1; ++Y) for (int32 X = -1; X <= 1; ++X) Block.Add(FIntVector(X, Y, Z));
+		Block.Add(FIntVector(0));
+		UPCGPointArrayData* Full = MakeVoxels(Block);
+		AddExpectedMessage(TEXT("shared a cell with another point and were ignored"), EAutomationExpectedErrorFlags::Contains, 0);
+		TestTrue(TEXT("Full: reads"), BuildGrid(Full, Grid, Move));
+		TestEqual(TEXT("Full: the extra point is ignored"), Grid.NumIgnoredPoints, 1);
+		Move.MoveRadius = 2;
+		TestTrue(TEXT("Full, radius 2: reads"), BuildGrid(Full, Grid, Move));
+		TestEqual(TEXT("Full, radius 2: the extra point moves out of the block"), Grid.NumCells(), 28);
 	}
 	// Grid transform with scale.
 	{

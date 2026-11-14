@@ -40,9 +40,21 @@ A `Missing Grid Transform` setting (`World` / `Target Actor`) covers graphs that
 **Validation** (CLAUDE.md: one exact invariant per message):
 - `VoxelSize` not found; or its X, Y or Z is ≤ 0 (name the axis and value).
 - `VoxelGridTransform` has the wrong type; or its scale is not 1 (give the scale).
-- Point N is off-grid: distance to the nearest cell centre is greater than `Grid Tolerance`. Report the point index,
-  the distance and the tolerance. A setting `Off Grid Points: Error | Snap` exists; default Error.
-- Points N and M fill the same cell. A setting `Duplicate Cells: Error | Keep First | Keep Last`; default Error.
+- Malformed input only fails: a missing or non-positive voxel size, a bad grid transform, a span that is not whole.
+  Points are free to go where a graph puts them, so a point's position never fails the input by default (designer
+  decision 2026-11-13: failure is for catastrophic, malformed input only).
+- Off-grid points (further from a cell centre than `Grid Tolerance`): `Off Grid Points: Snap | Error`; default
+  **Snap** (read as the nearest cell). Error reports the point index, the distance and the tolerance.
+- Two points in one cell: `Duplicate Cells: Keep First | Move To Free Cell | Keep Last | Error`; default **Keep First**.
+  A grid stores occupancy only, so a shared cell is just a filled cell; the setting decides which point the cell reads
+  its values from. Keep First / Keep Last ignore the other point quietly (it covers no cell, and nodes that rewrite
+  the set leave it out); no warning, since Offset Surface writes carved cells this way on purpose. An ignored point on
+  the same cell (same first cell and span) still counts toward the cell's surface offsets: the point that has the cell
+  reaches as far as any of them, so a cell written as several boxes reads as the box around them
+  (`ComputeSurfaceOffsets`). Move To Free Cell moves each later point to the free cell
+  nearest its own centre within `Move Radius` (default 1; a chunk's whole box must fit), after every point that kept its
+  place has claimed it, so a moved point never takes a later point's own cell; a point with no room is ignored with a
+  warning. Error fails, naming both points and the cell.
 
 Shared code lives in `PCGUtilsVoxel/Public/Voxel/PCGVoxelGrid.h`. `FPCGVoxelGrid::Build(PointData, Settings, Context)`
 validates the contract once and returns:
@@ -745,6 +757,10 @@ be any size and corners come out right. It takes over the planned phase-2 `Dilat
   (L-infinity) offset of the whole set: the whole part adds or removes that many layers (corners stay square), and
   the fraction then moves the open faces of the cells that are left. `-1.25` removes one layer and pulls the new
   surface in a quarter cell; a 5x5x5 block becomes a 2.5-cell cube.
+- `Axes` (added 2026-11-14 on request; bitmask X | Y | Z, default all three): the axes the offset moves along. An
+  axis left out gets no offset at all: no layers added or removed along it, its faces stay put, and inside corners
+  are not carved along it. X | Y offsets sideways only (one cell +1 is a 3x3 plate; -1 on a 3x3x3 keeps the middle
+  column). With some axes off, a growing cell's spare reach is measured over the axes left on.
 - `Units` (added 2026-11-10 on request): **Cells** (default; 1 is one cell width per axis) or **Absolute** (world
   units, turned into cells per axis by Voxel Size, so non-cubic cells get per-axis layers and fractions).
 - **Per-cell values** (either setting from a point attribute): falloff and masking (a scale of 0 leaves a cell
@@ -765,16 +781,15 @@ be any size and corners come out right. It takes over the planned phase-2 `Dilat
   look. The geometry is the same.
 - `Added Values` (positive, a cell or more): **Nearest** (default; the cell that grew into it) or **None** (default
   attributes; native properties still from that cell).
-- **Two pins** (changed 2026-11-10 on request; before, split cells made Out unusable for other voxel nodes):
-  - **Out**: In, mutated (CLAUDE.md rule): metadata, tags and `@Data` kept, chunks expanded to one point per cell
-    (the span attribute removed), cells ordered Z, Y, X. Always a valid voxel set: one point per cell, its bounds the
-    open-face box (surface offsets; `Voxel | To DynMesh` with Surface Offset From Point Bounds meshes it). A cell
-    carved at an inside corner keeps its open-face box and gets `WasSplit` = true (optional Boolean output,
-    `Was Split Attribute`). `IsSurrounded` is rewritten (section 1.3).
-  - **Spawn**: the boxes to spawn meshes on. A split cell is its carved boxes (several points on one cell, each
-    `WasSplit`); other cells are their open-face box. `Spawn Only Visible` (default on) leaves out cells that show no
-    face and were not carved, so it can feed a mesh spawner directly. Not a voxel set. `IsSurrounded` is the cell's,
-    and false on carved boxes (a diagonal notch shows).
+- **One pin** (changed 2026-11-14 on request: the separate Spawn pin went once two points on one cell stopped being
+  an error, section 1). **Out** is In, mutated (CLAUDE.md rule): metadata, tags and `@Data` kept, chunks expanded
+  (the span attribute removed), cells ordered Z, Y, X. Each cell is its open-face box (bounds as surface offsets);
+  a cell carved at an inside corner is instead its carved boxes, several points on one cell, the largest first, each
+  with `WasSplit` = true (optional Boolean output, `Was Split Attribute`). Other voxel nodes read a carved cell as
+  one filled cell; `Voxel | To DynMesh` (Surface Offset From Point Bounds, Exact offsets) reads it as the box around
+  its pieces, and the neighbours' walls close the notch, so the mesh is the exact shape of the boxes. `IsSurrounded`
+  is rewritten (section 1.3) and false on carved boxes (a diagonal notch shows); filter on it to spawn only visible
+  boxes (the old Spawn Only Visible).
 - Error when the box worked over (bounds plus grown layers plus one) is over `Max Cells` (default 64M), naming its
   size.
 
@@ -940,7 +955,7 @@ Before trusting a grid, a node checks that it matches the points, which needs no
 - every point's cells are occupied in the grid.
 
 When no two points fill one cell, these two together prove the grid holds exactly the points' cells. Duplicate cells
-(allowed under `Duplicate Cells: Keep First | Keep Last`, section 1) make the counts differ, so such a set always
+(Keep First, the default, and Keep Last; section 1) make the counts differ, so such a set always
 rebuilds. Cost: one occupancy read per cell, far less than building a grid. When the check fails, the node
 builds its own lookup as it does today and gives a note naming the reason (missing grid, cell count A against B, or
 the first point whose cell is empty). So a plain Uber Filter is always safe; the Voxel versions only save time.
@@ -1016,8 +1031,11 @@ a cell hash.
     Surrounded Attribute None leaves values alone.
   - Shift Seams reach: two 4-cell chunks move more than a cell, a chunk against a cell at most a cell, the old limit
     at most half a chunk; a strength of 0 on a box pins its seams; a strength of 2 is refused naming the point.
-  - Offset Surface pins: an L's Out has 3 points with only the corner `WasSplit`, Spawn 4; Out feeds another offset;
-    a notched block's Out is 26 cells; Spawn Only Visible spawns 98 of a 5-cube; stale `IsSurrounded` rewritten.
+  - Offset Surface split cells on Out: an L's Out has 4 points with the corner's 2 boxes `WasSplit`; Out feeds another
+    offset as 3 cells; the corner reads as its face box; meshed it is closed with the carved boxes' exact volume; a
+    notched block's Out is 31 points (middle 3 boxes); stale `IsSurrounded` rewritten.
+  - Offset Surface Axes: X | Y grows a quarter sideways only, +1 is a 3x3 plate, -1 on a 3x3x3 keeps the middle
+    column, the L corner carves into 2 full-height boxes; Z only grows a column; no axis leaves the cell alone.
   - Compress Random: boxes tile every cell exactly once, stay within Random Span, never mix unequal cells, and
     depend only on the seed; the palette alias presets the shape;
   - Bevel: a cube's chamfer volume matches the formula at 0.1, 0.25, 0.4 and 1 (octahedron); each of the six Full
@@ -1088,7 +1106,8 @@ In order. The designer asked for one at a time.
    for its output: a chunk is surrounded when every cell around its box is filled.
 3. **Done 2026-11-10** (section 4i, Out and Spawn). **Offset Surface keeps the grid.** Out stays a valid voxel set (whole layers applied; the cells split at inside
    corners flagged, e.g. `WasSplit`); a second pin carries the spawn points (the moved-face boxes and the split
-   pieces). Today split cells make Out unusable for other voxel nodes.
+   pieces). Today split cells make Out unusable for other voxel nodes. **Superseded 2026-11-14:** one pin; split cells
+   are several points on one cell, which every voxel node now reads (section 1, Duplicate Cells).
 4. **Done 2026-11-10** (section 1.2: Random Size, Random Span, Random Chance). **Compress Random controls.** A fixed chunk shape or size (compress to exactly this, or not at all) instead of
    only "anything up to the maximum"; a chance per chunk; chance and size as point shorthands read from the chunk's
    starting cell (first come, first served: cells already taken by another chunk are gone).

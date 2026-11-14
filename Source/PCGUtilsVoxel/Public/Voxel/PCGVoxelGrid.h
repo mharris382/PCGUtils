@@ -30,16 +30,24 @@ enum class EPCGVoxelOffGridPoints : uint8
 	Snap,
 };
 
-/** What to do when two points cover the same cell. */
+/**
+ * What to do when two points cover the same cell. Occupancy is all a voxel grid stores, so a shared cell is still
+ * just a filled cell; this only decides which point the cell reads its values from, and what happens to the others.
+ */
 UENUM(BlueprintType)
 enum class EPCGVoxelDuplicateCells : uint8
 {
-	/** The input fails with an error naming both points and the cell. */
+	/** The input fails with an error naming both points and the cell. Only for graphs that must never overlap. */
 	Error,
-	/** The earlier point keeps the cell; the later point is dropped whole. */
+	/** The earlier point keeps the cell; the later point is ignored (it covers no cell, and nodes that rewrite the set drop it). */
 	KeepFirst UMETA(DisplayName="Keep First"),
-	/** The later point takes the cell; the earlier point is dropped whole. */
+	/** The later point takes the cell; the earlier point is ignored. */
 	KeepLast UMETA(DisplayName="Keep Last"),
+	/**
+	 * The earlier point keeps the cell; the later point moves to the free cell nearest its own centre within Move
+	 * Radius (its whole box must fit, for a chunk). A point with no free cell that close is ignored, as Keep First.
+	 */
+	MoveToFreeCell UMETA(DisplayName="Move To Free Cell"),
 };
 
 /**
@@ -93,13 +101,22 @@ struct PCGUTILSVOXEL_API FPCGVoxelGridReadSettings
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Grid", meta=(PCG_Overridable, ClampMin="0", ClampMax="0.5"))
 	double GridTolerance = 0.01;
 
-	/** Error (default) fails the input on a point further than Grid Tolerance from the grid; Snap moves it to the nearest cell. */
+	/** Snap (default) reads a point further than Grid Tolerance from the grid as the nearest cell; Error fails the input. */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Grid", meta=(PCG_Overridable))
-	EPCGVoxelOffGridPoints OffGridPoints = EPCGVoxelOffGridPoints::Error;
+	EPCGVoxelOffGridPoints OffGridPoints = EPCGVoxelOffGridPoints::Snap;
 
-	/** Error (default) fails the input when two points cover one cell; Keep First / Keep Last drop one of them whole. */
+	/**
+	 * When two points cover one cell. Keep First (default) reads the cell from the earlier point and ignores the later
+	 * one, with a warning; Move To Free Cell moves the later one to a nearby free cell instead; Keep Last keeps the
+	 * later one; Error fails the input.
+	 */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Grid", meta=(PCG_Overridable))
-	EPCGVoxelDuplicateCells DuplicateCells = EPCGVoxelDuplicateCells::Error;
+	EPCGVoxelDuplicateCells DuplicateCells = EPCGVoxelDuplicateCells::KeepFirst;
+
+	/** Move To Free Cell: how many cells away (on each axis) a point may move to find a free cell. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Grid", meta=(PCG_Overridable, ClampMin="1", ClampMax="16",
+		EditCondition="DuplicateCells == EPCGVoxelDuplicateCells::MoveToFreeCell", EditConditionHides))
+	int32 MoveRadius = 1;
 };
 
 /**
@@ -122,6 +139,10 @@ struct PCGUTILSVOXEL_API FPCGVoxelGrid
 
 	/** Per point: false when Duplicate Cells dropped it. A dropped point covers no cell. */
 	TArray<bool> PointUsed;
+
+	/** How many points Duplicate Cells ignored, and how many it moved to a free cell (Build only). */
+	int32 NumIgnoredPoints = 0;
+	int32 NumMovedPoints = 0;
 
 	/** Every occupied cell, ordered by Z, then Y, then X. */
 	TArray<FIntVector> Cells;
@@ -206,6 +227,8 @@ struct PCGUTILSVOXEL_API FPCGVoxelGrid
 	/**
 	 * Per point, how far its bounds reach past the natural extent of the cells it covers, on each side, measured
 	 * outward (positive grows the surface). From point bounds times the point's scale; its rotation is ignored.
+	 * A point that has a cell also takes in the reach of the points Duplicate Cells ignored on that same cell (same
+	 * first cell and span), so a cell written as several boxes reads as the box around them.
 	 */
 	void ComputeSurfaceOffsets(const UPCGBasePointData* Points, TArray<FVector>& OutMinSide, TArray<FVector>& OutMaxSide) const;
 

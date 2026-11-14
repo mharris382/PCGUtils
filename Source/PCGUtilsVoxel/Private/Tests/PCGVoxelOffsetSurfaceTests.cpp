@@ -7,6 +7,7 @@
 #if WITH_AUTOMATION_TESTS
 
 #include "Elements/PCGVoxelOffsetSurface.h"
+#include "Elements/PCGVoxelToDynMesh.h"
 #include "PCGVoxelTestHelpers.h"
 
 namespace PCGVoxelOffsetSurfaceTests
@@ -21,15 +22,15 @@ namespace PCGVoxelOffsetSurfaceTests
 		int32 Id;
 	};
 
-	/** Runs the node and reads one pin: Out (the grid) by default, or Spawn. */
+	/** Runs the node and reads its one output pin. */
 	TArray<FOutPoint> Offset(const UPCGData* In, double Amount, TFunctionRef<void(UPCGVoxelOffsetSurfaceSettings&)> Edit,
-		TArray<FPCGTaggedData>* OutRaw = nullptr, FName Pin = PCGPinConstants::DefaultOutputLabel)
+		TArray<FPCGTaggedData>* OutRaw = nullptr)
 	{
 		UPCGVoxelOffsetSurfaceSettings* Settings = NewObject<UPCGVoxelOffsetSurfaceSettings>();
 		Settings->Amount.Constant = Amount;
 		Edit(*Settings);
 		const TArray<FPCGTaggedData> Outputs = Run<FPCGVoxelOffsetSurfaceElement>(Settings, { { PCGPinConstants::DefaultInputLabel, In } })
-			.FilterByPredicate([Pin](const FPCGTaggedData& Data) { return Data.Pin == Pin; });
+			.FilterByPredicate([](const FPCGTaggedData& Data) { return Data.Pin == PCGPinConstants::DefaultOutputLabel; });
 		if (OutRaw)
 		{
 			*OutRaw = Outputs;
@@ -58,18 +59,6 @@ namespace PCGVoxelOffsetSurfaceTests
 	TArray<FOutPoint> Offset(const UPCGData* In, double Amount)
 	{
 		return Offset(In, Amount, [](UPCGVoxelOffsetSurfaceSettings&) {});
-	}
-
-	/** The Spawn pin. */
-	TArray<FOutPoint> Spawn(const UPCGData* In, double Amount, TFunctionRef<void(UPCGVoxelOffsetSurfaceSettings&)> Edit,
-		TArray<FPCGTaggedData>* OutRaw = nullptr)
-	{
-		return Offset(In, Amount, Edit, OutRaw, PCGVoxelOffsetSurfacePins::Spawn);
-	}
-
-	TArray<FOutPoint> Spawn(const UPCGData* In, double Amount)
-	{
-		return Spawn(In, Amount, [](UPCGVoxelOffsetSurfaceSettings&) {});
 	}
 
 	/** Per point of the single dataset in Raw, the Boolean attribute Name (empty when missing). */
@@ -174,7 +163,7 @@ bool FPCGVoxelOffsetSurfaceCornersTest::RunTest(const FString& Parameters)
 	// An L of three cells: the corner cell (0,0) has the empty (1,1) diagonal. Shrinking a quarter splits it in two
 	// (an L in XY), the arms stay one box each.
 	const TArray<FIntVector> L = { FIntVector(0, 0, 0), FIntVector(1, 0, 0), FIntVector(0, 1, 0) };
-	const TArray<FOutPoint> Split = Spawn(MakeVoxels(L), -0.25);
+	const TArray<FOutPoint> Split = Offset(MakeVoxels(L), -0.25);
 	TestEqual(TEXT("split: 4 points"), Split.Num(), 4);
 	TestEqual(TEXT("corner cell in 2 boxes"), CountAt(Split, FIntVector(0, 0, 0)), 2);
 	TestEqual(TEXT("arm in 1 box"), CountAt(Split, FIntVector(1, 0, 0)), 1);
@@ -188,7 +177,7 @@ bool FPCGVoxelOffsetSurfaceCornersTest::RunTest(const FString& Parameters)
 		}
 	}
 
-	const TArray<FOutPoint> NoSplit = Spawn(MakeVoxels(L), -0.25, [](UPCGVoxelOffsetSurfaceSettings& S) { S.bSplitInnerCorners = false; });
+	const TArray<FOutPoint> NoSplit = Offset(MakeVoxels(L), -0.25, [](UPCGVoxelOffsetSurfaceSettings& S) { S.bSplitInnerCorners = false; });
 	TestEqual(TEXT("no split: 3 points"), NoSplit.Num(), 3);
 	TestNearlyEqual(TEXT("no split keeps the notch filled"), Volume(NoSplit), (0.75 * 0.75 * 0.5 + 2.0 * 0.1875) * 1e6, 1.0);
 
@@ -196,7 +185,7 @@ bool FPCGVoxelOffsetSurfaceCornersTest::RunTest(const FString& Parameters)
 	// cube of a quarter cell: 3 boxes.
 	TArray<FIntVector> Notched = Block(3, 3, 3);
 	Notched.Remove(FIntVector(2, 2, 2));
-	const TArray<FOutPoint> Carved = Spawn(MakeVoxels(Notched), -0.25);
+	const TArray<FOutPoint> Carved = Offset(MakeVoxels(Notched), -0.25);
 	TestEqual(TEXT("middle cell carved into 3 boxes"), CountAt(Carved, FIntVector(1, 1, 1)), 3);
 	double Middle = 0.0;
 	for (const FOutPoint& P : Carved)
@@ -411,59 +400,68 @@ bool FPCGVoxelOffsetSurfaceOverrideLabelTest::RunTest(const FString& Parameters)
 	return true;
 }
 
-IMPLEMENT_SIMPLE_AUTOMATION_TEST(FPCGVoxelOffsetSurfacePinsTest, "PCGUtils.Voxel.OffsetSurface.GridAndSpawnPins",
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FPCGVoxelOffsetSurfacePinsTest, "PCGUtils.Voxel.OffsetSurface.SplitCellsOnOut",
 	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
 
 bool FPCGVoxelOffsetSurfacePinsTest::RunTest(const FString& Parameters)
 {
 	using namespace PCGVoxelOffsetSurfaceTests;
 
-	// An L shrunk a quarter: Out keeps one point per cell (the corner flagged, with its open-face box); Spawn has the
-	// corner's two carved boxes.
+	TestEqual(TEXT("one output pin"), NewObject<UPCGVoxelOffsetSurfaceSettings>()->DefaultOutputPinProperties().Num(), 1);
+
+	// An L shrunk a quarter: Out has the corner's two carved boxes (both flagged, largest first) plus the arms.
 	const TArray<FIntVector> L = { FIntVector(0, 0, 0), FIntVector(1, 0, 0), FIntVector(0, 1, 0) };
 	TArray<FPCGTaggedData> GridRaw;
 	const TArray<FOutPoint> Grid = Offset(MakeVoxels(L), -0.25, [](UPCGVoxelOffsetSurfaceSettings&) {}, &GridRaw);
-	TestEqual(TEXT("Out: one point per cell"), Grid.Num(), 3);
+	TestEqual(TEXT("Out: the corner's 2 boxes plus the arms"), Grid.Num(), 4);
 	const TArray<bool> Split = Bools(GridRaw, TEXT("WasSplit"));
-	if (TestEqual(TEXT("Out: WasSplit on every point"), Split.Num(), 3))
+	if (TestEqual(TEXT("Out: WasSplit on every point"), Split.Num(), 4))
 	{
 		for (int32 Index = 0; Index < Grid.Num(); ++Index)
 		{
 			TestEqual(FString::Printf(TEXT("Out: WasSplit of %s"), *Grid[Index].Cell.ToString()), Split[Index], Grid[Index].Cell == FIntVector(0, 0, 0));
 		}
 	}
-	if (const FOutPoint* Corner = At(Grid, FIntVector(0, 0, 0)))
-	{
-		TestTrue(TEXT("Out: the split cell keeps its open-face box"), BoundsAre(Corner, FVector(-25, -25, -25), FVector(50, 50, 25)));
-	}
-	TArray<FPCGTaggedData> SpawnRaw;
-	const TArray<FOutPoint> Pieces = Spawn(MakeVoxels(L), -0.25, [](UPCGVoxelOffsetSurfaceSettings&) {}, &SpawnRaw);
-	TestEqual(TEXT("Spawn: the corner's 2 boxes plus the arms"), Pieces.Num(), 4);
-	int32 SplitPieces = 0;
-	for (const bool bSplit : Bools(SpawnRaw, TEXT("WasSplit")))
-	{
-		SplitPieces += bSplit ? 1 : 0;
-	}
-	TestEqual(TEXT("Spawn: the 2 carved boxes are flagged"), SplitPieces, 2);
 
-	// Out is a valid voxel set again: a second offset reads it without a duplicate-cell error.
 	if (GridRaw.Num() == 1)
 	{
+		// Out feeds another voxel node: the corner reads as one filled cell.
 		TestEqual(TEXT("Out feeds another voxel node"), Offset(GridRaw[0].Data, 0.0).Num(), 3);
+
+		// The cell's points read as the box around them: the open-face box (-25..50, -25..50, -25..25).
+		FPCGVoxelGrid Read;
+		const UPCGBasePointData* OutPoints = Cast<UPCGBasePointData>(GridRaw[0].Data);
+		if (TestTrue(TEXT("Out reads as a voxel set"), FPCGVoxelGrid::Build(nullptr, OutPoints, FPCGVoxelGridReadSettings(), FText::FromString(TEXT("Voxel Test")), 0, Read)))
+		{
+			TArray<FVector> MinSide, MaxSide;
+			Read.ComputeSurfaceOffsets(OutPoints, MinSide, MaxSide);
+			const int32 Owner = Read.FindPoint(FIntVector(0));
+			TestTrue(TEXT("the corner reads as the box around its pieces"), Owner != INDEX_NONE
+				&& MinSide[Owner].Equals(FVector(-25.0), 1e-6) && MaxSide[Owner].Equals(FVector(0.0, 0.0, -25.0), 1e-6));
+		}
+
+		// Meshed (Exact offsets): the exact shape of the carved boxes, notch left open. The corner reads as its face
+		// box, and the arms' walls close the notch: corner (0.75^2 - 0.25^2) x 0.5, each arm 0.75 x 0.5 x 0.5, cells of 100.
+		UPCGVoxelToDynMeshSettings* MeshSettings = NewObject<UPCGVoxelToDynMeshSettings>();
+		MeshSettings->SurfaceOffset = EPCGVoxelSurfaceOffset::FromPointBounds;
+		const UE::Geometry::FDynamicMesh3* Mesh = MeshOf(Run<FPCGVoxelToDynMeshElement>(MeshSettings, { { PCGPinConstants::DefaultInputLabel, GridRaw[0].Data } }));
+		if (TestNotNull(TEXT("Out meshes"), Mesh))
+		{
+			TestEqual(TEXT("mesh is closed"), OpenEdges(*Mesh), 0);
+			TestNearlyEqual(TEXT("mesh volume is the carved boxes"), PCGVoxelTestHelpers::Volume(*Mesh), (0.25 + 2.0 * 0.1875) * 1e6, 1.0);
+		}
 	}
 
-	// A notch inside a 3x3x3: Out has 26 cells, the middle (all six neighbours filled) flagged with a whole-cell box.
+	// A notch inside a 3x3x3: the middle cell (all six neighbours filled) is its 3 carved boxes, flagged and visible.
 	TArray<FIntVector> Notched = Block(3, 3, 3);
 	Notched.Remove(FIntVector(2, 2, 2));
 	const TArray<FOutPoint> NotchedGrid = Offset(MakeVoxels(Notched), -0.25);
-	TestEqual(TEXT("notched Out: 26 cells"), NotchedGrid.Num(), 26);
-	TestTrue(TEXT("notched Out: the middle keeps a whole cell"), BoundsAre(At(NotchedGrid, FIntVector(1, 1, 1)), FVector(-50.0), FVector(50.0)));
+	TestEqual(TEXT("notched Out: the middle in 3 boxes"), CountAt(NotchedGrid, FIntVector(1, 1, 1)), 3);
+	// The three cells touching the notch along an edge split in 2: 26 cells, +2 for the middle, +3 for those.
+	TestEqual(TEXT("notched Out: 31 points"), NotchedGrid.Num(), 31);
 
-	// Spawn Only Visible: a 5x5x5 grown a quarter spawns its 98 surface cells, not the hidden 27.
+	// Hidden cells stay on Out (filter on Is Surrounded to spawn only visible ones).
 	TestEqual(TEXT("5x5x5 Out: 125 cells"), Offset(MakeVoxels(Block(5, 5, 5)), 0.25).Num(), 125);
-	TestEqual(TEXT("5x5x5 Spawn: 98 visible"), Spawn(MakeVoxels(Block(5, 5, 5)), 0.25).Num(), 98);
-	TestEqual(TEXT("5x5x5 Spawn, every cell"),
-		Spawn(MakeVoxels(Block(5, 5, 5)), 0.25, [](UPCGVoxelOffsetSurfaceSettings& S) { S.bSpawnOnlyVisible = false; }).Num(), 125);
 
 	// IsSurrounded on the input is rewritten for the offset cells: -1 on 5x5x5 leaves 27, only the middle hidden.
 	UPCGPointArrayData* WithFlag = MakeVoxels(Block(5, 5, 5));
@@ -488,4 +486,51 @@ bool FPCGVoxelOffsetSurfacePinsTest::RunTest(const FString& Parameters)
 	return true;
 }
 
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FPCGVoxelOffsetSurfaceAxesTest, "PCGUtils.Voxel.OffsetSurface.Axes",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+
+bool FPCGVoxelOffsetSurfaceAxesTest::RunTest(const FString& Parameters)
+{
+	using namespace PCGVoxelOffsetSurfaceTests;
+	const int32 XY = static_cast<int32>(EPCGVoxelAxes::X | EPCGVoxelAxes::Y);
+	auto OnlyXY = [XY](UPCGVoxelOffsetSurfaceSettings& S) { S.Axes = XY; };
+
+	TestEqual(TEXT("default: X, Y and Z"), NewObject<UPCGVoxelOffsetSurfaceSettings>()->Axes, static_cast<int32>(EPCGVoxelAxes::All));
+
+	// A fraction moves only the X and Y faces.
+	const TArray<FOutPoint> Faces = Offset(MakeVoxels({ FIntVector(0) }), 0.25, OnlyXY);
+	TestTrue(TEXT("X | Y: +0.25 grows sideways only"), Faces.Num() == 1 && BoundsAre(&Faces[0], FVector(-75, -75, -50), FVector(75, 75, 50)));
+
+	// Whole layers grow sideways only: one cell +1 is a 3x3 plate.
+	const TArray<FOutPoint> Plate = Offset(MakeVoxels({ FIntVector(0) }), 1.0, OnlyXY);
+	TestEqual(TEXT("X | Y: +1 gives a 3x3 plate"), Plate.Num(), 9);
+	TestTrue(TEXT("X | Y: nothing above or below"), !Plate.ContainsByPredicate([](const FOutPoint& P) { return P.Cell.Z != 0; }));
+
+	// A shrink by a layer peels the sides, not the top and bottom: a 3x3x3 keeps its middle column.
+	const TArray<FOutPoint> Column = Offset(MakeVoxels(Block(3, 3, 3)), -1.0, OnlyXY);
+	TestEqual(TEXT("X | Y: -1 on 3x3x3 keeps the middle column"), Column.Num(), 3);
+	TestTrue(TEXT("X | Y: the column is the middle"), !Column.ContainsByPredicate([](const FOutPoint& P) { return P.Cell.X != 1 || P.Cell.Y != 1; }));
+
+	// Inside corners carve only along X and Y: the L corner splits into 2 full-height boxes.
+	const TArray<FIntVector> L = { FIntVector(0, 0, 0), FIntVector(1, 0, 0), FIntVector(0, 1, 0) };
+	const TArray<FOutPoint> Corner = Offset(MakeVoxels(L), -0.25, OnlyXY);
+	TestEqual(TEXT("X | Y: corner in 2 boxes"), CountAt(Corner, FIntVector(0, 0, 0)), 2);
+	TestTrue(TEXT("X | Y: every box keeps its full height"), !Corner.ContainsByPredicate([](const FOutPoint& P)
+	{
+		return !FMath::IsNearlyEqual(P.Min.Z, -50.0, 1e-6) || !FMath::IsNearlyEqual(P.Max.Z, 50.0, 1e-6);
+	}));
+	// Corner (0.75^2 - 0.25^2) x 1, each arm 0.75 x 0.5 x 1; in cells of 100.
+	TestNearlyEqual(TEXT("X | Y: corner volume"), Volume(Corner), (0.5 + 2.0 * 0.375) * 1e6, 1.0);
+
+	// Only Z: a cell grows up and down.
+	const TArray<FOutPoint> Tall = Offset(MakeVoxels({ FIntVector(0) }), 1.0, [](UPCGVoxelOffsetSurfaceSettings& S) { S.Axes = static_cast<int32>(EPCGVoxelAxes::Z); });
+	TestEqual(TEXT("Z: +1 gives a column of 3"), Tall.Num(), 3);
+
+	// No axis: nothing moves.
+	const TArray<FOutPoint> Still = Offset(MakeVoxels({ FIntVector(0) }), 1.5, [](UPCGVoxelOffsetSurfaceSettings& S) { S.Axes = 0; });
+	TestTrue(TEXT("no axis: the cell is left as it is"), Still.Num() == 1 && BoundsAre(&Still[0], FVector(-50.0), FVector(50.0)));
+	return true;
+}
+
 #endif
+

@@ -171,6 +171,12 @@ bool FPCGVoxelExtrudeRemoveTest::RunTest(const FString&)
 		[](UPCGVoxelExtrudeSettings& S) { S.Amount.SetAttribute(TEXT("ExtrudeAmount")); });
 	TestTrue(*FString::Printf(TEXT("Removal wins over growth into the same cell (%s)"), *Describe(Mixed)),
 		Mixed.Num() == 1 && Mixed.Contains(FIntVector(3, 0, 0)));
+
+	// Two points in one cell no longer stop the node: the first point is the cell and the other is ignored.
+	UPCGPointArrayData* Shared = MakeVoxels({ FIntVector(0), FIntVector(0) });
+	const TMap<FIntVector, FOutCell> Grown = Extrude(Shared, FVector(0, 0, 1), 1.0);
+	TestTrue(*FString::Printf(TEXT("A shared cell still extrudes (%s)"), *Describe(Grown)),
+		Grown.Num() == 2 && Grown.Contains(FIntVector(0, 0, 1)));
 	return true;
 }
 

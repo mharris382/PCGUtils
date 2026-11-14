@@ -10,11 +10,17 @@
 
 #include "PCGVoxelOffsetSurface.generated.h"
 
-namespace PCGVoxelOffsetSurfacePins
+/** Grid axes, as flags. */
+UENUM(BlueprintType, meta=(Bitflags, UseEnumValuesAsMaskValuesInEditor="true"))
+enum class EPCGVoxelAxes : uint8
 {
-	/** The boxes to spawn meshes on (split pieces included, hidden cells left out). */
-	const FName Spawn = TEXT("Spawn");
-}
+	None = 0 UMETA(Hidden),
+	X = 1 << 0,
+	Y = 1 << 1,
+	Z = 1 << 2,
+	All = X | Y | Z UMETA(Hidden),
+};
+ENUM_CLASS_FLAGS(EPCGVoxelAxes);
 
 /** What Amount is measured in. */
 UENUM(BlueprintType)
@@ -63,12 +69,12 @@ enum class EPCGVoxelOffsetAddedValues : uint8
  * value per point, so per cell, or one @Data value per set). The whole part adds or removes layers of cells;
  * the fraction moves the cell's open faces (written to the point bounds, the point staying on its cell centre). Corners
  * stay square, as in a box offset; with Split Inner Corners a shrink carves inside corners too by splitting those cells
- * into boxes.
+ * into boxes. Axes limits the offset to some grid axes (X | Y leaves Z alone).
  *
- * Out: In, mutated and still a valid voxel set: one point per cell (a chunked set is expanded), metadata, tags and
- * @Data kept, bounds moved on the open faces. Cells carved at inside corners are flagged with Was Split Attribute.
- * Spawn: the same cells as boxes to spawn on; a split cell becomes its carved boxes (several points on one cell), and
- * cells that can never be seen are left out.
+ * Out: In, mutated and still a valid voxel set: one point per box (a chunked set is expanded), metadata, tags and
+ * @Data kept, bounds moved on the open faces. A cell carved at an inside corner is written as its carved boxes, several
+ * points on one cell (voxel nodes read the cell as filled; meshing reads the box around them), each flagged with Was
+ * Split Attribute.
  */
 UCLASS(BlueprintType, ClassGroup=(Procedural), Category="PCGUtils|Voxel",
 	meta=(Keywords="voxel voxels offset surface grow shrink inset outset erode dilate thicken thin bounds open sides push corner split"))
@@ -96,6 +102,13 @@ public:
 	 */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Settings", meta=(PCG_Overridable))
 	FPCGUtilsPointShorthandDouble Amount = FPCGUtilsPointShorthandDouble(0.25, TEXT("OffsetAmount"));
+
+	/**
+	 * Which grid axes the offset moves along (default X, Y and Z). X | Y offsets sideways only: no layers are added or
+	 * removed above or below, and the top and bottom faces stay where they are. No axis leaves every cell as it is.
+	 */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Settings", meta=(PCG_Overridable, Bitmask, BitmaskEnum="/Script/PCGUtilsVoxel.EPCGVoxelAxes"))
+	int32 Axes = static_cast<int32>(EPCGVoxelAxes::All);
 
 	/** Cells (default): 1 is one cell width. Absolute: world units, the same distance on every axis. */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Settings", meta=(PCG_Overridable))
@@ -130,18 +143,11 @@ public:
 	bool bWriteWasSplit = true;
 
 	/**
-	 * Optional output, Boolean, on Out and Spawn: true for a cell carved at an inside corner (Split Inner Corners). On
-	 * Out its point keeps the open-face box; on Spawn the cell is its carved boxes, each flagged.
+	 * Optional output, Boolean: true on each of the boxes a cell was carved into at an inside corner (Split Inner
+	 * Corners); false on every other point.
 	 */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Outputs", meta=(PCG_Overridable, EditCondition="bWriteWasSplit"))
 	FName WasSplitAttribute = TEXT("WasSplit");
-
-	/**
-	 * Spawn leaves out cells that show no face and were not carved (all six neighbours filled after the offset), so it
-	 * can feed a mesh spawner directly. Off: every cell.
-	 */
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Outputs", meta=(PCG_Overridable))
-	bool bSpawnOnlyVisible = true;
 
 	/** The node stops with an error when the box of cells it works over (the set's bounds, plus the added layers) has more cells than this. */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Settings", meta=(PCG_Overridable, ClampMin="1"))
