@@ -1,5 +1,6 @@
 #include "Elements/PCGGetPathData.h"
 
+#include "Modifiers/PCGUtilsModifierStack.h"
 #include "PCGUtilsHelpers.h"
 #include "Algo/Transform.h"
 #include "Components/ActorComponent.h"
@@ -120,13 +121,20 @@ void FPCGGetPathElement::ProcessActor(
 		const FPathComponentData PathData = IPCGPathProvider::Execute_GetPathData(Provider);
 
 		// One output per path. PathIndex is INDEX_NONE for a single-path provider, which writes no path attributes.
+		// ModifiedSpline: a result of the provider's modifier stack. In spline mode it is emitted as is; in points
+		// mode ProviderPoints are its control points and its @Data (modifier attributes) is carried over.
 		auto EmitPath = [&](TArray<FPCGPathPoint>&& ProviderPoints, bool bIsLocalSpace, bool bIsLinearPath, bool bIsClosed,
-			int32 PathIndex, bool bIsHole)
+			int32 PathIndex, bool bIsHole, UPCGSplineData* ModifiedSpline)
 		{
 			UPCGData* ProducedData = nullptr;
 			UPCGMetadata* Metadata = nullptr;
 
-			if (GetSettings->OutputMode == EPCGPathDataOutputMode::SplineData)
+			if (GetSettings->OutputMode == EPCGPathDataOutputMode::SplineData && ModifiedSpline)
+			{
+				ProducedData = ModifiedSpline;
+				Metadata = ModifiedSpline->MutableMetadata();
+			}
+			else if (GetSettings->OutputMode == EPCGPathDataOutputMode::SplineData)
 			{
 				UPCGSplineData* SplineData = FPCGContext::NewObject_AnyThread<UPCGSplineData>(Context);
 				const USplineComponent* SplineComponent = PathIndex == INDEX_NONE ? Cast<USplineComponent>(Provider) : nullptr;
@@ -177,6 +185,7 @@ void FPCGGetPathElement::ProcessActor(
 				if (!PointData) return;
 				ProducedData = PointData;
 				Metadata = PointData->MutableMetadata();
+				FPCGUtilsModifierHelpers::CopyDataDomain(ModifiedSpline, PointData);
 
 				if (Metadata && !bIsLinearPath)
 				{
@@ -246,6 +255,36 @@ void FPCGGetPathElement::ProcessActor(
 			TaggedData.Tags.Append(AdditionalTags);
 		};
 
+		// Runs the provider's modifier stack, when it has one, and emits every result.
+		auto EmitThroughStack = [&](TArray<FPCGPathPoint>&& ProviderPoints, bool bIsLocalSpace, bool bIsLinearPath, bool bIsClosed,
+			int32 PathIndex, bool bIsHole)
+		{
+			if (!FPCGUtilsModifierHelpers::HasStack(Provider))
+			{
+				EmitPath(MoveTemp(ProviderPoints), bIsLocalSpace, bIsLinearPath, bIsClosed, PathIndex, bIsHole, nullptr);
+				return;
+			}
+
+			UPCGSplineData* SourceSpline = nullptr;
+			const USplineComponent* SplineComponent = PathIndex == INDEX_NONE ? Cast<USplineComponent>(Provider) : nullptr;
+			if (SplineComponent && GetSettings->OutputMode == EPCGPathDataOutputMode::SplineData)
+			{
+				SourceSpline = FPCGContext::NewObject_AnyThread<UPCGSplineData>(Context);
+				SourceSpline->Initialize(SplineComponent);
+			}
+			else
+			{
+				if (ProviderPoints.IsEmpty()) return;
+				SourceSpline = FPCGUtilsModifierHelpers::MakeSpline(Context, ProviderPoints, bIsLocalSpace, LocalToWorld, bIsLinearPath, bIsClosed);
+			}
+
+			for (UPCGSplineData* Result : FPCGUtilsModifierHelpers::ApplyOwnerStackToPath(Context, Provider, SourceSpline))
+			{
+				EmitPath(FPCGUtilsModifierHelpers::SplineToPathPoints(Result), /*bIsLocalSpace=*/false,
+					FPCGUtilsModifierHelpers::IsLinearSpline(Result), Result->IsClosed(), PathIndex, bIsHole, Result);
+			}
+		};
+
 		const int32 PathCount = IPCGPathProvider::Execute_GetPCGPathCount(Provider);
 		if (PathCount <= 0)
 		{
@@ -259,7 +298,7 @@ void FPCGGetPathElement::ProcessActor(
 				ProviderPoints = IPCGPathProvider::Execute_GetPCGPathPoints(Provider, bIsLocalSpace, bIsLinearPath, bIsClosed);
 				if (ProviderPoints.IsEmpty()) return;
 			}
-			EmitPath(MoveTemp(ProviderPoints), bIsLocalSpace, bIsLinearPath, bIsClosed, INDEX_NONE, false);
+			EmitThroughStack(MoveTemp(ProviderPoints), bIsLocalSpace, bIsLinearPath, bIsClosed, INDEX_NONE, false);
 			return;
 		}
 
@@ -271,7 +310,7 @@ void FPCGGetPathElement::ProcessActor(
 			bool bIsHole = false;
 			TArray<FPCGPathPoint> ProviderPoints = IPCGPathProvider::Execute_GetPCGPathPointsAt(
 				Provider, PathIndex, bIsLocalSpace, bIsLinearPath, bIsClosed, bIsHole);
-			EmitPath(MoveTemp(ProviderPoints), bIsLocalSpace, bIsLinearPath, bIsClosed, PathIndex, bIsHole);
+			EmitThroughStack(MoveTemp(ProviderPoints), bIsLocalSpace, bIsLinearPath, bIsClosed, PathIndex, bIsHole);
 		}
 	};
 

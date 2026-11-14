@@ -6,10 +6,11 @@
 #include "Interfaces/PCGPathProvider.h"
 #include "OverrideGraphs.h"
 #include "ShapePath/ShapePathGenerator.h"
+#include "Modifiers/PCGUtilsModifierStack.h"
 #include "ShapePathComponent.generated.h"
 
 UCLASS(ClassGroup=(Custom), meta=(BlueprintSpawnableComponent))
-class PCGUTILS_API UShapePathComponent : public USceneComponent, public IPCGPathProvider, public IPCGBoundsProvider
+class PCGUTILS_API UShapePathComponent : public USceneComponent, public IPCGPathProvider, public IPCGBoundsProvider, public IPCGUtilsModifierStackOwner
 {
 	GENERATED_BODY()
 public:
@@ -23,6 +24,14 @@ public:
 	/** Standardized path data used by PCG path getter elements. */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "PCG", meta = (DisplayPriority=1, ShowOnlyInnerProperties))
 	FPathComponentData PathData;
+
+	/** Modifiers applied, top first, to what PCG reads from this component. The component itself is never changed. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Modifiers", meta=(ShowOnlyInnerProperties))
+	FPCGUtilsModifierStack ModifierStack;
+
+	//~ IPCGUtilsModifierStackOwner
+	virtual const FPCGUtilsModifierStack* GetModifierStack() const override { return &ModifierStack; }
+	virtual FPCGUtilsModifierStack* GetMutableModifierStack() override { return &ModifierStack; }
 
 	// Legacy fields are intentionally retained for asset migration.
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="PCG|Depricated")

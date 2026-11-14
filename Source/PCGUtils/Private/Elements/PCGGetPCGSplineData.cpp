@@ -1,5 +1,6 @@
 #include "Elements/PCGGetPCGSplineData.h"
 
+#include "Modifiers/PCGUtilsModifierStack.h"
 #include "Components/PCGSplineComponent.h"
 #include "Data/PCGUtilsComponentData.h"
 #include "Data/PCGSplineData.h"
@@ -67,38 +68,43 @@ void FPCGGetPCGSplineDataElement::ProcessActor(
 			continue;
 		}
 
-		UPCGSplineData* SplineData = FPCGContext::NewObject_AnyThread<UPCGSplineData>(Context);
-		SplineData->Initialize(SplineComponent);
-		
-		if (SplineData->Metadata)
+		UPCGSplineData* SourceSpline = FPCGContext::NewObject_AnyThread<UPCGSplineData>(Context);
+		SourceSpline->Initialize(SplineComponent);
+
+		// The component's modifier stack decides what PCG receives (one spline can become several).
+		for (UPCGSplineData* SplineData : FPCGUtilsModifierHelpers::ApplyOwnerStackToPath(Context, Comp, SourceSpline))
 		{
-			if (GetSettings->IsClosedAttributeName.IsNone())
+			const bool bIsClosed = SplineData->IsClosed();
+			if (SplineData->Metadata)
 			{
-				PCGE_LOG(Error, GraphAndLog, FText::Format(
-					LOCTEXT("EmptyIsClosedAttributeName",
-						"Get PCG Spline Data could not write the closed-state metadata for component {0}: IsClosedAttributeName is None; expected a nonempty @Data Bool attribute name."),
-					FText::FromString(GetNameSafe(Comp))));
-			}
-			else if (FPCGMetadataAttribute<bool>* IsClosedAttribute =
-					SplineData->Metadata->FindOrCreateAttribute<bool>(
-						FPCGAttributeIdentifier(GetSettings->IsClosedAttributeName, PCGMetadataDomainID::Data),
-						SplineComponent->IsClosedLoop(),false,false,true))
-			{
-				IsClosedAttribute->SetValue(PCGInvalidEntryKey, SplineComponent->IsClosedLoop());
-			}
+				if (GetSettings->IsClosedAttributeName.IsNone())
+				{
+					PCGE_LOG(Error, GraphAndLog, FText::Format(
+						LOCTEXT("EmptyIsClosedAttributeName",
+							"Get PCG Spline Data could not write the closed-state metadata for component {0}: IsClosedAttributeName is None; expected a nonempty @Data Bool attribute name."),
+						FText::FromString(GetNameSafe(Comp))));
+				}
+				else if (FPCGMetadataAttribute<bool>* IsClosedAttribute =
+						SplineData->Metadata->FindOrCreateAttribute<bool>(
+							FPCGAttributeIdentifier(GetSettings->IsClosedAttributeName, PCGMetadataDomainID::Data),
+							bIsClosed, false, false, true))
+				{
+					IsClosedAttribute->SetValue(PCGInvalidEntryKey, bIsClosed);
+				}
 			
 
-			UPCGUtilPathDataLibrary::GetPathDataFromSettings(
-				SplineData->Metadata, &GetSettings->PathSettings, &Comp->PathData);
-			UPCGUtilPathDataLibrary::GetComponentDataFromSettings(
-				SplineData->Metadata, &GetSettings->ComponentSettings, Comp);
-			WriteAdditionalSplineMetadata(Context, GetSettings, Comp, SplineData);
-		}
+				UPCGUtilPathDataLibrary::GetPathDataFromSettings(
+					SplineData->Metadata, &GetSettings->PathSettings, &Comp->PathData);
+				UPCGUtilPathDataLibrary::GetComponentDataFromSettings(
+					SplineData->Metadata, &GetSettings->ComponentSettings, Comp);
+				WriteAdditionalSplineMetadata(Context, GetSettings, Comp, SplineData);
+			}
 
-		FPCGTaggedData& TaggedData = Context->OutputData.TaggedData.Emplace_GetRef();
-		TaggedData.Data = SplineData;
-		Algo::Transform(SplineComponent->ComponentTags, TaggedData.Tags, NameTagsToStringTags);
-		TaggedData.Tags.Append(ActorTags);
+			FPCGTaggedData& TaggedData = Context->OutputData.TaggedData.Emplace_GetRef();
+			TaggedData.Data = SplineData;
+			Algo::Transform(SplineComponent->ComponentTags, TaggedData.Tags, NameTagsToStringTags);
+			TaggedData.Tags.Append(ActorTags);
+		}
 	}
 }
 

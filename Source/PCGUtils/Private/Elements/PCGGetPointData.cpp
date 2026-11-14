@@ -1,5 +1,6 @@
 #include "Elements/PCGGetPointData.h"
 
+#include "Modifiers/PCGUtilsModifierStack.h"
 #include "Algo/Transform.h"
 #include "Components/ActorComponent.h"
 #include "Components/SceneComponent.h"
@@ -61,7 +62,7 @@ void FPCGGetPointDataElement::ProcessActor(
 	for (UActorComponent* Component : Components)
 	{
 		if (!IsValid(Component)
-			|| Settings->ComponentSelector.FilterComponent(Component)
+			|| !Settings->ComponentSelector.FilterComponent(Component)
 			|| !Component->GetClass()->ImplementsInterface(UPCGPointProvider::StaticClass()))
 		{
 			continue;
@@ -111,10 +112,13 @@ void FPCGGetPointDataElement::ProcessActor(
 			}
 		}
 
-		FPCGTaggedData& TaggedData = Context->OutputData.TaggedData.Emplace_GetRef();
-		TaggedData.Data = PointData;
-		Algo::Transform(Component->ComponentTags, TaggedData.Tags, NameToString);
-		TaggedData.Tags.Append(ActorTags);
+		for (UPCGBasePointData* Result : FPCGUtilsModifierHelpers::ApplyOwnerStackToPoints(Context, Component, PointData))
+		{
+			FPCGTaggedData& TaggedData = Context->OutputData.TaggedData.Emplace_GetRef();
+			TaggedData.Data = Result;
+			Algo::Transform(Component->ComponentTags, TaggedData.Tags, NameToString);
+			TaggedData.Tags.Append(ActorTags);
+		}
 	}
 }
 

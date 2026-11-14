@@ -5,6 +5,7 @@
 #include "Data/PCGUtilsComponentData.h"
 #include "Interfaces/PCGPathProvider.h"
 #include "OverrideGraphs.h"
+#include "Modifiers/PCGUtilsModifierStack.h"
 #include "PCGSplineComponent.generated.h"
 
 enum class ESplineLoopMode : uint8
@@ -15,7 +16,7 @@ enum class ESplineLoopMode : uint8
 };
 
 UCLASS(ClassGroup = "PCG", meta = (BlueprintSpawnableComponent), BlueprintType, Blueprintable)
-class PCGUTILS_API UPCGSplineComponent : public USplineComponent, public IPCGPathProvider
+class PCGUTILS_API UPCGSplineComponent : public USplineComponent, public IPCGPathProvider, public IPCGUtilsModifierStackOwner
 {
 	GENERATED_BODY()
 
@@ -33,6 +34,14 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "PCG",
 		meta = (DisplayPriority = 0, ShowOnlyInnerProperties, SkipUCSModifiedProperties))
 	FPathComponentData PathData;
+
+	/** Modifiers applied, top first, to what PCG reads from this component. The component itself is never changed. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Modifiers", meta=(ShowOnlyInnerProperties))
+	FPCGUtilsModifierStack ModifierStack;
+
+	//~ IPCGUtilsModifierStackOwner
+	virtual const FPCGUtilsModifierStack* GetModifierStack() const override { return &ModifierStack; }
+	virtual FPCGUtilsModifierStack* GetMutableModifierStack() override { return &ModifierStack; }
 
 	/** Extra interior samples added to curved spline segments when producing path points. */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, AdvancedDisplay, Category = "PCG", meta = (ClampMin = 0, UIMin = 0))

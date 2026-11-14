@@ -8,11 +8,12 @@
 #include "Interfaces/PCGPointProvider.h"
 #include "OverrideGraphs.h"
 #include "Components/SceneComponent.h"
+#include "Modifiers/PCGUtilsModifierStack.h"
 #include "PCGMarkerComponent.generated.h"
 
 
 UCLASS(ClassGroup="PCG", meta=(BlueprintSpawnableComponent), BlueprintType, Blueprintable)
-class PCGUTILS_API UPCGMarkerComponent : public USceneComponent, public IPCGBoundsProvider, public IPCGPointProvider
+class PCGUTILS_API UPCGMarkerComponent : public USceneComponent, public IPCGBoundsProvider, public IPCGPointProvider, public IPCGUtilsModifierStackOwner
 {
 	GENERATED_BODY()
 
@@ -34,6 +35,14 @@ public:
 	/** General-purpose data used to construct the marker's output point. */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Marker", meta = (ShowOnlyInnerProperties))
 	FPointComponentData PointData;
+
+	/** Modifiers applied, top first, to what PCG reads from this component. The component itself is never changed. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Modifiers", meta=(ShowOnlyInnerProperties))
+	FPCGUtilsModifierStack ModifierStack;
+
+	//~ IPCGUtilsModifierStackOwner
+	virtual const FPCGUtilsModifierStack* GetModifierStack() const override { return &ModifierStack; }
+	virtual FPCGUtilsModifierStack* GetMutableModifierStack() override { return &ModifierStack; }
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category= "Marker|Legacy", meta=(DeprecatedProperty, DeprecationMessage="Use PointData.GroupID instead."))
 	int32 MarkerGroupID = 0;

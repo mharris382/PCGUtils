@@ -30,6 +30,7 @@ public class PCGUtils : ModuleRules
             new string[]
             {
                 "GeometryCore",
+                "GeometryAlgorithms",
                 "GeometryFramework",
                 "ModelingComponents",
             }

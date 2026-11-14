@@ -2,6 +2,7 @@
 
 #include "Elements/PCGGetMarkerData.h"
 
+#include "Modifiers/PCGUtilsModifierStack.h"
 #include "Components/PCGMarkerComponent.h"
 #include "Data/PCGPointData.h"
 #include "Metadata/PCGMetadata.h"
@@ -110,10 +111,14 @@ void FPCGGetMarkerDataElement::ProcessActor(
 			AddMetadataFromMarker(Context, ShapeSettings, FoundActor, ShapeComp, Meta);
 		}
 		
-		FPCGTaggedData& TaggedData = Context->OutputData.TaggedData.Emplace_GetRef();
-		TaggedData.Data = PointData;
-		Algo::Transform(ShapeComp->ComponentTags, TaggedData.Tags, NameToString);
-		TaggedData.Tags.Append(ActorTags);
+		// The marker's modifier stack decides what PCG actually receives (one marker can become many).
+		for (UPCGBasePointData* Result : FPCGUtilsModifierHelpers::ApplyOwnerStackToPoints(Context, ShapeComp, PointData))
+		{
+			FPCGTaggedData& TaggedData = Context->OutputData.TaggedData.Emplace_GetRef();
+			TaggedData.Data = Result;
+			Algo::Transform(ShapeComp->ComponentTags, TaggedData.Tags, NameToString);
+			TaggedData.Tags.Append(ActorTags);
+		}
 	}
 }
 
