@@ -67,14 +67,15 @@ enum class EPCGVoxelOffsetAddedValues : uint8
  * Offsets the surface of a voxel set, like adding the open-side vectors to each cell's bounds, but aware of the grid.
  * Each cell's offset is Amount x Amount Scale (in cells or world units); each is a constant or an attribute (one
  * value per point, so per cell, or one @Data value per set). The whole part adds or removes layers of cells;
- * the fraction moves the cell's open faces (written to the point bounds, the point staying on its cell centre). Corners
- * stay square, as in a box offset; with Split Inner Corners a shrink carves inside corners too by splitting those cells
- * into boxes. Axes limits the offset to some grid axes (X | Y leaves Z alone).
+ * the fraction is a part cell (written to the point bounds, the point staying on its cell centre). No box ever leaves
+ * its cell: growing 3.5 adds three layers of cells, then a layer of cells half deep. A grown cell's reach is its box
+ * grown by its amount (a box offset, so corners stay square), and a cell reached by several keeps the union of their
+ * parts, each copying its own grower. A shrink moves the open faces in; with Split Inner Corners it carves inside
+ * corners too. Axes limits the offset to some grid axes (X | Y leaves Z alone).
  *
  * Out: In, mutated and still a valid voxel set: one point per box (a chunked set is expanded), metadata, tags and
- * @Data kept, bounds moved on the open faces. A cell carved at an inside corner is written as its carved boxes, several
- * points on one cell (voxel nodes read the cell as filled; meshing reads the box around them), each flagged with Was
- * Split Attribute.
+ * @Data kept. A cell that takes more than one box (an inside corner grown, or carved on a shrink) is written as several
+ * points on one cell (voxel nodes read the cell as filled), each flagged with Was Split Attribute.
  */
 UCLASS(BlueprintType, ClassGroup=(Procedural), Category="PCGUtils|Voxel",
 	meta=(Keywords="voxel voxels offset surface grow shrink inset outset erode dilate thicken thin bounds open sides push corner split"))
@@ -95,8 +96,9 @@ public:
 
 	/**
 	 * How far the surface moves (times Amount Scale), in Units. Positive grows, negative shrinks. The whole part (in
-	 * cells) adds or removes that many layers of cells; the rest moves the open faces of the cells that are left.
-	 * -1.25 cells: one layer removed, then the new surface pulled in a quarter cell.
+	 * cells) adds or removes that many layers of cells; the rest is a part cell. 3.5 cells: three layers added, then a
+	 * layer of cells half deep (each box stays inside its cell). -1.25 cells: one layer removed, then the open faces of
+	 * the cells left pulled in a quarter cell.
 	 * Attribute (a number, required in that mode; default 'OffsetAmount'): a point attribute or property gives each
 	 * cell its own amount (every cell of a chunk shares its point's value); '@Data.OffsetAmount' gives one per set.
 	 */
@@ -133,8 +135,8 @@ public:
 	/**
 	 * Negative fractions: carve inside corners too. A cell in an inside corner (or under a notch) has no open side
 	 * facing the corner, so shrinking open sides alone leaves it sticking out; with this on it is split into the fewest
-	 * boxes (up to 3 for one corner) that leave the notch empty. Off: one box per cell, open sides only. Positive
-	 * fractions never need splitting.
+	 * boxes (up to 3 for one corner) that leave the notch empty. Off: one box per cell, open sides only. Growing needs
+	 * no setting: a grown inside corner is always the union of its walls' parts.
 	 */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Settings", meta=(PCG_Overridable))
 	bool bSplitInnerCorners = true;
@@ -143,8 +145,8 @@ public:
 	bool bWriteWasSplit = true;
 
 	/**
-	 * Optional output, Boolean: true on each of the boxes a cell was carved into at an inside corner (Split Inner
-	 * Corners); false on every other point.
+	 * Optional output, Boolean: true on each point of a cell written as several boxes (an inside corner grown, or
+	 * carved with Split Inner Corners) and on a cell carved to one box; false on every other point.
 	 */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Outputs", meta=(PCG_Overridable, EditCondition="bWriteWasSplit"))
 	FName WasSplitAttribute = TEXT("WasSplit");

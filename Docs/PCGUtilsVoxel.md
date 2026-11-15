@@ -755,8 +755,9 @@ be any size and corners come out right. It takes over the planned phase-2 `Dilat
   its point's value; defaults `OffsetAmount` and `AmountScale`) or `@Data` (one value per set). Positive grows,
   negative shrinks. With one value for the set it is a box
   (L-infinity) offset of the whole set: the whole part adds or removes that many layers (corners stay square), and
-  the fraction then moves the open faces of the cells that are left. `-1.25` removes one layer and pulls the new
-  surface in a quarter cell; a 5x5x5 block becomes a 2.5-cell cube.
+  the fraction is part cells. **No box ever leaves its cell** (rule from the designer, 2026-11-15): `+3.5` adds three
+  layers, then a layer of cells half deep. `-1.25` removes one layer and pulls the open faces of the cells left in a
+  quarter cell; a 5x5x5 block becomes a 2.5-cell cube.
 - `Axes` (added 2026-11-14 on request; bitmask X | Y | Z, default all three): the axes the offset moves along. An
   axis left out gets no offset at all: no layers added or removed along it, its faces stay put, and inside corners
   are not carved along it. X | Y offsets sideways only (one cell +1 is a 3x3 plate; -1 on a 3x3x3 keeps the middle
@@ -764,14 +765,23 @@ be any size and corners come out right. It takes over the planned phase-2 `Dilat
 - `Units` (added 2026-11-10 on request): **Cells** (default; 1 is one cell width per axis) or **Absolute** (world
   units, turned into cells per axis by Voxel Size, so non-cubic cells get per-axis layers and fractions).
 - **Per-cell values** (either setting from a point attribute): falloff and masking (a scale of 0 leaves a cell
-  alone, negative flips it). Each cell's own product decides: a shrinking cell goes when an empty cell is within its reach (box, per axis; a summed-volume table of the
-  empty cells answers it in O(1)); a growing cell fills every empty cell within its reach (stamped, so cost is cells
-  times reach cubed), and an empty cell reached by several copies the one with the most reach to spare, then the
-  closest. Added cells take the fraction of the cell that grew them. Growth fills only cells empty in the input, not
-  cells a neighbour removed. With one value everywhere this is exactly the box offset above.
+  alone, negative flips it). Each cell's own product decides: a shrinking cell goes when an empty cell is within its
+  whole layers (box, per axis; a summed-volume table of the empty cells answers it in O(1)). A growing cell's
+  **reach** is its own box grown by its amount on each axis; the reach is clipped to every empty cell it touches
+  (stamped, so cost is cells times reach cubed). A cell covered whole is filled and copies the grower with the most
+  reach to spare, then the closest. A cell covered only in part keeps the **union** of the parts reaching it: cut at
+  every part's faces, each piece goes to the part with the most reach to spare there (then the closest, then input
+  order), and pieces are merged greedily into boxes within one grower, so each box copies its own grower. An inside
+  corner is an L of 2 boxes, one from each wall; a one-cell gap between two cells growing 0.75 is 2 boxes meeting
+  where the reaches cross. This answers "which cell supplies the offset at an inside corner": every grower supplies
+  its own part, with its own amount. Growth fills only cells empty in the input, not cells a neighbour removed. With
+  one value everywhere this is exactly the box offset above. Until 2026-11-15 a growing fraction stretched the cell's
+  own box over its open faces, so two cells could stretch into the same empty cell (inside corners, diagonal
+  neighbours, gaps under twice the fraction) and overlap; the field bug that set the rule above.
 - **Fraction.** Written to the point bounds: the point stays on its cell centre and its bounds cover the box (in the
-  point's frame: its rotation and scale are allowed for). Any bounds the input had are replaced. Growing never needs
-  splitting (at an inside corner the two grown faces overlap inside the solid). Shrinking with `Split Inner Corners`
+  point's frame: its rotation and scale are allowed for). Any bounds the input had are replaced. A growing cell stays
+  whole (its fraction is the part cells around it). A shrinking cell moves its open faces in; only a whole cell next to
+  a face holds it (a part cell from a neighbour's growth does not). Shrinking with `Split Inner Corners`
   (default on) takes away everything within the fraction of every empty neighbour among the 26, so cells in inside
   corners and under notches are carved too: each cell is cut at its faces and the planes the fraction in from them
   (up to 3x3x3 pieces), and the kept pieces are merged greedily into the fewest boxes found (an inside edge gives 2, an
@@ -783,13 +793,15 @@ be any size and corners come out right. It takes over the planned phase-2 `Dilat
   attributes; native properties still from that cell).
 - **One pin** (changed 2026-11-14 on request: the separate Spawn pin went once two points on one cell stopped being
   an error, section 1). **Out** is In, mutated (CLAUDE.md rule): metadata, tags and `@Data` kept, chunks expanded
-  (the span attribute removed), cells ordered Z, Y, X. Each cell is its open-face box (bounds as surface offsets);
-  a cell carved at an inside corner is instead its carved boxes, several points on one cell, the largest first, each
-  with `WasSplit` = true (optional Boolean output, `Was Split Attribute`). Other voxel nodes read a carved cell as
-  one filled cell; `Voxel | To DynMesh` (Surface Offset From Point Bounds, Exact offsets) reads it as the box around
-  its pieces, and the neighbours' walls close the notch, so the mesh is the exact shape of the boxes. `IsSurrounded`
-  is rewritten (section 1.3) and false on carved boxes (a diagonal notch shows); filter on it to spawn only visible
-  boxes (the old Spawn Only Visible).
+  (the span attribute removed), cells ordered Z, Y, X. Each box is inside its own cell (bounds as surface offsets). A
+  cell that takes more than one box (a grown inside corner, or a cell carved at an inside corner) is several points on
+  one cell, the largest first, each with `WasSplit` = true (optional Boolean output, `Was Split Attribute`; a cell
+  carved down to one box is flagged too). Other voxel nodes read such a cell as one filled cell; `Voxel | To DynMesh`
+  (Surface Offset From Point Bounds, Exact offsets) reads it as the box around its pieces, and the neighbours' walls
+  close the notch, so the mesh is the exact shape of the boxes (tested for carved corners, part cells and a grown L).
+  `IsSurrounded` is rewritten (section 1.3): only whole cells hide a face, and it is false on carved and part boxes;
+  filter on it to spawn only visible boxes (the old Spawn Only Visible). Growing makes more points than before
+  2026-11-15: one cell +0.25 is 27 points (itself, 6 slabs, 12 bars, 8 corner cubes) where it was one stretched box.
 - Error when the box worked over (bounds plus grown layers plus one) is over `Max Cells` (default 64M), naming its
   size.
 
@@ -1036,6 +1048,10 @@ a cell hash.
     notched block's Out is 31 points (middle 3 boxes); stale `IsSurrounded` rewritten.
   - Offset Surface Axes: X | Y grows a quarter sideways only, +1 is a 3x3 plate, -1 on a 3x3x3 keeps the middle
     column, the L corner carves into 2 full-height boxes; Z only grows a column; no axis leaves the cell alone.
+  - Offset Surface grow never overlaps: every grow test checks each box stays inside its cell and no two overlap; an L
+    +0.25 is the exact box offset (5.25 x 1.5) with its inside corner an L of 2 boxes; diagonal neighbours; a one-cell
+    gap grown 0.75 from both sides is filled exactly once, each box copying its side; a plate of mixed amounts.
+  - Offset Surface grow meshes: one cell +0.25 and +1.5 and the L +0.25 mesh closed with the boxes' exact volume.
   - Compress Random: boxes tile every cell exactly once, stay within Random Span, never mix unequal cells, and
     depend only on the seed; the palette alias presets the shape;
   - Bevel: a cube's chamfer volume matches the formula at 0.1, 0.25, 0.4 and 1 (octahedron); each of the six Full

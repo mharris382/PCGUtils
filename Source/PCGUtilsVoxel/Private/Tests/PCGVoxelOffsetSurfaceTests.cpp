@@ -1,6 +1,7 @@
 // Copyright Max Harris
 //
-// Voxel | Offset Surface: fractions move open faces (bounds), whole cells add or remove layers, inside corners split.
+// Voxel | Offset Surface: whole cells add or remove layers, a growing fraction is part cells (each box inside its own
+// cell, never overlapping), a shrinking fraction moves open faces, inside corners split.
 
 #include "Misc/AutomationTest.h"
 
@@ -105,6 +106,63 @@ namespace PCGVoxelOffsetSurfaceTests
 		return P && P->Min.Equals(Min, 1e-6) && P->Max.Equals(Max, 1e-6);
 	}
 
+	FBox WorldBox(const FOutPoint& P)
+	{
+		const FVector Centre = FVector(P.Cell) * 100.0;
+		return FBox(Centre + P.Min, Centre + P.Max);
+	}
+
+	/** The box around every point's box, in world space. */
+	FBox Around(const TArray<FOutPoint>& Points)
+	{
+		FBox Box(ForceInit);
+		for (const FOutPoint& P : Points)
+		{
+			Box += WorldBox(P);
+		}
+		return Box;
+	}
+
+	/** True when every box stays inside its own cell (cells of 100). */
+	bool InsideCells(const TArray<FOutPoint>& Points)
+	{
+		return !Points.ContainsByPredicate([](const FOutPoint& P)
+		{
+			return P.Min.GetMin() < -50.0 - 1e-6 || P.Max.GetMax() > 50.0 + 1e-6;
+		});
+	}
+
+	/** Pairs of boxes that overlap by more than a sliver. */
+	int32 Overlaps(const TArray<FOutPoint>& Points)
+	{
+		int32 Count = 0;
+		for (int32 A = 0; A < Points.Num(); ++A)
+		{
+			const FBox BoxA = WorldBox(Points[A]);
+			for (int32 B = A + 1; B < Points.Num(); ++B)
+			{
+				const FBox BoxB = WorldBox(Points[B]);
+				const FVector Lo = BoxA.Min.ComponentMax(BoxB.Min);
+				const FVector Hi = BoxA.Max.ComponentMin(BoxB.Max);
+				if ((Hi - Lo).GetMin() > 1e-3)
+				{
+					++Count;
+				}
+			}
+		}
+		return Count;
+	}
+
+	/** Every box inside its cell, none overlapping, the box around them Min..Max (world). */
+	void TestGrown(FAutomationTestBase& Test, const TCHAR* What, const TArray<FOutPoint>& Points, const FVector& Min, const FVector& Max)
+	{
+		Test.TestTrue(FString::Printf(TEXT("%s: every box inside its cell"), What), InsideCells(Points));
+		Test.TestEqual(FString::Printf(TEXT("%s: no overlapping boxes"), What), Overlaps(Points), 0);
+		const FBox Box = Around(Points);
+		Test.TestTrue(FString::Printf(TEXT("%s: reaches %s to %s (got %s to %s)"), What, *Min.ToString(), *Max.ToString(), *Box.Min.ToString(), *Box.Max.ToString()),
+			Box.Min.Equals(Min, 1e-6) && Box.Max.Equals(Max, 1e-6));
+	}
+
 	double Volume(const TArray<FOutPoint>& Points)
 	{
 		double Sum = 0.0;
@@ -125,15 +183,18 @@ bool FPCGVoxelOffsetSurfaceFractionTest::RunTest(const FString& Parameters)
 {
 	using namespace PCGVoxelOffsetSurfaceTests;
 
-	// One cell grows a quarter cell on every side; keeps its Id and tag.
+	// One cell grows a quarter cell on every side: the cell stays whole, its 26 neighbours get the quarter (6 slabs,
+	// 12 edge bars, 8 corner cubes), each inside its own cell. Every box copies the cell (Id 0); the tag is kept.
 	TArray<FPCGTaggedData> Raw;
 	const TArray<FOutPoint> Grown = Offset(MakeVoxels({ FIntVector(0) }), 0.25, [](UPCGVoxelOffsetSurfaceSettings&) {}, &Raw);
-	if (TestEqual(TEXT("one cell, one point"), Grown.Num(), 1))
-	{
-		TestTrue(TEXT("grown bounds"), Grown[0].Min.Equals(FVector(-75.0), 1e-6) && Grown[0].Max.Equals(FVector(75.0), 1e-6));
-		TestEqual(TEXT("Id kept"), Grown[0].Id, 0);
-		TestTrue(TEXT("tag kept"), Raw.Num() == 1 && Raw[0].Tags.Contains(TEXT("KeptTag")));
-	}
+	TestEqual(TEXT("one cell grown: itself and 26 part cells"), Grown.Num(), 27);
+	TestGrown(*this, TEXT("+0.25"), Grown, FVector(-75.0), FVector(75.0));
+	TestNearlyEqual(TEXT("+0.25 volume"), Volume(Grown), 1.5 * 1.5 * 1.5 * 1e6, 1.0);
+	TestTrue(TEXT("the cell stays whole"), BoundsAre(At(Grown, FIntVector(0)), FVector(-50.0), FVector(50.0)));
+	TestTrue(TEXT("+X slab against the cell"), BoundsAre(At(Grown, FIntVector(1, 0, 0)), FVector(-50.0), FVector(-25.0, 50.0, 50.0)));
+	TestTrue(TEXT("corner cube against the cell"), BoundsAre(At(Grown, FIntVector(-1, -1, -1)), FVector(25.0), FVector(50.0)));
+	TestTrue(TEXT("every box copies the cell"), !Grown.ContainsByPredicate([](const FOutPoint& P) { return P.Id != 0; }));
+	TestTrue(TEXT("tag kept"), Raw.Num() == 1 && Raw[0].Tags.Contains(TEXT("KeptTag")));
 
 	// A 3x3x1 plate shrinks: the middle only on Z, a corner on -X, -Y and Z.
 	const TArray<FOutPoint> Shrunk = Offset(MakeVoxels(Block(3, 3, 1)), -0.25);
@@ -236,15 +297,18 @@ bool FPCGVoxelOffsetSurfaceLayersTest::RunTest(const FString& Parameters)
 	TestEqual(TEXT("-1.25 keeps 27 cells"), Deeper.Num(), 27);
 	TestNearlyEqual(TEXT("-1.25 volume is a 2.5 cube"), Deeper.Num() ? Volume(Deeper) : 0.0, 2.5 * 2.5 * 2.5 * 1e6, 1.0);
 
-	// One cell, +1.5: a 3x3x3 block, the outer faces half a cell further; added cells copy the nearest (Id 0).
+	// One cell, +1.5: a whole 3x3x3 block, then a layer of cells half deep (5x5x5 cells in all); added cells copy the
+	// nearest (Id 0). No box leaves its cell.
 	const TArray<FOutPoint> Grown = Offset(MakeVoxels({ FIntVector(0) }), 1.5);
-	TestEqual(TEXT("+1.5 gives 27 cells"), Grown.Num(), 27);
+	TestEqual(TEXT("+1.5 gives 5x5x5 cells"), Grown.Num(), 125);
 	TestNearlyEqual(TEXT("+1.5 volume is a 4 cube"), Volume(Grown), 4.0 * 4.0 * 4.0 * 1e6, 1.0);
+	TestGrown(*this, TEXT("+1.5"), Grown, FVector(-200.0), FVector(200.0));
 	if (const FOutPoint* P = At(Grown, FIntVector(-1, -1, -1)))
 	{
-		TestTrue(TEXT("corner cell grows on its 3 open sides"), P->Min.Equals(FVector(-100.0), 1e-6) && P->Max.Equals(FVector(50.0), 1e-6));
+		TestTrue(TEXT("the whole layer is whole cells"), BoundsAre(P, FVector(-50.0), FVector(50.0)));
 		TestEqual(TEXT("added cell copies the nearest"), P->Id, 0);
 	}
+	TestTrue(TEXT("the outer corner is half a cell deep"), BoundsAre(At(Grown, FIntVector(-2, -2, -2)), FVector(0.0), FVector(50.0)));
 	const TArray<FOutPoint> Plain = Offset(MakeVoxels({ FIntVector(0) }), 1.0,
 		[](UPCGVoxelOffsetSurfaceSettings& S) { S.AddedValues = EPCGVoxelOffsetAddedValues::None; });
 	if (const FOutPoint* P = At(Plain, FIntVector(1, 0, 0)))
@@ -266,15 +330,14 @@ bool FPCGVoxelOffsetSurfaceChunksTest::RunTest(const FString& Parameters)
 {
 	using namespace PCGVoxelOffsetSurfaceTests;
 
-	// A 2x1x1 chunk comes out as two cells, without the span attribute, each grown on its open sides only.
+	// A 2x1x1 chunk comes out as its two cells, without the span attribute, plus the part cells around them (4x3x3 in all).
 	const TArray<FIntVector> Spans = { FIntVector(2, 1, 1) };
 	TArray<FPCGTaggedData> Raw;
 	const TArray<FOutPoint> Expanded = Offset(MakeVoxels({ FIntVector(0) }, 100.0, &Spans), 0.25, [](UPCGVoxelOffsetSurfaceSettings&) {}, &Raw);
-	TestEqual(TEXT("chunk expanded to 2 cells"), Expanded.Num(), 2);
-	if (const FOutPoint* P = At(Expanded, FIntVector(0, 0, 0)))
-	{
-		TestTrue(TEXT("shared face stays put"), FMath::IsNearlyEqual(P->Max.X, 50.0, 1e-6) && FMath::IsNearlyEqual(P->Min.X, -75.0, 1e-6));
-	}
+	TestEqual(TEXT("chunk expanded: 2 cells and 34 part cells"), Expanded.Num(), 36);
+	TestTrue(TEXT("each chunk cell is whole"), BoundsAre(At(Expanded, FIntVector(0, 0, 0)), FVector(-50.0), FVector(50.0))
+		&& BoundsAre(At(Expanded, FIntVector(1, 0, 0)), FVector(-50.0), FVector(50.0)));
+	TestGrown(*this, TEXT("chunk +0.25"), Expanded, FVector(-75.0), FVector(175.0, 75.0, 75.0));
 	const UPCGBasePointData* Points = Raw.Num() == 1 ? Cast<UPCGBasePointData>(Raw[0].Data) : nullptr;
 	TestTrue(TEXT("no span attribute"), Points && !Points->ConstMetadata()->GetConstMetadataDomain(PCGMetadataDomainID::Elements)->HasAttribute(TEXT("VoxelSpan")));
 
@@ -295,21 +358,26 @@ bool FPCGVoxelOffsetSurfaceScaleTest::RunTest(const FString& Parameters)
 	// Absolute: 25 world units on 100 cells is a quarter cell.
 	const TArray<FOutPoint> Absolute = Offset(MakeVoxels({ FIntVector(0) }), 25.0,
 		[](UPCGVoxelOffsetSurfaceSettings& S) { S.Units = EPCGVoxelOffsetUnits::Absolute; });
-	TestTrue(TEXT("Absolute 25 = a quarter cell"), Absolute.Num() == 1 && BoundsAre(&Absolute[0], FVector(-75.0), FVector(75.0)));
+	TestEqual(TEXT("Absolute 25: 27 cells"), Absolute.Num(), 27);
+	TestGrown(*this, TEXT("Absolute 25 = a quarter cell"), Absolute, FVector(-75.0), FVector(75.0));
 
 	// Constant scale multiplies.
 	const TArray<FOutPoint> Doubled = Offset(MakeVoxels({ FIntVector(0) }), 0.25,
 		[](UPCGVoxelOffsetSurfaceSettings& S) { S.AmountScale.Constant = 2.0; });
-	TestTrue(TEXT("Amount Scale 2"), Doubled.Num() == 1 && BoundsAre(&Doubled[0], FVector(-100.0), FVector(100.0)));
+	TestEqual(TEXT("Amount Scale 2: 27 cells"), Doubled.Num(), 27);
+	TestGrown(*this, TEXT("Amount Scale 2"), Doubled, FVector(-100.0), FVector(100.0));
 
-	// Per cell: a row scaled 0, 1, -1. The first stays, the middle grows on its open sides, the last shrinks.
+	// Per cell: a row scaled 0, 1, -1. The first stays, the middle grows (whole, with 24 part cells around it), the last
+	// shrinks on its open sides (a part cell next to it does not hold its face).
 	auto Attribute = [](UPCGVoxelOffsetSurfaceSettings& S) { S.AmountScale.Input = EPCGUtilsPointInputValueType::Attribute; };
 	UPCGPointArrayData* Row = MakeVoxels({ FIntVector(0, 0, 0), FIntVector(1, 0, 0), FIntVector(2, 0, 0) });
 	AddDoubles(Row, TEXT("AmountScale"), { 0.0, 1.0, -1.0 });
 	const TArray<FOutPoint> Mixed = Offset(Row, 0.25, Attribute);
-	TestEqual(TEXT("mixed: 3 points"), Mixed.Num(), 3);
+	TestEqual(TEXT("mixed: 3 cells and 24 part cells"), Mixed.Num(), 27);
+	TestEqual(TEXT("mixed: no overlapping boxes"), Overlaps(Mixed), 0);
 	TestTrue(TEXT("scale 0 leaves the cell alone"), BoundsAre(At(Mixed, FIntVector(0, 0, 0)), FVector(-50.0), FVector(50.0)));
-	TestTrue(TEXT("scale 1 grows its open sides"), BoundsAre(At(Mixed, FIntVector(1, 0, 0)), FVector(-50, -75, -75), FVector(50, 75, 75)));
+	TestTrue(TEXT("scale 1 stays whole"), BoundsAre(At(Mixed, FIntVector(1, 0, 0)), FVector(-50.0), FVector(50.0)));
+	TestTrue(TEXT("scale 1 grows a quarter into +Y"), BoundsAre(At(Mixed, FIntVector(1, 1, 0)), FVector(-50.0), FVector(50.0, -25.0, 50.0)));
 	TestTrue(TEXT("scale -1 shrinks its open sides"), BoundsAre(At(Mixed, FIntVector(2, 0, 0)), FVector(-50, -25, -25), FVector(25, 25, 25)));
 
 	// Per cell whole layers: only the cell scaled 1 grows a layer.
@@ -341,9 +409,9 @@ bool FPCGVoxelOffsetSurfaceScaleTest::RunTest(const FString& Parameters)
 	UPCGPointArrayData* AmountRow = MakeVoxels({ FIntVector(0, 0, 0), FIntVector(1, 0, 0), FIntVector(2, 0, 0) });
 	AddDoubles(AmountRow, TEXT("OffsetAmount"), { 0.0, 0.25, -0.25 });
 	const TArray<FOutPoint> PerPoint = Offset(AmountRow, 99.0, [](UPCGVoxelOffsetSurfaceSettings& S) { S.Amount.Input = EPCGUtilsPointInputValueType::Attribute; });
-	TestEqual(TEXT("per-point amount: 3 points"), PerPoint.Num(), 3);
+	TestEqual(TEXT("per-point amount: 27 points"), PerPoint.Num(), 27);
 	TestTrue(TEXT("amount 0 leaves the cell alone"), BoundsAre(At(PerPoint, FIntVector(0, 0, 0)), FVector(-50.0), FVector(50.0)));
-	TestTrue(TEXT("amount 0.25 grows its open sides"), BoundsAre(At(PerPoint, FIntVector(1, 0, 0)), FVector(-50, -75, -75), FVector(50, 75, 75)));
+	TestTrue(TEXT("amount 0.25 grows a quarter into +Y"), BoundsAre(At(PerPoint, FIntVector(1, 1, 0)), FVector(-50.0), FVector(50.0, -25.0, 50.0)));
 	TestTrue(TEXT("amount -0.25 shrinks its open sides"), BoundsAre(At(PerPoint, FIntVector(2, 0, 0)), FVector(-50, -25, -25), FVector(25, 25, 25)));
 
 	// Both per point multiply: 0.5 x 0.5 is a quarter.
@@ -355,7 +423,7 @@ bool FPCGVoxelOffsetSurfaceScaleTest::RunTest(const FString& Parameters)
 		S.Amount.Input = EPCGUtilsPointInputValueType::Attribute;
 		S.AmountScale.Input = EPCGUtilsPointInputValueType::Attribute;
 	});
-	TestTrue(TEXT("0.5 x 0.5 grows a quarter"), Multiplied.Num() == 1 && BoundsAre(&Multiplied[0], FVector(-75.0), FVector(75.0)));
+	TestGrown(*this, TEXT("0.5 x 0.5 grows a quarter"), Multiplied, FVector(-75.0), FVector(75.0));
 
 	// A property works too: $Density is 1 on every point, scaled by a constant quarter.
 	const TArray<FOutPoint> FromDensity = Offset(MakeVoxels({ FIntVector(0) }), 99.0, [](UPCGVoxelOffsetSurfaceSettings& S)
@@ -363,7 +431,7 @@ bool FPCGVoxelOffsetSurfaceScaleTest::RunTest(const FString& Parameters)
 		S.Amount.SetAttribute(TEXT("$Density"));
 		S.AmountScale.Constant = 0.25;
 	});
-	TestTrue(TEXT("$Density x 0.25 grows a quarter"), FromDensity.Num() == 1 && BoundsAre(&FromDensity[0], FVector(-75.0), FVector(75.0)));
+	TestGrown(*this, TEXT("$Density x 0.25 grows a quarter"), FromDensity, FVector(-75.0), FVector(75.0));
 
 	// A value that is not finite names the point.
 	UPCGPointArrayData* Bad = MakeVoxels({ FIntVector(0), FIntVector(1, 0, 0) });
@@ -460,8 +528,8 @@ bool FPCGVoxelOffsetSurfacePinsTest::RunTest(const FString& Parameters)
 	// The three cells touching the notch along an edge split in 2: 26 cells, +2 for the middle, +3 for those.
 	TestEqual(TEXT("notched Out: 31 points"), NotchedGrid.Num(), 31);
 
-	// Hidden cells stay on Out (filter on Is Surrounded to spawn only visible ones).
-	TestEqual(TEXT("5x5x5 Out: 125 cells"), Offset(MakeVoxels(Block(5, 5, 5)), 0.25).Num(), 125);
+	// Hidden cells stay on Out (filter on Is Surrounded to spawn only visible ones): 125 cells and the 7x7x7 shell.
+	TestEqual(TEXT("5x5x5 grown a quarter: 7x7x7 points"), Offset(MakeVoxels(Block(5, 5, 5)), 0.25).Num(), 343);
 
 	// IsSurrounded on the input is rewritten for the offset cells: -1 on 5x5x5 leaves 27, only the middle hidden.
 	UPCGPointArrayData* WithFlag = MakeVoxels(Block(5, 5, 5));
@@ -497,9 +565,10 @@ bool FPCGVoxelOffsetSurfaceAxesTest::RunTest(const FString& Parameters)
 
 	TestEqual(TEXT("default: X, Y and Z"), NewObject<UPCGVoxelOffsetSurfaceSettings>()->Axes, static_cast<int32>(EPCGVoxelAxes::All));
 
-	// A fraction moves only the X and Y faces.
+	// A fraction grows only into X and Y: the cell and its 8 neighbours in the plane.
 	const TArray<FOutPoint> Faces = Offset(MakeVoxels({ FIntVector(0) }), 0.25, OnlyXY);
-	TestTrue(TEXT("X | Y: +0.25 grows sideways only"), Faces.Num() == 1 && BoundsAre(&Faces[0], FVector(-75, -75, -50), FVector(75, 75, 50)));
+	TestEqual(TEXT("X | Y: +0.25 is 9 points"), Faces.Num(), 9);
+	TestGrown(*this, TEXT("X | Y: +0.25 grows sideways only"), Faces, FVector(-75, -75, -50), FVector(75, 75, 50));
 
 	// Whole layers grow sideways only: one cell +1 is a 3x3 plate.
 	const TArray<FOutPoint> Plate = Offset(MakeVoxels({ FIntVector(0) }), 1.0, OnlyXY);
@@ -532,5 +601,106 @@ bool FPCGVoxelOffsetSurfaceAxesTest::RunTest(const FString& Parameters)
 	return true;
 }
 
-#endif
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FPCGVoxelOffsetSurfaceNoOverlapTest, "PCGUtils.Voxel.OffsetSurface.GrowNeverOverlaps",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
 
+bool FPCGVoxelOffsetSurfaceNoOverlapTest::RunTest(const FString& Parameters)
+{
+	using namespace PCGVoxelOffsetSurfaceTests;
+
+	// An L grown a quarter: the inside corner cell (1,1,0) is reached by both arms and the corner cell. It is the union
+	// of their parts, an L of 2 boxes (both flagged Was Split, as are the L cells above and below it), and nothing
+	// overlaps (the old bug).
+	const TArray<FIntVector> L = { FIntVector(0, 0, 0), FIntVector(1, 0, 0), FIntVector(0, 1, 0) };
+	TArray<FPCGTaggedData> Raw;
+	const TArray<FOutPoint> Grown = Offset(MakeVoxels(L), 0.25, [](UPCGVoxelOffsetSurfaceSettings&) {}, &Raw);
+	TestGrown(*this, TEXT("L +0.25"), Grown, FVector(-75.0), FVector(175.0, 175.0, 75.0));
+	TestEqual(TEXT("inside corner: 2 boxes"), CountAt(Grown, FIntVector(1, 1, 0)), 2);
+	double Corner = 0.0;
+	for (const FOutPoint& P : Grown)
+	{
+		if (P.Cell == FIntVector(1, 1, 0))
+		{
+			const FVector Size = P.Max - P.Min;
+			Corner += Size.X * Size.Y * Size.Z;
+			TestTrue(TEXT("inside corner: no box reaches past a quarter on both X and Y"), P.Max.X <= -25.0 + 1e-6 || P.Max.Y <= -25.0 + 1e-6);
+		}
+	}
+	TestNearlyEqual(TEXT("inside corner: an L, 1 x 0.25 + 0.25 x 0.75"), Corner, (0.25 + 0.1875) * 1e6, 1.0);
+	// The exact box offset: in plan 3 squares of 1.5 (6.75) less their overlaps (0.75 + 0.75 + 0.25) plus the triple
+	// (0.25) = 5.25, times 1.5 high.
+	TestNearlyEqual(TEXT("L +0.25: the exact box offset"), Volume(Grown), 5.25 * 1.5 * 1e6, 1.0);
+	const TArray<bool> Split = Bools(Raw, TEXT("WasSplit"));
+	if (TestEqual(TEXT("WasSplit on every point"), Split.Num(), Grown.Num()))
+	{
+		for (int32 Index = 0; Index < Grown.Num(); ++Index)
+		{
+			TestEqual(FString::Printf(TEXT("WasSplit of %s"), *Grown[Index].Cell.ToString()), Split[Index], Grown[Index].Cell.X == 1 && Grown[Index].Cell.Y == 1);
+		}
+	}
+
+	// Cells that touch only along an edge: each grows its corner into the two cells between them; no overlap.
+	const TArray<FOutPoint> Diagonal = Offset(MakeVoxels({ FIntVector(0, 0, 0), FIntVector(1, 1, 0) }), 0.25);
+	TestEqual(TEXT("diagonal pair: no overlapping boxes"), Overlaps(Diagonal), 0);
+	TestTrue(TEXT("diagonal pair: every box inside its cell"), InsideCells(Diagonal));
+
+	// A one-cell gap, each side growing 0.75: the gap is filled, as 2 boxes that meet, each from its own side.
+	UPCGPointArrayData* Gap = MakeVoxels({ FIntVector(0, 0, 0), FIntVector(2, 0, 0) });
+	const TArray<FOutPoint> Closed = Offset(Gap, 0.75);
+	TestEqual(TEXT("gap: no overlapping boxes"), Overlaps(Closed), 0);
+	TestEqual(TEXT("gap: 2 boxes"), CountAt(Closed, FIntVector(1, 0, 0)), 2);
+	double GapVolume = 0.0;
+	for (const FOutPoint& P : Closed)
+	{
+		if (P.Cell == FIntVector(1, 0, 0))
+		{
+			const FVector Size = P.Max - P.Min;
+			GapVolume += Size.X * Size.Y * Size.Z;
+			TestEqual(TEXT("gap: each box copies the side it touches"), P.Id, P.Min.X < -49.0 ? 0 : 1);
+		}
+	}
+	TestNearlyEqual(TEXT("gap: filled exactly once"), GapVolume, 1e6, 1.0);
+
+	// Different amounts per cell (the case in the field): a 4x4 plate, amounts 0.3 to 1.8, never overlaps.
+	TArray<FIntVector> Plate = Block(4, 4, 1);
+	UPCGPointArrayData* Varied = MakeVoxels(Plate);
+	TArray<double> Amounts;
+	for (int32 Index = 0; Index < Plate.Num(); ++Index)
+	{
+		Amounts.Add(0.3 + 0.1 * ((Index * 7) % 16));
+	}
+	AddDoubles(Varied, TEXT("OffsetAmount"), Amounts);
+	const TArray<FOutPoint> Mixed = Offset(Varied, 0.0, [](UPCGVoxelOffsetSurfaceSettings& S) { S.Amount.Input = EPCGUtilsPointInputValueType::Attribute; });
+	TestTrue(TEXT("varied: grew"), Mixed.Num() > Plate.Num());
+	TestTrue(TEXT("varied: every box inside its cell"), InsideCells(Mixed));
+	TestEqual(TEXT("varied: no overlapping boxes"), Overlaps(Mixed), 0);
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FPCGVoxelOffsetSurfaceGrowMeshTest, "PCGUtils.Voxel.OffsetSurface.GrowMeshes",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+
+bool FPCGVoxelOffsetSurfaceGrowMeshTest::RunTest(const FString& Parameters)
+{
+	using namespace PCGVoxelOffsetSurfaceTests;
+	// Out meshes as the exact shape of its boxes (Surface Offset From Point Bounds), part cells and grown corners included.
+	auto Probe = [&](const TCHAR* What, const TArray<FIntVector>& Cells, double Amount)
+	{
+		TArray<FPCGTaggedData> Raw;
+		const TArray<FOutPoint> Pts = Offset(MakeVoxels(Cells), Amount, [](UPCGVoxelOffsetSurfaceSettings&) {}, &Raw);
+		UPCGVoxelToDynMeshSettings* MeshSettings = NewObject<UPCGVoxelToDynMeshSettings>();
+		MeshSettings->SurfaceOffset = EPCGVoxelSurfaceOffset::FromPointBounds;
+		const UE::Geometry::FDynamicMesh3* Mesh = Raw.Num() == 1 ? MeshOf(Run<FPCGVoxelToDynMeshElement>(MeshSettings, { { PCGPinConstants::DefaultInputLabel, Raw[0].Data } })) : nullptr;
+		if (TestNotNull(FString::Printf(TEXT("%s meshes"), What), Mesh))
+		{
+			TestEqual(FString::Printf(TEXT("%s: mesh is closed"), What), OpenEdges(*Mesh), 0);
+			TestNearlyEqual(FString::Printf(TEXT("%s: mesh volume is the boxes'"), What), PCGVoxelTestHelpers::Volume(*Mesh), Volume(Pts), 1.0);
+		}
+	};
+	Probe(TEXT("cell +0.25"), { FIntVector(0) }, 0.25);
+	Probe(TEXT("cell +1.5"), { FIntVector(0) }, 1.5);
+	Probe(TEXT("L +0.25"), { FIntVector(0, 0, 0), FIntVector(1, 0, 0), FIntVector(0, 1, 0) }, 0.25);
+	return true;
+}
+
+#endif

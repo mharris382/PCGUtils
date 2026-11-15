@@ -89,84 +89,66 @@ namespace PCGVoxelOffsetSurfacePrivate
 		FIntVector Layers = FIntVector::ZeroValue;
 		FVector Fraction = FVector::ZeroVector;
 		FVector Magnitude = FVector::ZeroVector; // in cells per axis
+		FIntVector Reach = FIntVector::ZeroValue; // growing: the cells its grown box touches, per axis (Layers, plus one with a fraction)
 	};
 
-	/** A box inside one cell, in cell units relative to the cell centre (the whole cell is -0.5 to 0.5). */
-	struct FPiece
+	/** A growing cell's reach clipped to an empty cell it covers only in part. */
+	struct FPartialHit
 	{
-		FIntVector Cell;
-		int32 Source = INDEX_NONE; // point of In this piece copies
-		bool bFreshEntry = false; // Added Values None: gets a new, default metadata entry
+		int64 I = 0; // dense index of the covered cell
+		int32 From = INDEX_NONE; // index into Grid.Cells of the growing cell
 		FVector Lo = FVector(-0.5);
 		FVector Hi = FVector(0.5);
+		float Spare = 0.0f;
+		float Dist = 0.0f;
 	};
 
-	/**
-	 * The part of a cell left after taking away, for each empty neighbour (offset D among the 26), every point within
-	 * Fraction of it (per axis, box distance), as the fewest boxes a greedy merge finds. Appends nothing when nothing is left.
-	 */
-	void CarveCell(const FPiece& Whole, const FVector& Fraction, TConstArrayView<FIntVector> EmptyNeighbours, TArray<FPiece>& Out)
+	/** Sorted, de-duplicated cut planes on one axis, always including the cell faces. */
+	void FinishCuts(TArray<double>& Cuts)
 	{
-		// Breakpoints per axis: the cell's faces and the planes Fraction in from each.
-		double Cuts[3][4];
-		int32 NumCuts[3];
-		for (int32 Axis = 0; Axis < 3; ++Axis)
+		for (double& V : Cuts)
 		{
-			const double F = Fraction[Axis];
-			double Raw[4] = { -0.5, 0.5 - F, -0.5 + F, 0.5 };
-			for (double& V : Raw)
+			V = FMath::Clamp(V, -0.5, 0.5);
+		}
+		Cuts.Add(-0.5);
+		Cuts.Add(0.5);
+		Algo::Sort(Cuts);
+		int32 Kept = 0;
+		for (const double V : Cuts)
+		{
+			if (Kept == 0 || V > Cuts[Kept - 1] + 1e-9)
 			{
-				V = FMath::Clamp(V, -0.5, 0.5);
-			}
-			Algo::Sort(Raw);
-			NumCuts[Axis] = 0;
-			for (const double V : Raw)
-			{
-				if (NumCuts[Axis] == 0 || V > Cuts[Axis][NumCuts[Axis] - 1] + 1e-9)
-				{
-					Cuts[Axis][NumCuts[Axis]++] = V;
-				}
+				Cuts[Kept++] = V;
 			}
 		}
-		const int32 NX = NumCuts[0] - 1, NY = NumCuts[1] - 1, NZ = NumCuts[2] - 1;
+		Cuts.SetNum(Kept);
+	}
+
+	/**
+	 * Greedy merge of a grid of sub-boxes (between the cut planes), each labelled (INDEX_NONE = empty), into boxes of one
+	 * label each: grows along X, then Y, then Z. Calls Emit(Label, Lo, Hi) per box.
+	 */
+	template <typename EmitType>
+	void MergeLabels(const TArray<double> (&Cuts)[3], TConstArrayView<int32> Labels, EmitType&& Emit)
+	{
+		const int32 NX = Cuts[0].Num() - 1, NY = Cuts[1].Num() - 1, NZ = Cuts[2].Num() - 1;
 		if (NX < 1 || NY < 1 || NZ < 1)
 		{
 			return;
 		}
-		auto Mid = [&](int32 Axis, int32 I) { return 0.5 * (Cuts[Axis][I] + Cuts[Axis][I + 1]); };
-		auto Removed = [&](int32 I, int32 J, int32 K)
-		{
-			const FVector C(Mid(0, I), Mid(1, J), Mid(2, K));
-			for (const FIntVector& D : EmptyNeighbours)
-			{
-				bool bInside = true;
-				for (int32 Axis = 0; Axis < 3 && bInside; ++Axis)
-				{
-					bInside = D[Axis] > 0 ? C[Axis] > 0.5 - Fraction[Axis] : (D[Axis] < 0 ? C[Axis] < -0.5 + Fraction[Axis] : true);
-				}
-				if (bInside)
-				{
-					return true;
-				}
-			}
-			return false;
-		};
-		bool Kept[3][3][3];
-		bool Used[3][3][3] = {};
-		for (int32 K = 0; K < NZ; ++K)
-			for (int32 J = 0; J < NY; ++J)
-				for (int32 I = 0; I < NX; ++I)
-					Kept[K][J][I] = !Removed(I, J, K);
-
-		auto Free = [&](int32 I, int32 J, int32 K) { return Kept[K][J][I] && !Used[K][J][I]; };
+		auto At = [&](int32 I, int32 J, int32 K) { return I + NX * (J + NY * K); };
+		TArray<bool> Used;
+		Used.SetNumZeroed(NX * NY * NZ);
 		for (int32 K = 0; K < NZ; ++K)
 			for (int32 J = 0; J < NY; ++J)
 				for (int32 I = 0; I < NX; ++I)
 				{
-					if (!Free(I, J, K))
+					const int32 Label = Labels[At(I, J, K)];
+					if (Label == INDEX_NONE || Used[At(I, J, K)])
 					{
 						continue;
 					}
+					auto Free = [&](int32 II, int32 JJ, int32 KK) { return Labels[At(II, JJ, KK)] == Label && !Used[At(II, JJ, KK)]; };
 					int32 I1 = I + 1;
 					while (I1 < NX && Free(I1, J, K)) { ++I1; }
 					auto RowFree = [&](int32 JJ, int32 KK)
@@ -192,11 +174,114 @@ namespace PCGVoxelOffsetSurfacePrivate
 					for (int32 KK = K; KK < K1; ++KK)
 						for (int32 JJ = J; JJ < J1; ++JJ)
 							for (int32 II = I; II < I1; ++II)
-								Used[KK][JJ][II] = true;
-					FPiece& Piece = Out.Add_GetRef(Whole);
-					Piece.Lo = FVector(Cuts[0][I], Cuts[1][J], Cuts[2][K]);
-					Piece.Hi = FVector(Cuts[0][I1], Cuts[1][J1], Cuts[2][K1]);
+								Used[At(II, JJ, KK)] = true;
+					Emit(Label, FVector(Cuts[0][I], Cuts[1][J], Cuts[2][K]), FVector(Cuts[0][I1], Cuts[1][J1], Cuts[2][K1]));
 				}
+	}
+
+	/**
+	 * The union of the parts of one empty cell that growing cells reach, as boxes that do not overlap. Each part of the
+	 * cell goes to the hit with the most reach to spare there (then the closest, then the first), and boxes are merged
+	 * only within one hit, so each box copies one source. Calls Emit(HitIndex, Lo, Hi) per box.
+	 */
+	template <typename EmitType>
+	void UnionHits(TConstArrayView<FPartialHit> Hits, EmitType&& Emit)
+	{
+		TArray<double> Cuts[3];
+		for (int32 Axis = 0; Axis < 3; ++Axis)
+		{
+			for (const FPartialHit& Hit : Hits)
+			{
+				Cuts[Axis].Add(Hit.Lo[Axis]);
+				Cuts[Axis].Add(Hit.Hi[Axis]);
+			}
+			FinishCuts(Cuts[Axis]);
+		}
+		const int32 NX = Cuts[0].Num() - 1, NY = Cuts[1].Num() - 1, NZ = Cuts[2].Num() - 1;
+		TArray<int32> Labels;
+		Labels.Init(INDEX_NONE, NX * NY * NZ);
+		for (int32 K = 0; K < NZ; ++K)
+			for (int32 J = 0; J < NY; ++J)
+				for (int32 I = 0; I < NX; ++I)
+				{
+					const FVector Mid(0.5 * (Cuts[0][I] + Cuts[0][I + 1]), 0.5 * (Cuts[1][J] + Cuts[1][J + 1]), 0.5 * (Cuts[2][K] + Cuts[2][K + 1]));
+					int32 Best = INDEX_NONE;
+					for (int32 H = 0; H < Hits.Num(); ++H)
+					{
+						const FPartialHit& Hit = Hits[H];
+						if (Mid.X <= Hit.Lo.X || Mid.X >= Hit.Hi.X || Mid.Y <= Hit.Lo.Y || Mid.Y >= Hit.Hi.Y || Mid.Z <= Hit.Lo.Z || Mid.Z >= Hit.Hi.Z)
+						{
+							continue;
+						}
+						if (Best == INDEX_NONE || Hit.Spare > Hits[Best].Spare + 1e-4f
+							|| (Hit.Spare > Hits[Best].Spare - 1e-4f && Hit.Dist < Hits[Best].Dist - 1e-3f))
+						{
+							Best = H;
+						}
+					}
+					Labels[I + NX * (J + NY * K)] = Best;
+				}
+		MergeLabels(Cuts, Labels, Emit);
+	}
+
+
+	/** A box inside one cell, in cell units relative to the cell centre (the whole cell is -0.5 to 0.5). */
+	struct FPiece
+	{
+		FIntVector Cell;
+		int32 Source = INDEX_NONE; // point of In this piece copies
+		bool bFreshEntry = false; // Added Values None: gets a new, default metadata entry
+		FVector Lo = FVector(-0.5);
+		FVector Hi = FVector(0.5);
+	};
+
+	/**
+	 * The part of a cell left after taking away, for each empty neighbour (offset D among the 26), every point within
+	 * Fraction of it (per axis, box distance), as the fewest boxes a greedy merge finds. Appends nothing when nothing is left.
+	 */
+	void CarveCell(const FPiece& Whole, const FVector& Fraction, TConstArrayView<FIntVector> EmptyNeighbours, TArray<FPiece>& Out)
+	{
+		// Breakpoints per axis: the cell's faces and the planes Fraction in from each.
+		TArray<double> Cuts[3];
+		for (int32 Axis = 0; Axis < 3; ++Axis)
+		{
+			Cuts[Axis] = { 0.5 - Fraction[Axis], -0.5 + Fraction[Axis] };
+			FinishCuts(Cuts[Axis]);
+		}
+		const int32 NX = Cuts[0].Num() - 1, NY = Cuts[1].Num() - 1, NZ = Cuts[2].Num() - 1;
+		if (NX < 1 || NY < 1 || NZ < 1)
+		{
+			return;
+		}
+		TArray<int32> Labels;
+		Labels.SetNumUninitialized(NX * NY * NZ);
+		for (int32 K = 0; K < NZ; ++K)
+			for (int32 J = 0; J < NY; ++J)
+				for (int32 I = 0; I < NX; ++I)
+				{
+					const FVector C(0.5 * (Cuts[0][I] + Cuts[0][I + 1]), 0.5 * (Cuts[1][J] + Cuts[1][J + 1]), 0.5 * (Cuts[2][K] + Cuts[2][K + 1]));
+					bool bRemoved = false;
+					for (const FIntVector& D : EmptyNeighbours)
+					{
+						bool bInside = true;
+						for (int32 Axis = 0; Axis < 3 && bInside; ++Axis)
+						{
+							bInside = D[Axis] > 0 ? C[Axis] > 0.5 - Fraction[Axis] : (D[Axis] < 0 ? C[Axis] < -0.5 + Fraction[Axis] : true);
+						}
+						if (bInside)
+						{
+							bRemoved = true;
+							break;
+						}
+					}
+					Labels[I + NX * (J + NY * K)] = bRemoved ? INDEX_NONE : 0;
+				}
+		MergeLabels(Cuts, Labels, [&](int32, const FVector& Lo, const FVector& Hi)
+		{
+			FPiece& Piece = Out.Add_GetRef(Whole);
+			Piece.Lo = Lo;
+			Piece.Hi = Hi;
+		});
 	}
 }
 
@@ -228,9 +313,10 @@ FText UPCGVoxelOffsetSurfaceSettings::GetNodeTooltipText() const
 {
 	return LOCTEXT("Tooltip",
 		"Moves a voxel set's surface by Amount x Amount Scale (cells or world units; each a constant, a per-cell point "
-		"attribute or an @Data value). The whole part adds or removes layers of cells; the fraction moves the open faces of each cell (its "
-		"point bounds). Corners stay square, and Split Inner Corners carves inside corners on a shrink by splitting those "
-		"cells into boxes (several points on one cell, flagged). Axes limits the offset to some grid axes (X | Y leaves Z alone).");
+		"attribute or an @Data value). The whole part adds or removes layers of cells; the fraction is a part cell (its point bounds): "
+		"growing 3.5 adds three cells and then cells half deep. No box ever leaves its cell. Corners stay square; an inside corner "
+		"grown, or carved on a shrink with Split Inner Corners, is several boxes on one cell (flagged). Axes limits the offset to "
+		"some grid axes (X | Y leaves Z alone).");
 }
 #endif
 
@@ -247,9 +333,9 @@ TArray<FPCGPinProperties> UPCGVoxelOffsetSurfaceSettings::OutputPinProperties() 
 {
 	TArray<FPCGPinProperties> Pins;
 	Pins.Emplace(PCGPinConstants::DefaultOutputLabel, EPCGDataType::Point, true, true,
-		LOCTEXT("OutTooltip", "Each input offset, still a voxel set: one point per box after the whole layers, its bounds moved on "
-			"its open faces. A cell carved at an inside corner is its carved boxes (several points on one cell, flagged with Was Split "
-			"Attribute). Is Surrounded is rewritten; filter on it to spawn only visible boxes."));
+		LOCTEXT("OutTooltip", "Each input offset, still a voxel set: one point per box, each box inside its own cell (point bounds). "
+			"A cell that takes more than one box (a grown or carved inside corner) has several points, flagged with Was Split "
+			"Attribute. Is Surrounded is rewritten; filter on it to spawn only visible boxes."));
 	return Pins;
 }
 
@@ -367,14 +453,16 @@ bool FPCGVoxelOffsetSurfaceElement::ExecuteInternal(FPCGContext* Context) const
 				Offset.Magnitude[Axis] = M;
 				Offset.Layers[Axis] = L;
 				Offset.Fraction[Axis] = M - L < 1e-9 ? 0.0 : M - L;
+				Offset.Reach[Axis] = Offset.Sign > 0 ? L + (Offset.Fraction[Axis] > 0.0 ? 1 : 0) : 0;
 			}
-			if (Offset.Layers != FIntVector::ZeroValue && Offset.Sign != 0)
+			if (Offset.Sign < 0 && Offset.Layers != FIntVector::ZeroValue)
 			{
 				bAnyLayers = true;
-				if (Offset.Sign > 0)
-				{
-					GrowReach = FIntVector(FMath::Max(GrowReach.X, Offset.Layers.X), FMath::Max(GrowReach.Y, Offset.Layers.Y), FMath::Max(GrowReach.Z, Offset.Layers.Z));
-				}
+			}
+			if (Offset.Reach != FIntVector::ZeroValue)
+			{
+				bAnyLayers = true;
+				GrowReach = FIntVector(FMath::Max(GrowReach.X, Offset.Reach.X), FMath::Max(GrowReach.Y, Offset.Reach.Y), FMath::Max(GrowReach.Z, Offset.Reach.Z));
 			}
 		}
 		if (bBadScale)
@@ -382,7 +470,7 @@ bool FPCGVoxelOffsetSurfaceElement::ExecuteInternal(FPCGContext* Context) const
 			continue;
 		}
 
-		// ---- Dense box: the set's cells, padded by the grown layers plus one for neighbour checks ----
+		// ---- Dense box: the set's cells, padded by the growing reach plus one for neighbour checks ----
 		const FIntVector Pad = GrowReach + FIntVector(1);
 		FMask Source;
 		Source.Min = Grid.MinCell - Pad;
@@ -407,11 +495,15 @@ bool FPCGVoxelOffsetSurfaceElement::ExecuteInternal(FPCGContext* Context) const
 			Source.Bits[Source.Index(Cell)] = 1;
 		}
 
-		// ---- Whole layers: each cell reaches Layers cells (a box) ----
-		// A shrinking cell goes when an empty cell is within its reach; a growing cell fills every empty cell within its
-		// reach, and an empty cell reached by several takes the one with the most reach to spare (then the closest).
+		// ---- Whole layers and growing ----
+		// A shrinking cell goes when an empty cell is within its whole layers (a box). A growing cell reaches its own box
+		// grown by its amount on each axis; that reach, clipped to each empty cell it touches, is what it gives that cell,
+		// so no box ever leaves its cell. A cell covered whole is filled, taking the grower with the most reach to spare
+		// (then the closest); a cell covered only in part keeps the union of the parts reaching it, each part copying its
+		// own grower (an inside corner gets an L from its two walls). Result marks full cells 1 and part cells 2.
 		FMask Result = Source;
-		TArray<int32> Origin; // per dense cell: the input cell that grew into it
+		TArray<int32> Origin; // per dense cell: the input cell that grew into it whole
+		TArray<FPartialHit> Partials;
 		if (bAnyLayers)
 		{
 			FEmptyTable Empty;
@@ -431,7 +523,7 @@ bool FPCGVoxelOffsetSurfaceElement::ExecuteInternal(FPCGContext* Context) const
 			{
 				const FCellOffset& Offset = Offsets[Index];
 				const FIntVector From = Grid.Cells[Index];
-				if (Offset.Sign <= 0 || Offset.Layers == FIntVector::ZeroValue || !Empty.AnyEmpty(From - Source.Min, Offset.Layers))
+				if (Offset.Reach == FIntVector::ZeroValue || !Empty.AnyEmpty(From - Source.Min, Offset.Reach))
 				{
 					continue;
 				}
@@ -441,10 +533,10 @@ bool FPCGVoxelOffsetSurfaceElement::ExecuteInternal(FPCGContext* Context) const
 					Reserve.Init(-1.0f, Count);
 					Distance.Init(0.0f, Count);
 				}
-				const FIntVector L = Offset.Layers;
-				for (int32 DZ = -L.Z; DZ <= L.Z; ++DZ)
-					for (int32 DY = -L.Y; DY <= L.Y; ++DY)
-						for (int32 DX = -L.X; DX <= L.X; ++DX)
+				const FIntVector R = Offset.Reach;
+				for (int32 DZ = -R.Z; DZ <= R.Z; ++DZ)
+					for (int32 DY = -R.Y; DY <= R.Y; ++DY)
+						for (int32 DX = -R.X; DX <= R.X; ++DX)
 						{
 							const FIntVector Cell = From + FIntVector(DX, DY, DZ);
 							const int64 I = Source.Index(Cell);
@@ -452,8 +544,24 @@ bool FPCGVoxelOffsetSurfaceElement::ExecuteInternal(FPCGContext* Context) const
 							{
 								continue;
 							}
-							// Reach left over on the axes the offset uses (an unused axis has no reach to spare).
+							// The grower's box in this cell's frame (its centre is at -D), clipped to the cell.
 							const FIntVector D(DX, DY, DZ);
+							FVector Lo, Hi;
+							bool bFull = true;
+							bool bNone = false;
+							for (int32 Axis = 0; Axis < 3; ++Axis)
+							{
+								const double Centre = -static_cast<double>(D[Axis]);
+								Lo[Axis] = FMath::Max(-0.5, Centre - 0.5 - Offset.Magnitude[Axis]);
+								Hi[Axis] = FMath::Min(0.5, Centre + 0.5 + Offset.Magnitude[Axis]);
+								bNone |= Hi[Axis] - Lo[Axis] <= 1e-6;
+								bFull &= Lo[Axis] <= -0.5 + 1e-9 && Hi[Axis] >= 0.5 - 1e-9;
+							}
+							if (bNone)
+							{
+								continue;
+							}
+							// Reach left over on the axes the offset uses (an unused axis has no reach to spare).
 							double SpareMin = TNumericLimits<double>::Max();
 							for (int32 Axis = 0; Axis < 3; ++Axis)
 							{
@@ -463,7 +571,12 @@ bool FPCGVoxelOffsetSurfaceElement::ExecuteInternal(FPCGContext* Context) const
 								}
 							}
 							const float Spare = static_cast<float>(SpareMin);
-							const float Dist = static_cast<float>((FVector(DX, DY, DZ) * Grid.VoxelSize).SizeSquared());
+							const float Dist = static_cast<float>((FVector(D) * Grid.VoxelSize).SizeSquared());
+							if (!bFull)
+							{
+								Partials.Add({ I, Index, Lo, Hi, Spare, Dist });
+								continue;
+							}
 							const bool bBetter = Origin[I] == INDEX_NONE || Spare > Reserve[I] + 1e-4f
 								|| (Spare > Reserve[I] - 1e-4f && Dist < Distance[I] - 1e-3f);
 							if (bBetter)
@@ -475,6 +588,15 @@ bool FPCGVoxelOffsetSurfaceElement::ExecuteInternal(FPCGContext* Context) const
 							}
 						}
 			}
+			// Cells reached only in part, grouped by cell in dense order (growers stay in input order within a cell).
+			Algo::StableSort(Partials, [](const FPartialHit& A, const FPartialHit& B) { return A.I < B.I; });
+			for (const FPartialHit& Hit : Partials)
+			{
+				if (Result.Bits[Hit.I] == 0)
+				{
+					Result.Bits[Hit.I] = 2;
+				}
+			}
 		}
 
 		// ---- Result cells: whose values and whose offset each takes ----
@@ -483,6 +605,8 @@ bool FPCGVoxelOffsetSurfaceElement::ExecuteInternal(FPCGContext* Context) const
 		TArray<int32> OffsetOf; // index into Grid.Cells / Offsets
 		TArray<int32> Own; // the In point copied, or INDEX_NONE when it needs the nearest old surface cell (Push)
 		TArray<bool> Added;
+		TArray<FIntPoint> PartialHits; // per result cell: its range in Partials, or empty when it is filled whole
+		int32 Cursor = 0;
 		for (int64 I = 0; I < Count; ++I)
 		{
 			if (!Result.Bits[I])
@@ -490,6 +614,20 @@ bool FPCGVoxelOffsetSurfaceElement::ExecuteInternal(FPCGContext* Context) const
 				continue;
 			}
 			const FIntVector Cell = Result.Cell(I);
+			if (Result.Bits[I] == 2)
+			{
+				while (Partials[Cursor].I < I) { ++Cursor; }
+				int32 End = Cursor;
+				while (End < Partials.Num() && Partials[End].I == I) { ++End; }
+				ResultCells.Add(Cell);
+				OffsetOf.Add(INDEX_NONE);
+				Own.Add(Grid.CellPoint[Partials[Cursor].From]);
+				Added.Add(true);
+				PartialHits.Add(FIntPoint(Cursor, End));
+				Cursor = End;
+				continue;
+			}
+			PartialHits.Add(FIntPoint(0, 0));
 			if (Source.Bits[I])
 			{
 				const int32 Index = Grid.FindCellIndex(Cell);
@@ -564,42 +702,73 @@ bool FPCGVoxelOffsetSurfaceElement::ExecuteInternal(FPCGContext* Context) const
 		}
 
 		// ---- The fraction: per result cell, its box (or boxes) ----
-		// The face box moves only the open faces. On a shrink with Split Inner Corners, the cell is also carved near
-		// every empty neighbour; when that leaves anything but the face box, the cell is written as its carved boxes
-		// instead (several points on one cell, the largest first so a node reading one point per cell gets the most of
-		// it; the box around them is the face box, which is what meshing reads).
+		// Growing cells are whole; a cell reached only in part is the union of those parts (several points on one cell
+		// when it takes more than one box, as at an inside corner). A shrinking cell moves only its open faces in. With
+		// Split Inner Corners it is also carved near every empty neighbour; when that leaves anything but the face box,
+		// the cell is written as its carved boxes instead. Several boxes on one cell go largest first, so a node reading
+		// one point per cell gets the most of it. No box leaves its cell.
 		TArray<FPiece> Pieces;
-		TArray<bool> PieceSplit;
+		TArray<bool> PieceSplit; // Was Split: one of several boxes on its cell
+		TArray<bool> PieceShows; // a carved or part box: shows even when its cell's six neighbours are filled
 		Pieces.Reserve(ResultCells.Num());
 		PieceSplit.Reserve(ResultCells.Num());
+		PieceShows.Reserve(ResultCells.Num());
 		TArray<FPiece> Carved;
 		TArray<FIntVector, TInlineAllocator<26>> EmptyNeighbours;
+		auto VolumeOf = [](const FPiece& P) { const FVector Size = P.Hi - P.Lo; return Size.X * Size.Y * Size.Z; };
+		auto AddSorted = [&](TArray<FPiece>& List)
+		{
+			Algo::StableSort(List, [&](const FPiece& A, const FPiece& B) { return VolumeOf(A) > VolumeOf(B) + 1e-12; });
+			for (const FPiece& Piece : List)
+			{
+				Pieces.Add(Piece);
+				PieceSplit.Add(List.Num() > 1);
+				PieceShows.Add(true);
+			}
+		};
+		// A shrinking face moves in unless a whole cell is next to it; a part cell (a neighbour's growth) does not cover it.
+		auto IsWhole = [&Result](const FIntVector& Cell) { return Result.Bits[Result.Index(Cell)] == 1; };
 		for (int32 Index = 0; Index < ResultCells.Num(); ++Index)
 		{
 			const FIntVector& Cell = ResultCells[Index];
+			if (PartialHits[Index].Y > PartialHits[Index].X)
+			{
+				const TConstArrayView<FPartialHit> Hits(Partials.GetData() + PartialHits[Index].X, PartialHits[Index].Y - PartialHits[Index].X);
+				Carved.Reset();
+				UnionHits(Hits, [&](int32 Hit, const FVector& Lo, const FVector& Hi)
+				{
+					FPiece& Piece = Carved.AddDefaulted_GetRef();
+					Piece.Cell = Cell;
+					Piece.Source = Grid.CellPoint[Hits[Hit].From];
+					Piece.bFreshEntry = Settings->AddedValues == EPCGVoxelOffsetAddedValues::None;
+					Piece.Lo = Lo;
+					Piece.Hi = Hi;
+				});
+				AddSorted(Carved);
+				continue;
+			}
 			const FCellOffset& Offset = Offsets[OffsetOf[Index]];
 			FPiece Whole;
 			Whole.Cell = Cell;
 			Whole.Source = Own[Index];
 			Whole.bFreshEntry = Added[Index] && Settings->AddedValues == EPCGVoxelOffsetAddedValues::None;
 
-			if (Offset.Sign != 0 && !Offset.Fraction.IsZero())
+			if (Offset.Sign < 0 && !Offset.Fraction.IsZero())
 			{
-				const bool bGrow = Offset.Sign > 0;
 				for (int32 Axis = 0; Axis < 3; ++Axis)
 				{
-					const double F = bGrow ? Offset.Fraction[Axis] : -Offset.Fraction[Axis];
+					const double F = -Offset.Fraction[Axis];
 					FIntVector Step(0);
 					Step[Axis] = 1;
-					if (!Result.Get(Cell + Step)) { Whole.Hi[Axis] += F; }
-					if (!Result.Get(Cell - Step)) { Whole.Lo[Axis] -= F; }
+					if (!IsWhole(Cell + Step)) { Whole.Hi[Axis] += F; }
+					if (!IsWhole(Cell - Step)) { Whole.Lo[Axis] -= F; }
 				}
 				if ((Whole.Hi - Whole.Lo).GetMin() <= 1e-6)
 				{
 					continue; // shrunk to nothing: the cell is gone
 				}
 
-				if (!bGrow && Settings->bSplitInnerCorners)
+				if (Settings->bSplitInnerCorners)
 				{
 					EmptyNeighbours.Reset();
 					for (int32 Z = -1; Z <= 1; ++Z)
@@ -607,7 +776,7 @@ bool FPCGVoxelOffsetSurfaceElement::ExecuteInternal(FPCGContext* Context) const
 							for (int32 X = -1; X <= 1; ++X)
 							{
 								const FIntVector D(X, Y, Z);
-								if (D != FIntVector::ZeroValue && !Result.Get(Cell + D))
+								if (D != FIntVector::ZeroValue && !IsWhole(Cell + D))
 								{
 									EmptyNeighbours.Add(D);
 								}
@@ -623,12 +792,10 @@ bool FPCGVoxelOffsetSurfaceElement::ExecuteInternal(FPCGContext* Context) const
 							&& Carved[0].Lo.Equals(Whole.Lo, 1e-9) && Carved[0].Hi.Equals(Whole.Hi, 1e-9);
 						if (!bSameAsFaces && !Carved.IsEmpty())
 						{
-							auto VolumeOf = [](const FPiece& P) { const FVector Size = P.Hi - P.Lo; return Size.X * Size.Y * Size.Z; };
-							Algo::StableSort(Carved, [&](const FPiece& A, const FPiece& B) { return VolumeOf(A) > VolumeOf(B) + 1e-12; });
-							for (const FPiece& Piece : Carved)
+							AddSorted(Carved);
+							if (Carved.Num() == 1)
 							{
-								Pieces.Add(Piece);
-								PieceSplit.Add(true);
+								PieceSplit.Last() = true; // carved, even when one box is left
 							}
 							continue;
 						}
@@ -638,6 +805,7 @@ bool FPCGVoxelOffsetSurfaceElement::ExecuteInternal(FPCGContext* Context) const
 
 			Pieces.Add(Whole);
 			PieceSplit.Add(false);
+			PieceShows.Add(false);
 		}
 
 		// ---- Write: one point per piece, on its cell centre, bounds covering its box ----
@@ -684,21 +852,22 @@ bool FPCGVoxelOffsetSurfaceElement::ExecuteInternal(FPCGContext* Context) const
 			}
 			return Out;
 		};
-		auto IsFilled = [&Result](const FIntVector& Cell) { return Result.Get(Cell); };
+		// Only whole cells hide a neighbour's face; a part cell may leave it open.
+		auto IsFilled = [&Result](const FIntVector& Cell) { return Result.Bits[Result.Index(Cell)] == 1; };
 
 		TArray<FPCGVoxelCellOut> Outs;
 		UPCGBasePointData* Out = Emit(Pieces, Outs);
 		if (PCGVoxelPointIO::RefreshSurrounded(Points, Out, Settings->Grid.SurroundedAttribute, Outs, IsFilled))
 		{
-			// A carved box shows even when its cell's six neighbours are filled (the notch is diagonal).
+			// A carved or part box shows even when its cell's six neighbours are filled (the notch is diagonal).
 			FPCGMetadataDomain* OutDomain = Out->MutableMetadata()->GetMetadataDomain(PCGMetadataDomainID::Elements);
 			if (FPCGMetadataAttribute<bool>* Surrounded = OutDomain
 				? static_cast<FPCGMetadataAttribute<bool>*>(OutDomain->GetMutableAttribute(Settings->Grid.SurroundedAttribute)) : nullptr)
 			{
 				const TConstPCGValueRange<int64> Entries = Out->GetConstMetadataEntryValueRange();
-				for (int32 Index = 0; Index < PieceSplit.Num(); ++Index)
+				for (int32 Index = 0; Index < PieceShows.Num(); ++Index)
 				{
-					if (PieceSplit[Index])
+					if (PieceShows[Index])
 					{
 						Surrounded->SetValue(Entries[Index], false);
 					}
