@@ -10,18 +10,6 @@
 
 #include "PCGVoxelOffsetSurface.generated.h"
 
-/** Grid axes, as flags. */
-UENUM(BlueprintType, meta=(Bitflags, UseEnumValuesAsMaskValuesInEditor="true"))
-enum class EPCGVoxelAxes : uint8
-{
-	None = 0 UMETA(Hidden),
-	X = 1 << 0,
-	Y = 1 << 1,
-	Z = 1 << 2,
-	All = X | Y | Z UMETA(Hidden),
-};
-ENUM_CLASS_FLAGS(EPCGVoxelAxes);
-
 /** What Amount is measured in. */
 UENUM(BlueprintType)
 enum class EPCGVoxelOffsetUnits : uint8
@@ -61,6 +49,16 @@ enum class EPCGVoxelOffsetAddedValues : uint8
 	Nearest,
 	/** Attribute defaults; native properties (color, density, rotation, scale) still come from the cell that grew into it. */
 	None,
+};
+
+/** What Min Thickness does with a run of cells a shrink would leave too thin. */
+UENUM(BlueprintType)
+enum class EPCGVoxelOffsetThinResult : uint8
+{
+	/** Shrink less: the run's end faces stop where the run is Min Thickness (or not at all, if it is thinner than that). */
+	Clamp,
+	/** Delete the run's cells (those with a Min Thickness above 0). */
+	Remove,
 };
 
 /**
@@ -140,6 +138,37 @@ public:
 	 */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Settings", meta=(PCG_Overridable))
 	bool bSplitInnerCorners = true;
+
+	/**
+	 * Shrinking: keep the offset from leaving slivers. Along each axis, a run of whole cells whose end faces a shrink
+	 * moves in may not end up thinner than Min Thickness; Thin Result says what happens to a run that would. Only the
+	 * shrink's fraction is limited (whole layers removed stay removed), and only runs the fraction made thinner count.
+	 */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Thinness", meta=(PCG_Overridable))
+	bool bLimitThinness = false;
+
+	/**
+	 * The thinnest a run of cells may end up along an axis, in Units (Cells: 0.25 is a quarter cell). Attribute (a
+	 * number of 0 or more, required in that mode; default 'MinThickness'): a point attribute or property gives each cell
+	 * its own minimum (0 = this cell is never clamped or removed, the per-cell switch); '@Data.MinThickness' gives one
+	 * per set. A run takes the largest minimum of its cells; only end cells above 0 are clamped.
+	 */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Thinness", meta=(PCG_Overridable, EditCondition="bLimitThinness"))
+	FPCGUtilsPointShorthandDoubleAbs MinThickness = FPCGUtilsPointShorthandDoubleAbs(0.25, TEXT("MinThickness"));
+
+	/** Clamp (default) shrinks a thin run less; Remove deletes it. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Thinness", meta=(PCG_Overridable, EditCondition="bLimitThinness"))
+	EPCGVoxelOffsetThinResult ThinResult = EPCGVoxelOffsetThinResult::Clamp;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Outputs", meta=(PCG_Overridable, InlineEditConditionToggle))
+	bool bWriteWasClamped = true;
+
+	/**
+	 * Optional output, Boolean (written when Limit Thinness is on): true on each point of a cell Min Thickness clamped
+	 * (its shrink limited on some axis); false on every other point.
+	 */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Outputs", meta=(PCG_Overridable, EditCondition="bWriteWasClamped"))
+	FName WasClampedAttribute = TEXT("WasClamped");
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Outputs", meta=(PCG_Overridable, InlineEditConditionToggle))
 	bool bWriteWasSplit = true;

@@ -703,4 +703,80 @@ bool FPCGVoxelOffsetSurfaceGrowMeshTest::RunTest(const FString& Parameters)
 	return true;
 }
 
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FPCGVoxelOffsetSurfaceThinnessTest, "PCGUtils.Voxel.OffsetSurface.MinThickness",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+
+bool FPCGVoxelOffsetSurfaceThinnessTest::RunTest(const FString& Parameters)
+{
+	using namespace PCGVoxelOffsetSurfaceTests;
+	auto Limit = [](double Min, EPCGVoxelOffsetThinResult Result = EPCGVoxelOffsetThinResult::Clamp)
+	{
+		return [Min, Result](UPCGVoxelOffsetSurfaceSettings& S)
+		{
+			S.bLimitThinness = true;
+			S.MinThickness.Constant = Min;
+			S.ThinResult = Result;
+		};
+	};
+
+	TestFalse(TEXT("off by default"), NewObject<UPCGVoxelOffsetSurfaceSettings>()->bLimitThinness);
+
+	// A plate one cell thick shrunk 0.4 would be 0.2 thick; Min Thickness 0.5 stops each Z face at a quarter. X and Y
+	// runs are 3 long (2.2 left), so the edges still pull in 0.4.
+	const TArray<FOutPoint> Free = Offset(MakeVoxels(Block(3, 3, 1)), -0.4);
+	TestTrue(TEXT("unlimited: the plate is 0.2 thick"), BoundsAre(At(Free, FIntVector(1, 1, 0)), FVector(-50, -50, -10), FVector(50, 50, 10)));
+	TArray<FPCGTaggedData> Raw;
+	const TArray<FOutPoint> Plate = Offset(MakeVoxels(Block(3, 3, 1)), -0.4, Limit(0.5), &Raw);
+	TestEqual(TEXT("clamped plate: 9 points"), Plate.Num(), 9);
+	TestTrue(TEXT("clamped plate: the middle is 0.5 thick"), BoundsAre(At(Plate, FIntVector(1, 1, 0)), FVector(-50, -50, -25), FVector(50, 50, 25)));
+	TestTrue(TEXT("clamped plate: the corner still pulls in 0.4 on X and Y"), BoundsAre(At(Plate, FIntVector(0, 0, 0)), FVector(-10, -10, -25), FVector(50, 50, 25)));
+	const TArray<bool> WasClamped = Bools(Raw, TEXT("WasClamped"));
+	TestTrue(TEXT("clamped plate: WasClamped on all 9"), WasClamped.Num() == 9 && !WasClamped.Contains(false));
+
+	// Remove deletes the thin runs: the whole plate.
+	TestEqual(TEXT("Remove: the thin plate is gone"), Offset(MakeVoxels(Block(3, 3, 1)), -0.4, Limit(0.5, EPCGVoxelOffsetThinResult::Remove)).Num(), 0);
+
+	// A lone cell -0.5 would vanish; clamped it is a Min Thickness cube.
+	const TArray<FOutPoint> Lone = Offset(MakeVoxels({ FIntVector(0) }), -0.5, Limit(0.25));
+	TestTrue(TEXT("lone cell -0.5 clamped to a quarter cube"), Lone.Num() == 1 && BoundsAre(&Lone[0], FVector(-12.5), FVector(12.5)));
+
+	// A thick block is not thin: nothing changes and nothing is flagged.
+	TArray<FPCGTaggedData> ThickRaw;
+	const TArray<FOutPoint> Thick = Offset(MakeVoxels(Block(5, 5, 5)), -0.4, Limit(0.5), &ThickRaw);
+	TestNearlyEqual(TEXT("thick block: the plain offset"), Volume(Thick), 4.2 * 4.2 * 4.2 * 1e6, 1.0);
+	TestFalse(TEXT("thick block: nothing clamped"), Bools(ThickRaw, TEXT("WasClamped")).Contains(true));
+
+	// A run of 2 cells: both ends shrink less, sharing the cut. Z only, -0.8 would leave 0.4; Min 1 leaves 1.
+	const TArray<FOutPoint> Pair = Offset(MakeVoxels({ FIntVector(0, 0, 0), FIntVector(0, 0, 1) }), -0.8, [&](UPCGVoxelOffsetSurfaceSettings& S)
+	{
+		Limit(1.0)(S);
+		S.Axes = static_cast<int32>(EPCGVoxelAxes::Z);
+	});
+	TestTrue(TEXT("run of 2: bottom from the middle down half a cell"), BoundsAre(At(Pair, FIntVector(0, 0, 0)), FVector(-50, -50, 0), FVector(50, 50, 50)));
+	TestTrue(TEXT("run of 2: top up half a cell"), BoundsAre(At(Pair, FIntVector(0, 0, 1)), FVector(-50, -50, -50), FVector(50, 50, 0)));
+
+	// Per cell: Min Thickness 0 on the plate's middle leaves it unclamped (the per-cell switch).
+	UPCGPointArrayData* Masked = MakeVoxels(Block(3, 3, 1));
+	TArray<double> Mins;
+	Mins.Init(0.5, 9);
+	Mins[4] = 0.0; // Block order: the middle of a 3x3 is index 4
+	AddDoubles(Masked, TEXT("MinThickness"), Mins);
+	const TArray<FOutPoint> PerCell = Offset(Masked, -0.4, [&](UPCGVoxelOffsetSurfaceSettings& S)
+	{
+		Limit(0.0)(S);
+		S.MinThickness.Input = EPCGUtilsPointInputValueType::Attribute;
+	});
+	TestTrue(TEXT("per cell: 0 leaves the middle at 0.2"), BoundsAre(At(PerCell, FIntVector(1, 1, 0)), FVector(-50, -50, -10), FVector(50, 50, 10)));
+	TestTrue(TEXT("per cell: the others clamp to 0.5"), BoundsAre(At(PerCell, FIntVector(0, 1, 0)), FVector(-10, -50, -25), FVector(50, 50, 25)));
+
+	// A missing attribute names the setting.
+	AddExpectedErrorPlain(TEXT("Min Thickness"), EAutomationExpectedErrorFlags::Contains, 1);
+	TestEqual(TEXT("missing Min Thickness attribute stops the input"), Offset(MakeVoxels(Block(3, 3, 1)), -0.4, [&](UPCGVoxelOffsetSurfaceSettings& S)
+	{
+		Limit(0.5)(S);
+		S.MinThickness.Input = EPCGUtilsPointInputValueType::Attribute;
+	}).Num(), 0);
+	return true;
+}
+
 #endif

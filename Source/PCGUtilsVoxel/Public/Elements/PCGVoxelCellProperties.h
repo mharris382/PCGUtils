@@ -32,12 +32,13 @@ enum class EPCGVoxelDirectionSpace : uint8
 
 /**
  * Writes per-cell properties of a voxel set as point attributes: which sides are open (next to an empty cell),
- * whether the cell is surrounded, and optional neighbourhood, depth, column and connectivity values. Each output has
+ * whether the cell is surrounded, and optional neighbourhood, depth, column, connectivity and shape values (thin
+ * protrusions and how far out they reach, thickness in a row, cells next to thin gaps or enclosed cavities). Each output has
  * its own toggle and attribute name. The output is the input with attributes added; a chunked input comes out
  * expanded to one point per cell, because every property is per cell.
  */
 UCLASS(BlueprintType, ClassGroup=(Procedural), Category="PCGUtils|Voxel",
-	meta=(Keywords="voxel voxels cell properties open sides surrounded neighbors neighbours exposed depth surface island component sky mask"))
+	meta=(Keywords="voxel voxels cell properties open sides surrounded neighbors neighbours exposed depth surface island component sky mask protrusion spike fin thin thickness gap slot cavity hole enclosed opening closing morphology"))
 class PCGUTILSVOXEL_API UPCGVoxelCellPropertiesSettings : public UPCGVoxelSettingsBase
 {
 	GENERATED_BODY()
@@ -216,6 +217,77 @@ public:
 	/** Which neighbours join cells into one component. */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Outputs|Components", meta=(PCG_Overridable))
 	EPCGVoxelConnectivity Connectivity = EPCGVoxelConnectivity::Faces;
+
+	// ---- Shape (opening and closing). Features are measured with a box of 2 x radius + 1 cells per axis, on the axes in
+	// Shape Axes (an axis left out has radius 0: X | Y finds features in plan only).
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Outputs|Shape", meta=(PCG_Overridable, InlineEditConditionToggle))
+	bool bWriteIsProtrusion = false;
+
+	/**
+	 * Optional output, Boolean: true on a cell that no box of 2 x Protrusion Radius + 1 cells fits around inside the
+	 * set: part of a feature thinner than that box (a spike, fin, thin wall or arm). These are the cells an opening
+	 * (Offset Surface by -R, then +R) would remove.
+	 */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Outputs|Shape", meta=(PCG_Overridable, EditCondition="bWriteIsProtrusion"))
+	FName IsProtrusionAttribute = TEXT("IsProtrusion");
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Outputs|Shape", meta=(PCG_Overridable, InlineEditConditionToggle))
+	bool bWriteCoreDistance = false;
+
+	/**
+	 * Optional output, Integer32: face steps through filled cells to the nearest core cell (one whose box of Protrusion
+	 * Radius is all filled). 0 on core cells, 1 next to the core; -1 when the cell's part of the set has no core at all.
+	 * Filter on it to find long protrusions (a value above X: more than X cells out from the bulk).
+	 */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Outputs|Shape", meta=(PCG_Overridable, EditCondition="bWriteCoreDistance"))
+	FName CoreDistanceAttribute = TEXT("CoreDistance");
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Outputs|Shape", meta=(PCG_Overridable, InlineEditConditionToggle))
+	bool bWriteThickness = false;
+
+	/**
+	 * Optional output, Vector: how many filled cells in an unbroken row pass through the cell along grid X, Y and Z,
+	 * the cell included. (1, 1, 1) for a lone cell; a wall one cell thick in X has X = 1.
+	 */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Outputs|Shape", meta=(PCG_Overridable, EditCondition="bWriteThickness"))
+	FName ThicknessAttribute = TEXT("Thickness");
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Outputs|Shape", meta=(PCG_Overridable, InlineEditConditionToggle))
+	bool bWriteBordersGap = false;
+
+	/**
+	 * Optional output, Boolean: true when a face neighbour is a gap cell, an empty cell that a closing by Gap Radius
+	 * fills (Offset Surface by +R, then -R): a slot, notch or hole narrower than 2 x Gap Radius + 1 cells.
+	 */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Outputs|Shape", meta=(PCG_Overridable, EditCondition="bWriteBordersGap"))
+	FName BordersGapAttribute = TEXT("BordersGap");
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Outputs|Shape", meta=(PCG_Overridable, InlineEditConditionToggle))
+	bool bWriteBordersCavity = false;
+
+	/** Optional output, Boolean: true when a face neighbour is an enclosed empty cell (no path through empty cells leads out). */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Outputs|Shape", meta=(PCG_Overridable, EditCondition="bWriteBordersCavity"))
+	FName BordersCavityAttribute = TEXT("BordersCavity");
+
+	/** Protrusions are features thinner than 2 x this + 1 cells (1: one cell thin features, 2: up to three). */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Outputs|Shape", meta=(PCG_Overridable, ClampMin=1, ClampMax=16, UIMin=1, UIMax=8))
+	int32 ProtrusionRadius = 1;
+
+	/** Gaps are slots and holes narrower than 2 x this + 1 cells. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Outputs|Shape", meta=(PCG_Overridable, ClampMin=1, ClampMax=16, UIMin=1, UIMax=8))
+	int32 GapRadius = 1;
+
+	/** The grid axes protrusions and gaps are measured along (default X, Y and Z). X | Y looks in plan only. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Outputs|Shape", meta=(PCG_Overridable, Bitmask, BitmaskEnum="/Script/PCGUtilsVoxel.EPCGVoxelAxes"))
+	int32 ShapeAxes = static_cast<int32>(EPCGVoxelAxes::All);
+
+	/**
+	 * Is Protrusion, Core Distance, Borders Gap and Borders Cavity work over a box of cells (the set's bounds padded by
+	 * the radii); the node stops with an error when it has more cells than this.
+	 */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Outputs|Shape", meta=(PCG_Overridable, ClampMin="1"))
+	int64 MaxShapeCells = 64 * 1024 * 1024;
 
 	// ---- Cell.
 

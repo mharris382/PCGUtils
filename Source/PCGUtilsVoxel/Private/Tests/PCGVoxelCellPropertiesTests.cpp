@@ -269,4 +269,79 @@ bool FPCGVoxelCellNamesTest::RunTest(const FString&)
 	return true;
 }
 
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FPCGVoxelCellShapeTest,
+	"PCGUtils.Voxel.CellProperties.Shape",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::ProductFilter)
+
+bool FPCGVoxelCellShapeTest::RunTest(const FString&)
+{
+	using namespace PCGVoxelCellPropertiesTests;
+	auto ShapeOn = []()
+	{
+		UPCGVoxelCellPropertiesSettings* Settings = NewObject<UPCGVoxelCellPropertiesSettings>();
+		Settings->bWriteIsProtrusion = true;
+		Settings->bWriteCoreDistance = true;
+		Settings->bWriteThickness = true;
+		Settings->bWriteBordersGap = true;
+		Settings->bWriteBordersCavity = true;
+		return Settings;
+	};
+
+	// A 5x5x5 block with a one-cell spike three long out of its +X face.
+	TArray<FIntVector> Spiked = Block(5, 5, 5);
+	Spiked.Append({ FIntVector(5, 2, 2), FIntVector(6, 2, 2), FIntVector(7, 2, 2) });
+	const UPCGBasePointData* Out = Properties(ShapeOn(), MakeVoxels(Spiked));
+	UTEST_NOT_NULL(TEXT("Out exists"), Out);
+	auto At = [&](int32 X, int32 Y, int32 Z) { return PointAt(Out, FIntVector(X, Y, Z)); };
+	TestTrue(TEXT("spike is a protrusion"), ValueOf<bool>(Out, TEXT("IsProtrusion"), At(6, 2, 2), false));
+	TestFalse(TEXT("the block's corner is not (a 3-cell box fits over it)"), ValueOf<bool>(Out, TEXT("IsProtrusion"), At(0, 0, 0), true));
+	TestEqual(TEXT("core cell: distance 0"), ValueOf<int32>(Out, TEXT("CoreDistance"), At(2, 2, 2), -9), 0);
+	TestEqual(TEXT("block corner: 3 steps from the core"), ValueOf<int32>(Out, TEXT("CoreDistance"), At(0, 0, 0), -9), 3);
+	TestEqual(TEXT("spike tip: 4 steps from the core"), ValueOf<int32>(Out, TEXT("CoreDistance"), At(7, 2, 2), -9), 4);
+	TestEqual(TEXT("spike thickness: a row of 8 in X, 1 across"), ValueOf<FVector>(Out, TEXT("Thickness"), At(6, 2, 2), FVector(0.0)), FVector(8, 1, 1));
+	TestEqual(TEXT("block edge thickness"), ValueOf<FVector>(Out, TEXT("Thickness"), At(2, 0, 0), FVector(0.0)), FVector(5, 5, 5));
+	TestFalse(TEXT("no gaps on a convex block"), ValueOf<bool>(Out, TEXT("BordersGap"), At(0, 0, 0), true));
+
+	// A plate one cell thick: all protrusion in 3D (no core, distance -1); in plan (X | Y) it is solid.
+	const UPCGBasePointData* Plate3D = Properties(ShapeOn(), MakeVoxels(Block(5, 5, 1)));
+	UTEST_NOT_NULL(TEXT("Plate exists"), Plate3D);
+	TestTrue(TEXT("3D: a thin plate is a protrusion"), ValueOf<bool>(Plate3D, TEXT("IsProtrusion"), PointAt(Plate3D, FIntVector(2, 2, 0)), false));
+	TestEqual(TEXT("3D: no core, distance -1"), ValueOf<int32>(Plate3D, TEXT("CoreDistance"), PointAt(Plate3D, FIntVector(2, 2, 0)), -9), -1);
+	UPCGVoxelCellPropertiesSettings* Plan = ShapeOn();
+	Plan->ShapeAxes = static_cast<int32>(EPCGVoxelAxes::X | EPCGVoxelAxes::Y);
+	const UPCGBasePointData* Plate2D = Properties(Plan, MakeVoxels(Block(5, 5, 1)));
+	UTEST_NOT_NULL(TEXT("Plan plate exists"), Plate2D);
+	TestFalse(TEXT("X | Y: the plate's corner is not a protrusion"), ValueOf<bool>(Plate2D, TEXT("IsProtrusion"), PointAt(Plate2D, FIntVector(0, 0, 0)), true));
+
+	// A one-cell slot cut into a plate (x = 2, y = 1 to 4): its walls border a gap, cells further away do not.
+	TArray<FIntVector> Slotted = Block(5, 5, 1);
+	Slotted.RemoveAll([](const FIntVector& C) { return C.X == 2 && C.Y >= 1; });
+	const UPCGBasePointData* Slot = Properties(Plan, MakeVoxels(Slotted));
+	UTEST_NOT_NULL(TEXT("Slot exists"), Slot);
+	TestTrue(TEXT("slot wall borders a gap"), ValueOf<bool>(Slot, TEXT("BordersGap"), PointAt(Slot, FIntVector(1, 2, 0)), false));
+	TestTrue(TEXT("slot end borders a gap"), ValueOf<bool>(Slot, TEXT("BordersGap"), PointAt(Slot, FIntVector(2, 0, 0)), false));
+	TestFalse(TEXT("the far edge does not"), ValueOf<bool>(Slot, TEXT("BordersGap"), PointAt(Slot, FIntVector(0, 2, 0)), true));
+	TestFalse(TEXT("an open slot is no cavity"), ValueOf<bool>(Slot, TEXT("BordersCavity"), PointAt(Slot, FIntVector(1, 2, 0)), true));
+
+	// A 3x3x3 block with its centre hollow: the six around it border a cavity; open the top and it is a cup, not a cavity.
+	TArray<FIntVector> Hollow = Block(3, 3, 3);
+	Hollow.Remove(FIntVector(1, 1, 1));
+	const UPCGBasePointData* Closed = Properties(ShapeOn(), MakeVoxels(Hollow));
+	UTEST_NOT_NULL(TEXT("Hollow exists"), Closed);
+	TestTrue(TEXT("hollow: the wall borders a cavity"), ValueOf<bool>(Closed, TEXT("BordersCavity"), PointAt(Closed, FIntVector(1, 1, 0)), false));
+	TestFalse(TEXT("hollow: a corner does not"), ValueOf<bool>(Closed, TEXT("BordersCavity"), PointAt(Closed, FIntVector(0, 0, 0)), true));
+	TestTrue(TEXT("hollow: the hole is a gap too"), ValueOf<bool>(Closed, TEXT("BordersGap"), PointAt(Closed, FIntVector(1, 1, 0)), false));
+	Hollow.Remove(FIntVector(1, 1, 2));
+	const UPCGBasePointData* Cup = Properties(ShapeOn(), MakeVoxels(Hollow));
+	UTEST_NOT_NULL(TEXT("Cup exists"), Cup);
+	TestFalse(TEXT("cup: open to the top, no cavity"), ValueOf<bool>(Cup, TEXT("BordersCavity"), PointAt(Cup, FIntVector(1, 1, 0)), true));
+
+	// The working box is capped.
+	UPCGVoxelCellPropertiesSettings* Small = ShapeOn();
+	Small->MaxShapeCells = 10;
+	AddExpectedErrorPlain(TEXT("Max Shape Cells"), EAutomationExpectedErrorFlags::Contains, 1);
+	TestNull(TEXT("over Max Shape Cells: no output"), Properties(Small, MakeVoxels(Block(2, 2, 2))));
+	return true;
+}
+
 #endif

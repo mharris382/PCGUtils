@@ -8,6 +8,7 @@
 #include "PCGPin.h"
 #include "Utils/PCGLogErrors.h"
 #include "Voxel/PCGVoxelGrid.h"
+#include "Voxel/PCGVoxelMorphology.h"
 #include "Voxel/PCGVoxelPointIO.h"
 
 #define LOCTEXT_NAMESPACE "PCGVoxelCellProperties"
@@ -166,8 +167,24 @@ bool FPCGVoxelCellPropertiesElement::ExecuteInternal(FPCGContext* Context) const
 		{ Settings->bWriteIsSkyVisible, Settings->IsSkyVisibleAttribute, TEXT("Is Sky Visible Attribute") },
 		{ Settings->bWriteComponentID, Settings->ComponentIDAttribute, TEXT("Component ID Attribute") },
 		{ Settings->bWriteComponentSize, Settings->ComponentSizeAttribute, TEXT("Component Size Attribute") },
+		{ Settings->bWriteIsProtrusion, Settings->IsProtrusionAttribute, TEXT("Is Protrusion Attribute") },
+		{ Settings->bWriteCoreDistance, Settings->CoreDistanceAttribute, TEXT("Core Distance Attribute") },
+		{ Settings->bWriteThickness, Settings->ThicknessAttribute, TEXT("Thickness Attribute") },
+		{ Settings->bWriteBordersGap, Settings->BordersGapAttribute, TEXT("Borders Gap Attribute") },
+		{ Settings->bWriteBordersCavity, Settings->BordersCavityAttribute, TEXT("Borders Cavity Attribute") },
 		{ Settings->bWriteCellIndex, Settings->CellIndexAttribute, TEXT("Cell Index Attribute") },
 	};
+	const bool bShapeBox = Settings->bWriteIsProtrusion || Settings->bWriteCoreDistance || Settings->bWriteBordersGap || Settings->bWriteBordersCavity;
+	FIntVector ProtrusionReach(0);
+	FIntVector GapReach(0);
+	for (int32 Axis = 0; Axis < 3; ++Axis)
+	{
+		const bool bOn = (Settings->ShapeAxes & (1 << Axis)) != 0;
+		ProtrusionReach[Axis] = bOn ? FMath::Max(1, Settings->ProtrusionRadius) : 0;
+		GapReach[Axis] = bOn ? FMath::Max(1, Settings->GapRadius) : 0;
+	}
+	// Room for the closing (twice the gap reach), the opening, and one empty layer for the outside flood.
+	const FIntVector ShapePad(FMath::Max(Settings->ProtrusionRadius, 2 * Settings->GapRadius) + 1);
 	for (int32 A = 0; A < UE_ARRAY_COUNT(Names); ++A)
 	{
 		if (!Names[A].bOn)
@@ -201,6 +218,20 @@ bool FPCGVoxelCellPropertiesElement::ExecuteInternal(FPCGContext* Context) const
 		if (!FPCGVoxelGrid::Build(Context, Points, Settings->Grid, Title, Index, Grid))
 		{
 			continue;
+		}
+		if (bShapeBox && Grid.NumCells() > 0)
+		{
+			const FIntVector Box = Grid.MaxCell - Grid.MinCell + FIntVector(1) + ShapePad * 2;
+			const int64 BoxCells = static_cast<int64>(Box.X) * Box.Y * Box.Z;
+			if (BoxCells > Settings->MaxShapeCells || BoxCells >= MAX_int32)
+			{
+				PCGLog::LogErrorOnGraph(PCGVoxel::FormatError(Title, Index, FText::Format(
+					LOCTEXT("ShapeTooBig", "the box of cells the shape outputs work over is {0} x {1} x {2} = {3} cells (the set's bounds plus "
+						"the radii and one cell each side), over Max Shape Cells ({4}, and under 2^31 at most). Raise Max Shape Cells, "
+						"lower the radii, or turn the shape outputs off."),
+					Box.X, Box.Y, Box.Z, FText::AsNumber(BoxCells), FText::AsNumber(Settings->MaxShapeCells))), Context);
+				continue;
+			}
 		}
 
 		// One output point per cell, in point order (a chunk's cells in Z, Y, X order), copied from its point.
@@ -477,6 +508,114 @@ bool FPCGVoxelCellPropertiesElement::ExecuteInternal(FPCGContext* Context) const
 			}
 			Write(Settings->bWriteComponentID, Settings->ComponentIDAttribute, int32(0), [&](int32 I) { return ComponentOf[OutCell[I]]; });
 			Write(Settings->bWriteComponentSize, Settings->ComponentSizeAttribute, int32(0), [&](int32 I) { return Size[ComponentOf[OutCell[I]]]; });
+		}
+
+		if (Settings->bWriteThickness)
+		{
+			// Per axis, each unbroken row of cells gives its length to all its cells.
+			TArray<FVector> Thickness;
+			Thickness.Init(FVector(1.0), NumCells);
+			TArray<int32> Row;
+			for (int32 Axis = 0; Axis < 3; ++Axis)
+			{
+				const FIntVector Step = FaceStep[2 * Axis];
+				for (int32 Cell = 0; Cell < NumCells; ++Cell)
+				{
+					if (Grid.IsOccupied(Grid.Cells[Cell] - Step))
+					{
+						continue; // not the start of its row
+					}
+					Row.Reset();
+					for (int32 Next = Cell; Next != INDEX_NONE; Next = Grid.FindCellIndex(Grid.Cells[Next] + Step))
+					{
+						Row.Add(Next);
+					}
+					for (const int32 InRow : Row)
+					{
+						Thickness[InRow][Axis] = Row.Num();
+					}
+				}
+			}
+			Write(true, Settings->ThicknessAttribute, FVector::ZeroVector, [&](int32 I) { return Thickness[OutCell[I]]; });
+		}
+
+		if (bShapeBox && NumCells > 0)
+		{
+			FPCGVoxelDenseMask Solid;
+			Solid.Init(Grid.MinCell, Grid.MaxCell, ShapePad);
+			for (const FIntVector& Cell : Grid.Cells)
+			{
+				Solid.Bits[Solid.Index(Cell)] = 1;
+			}
+			if (Settings->bWriteIsProtrusion || Settings->bWriteCoreDistance)
+			{
+				FPCGVoxelDenseMask Core;
+				PCGVoxelMorphology::Erode(Solid, ProtrusionReach, Core);
+				if (Settings->bWriteIsProtrusion)
+				{
+					FPCGVoxelDenseMask Opened;
+					PCGVoxelMorphology::Dilate(Core, ProtrusionReach, Opened);
+					Write(true, Settings->IsProtrusionAttribute, false, [&](int32 I) { return !Opened.Get(OutCells[I].First); });
+				}
+				if (Settings->bWriteCoreDistance)
+				{
+					// Breadth-first through filled cells from every core cell.
+					TArray<int32> Distance;
+					Distance.Init(INDEX_NONE, NumCells);
+					TArray<int32> Queue;
+					for (int32 Cell = 0; Cell < NumCells; ++Cell)
+					{
+						if (Core.Get(Grid.Cells[Cell]))
+						{
+							Distance[Cell] = 0;
+							Queue.Add(Cell);
+						}
+					}
+					for (int32 Head = 0; Head < Queue.Num(); ++Head)
+					{
+						const int32 Cell = Queue[Head];
+						for (int32 Dir = 0; Dir < 6; ++Dir)
+						{
+							const int32 Next = Grid.FindCellIndex(Grid.Cells[Cell] + FaceStep[Dir]);
+							if (Next != INDEX_NONE && Distance[Next] == INDEX_NONE)
+							{
+								Distance[Next] = Distance[Cell] + 1;
+								Queue.Add(Next);
+							}
+						}
+					}
+					Write(true, Settings->CoreDistanceAttribute, int32(0), [&](int32 I) { return Distance[OutCell[I]]; });
+				}
+			}
+			auto AnyFaceNeighbour = [](const FIntVector& Cell, auto&& Test)
+			{
+				for (int32 Dir = 0; Dir < 6; ++Dir)
+				{
+					if (Test(Cell + FaceStep[Dir]))
+					{
+						return true;
+					}
+				}
+				return false;
+			};
+			if (Settings->bWriteBordersGap)
+			{
+				FPCGVoxelDenseMask Closed;
+				PCGVoxelMorphology::Close(Solid, GapReach, Closed);
+				Write(true, Settings->BordersGapAttribute, false, [&](int32 I)
+				{
+					return AnyFaceNeighbour(OutCells[I].First, [&](const FIntVector& N) { return Closed.Get(N) && !Solid.Get(N); });
+				});
+			}
+			if (Settings->bWriteBordersCavity)
+			{
+				FPCGVoxelDenseMask Outside;
+				PCGVoxelMorphology::FloodOutside(Solid, Outside);
+				Write(true, Settings->BordersCavityAttribute, false, [&](int32 I)
+				{
+					return AnyFaceNeighbour(OutCells[I].First, [&](const FIntVector& N) { return !Solid.Get(N) && !Outside.Get(N); });
+				});
+			}
 		}
 
 		Write(Settings->bWriteCellIndex, Settings->CellIndexAttribute, FVector::ZeroVector,

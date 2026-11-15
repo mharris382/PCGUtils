@@ -11,6 +11,18 @@ class UPCGBasePointData;
 struct FPCGContext;
 
 /** Where a voxel set's grid sits when its data has no grid transform attribute. */
+/** Grid axes, as flags. */
+UENUM(BlueprintType, meta=(Bitflags, UseEnumValuesAsMaskValuesInEditor="true"))
+enum class EPCGVoxelAxes : uint8
+{
+	None = 0 UMETA(Hidden),
+	X = 1 << 0,
+	Y = 1 << 1,
+	Z = 1 << 2,
+	All = X | Y | Z UMETA(Hidden),
+};
+ENUM_CLASS_FLAGS(EPCGVoxelAxes);
+
 UENUM(BlueprintType)
 enum class EPCGVoxelMissingGridTransform : uint8
 {

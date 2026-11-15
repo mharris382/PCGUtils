@@ -494,6 +494,11 @@ that side is empty. Directions are grid axes; grid +Z is up.
 | `IsSkyVisible` | Boolean | no | No filled cell anywhere above in the column. |
 | `ComponentID` | Integer32 | no | Connected component, numbered from 0 in cell order (Z, Y, X). `Connectivity: Faces / Edges / Corners` (default Faces). |
 | `ComponentSize` | Integer32 | no | Cells in that component (for removing floaters). |
+| `IsProtrusion` | Boolean | no | No box of 2 x `Protrusion Radius` + 1 cells fits around the cell inside the set: part of a spike, fin, thin wall or arm. Exactly what an opening (Offset Surface -R then +R) removes. |
+| `CoreDistance` | Integer32 | no | Face steps through filled cells to the nearest core cell (one whose box of `Protrusion Radius` is all filled); 0 on the core, -1 when the cell's part has no core. Long protrusions have large values. |
+| `Thickness` | Vector | no | Cells in the unbroken row through the cell along X, Y and Z, the cell included. |
+| `BordersGap` | Boolean | no | A face neighbour is a gap cell: empty, but filled by a closing by `Gap Radius` (Offset Surface +R then -R): a slot, notch or hole narrower than 2 x R + 1. |
+| `BordersCavity` | Boolean | no | A face neighbour is an enclosed empty cell (no face path through empty cells leads out of the set's padded box). |
 | `CellIndex` | Vector | no | The whole-number grid index. |
 
 **Concave** means an inside corner that face checks cannot see. A concave edge is an empty edge neighbour whose two
@@ -503,6 +508,15 @@ edge plus two corners. Concave diagonals are reported for open cells too (a wall
 edge); `IsInnerCorner` is the case with no open side. Use: offsetting a surface by its open sides misses these cells;
 they are where a negative offset would have to split the box, or a positive offset of the neighbours closes the gap.
 
+- **Shape outputs** (added 2026-11-15, item 3 of the Offset Surface queue, from the designer's analysis sketch
+  `Monkey Golf Docs/Excalidraw/Attachments/Pasted image 20261115122454.png`): `Protrusion Radius` and `Gap Radius`
+  (default 1, cells) set the feature size; `Shape Axes` (default X | Y | Z) the axes they are measured along, so X | Y
+  finds thin features and slots in plan (a one-cell plate is solid in plan, all protrusion in 3D). The sketch's
+  protrusion test B ("distance to any cell with depth 2 is greater than X") is `CoreDistance > X` with radius 1.
+  These four (not Thickness) work on a dense box of the set's bounds padded by max(Protrusion R, 2 x Gap R) + 1, capped
+  by `Max Shape Cells` (default 64M; over it the input fails with an error naming the box). The morphology is the
+  shared `Voxel/PCGVoxelMorphology` library (section 5). Thin gaps are flagged on the cells next to them; the gap
+  cells themselves become points in item 4 (not built).
 - **Output:** the input with the attributes added: points, metadata, tags and `@Data` carry over (written through
   `PCGVoxelPointIO::WriteCells`).
 - **Chunk rule:** every property is per cell, so a chunked input comes out **expanded** to one point per cell (each
@@ -786,6 +800,17 @@ be any size and corners come out right. It takes over the planned phase-2 `Dilat
   corners and under notches are carved too: each cell is cut at its faces and the planes the fraction in from them
   (up to 3x3x3 pieces), and the kept pieces are merged greedily into the fewest boxes found (an inside edge gives 2, an
   inside corner 3). Each box is a point copied from the cell. Off: one box per cell, open faces only (the old look).
+- **Min Thickness** (added 2026-11-15 on request, for thin floating slivers a shrink leaves; off by default:
+  `Limit Thinness`). Along each axis the whole cells after the layers form runs, and only a run's two end faces move,
+  so its thickness after the shrink is its length less its end cells' fractions. A run the fraction leaves under its
+  minimum (in Units; the largest of its cells') gets `Thin Result`: **Clamp** (default; the end cells shrink less,
+  sharing the cut by their fractions, at most back to no shrink) or **Remove** (its cells are deleted). Only runs the
+  fraction made thinner count: whole layers removed stay removed, and a wall already thin in the input is left alone.
+  `Min Thickness` is a point shorthand (default constant 0.25, attribute `MinThickness`): per cell, 0 means never
+  clamp or remove this cell, which is the per-cell switch the designer asked for (a Boolean shorthand does not exist;
+  a number covers it and allows different minimums). A cell clamped on some axis is flagged `WasClamped` (optional
+  Boolean output, `Was Clamped Attribute`). Corner carving uses the clamped fraction. Growth is not limited (a grown
+  part box is always attached to its grower).
 - `Removed Cells` (negative, a cell or more): **Delete** (default) keeps each remaining cell's own values; **Push**
   gives each newly exposed cell the values of the nearest cell of the old surface (hash grid, then a scan), so the surface sinks with its
   look. The geometry is the same.
@@ -804,6 +829,12 @@ be any size and corners come out right. It takes over the planned phase-2 `Dilat
   2026-11-15: one cell +0.25 is 27 points (itself, 6 slabs, 12 bars, 8 corner cubes) where it was one stretched box.
 - Error when the box worked over (bounds plus grown layers plus one) is over `Max Cells` (default 64M), naming its
   size.
+- **Queued (designer, 2026-11-15):** (3, built 2026-11-15 as Cell Properties' shape outputs, section 4b); (4) gap
+  cells as points; (5) a
+  `Compress` flag that writes each added run of whole cells as one chunk instead of a point per cell; (5.2, default
+  off) also join neighbouring cells with the same offset into box chunks in the same pass. The chunking must be the
+  shared code `Voxel | Compress` uses, moved out of `PCGVoxelCompress.cpp` into a `Voxel/` library first (designer:
+  no element reimplements compression).
 
 ## 4k. Voxel | Extrude
 
@@ -1009,6 +1040,11 @@ a cell hash.
   domain helpers) and PCGUtilsDynMesh (space helpers, material assignment).
 - `.uplugin`: `PCGUtilsVoxel`, Runtime, PreDefault.
 - `Public/Voxel/PCGVoxelGrid.h` holds the contract, validation and cell lookup.
+- `Public/Voxel/PCGVoxelMorphology.h` (added 2026-11-15) is the shared dense-grid library: `FPCGVoxelDenseMask` (a
+  box of cells, a byte each), `FPCGVoxelBoxSum` (set cells in any box in O(1), a summed-volume table) and
+  `PCGVoxelMorphology::Erode / Dilate / Open / Close / FloodOutside` with per-axis reach. Offset Surface and Cell
+  Properties use it; new nodes must too, rather than writing their own (designer rule, 2026-11-15, which applies to
+  compression as well: the chunking in `PCGVoxelCompress.cpp` moves to a shared header before anything else chunks).
 - `Public/Voxel/PCGVoxelMesher.h` holds the faces → mesh core. It is plain C++, so it can be tested without a graph.
   The bevel path is `Private/Voxel/PCGVoxelBevelMesher.cpp` (`PCGVoxelMesher::BuildBeveledMesh`).
 - `Public/Elements/PCGVoxelToDynMesh.h`, `PCGVoxelPackPoints.h`, `PCGVoxelCompress.h`, `PCGVoxelExpand.h`, `PCGVoxelCellProperties.h`, `PCGVoxelShiftSeams.h`, `PCGVoxelTransformGrid.h`, `PCGVoxelAirFlow.h`, `PCGVoxelRasterize.h`, `PCGVoxelBoolean.h`, `PCGVoxelOffsetSurface.h`, `PCGVoxelMatchRules.h`. All derive from `UPCGSettings`, so each overrides
@@ -1034,6 +1070,9 @@ a cell hash.
     random partial settle, no two output boxes intersect;
   - Cell Properties: open sides, depth, neighbours and column values on a block; components by connectivity; concave
     edges and corners of a notch and a crease; a chunked set gives the same values as its expanded form; output names must be set and distinct;
+    shape: a block's spike is a protrusion and its core distance counts out to the tip, thickness rows, a thin plate
+    is all protrusion in 3D but solid in plan (X | Y), a slot's walls border a gap, a hollow borders a cavity but a cup
+    does not, Max Shape Cells stops the input;
   - Compress Random modes: Exact 2 tiles a 6-cube in 27 cubes, Exact 4 makes one cube and leaves the rest single,
     Exact 3x1x1 makes 72 bricks, Cubes Up To makes only cubes, chance 0 compresses nothing, chance 0.5 mixes cubes
     and cells, a per-cell chance limits boxes to where it is 1, a per-cell span, a bad span names its point; Max Span
@@ -1052,6 +1091,9 @@ a cell hash.
     +0.25 is the exact box offset (5.25 x 1.5) with its inside corner an L of 2 boxes; diagonal neighbours; a one-cell
     gap grown 0.75 from both sides is filled exactly once, each box copying its side; a plate of mixed amounts.
   - Offset Surface grow meshes: one cell +0.25 and +1.5 and the L +0.25 mesh closed with the boxes' exact volume.
+  - Offset Surface Min Thickness: a 1-thick plate -0.4 keeps 0.5 (edges still pull in 0.4), all flagged; Remove deletes
+    it; a lone cell -0.5 stays a quarter cube; a thick block is unchanged and unflagged; a run of 2 shares the cut; a
+    per-cell 0 leaves that cell unclamped; a missing attribute names the setting.
   - Compress Random: boxes tile every cell exactly once, stay within Random Span, never mix unequal cells, and
     depend only on the seed; the palette alias presets the shape;
   - Bevel: a cube's chamfer volume matches the formula at 0.1, 0.25, 0.4 and 1 (octahedron); each of the six Full
