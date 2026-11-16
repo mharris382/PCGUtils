@@ -76,8 +76,9 @@ enum class EPCGVoxelOffsetBlend : uint8
 {
 	/**
 	 * Every face keeps its own point's offsets, giving the same shape as spawning each point's bounds as a box:
-	 * neighbours at different heights make a step, joined by a riser wall. Still one closed mesh. Along a step's side
-	 * the walls meet in zero-area slivers.
+	 * neighbours at different heights make a step. Still one closed mesh. With offsets From Point Bounds the mesh is the
+	 * union of every point's box (several points on one cell included), with no zero-area triangles; with a Constant
+	 * offset, steps are joined by riser walls.
 	 */
 	Exact UMETA(DisplayName="Exact (Point Boxes)"),
 	/** Shared vertices take the average of the faces meeting there, so steps become slopes. No extra walls. */

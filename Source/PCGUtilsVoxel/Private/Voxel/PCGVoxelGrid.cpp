@@ -560,7 +560,7 @@ void FPCGVoxelGrid::FinalizeCells()
 	}
 }
 
-void FPCGVoxelGrid::ComputeSurfaceOffsets(const UPCGBasePointData* Points, TArray<FVector>& OutMinSide, TArray<FVector>& OutMaxSide) const
+void FPCGVoxelGrid::ComputeSurfaceOffsets(const UPCGBasePointData* Points, TArray<FVector>& OutMinSide, TArray<FVector>& OutMaxSide, bool bMergeIgnored) const
 {
 	const int32 Num = NumPoints();
 	OutMinSide.Init(FVector::ZeroVector, Num);
@@ -579,7 +579,19 @@ void FPCGVoxelGrid::ComputeSurfaceOffsets(const UPCGBasePointData* Points, TArra
 		OutMinSide[Point] = -Mins[Point] * Scale - Half;
 		OutMaxSide[Point] = Maxs[Point] * Scale - Half;
 	}
+	if (bMergeIgnored)
+	{
+		MergeIgnoredOffsets(OutMinSide, OutMaxSide);
+	}
+}
 
+void FPCGVoxelGrid::MergeIgnoredOffsets(TArray<FVector>& OutMinSide, TArray<FVector>& OutMaxSide) const
+{
+	const int32 Num = NumPoints();
+	if (OutMinSide.Num() != Num || OutMaxSide.Num() != Num)
+	{
+		return;
+	}
 	// A point Duplicate Cells ignored still describes part of its cell (Offset Surface writes a carved cell as several
 	// boxes on one cell): the point that has the cell reaches as far as any of them, so the cell is the box around them.
 	for (int32 Point = 0; Point < Num; ++Point)

@@ -149,9 +149,8 @@ bool FPCGVoxelMeshFuzzTest::RunTest(const FString&)
 			const double MeshVolume = PCGVoxelTestHelpers::Volume(*Mesh);
 			const double MeshArea = Area(*Mesh);
 			const bool bValid = Mesh->CheckValidity(UE::Geometry::FDynamicMesh3::FValidityOptions(), UE::Geometry::EValidityCheckFailMode::ReturnOnly);
-			// Random insets make shapes Exact does not model (a cell over a narrowed one shows an underside it has no
-			// face for), so there only holes and invalid meshes count.
-			const bool bShapeChecked = Group != 2;
+			// Exact offsets mesh the union of the point boxes, so random insets are held to the exact shape too.
+			const bool bShapeChecked = true;
 			if (Open != 0 || !bValid || (bShapeChecked && (!FMath::IsNearlyEqual(MeshVolume, Volume, 1.0) || !FMath::IsNearlyEqual(MeshArea, SurfaceArea, 1.0))))
 			{
 				FString Dump;
@@ -267,8 +266,7 @@ bool FPCGVoxelMeshOffsetPipelineFuzzTest::RunTest(const FString&)
 			}
 		}
 		const double SurfaceArea = Exposed * Step * Step;
-		// To DynMesh meshes a cell holding several boxes as the box around them (FPCGVoxelGrid::ComputeSurfaceOffsets),
-		// so the shape is checked only where every cell holds one box; holes and validity are checked everywhere.
+		// Sets where a cell holds several boxes are counted, since those are what the box-union mesher is for.
 		TSet<FIntVector> CellsSeen;
 		bool bOneBoxPerCell = true;
 		for (int32 Index = 0; Index < Grown->GetNumPoints() && bOneBoxPerCell; ++Index)
@@ -287,6 +285,7 @@ bool FPCGVoxelMeshOffsetPipelineFuzzTest::RunTest(const FString&)
 			Settings->bConvertToLocalSpace = false;
 			Settings->SurfaceOffset = EPCGVoxelSurfaceOffset::FromPointBounds;
 			Settings->bCollapseCoplanarFaces = bCollapse;
+			Settings->OffsetBlend = EPCGVoxelOffsetBlend::Exact;
 			const UE::Geometry::FDynamicMesh3* Mesh = MeshOf(Run<FPCGVoxelToDynMeshElement>(Settings, { { PCGPinConstants::DefaultInputLabel, Grown } }));
 			if (!Mesh)
 			{
@@ -296,13 +295,14 @@ bool FPCGVoxelMeshOffsetPipelineFuzzTest::RunTest(const FString&)
 			const bool bValid = Mesh->CheckValidity(UE::Geometry::FDynamicMesh3::FValidityOptions(), UE::Geometry::EValidityCheckFailMode::ReturnOnly);
 			const double MeshVolume = PCGVoxelTestHelpers::Volume(*Mesh);
 			const double MeshArea = Area(*Mesh);
-			if (bOneBoxPerCell && Open == 0 && bValid && (!FMath::IsNearlyEqual(MeshVolume, Volume, 1.0) || !FMath::IsNearlyEqual(MeshArea, SurfaceArea, 1.0)))
+			int32 Slivers = 0;
+			for (const int32 TID : Mesh->TriangleIndicesItr())
 			{
-				// Known limit, not a defect of this test's subject: Exact cannot show the underside of a cell another
-				// cell's shrink exposes. Counted, not failed.
-				++ShapeOff;
+				Slivers += Mesh->GetTriArea(TID) < 1e-3 ? 1 : 0;
 			}
-			if (Open != 0 || !bValid)
+			const bool bShapeOff = !FMath::IsNearlyEqual(MeshVolume, Volume, 1.0) || !FMath::IsNearlyEqual(MeshArea, SurfaceArea, 1.0);
+			ShapeOff += bShapeOff ? 1 : 0;
+			if (Open != 0 || !bValid || bShapeOff || Slivers > 0)
 			{
 				++Bad;
 				++BadByKind[Kind];
@@ -314,14 +314,14 @@ bool FPCGVoxelMeshOffsetPipelineFuzzTest::RunTest(const FString&)
 						Dump += FString::Printf(TEXT(" [%d %d %d : %g]"), Case.Cells[Index].X, Case.Cells[Index].Y, Case.Cells[Index].Z,
 							AmountAttribute->GetValueFromItemKey(Entries[Index]));
 					}
-					AddError(FString::Printf(TEXT("Pipeline seed %d%s: open %d, valid %d, volume %.0f vs %.0f, area %.0f vs %.0f; cells%s"), Seed,
-						bCollapse ? TEXT(" collapsed") : TEXT(""), Open, bValid ? 1 : 0, MeshVolume, Volume, MeshArea, SurfaceArea, *Dump));
+					AddError(FString::Printf(TEXT("Pipeline seed %d%s: open %d, valid %d, slivers %d, volume %.0f vs %.0f, area %.0f vs %.0f; cells%s"), Seed,
+						bCollapse ? TEXT(" collapsed") : TEXT(""), Open, bValid ? 1 : 0, Slivers, MeshVolume, Volume, MeshArea, SurfaceArea, *Dump));
 				}
 			}
 		}
 	}
-	AddInfo(FString::Printf(TEXT("PipelineFuzz: %d of %d sets had one box per cell; %d meshes of those differ in shape (exposed undersides)"), OneBoxSets, Sets, ShapeOff));
-	AddInfo(FString::Printf(TEXT("PipelineFuzz: %d meshes with holes or invalid; uniform+ %d, uniform- %d, mixed+ %d, mixed+- %d"), Bad, BadByKind[0], BadByKind[1], BadByKind[2], BadByKind[3]));
+	AddInfo(FString::Printf(TEXT("PipelineFuzz: %d of %d sets had one box per cell; %d meshes differ in shape"), OneBoxSets, Sets, ShapeOff));
+	AddInfo(FString::Printf(TEXT("PipelineFuzz: %d meshes with holes, invalid, wrong shape or slivers; uniform+ %d, uniform- %d, mixed+ %d, mixed+- %d"), Bad, BadByKind[0], BadByKind[1], BadByKind[2], BadByKind[3]));
 	return true;
 }
 

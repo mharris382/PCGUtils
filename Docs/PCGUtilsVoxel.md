@@ -51,7 +51,8 @@ A `Missing Grid Transform` setting (`World` / `Target Actor`) covers graphs that
   the set leave it out); no warning, since Offset Surface writes carved cells this way on purpose. An ignored point on
   the same cell (same first cell and span) still counts toward the cell's surface offsets: the point that has the cell
   reaches as far as any of them, so a cell written as several boxes reads as the box around them
-  (`ComputeSurfaceOffsets`). Move To Free Cell moves each later point to the free cell
+  (`ComputeSurfaceOffsets`), except in `Voxel | To DynMesh` with Exact offsets from point bounds, which meshes every
+  box as it is (section 3.5). Move To Free Cell moves each later point to the free cell
   nearest its own centre within `Move Radius` (default 1; a chunk's whole box must fit), after every point that kept its
   place has claimed it, so a moved point never takes a later point's own cell; a point with no room is ignored with a
   warning. Error fails, naming both points and the cell.
@@ -247,7 +248,19 @@ The offset changes only the **outer surface**:
   the un-offset mesh.
 - Where neighbouring cells have different offsets, `Offset Blend` decides (added 2026-11-13):
   - **Exact (Point Boxes)** (default): every face keeps its own point's offsets, so the mesh has the shape you get by
-    spawning each point's bounds as a box instance. A Rasterize Best Fit/Trim surface keeps its steps. Corners join only
+    spawning each point's bounds as a box instance. A Rasterize Best Fit/Trim surface keeps its steps.
+    With `Surface Offset` = From Point Bounds (rebuilt 2026-11-16) the mesh is the union of every point's box, built
+    directly (`PCGVoxelMesher::BuildExactBoxMesh`, `PCGVoxelBoxMesher.cpp`): points Duplicate Cells ignored on the same
+    cell count as boxes of their own, so a cell Offset Surface wrote as several boxes keeps its notch instead of
+    becoming the box around them, and a face a neighbour's shrink exposes (the underside of a cell over a pulled-in one)
+    is there. Each box face is cut, cell by cell, against the boxes in front of it and against earlier boxes' faces on
+    the same plane; pieces are welded on a 1/2^20-cell lattice (all comparisons exact), every edge is split at each
+    vertex lying on it (no T-junctions), the four faces at a pinch edge are paired by the solid quarter they bound
+    (a later pair still sharing both ends gets a midpoint vertex), and each polygon is ear clipped clipping corners next
+    to straight runs first, so there are no zero-area triangles and no risers or fans. Collapse joins neighbouring
+    pieces of one plane, direction, material, color and polygroup value into rectangles. A box with no thickness on an
+    axis (Offset Repair Zero Thickness or One-Sided Plane) falls back to the cell path below with merged boxes.
+    The cell path (Constant offsets, or the fallback): corners join only
     where they land at the same place. Each edge whose corners part from its partner's gets a stitch: a riser quad, or a
     triangle when one end still meets. Where three or more stitches meet at one lattice point, the small hole left
     is fanned shut. The mesh stays closed and manifold. Stitches along a step's side line, and those fans, are
@@ -838,8 +851,9 @@ be any size and corners come out right. It takes over the planned phase-2 `Dilat
   cell that takes more than one box (a grown inside corner, or a cell carved at an inside corner) is several points on
   one cell, the largest first, each with `WasSplit` = true (optional Boolean output, `Was Split Attribute`; a cell
   carved down to one box is flagged too). Other voxel nodes read such a cell as one filled cell; `Voxel | To DynMesh`
-  (Surface Offset From Point Bounds, Exact offsets) reads it as the box around its pieces, and the neighbours' walls
-  close the notch, so the mesh is the exact shape of the boxes (tested for carved corners, part cells and a grown L).
+  (Surface Offset From Point Bounds, Exact offsets) meshes the union of all the boxes (section 3.5), so the mesh is the
+  exact shape of the boxes, notches and exposed undersides included (tested for carved corners, part cells and a grown
+  L, and by `OffsetSurfaceOutputRandomSets`: 297 random sets, exact volume and area, no slivers).
   `IsSurrounded` is rewritten (section 1.3): only whole cells hide a face, and it is false on carved and part boxes;
   filter on it to spawn only visible boxes (the old Spawn Only Visible). Growing makes more points than before
   2026-11-15: one cell +0.25 is 27 points (itself, 6 slabs, 12 bars, 8 corner cubes) where it was one stretched box.

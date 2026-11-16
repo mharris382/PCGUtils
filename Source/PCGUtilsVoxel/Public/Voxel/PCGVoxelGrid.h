@@ -277,7 +277,10 @@ struct PCGUTILSVOXEL_API FPCGVoxelGrid
 	 * A point that has a cell also takes in the reach of the points Duplicate Cells ignored on that same cell (same
 	 * first cell and span), so a cell written as several boxes reads as the box around them.
 	 */
-	void ComputeSurfaceOffsets(const UPCGBasePointData* Points, TArray<FVector>& OutMinSide, TArray<FVector>& OutMaxSide) const;
+	void ComputeSurfaceOffsets(const UPCGBasePointData* Points, TArray<FVector>& OutMinSide, TArray<FVector>& OutMaxSide, bool bMergeIgnored = true) const;
+
+	/** Grows each cell owner's offsets to the box around every ignored point with the same first cell and span. */
+	void MergeIgnoredOffsets(TArray<FVector>& MinSide, TArray<FVector>& MaxSide) const;
 
 private:
 	/**

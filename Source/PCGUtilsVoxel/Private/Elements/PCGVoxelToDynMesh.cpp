@@ -412,7 +412,10 @@ bool FPCGVoxelToDynMeshElement::ExecuteInternal(FPCGContext* Context) const
 		}
 		else if (Settings->SurfaceOffset == EPCGVoxelSurfaceOffset::FromPointBounds)
 		{
-			Grid.ComputeSurfaceOffsets(Points, MeshInput.OffsetMin, MeshInput.OffsetMax);
+			// Exact offsets keep each box (a cell Offset Surface carved holds several); other blends merge them.
+			const bool bPerBox = Settings->OffsetBlend == EPCGVoxelOffsetBlend::Exact;
+			Grid.ComputeSurfaceOffsets(Points, MeshInput.OffsetMin, MeshInput.OffsetMax, !bPerBox);
+			MeshInput.bPerBoxOffsets = bPerBox;
 		}
 		else if (Settings->SurfaceOffset == EPCGVoxelSurfaceOffset::Constant)
 		{

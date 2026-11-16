@@ -150,6 +150,22 @@ void PCGVoxelMesher::BuildMesh(const FPCGVoxelMeshInput& Input, const FPCGVoxelM
 		return;
 	}
 	const FPCGVoxelGrid& Grid = *Input.Grid;
+	if (Input.bPerBoxOffsets)
+	{
+		const bool bHasOffsets = Input.OffsetMin.Num() == Grid.NumPoints() && Input.OffsetMax.Num() == Grid.NumPoints();
+		if (bHasOffsets && Options.bExactOffsets && BuildExactBoxMesh(Input, Options, OutMesh, OutStats))
+		{
+			return;
+		}
+		FPCGVoxelMeshInput Merged = Input;
+		Merged.bPerBoxOffsets = false;
+		if (bHasOffsets)
+		{
+			Grid.MergeIgnoredOffsets(Merged.OffsetMin, Merged.OffsetMax);
+		}
+		BuildMesh(Merged, Options, OutMesh, OutStats);
+		return;
+	}
 	double StageStart = FPlatformTime::Seconds();
 	auto EndStage = [&](int32 Stage)
 	{

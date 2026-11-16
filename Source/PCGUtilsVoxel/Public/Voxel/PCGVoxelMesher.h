@@ -71,6 +71,13 @@ struct PCGUTILSVOXEL_API FPCGVoxelMeshInput
 	TArray<FVector> OffsetMax;
 
 	/**
+	 * OffsetMin/OffsetMax hold each point's own box, points Duplicate Cells ignored included (ComputeSurfaceOffsets
+	 * with bMergeIgnored false). Exact offsets then mesh the union of those boxes, so a cell holding several boxes keeps
+	 * its shape; every other mode merges them into the box around them first.
+	 */
+	bool bPerBoxOffsets = false;
+
+	/**
 	 * Faces to leave out, per point: bit Dir (0 +X, 1 -X, 2 +Y, 3 -Y, 4 +Z, 5 -Z) drops that side's surface faces on
 	 * every cell of the point, leaving the mesh open there. Empty: nothing dropped.
 	 */
@@ -154,6 +161,14 @@ namespace PCGVoxelMesher
 	 * Bevels that would overlap on a face are scaled down to meet. Edges where cells touch only along the edge count
 	 * as convex. Normals are flat per polygon.
 	 */
+	/**
+	 * Exact offsets with per-box offsets (BuildMesh calls it): the surface of the union of every point's box, each box
+	 * face cut against the boxes in front of it, welded, edges split at every vertex on them, pinch edges paired by
+	 * the solid they bound. Returns false, leaving OutMesh untouched, when a box has no thickness on an axis.
+	 */
+	PCGUTILSVOXEL_API bool BuildExactBoxMesh(const FPCGVoxelMeshInput& Input, const FPCGVoxelMeshOptions& Options,
+		UE::Geometry::FDynamicMesh3& OutMesh, FPCGVoxelMeshStats* OutStats = nullptr);
+
 	PCGUTILSVOXEL_API void BuildBeveledMesh(const FPCGVoxelMeshInput& Input, const FPCGVoxelMeshOptions& Options,
 		UE::Geometry::FDynamicMesh3& OutMesh, FPCGVoxelMeshStats* OutStats = nullptr);
 }
