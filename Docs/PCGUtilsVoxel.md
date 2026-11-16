@@ -178,12 +178,13 @@ first cell's values. A test checks it.
 | 1 | `Voxel \| Air Flow` | Wind around a voxel set: a smooth flow field on air cells (a voxel set of its own), wind shadows, exposure per solid cell (section 4f). |
 | 1 | `Voxel \| Rasterize` | A DynMesh or a closed point path to cells: Fill, Intersect and Surround modes, on its own grid or another set's (section 4g). |
 | 1 | `Voxel \| Boolean` | Union, intersect or subtract voxel sets by cell index; Out is In, mutated (section 4h). |
-| 1 | `Voxel \| Offset Surface` | Moves the surface by Amount cells: whole layers added or removed, the fraction on the open faces (bounds), inside corners split (section 4i). |
+| 1 | `Voxel \| Offset Surface` | Moves the surface by Amount cells: whole layers, then part cells (no box leaves its cell); inside corners split; Min Thickness (section 4i). |
+| 1 | `Voxel \| Fill Gaps` | Fills thin gaps (what a closing fills) and, optionally, enclosed cavities; Out is In with the cells added, Gaps has only them (section 4l). |
 | 1 | `Voxel \| Extrude` | Grows each cell along Direction × Amount (whole cells, rounded up), or with a negative Amount removes it and the cells beyond; separate runs per axis or a box; added cells numbered by step (section 4k). |
 | 1 | `Voxel \| Match Rules` | Rule tiles: ordered rules (open faces, thin) that may turn to fit; turns each cell's point and writes a mesh index for a collection downstream (section 4j). |
 | 1 | `Voxel \| Expand` | Turns chunks back into one point per cell (section 1.2). |
 | 1 | `Voxel \| Pack Points` | Packs loose points into free cells of a voxel grid, fully or part way, without overlaps (section 4). |
-| 1 | `Voxel \| Cell Properties` | Writes per-cell attributes: open sides, surrounded, inside corners, neighbourhood, depth, column and components (section 4b). Replaces the planned `Voxel \| Neighbors`. |
+| 1 | `Voxel \| Cell Properties` | Writes per-cell attributes: open sides, surrounded, inside corners, neighbourhood, depth, column, components and shape (protrusions, thickness, gaps, cavities) (section 4b). Replaces the planned `Voxel \| Neighbors`. |
 | later | `Voxel \| Resample` | Change cell size. (`From DynMesh` became `Voxel \| Rasterize`.) |
 
 ## 3. Voxel | To DynMesh
@@ -829,12 +830,36 @@ be any size and corners come out right. It takes over the planned phase-2 `Dilat
   2026-11-15: one cell +0.25 is 27 points (itself, 6 slabs, 12 bars, 8 corner cubes) where it was one stretched box.
 - Error when the box worked over (bounds plus grown layers plus one) is over `Max Cells` (default 64M), naming its
   size.
-- **Queued (designer, 2026-11-15):** (3, built 2026-11-15 as Cell Properties' shape outputs, section 4b); (4) gap
-  cells as points; (5) a
+- **Queued (designer, 2026-11-15):** (3, built 2026-11-15 as Cell Properties' shape outputs, section 4b); (4, built
+  2026-11-15 as `Voxel | Fill Gaps`, section 4l); (5) a
   `Compress` flag that writes each added run of whole cells as one chunk instead of a point per cell; (5.2, default
   off) also join neighbouring cells with the same offset into box chunks in the same pass. The chunking must be the
   shared code `Voxel | Compress` uses, moved out of `PCGVoxelCompress.cpp` into a `Voxel/` library first (designer:
   no element reimplements compression).
+
+## 4l. Voxel | Fill Gaps
+
+Built 2026-11-15 (item 4 of the Offset Surface queue; the designer's sketch's "thin gap, option 1: fill it" and "flood
+fill gap"). Uses the shared `Voxel/PCGVoxelMorphology` library.
+
+- `Fill Gaps` (default on): fills the empty cells a closing by `Gap Radius` (default 1) fills, measured along `Axes`
+  (default X | Y | Z; X | Y fills slots seen in plan): slots, notches and holes narrower than 2 x R + 1 cells. A slot
+  three wide stays at radius 1 and fills at radius 2.
+- `Fill Cavities` (default off): also fills enclosed empty cells of any size (no face path through empty cells leads
+  out of the set's padded box). A cup open at the top is not a cavity.
+- **Out** is In, mutated (CLAUDE.md rule): its own points as they were, chunks kept (span written when the input was
+  chunked), plus one point per added cell. **Gaps** has only the added cells, as a voxel set of their own (same grid,
+  metadata and tags). Added cells copy the nearest filled cell, found breadth-first by face steps through the added
+  cells (a face neighbour where there is one), or the nearest by distance when no such path exists; `Added Values: None`
+  gives them attribute defaults instead. Whole-cell bounds. `IsSurrounded` is rewritten on both pins.
+- Outputs on both pins: `IsGap` (Boolean, default on: true on added cells) and `IsCavity` (Boolean, default off: true
+  on added cells inside an enclosed cavity, also when Fill Gaps filled them because the cavity is small).
+- Errors: an enabled output with an empty name, the two outputs sharing a name, and a working box (bounds padded by
+  2 x Gap Radius + 1) over `Max Cells` (default 64M), each naming the setting or the box.
+- Tests (`PCGUtils.Voxel.FillGaps`): a one-cell slot in plan comes back (4 cells, copied from a face neighbour,
+  whole-cell bounds); a three-wide slot needs radius 2; a 3-wide hollow is no gap but Fill Cavities fills its 27, all
+  flagged; a cup is no cavity; a one-cell hollow is filled as a gap and flagged a cavity; chunks are kept; both off
+  passes through; shared output names fail.
 
 ## 4k. Voxel | Extrude
 
@@ -1047,7 +1072,7 @@ a cell hash.
   compression as well: the chunking in `PCGVoxelCompress.cpp` moves to a shared header before anything else chunks).
 - `Public/Voxel/PCGVoxelMesher.h` holds the faces → mesh core. It is plain C++, so it can be tested without a graph.
   The bevel path is `Private/Voxel/PCGVoxelBevelMesher.cpp` (`PCGVoxelMesher::BuildBeveledMesh`).
-- `Public/Elements/PCGVoxelToDynMesh.h`, `PCGVoxelPackPoints.h`, `PCGVoxelCompress.h`, `PCGVoxelExpand.h`, `PCGVoxelCellProperties.h`, `PCGVoxelShiftSeams.h`, `PCGVoxelTransformGrid.h`, `PCGVoxelAirFlow.h`, `PCGVoxelRasterize.h`, `PCGVoxelBoolean.h`, `PCGVoxelOffsetSurface.h`, `PCGVoxelMatchRules.h`. All derive from `UPCGSettings`, so each overrides
+- `Public/Elements/PCGVoxelToDynMesh.h`, `PCGVoxelPackPoints.h`, `PCGVoxelCompress.h`, `PCGVoxelExpand.h`, `PCGVoxelCellProperties.h`, `PCGVoxelShiftSeams.h`, `PCGVoxelTransformGrid.h`, `PCGVoxelAirFlow.h`, `PCGVoxelRasterize.h`, `PCGVoxelBoolean.h`, `PCGVoxelOffsetSurface.h`, `PCGVoxelMatchRules.h`, `PCGVoxelExtrude.h`, `PCGVoxelFillGaps.h` (15 palette entries; the palette test counts them). All derive from `UPCGSettings`, so each overrides
   `GetType()` (or they land in `Generic`). Add the `Voxel` category to the `PCGUtils.Palette.SearchContract` test.
 - `Public/Voxel/PCGVoxelRules.h` holds the rule structs (rule, compound rule, mapping, mapping asset), the 24
   rotations, the 64-mask match table and the text form. `PCGUtilsEditor` depends on `PCGUtilsVoxel` only for the rule
