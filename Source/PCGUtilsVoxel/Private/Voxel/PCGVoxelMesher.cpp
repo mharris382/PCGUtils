@@ -289,6 +289,35 @@ void PCGVoxelMesher::BuildMesh(const FPCGVoxelMeshInput& Input, const FPCGVoxelM
 	// along an edge, each face continues onto its own cell's faces, which splits the vertices there.
 	// For each face edge, the corner uses of the partner face that meet this face's two corners on that edge
 	// (INDEX_NONE when there is no partner). Found in parallel; joined serially below.
+	// A pinch edge has solid cells C and D on one diagonal and empty cells U and S on the other, so four faces meet
+	// there and the surface passes it twice. Each face pairs either with its own cell's other face there (the solid
+	// cells stay apart) or with the other solid cell's face across the empty cell in front (the empty cells stay
+	// apart). The two passes become two coincident edges, which a mesh can hold only when they do not share both end
+	// vertices. The decision is made for the whole line of pinch edges in a row (collapsing drops the vertices along
+	// it), from the cells just past each end of the line: if C and D are joined there through solid cells, keeping the
+	// solids apart merges both passes into one vertex at that end. Keep the solids apart unless that merges at both
+	// ends; then the empty side cannot merge at either end (the two conditions exclude each other).
+	auto PinchJoinsEmpty = [&](const FIntVector& C, const FIntVector& S, const FIntVector& D, const FIntVector& U, int32 EdgeAxis)
+	{
+		auto SolidMerges = [&](int32 Step)
+		{
+			FIntVector Along(0);
+			for (int32 K = 1;; ++K)
+			{
+				Along[EdgeAxis] = Step * K;
+				if (!Grid.IsOccupied(C + Along) || !Grid.IsOccupied(D + Along))
+				{
+					return false;
+				}
+				if (Grid.IsOccupied(S + Along) || Grid.IsOccupied(U + Along))
+				{
+					return true;
+				}
+				// The same pinch continues: look further along.
+			}
+		};
+		return SolidMerges(-1) && SolidMerges(1);
+	};
 	TArray<FIntPoint> EdgeJoin;
 	EdgeJoin.SetNumUninitialized(NumFaces * 4);
 	ParallelForTemplate(TEXT("PCGVoxelMesher.EdgeJoin"), NumFaces, 4096, [&](int32 FaceID)
@@ -310,6 +339,13 @@ void PCGVoxelMesher::BuildMesh(const FPCGVoxelMeshInput& Input, const FPCGVoxelM
 			if (SideCell == INDEX_NONE)
 			{
 				Partner = FaceAt(Face.Cell, MakeDir(TAxis, TSign));        // convex: round the cell's own edge
+				const int32 DiagonalCell = Grid.FindCellIndex(Side + OutOfFace);
+				if (DiagonalCell != INDEX_NONE && PinchJoinsEmpty(Face.Cell, Side, Side + OutOfFace, Face.Cell + OutOfFace, 3 - Axis - TAxis))
+				{
+					// A pinch edge (solid cells on one diagonal, empty on the other): the surface passes the edge twice.
+					// Here this face continues round the empty cell in front, onto the diagonal cell's wall.
+					Partner = FaceOfCell(DiagonalCell, MakeDir(TAxis, -TSign));
+				}
 			}
 			else
 			{
