@@ -21,6 +21,7 @@ namespace PCGVoxelOffsetSurfaceTests
 		FVector Min;
 		FVector Max;
 		int32 Id;
+		FVector Centre; // world position (a chunk's centre is between cells)
 	};
 
 	/** Runs the node and reads its one output pin. */
@@ -52,7 +53,7 @@ namespace PCGVoxelOffsetSurfaceTests
 		{
 			const FVector P = Transforms[Index].GetLocation() / 100.0;
 			Result.Add({ FIntVector(FMath::RoundToInt32(P.X), FMath::RoundToInt32(P.Y), FMath::RoundToInt32(P.Z)),
-				Mins[Index], Maxs[Index], Id ? Id->GetValueFromItemKey(Entries[Index]) : -99 });
+				Mins[Index], Maxs[Index], Id ? Id->GetValueFromItemKey(Entries[Index]) : -99, Transforms[Index].GetLocation() });
 		}
 		return Result;
 	}
@@ -108,8 +109,7 @@ namespace PCGVoxelOffsetSurfaceTests
 
 	FBox WorldBox(const FOutPoint& P)
 	{
-		const FVector Centre = FVector(P.Cell) * 100.0;
-		return FBox(Centre + P.Min, Centre + P.Max);
+		return FBox(P.Centre + P.Min, P.Centre + P.Max);
 	}
 
 	/** The box around every point's box, in world space. */
@@ -775,6 +775,69 @@ bool FPCGVoxelOffsetSurfaceThinnessTest::RunTest(const FString& Parameters)
 	{
 		Limit(0.5)(S);
 		S.MinThickness.Input = EPCGUtilsPointInputValueType::Attribute;
+	}).Num(), 0);
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FPCGVoxelOffsetSurfaceCompressionTest, "PCGUtils.Voxel.OffsetSurface.Compression",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+
+bool FPCGVoxelOffsetSurfaceCompressionTest::RunTest(const FString& Parameters)
+{
+	using namespace PCGVoxelOffsetSurfaceTests;
+	TestFalse(TEXT("off by default"), NewObject<UPCGVoxelOffsetSurfaceSettings>()->bCompressAdded || NewObject<UPCGVoxelOffsetSurfaceSettings>()->bCompressEqualCells);
+
+	// One cell +3: 343 cells plain; Compress Added writes the 342 added as a few chunks, same shape.
+	const TArray<FOutPoint> Plain = Offset(MakeVoxels({ FIntVector(0) }), 3.0);
+	TArray<FPCGTaggedData> Raw;
+	const TArray<FOutPoint> Packed = Offset(MakeVoxels({ FIntVector(0) }), 3.0, [](UPCGVoxelOffsetSurfaceSettings& S) { S.bCompressAdded = true; }, &Raw);
+	TestEqual(TEXT("+3 plain: 343 points"), Plain.Num(), 343);
+	TestTrue(FString::Printf(TEXT("+3 compressed: a few chunks (got %d)"), Packed.Num()), Packed.Num() > 1 && Packed.Num() <= 32);
+	TestNearlyEqual(TEXT("+3 compressed: the same volume"), Volume(Packed), 7.0 * 7.0 * 7.0 * 1e6, 1.0);
+	TestEqual(TEXT("+3 compressed: no overlapping boxes"), Overlaps(Packed), 0);
+	TestTrue(TEXT("+3 compressed: the box around them is the 7-cube"), Around(Packed).Min.Equals(FVector(-350.0), 1e-6) && Around(Packed).Max.Equals(FVector(350.0), 1e-6));
+	const UPCGBasePointData* PackedPoints = Raw.Num() == 1 ? Cast<UPCGBasePointData>(Raw[0].Data) : nullptr;
+	TestTrue(TEXT("+3 compressed: spans written"), PackedPoints && PackedPoints->ConstMetadata()->GetConstMetadataDomain(PCGMetadataDomainID::Elements)->HasAttribute(TEXT("VoxelSpan")));
+	TestTrue(TEXT("+3 compressed: the input cell stays its own point"), BoundsAre(At(Packed, FIntVector(0)), FVector(-50.0), FVector(50.0)));
+
+	// With a fraction: the whole cells chunk, and part boxes of one shape join along the axes they fill (a face's 3 x 3
+	// half-deep slabs become one chunk); same shape.
+	TArray<FPCGTaggedData> FractionRaw;
+	const TArray<FOutPoint> Fraction = Offset(MakeVoxels({ FIntVector(0) }), 1.5, [](UPCGVoxelOffsetSurfaceSettings& S) { S.bCompressAdded = true; }, &FractionRaw);
+	TestTrue(FString::Printf(TEXT("+1.5 compressed: a few dozen points (got %d)"), Fraction.Num()), Fraction.Num() <= 40);
+	TestNearlyEqual(TEXT("+1.5 compressed: the same volume"), Volume(Fraction), 4.0 * 4.0 * 4.0 * 1e6, 1.0);
+	TestEqual(TEXT("+1.5 compressed: no overlapping boxes"), Overlaps(Fraction), 0);
+	if (FractionRaw.Num() == 1)
+	{
+		UPCGVoxelToDynMeshSettings* MeshSettings = NewObject<UPCGVoxelToDynMeshSettings>();
+		MeshSettings->SurfaceOffset = EPCGVoxelSurfaceOffset::FromPointBounds;
+		const UE::Geometry::FDynamicMesh3* Mesh = MeshOf(Run<FPCGVoxelToDynMeshElement>(MeshSettings, { { PCGPinConstants::DefaultInputLabel, FractionRaw[0].Data } }));
+		if (TestNotNull(TEXT("+1.5 compressed meshes"), Mesh))
+		{
+			TestEqual(TEXT("+1.5 compressed: mesh is closed"), OpenEdges(*Mesh), 0);
+			TestNearlyEqual(TEXT("+1.5 compressed: mesh is the 4-cube"), PCGVoxelTestHelpers::Volume(*Mesh), 4.0 * 4.0 * 4.0 * 1e6, 1.0);
+		}
+	}
+	AddInfo(FString::Printf(TEXT("Compression counts: +3 plain %d, compressed %d; +1.5 plain 125, compressed %d"), Plain.Num(), Packed.Num(), Fraction.Num()));
+
+	// Compress Equal Cells: a 4-cube left as it is. All values: every cell has its own Id, nothing joins. Listed
+	// $Density (equal everywhere): one 4-cube chunk.
+	TestEqual(TEXT("equal cells, All: distinct Ids stay apart"), Offset(MakeVoxels(Block(4, 4, 4)), 0.0, [](UPCGVoxelOffsetSurfaceSettings& S) { S.bCompressEqualCells = true; }).Num(), 64);
+	const TArray<FOutPoint> One = Offset(MakeVoxels(Block(4, 4, 4)), 0.0, [](UPCGVoxelOffsetSurfaceSettings& S)
+	{
+		S.bCompressEqualCells = true;
+		S.MatchAttributes = EPCGVoxelMatchAttributes::Listed;
+		S.ListedAttributes = { TEXT("$Density") };
+	});
+	TestTrue(TEXT("equal cells, Listed $Density: one 4-cube"), One.Num() == 1 && BoundsAre(&One[0], FVector(-200.0), FVector(200.0)));
+
+	// A listed name that is not an attribute is an error naming it.
+	AddExpectedErrorPlain(TEXT("Listed Attributes names 'Nope'"), EAutomationExpectedErrorFlags::Contains, 1);
+	TestEqual(TEXT("missing listed attribute stops the input"), Offset(MakeVoxels(Block(2, 2, 2)), 0.5, [](UPCGVoxelOffsetSurfaceSettings& S)
+	{
+		S.bCompressEqualCells = true;
+		S.MatchAttributes = EPCGVoxelMatchAttributes::Listed;
+		S.ListedAttributes = { TEXT("Nope") };
 	}).Num(), 0);
 	return true;
 }

@@ -812,6 +812,16 @@ be any size and corners come out right. It takes over the planned phase-2 `Dilat
   a number covers it and allows different minimums). A cell clamped on some axis is flagged `WasClamped` (optional
   Boolean output, `Was Clamped Attribute`). Corner carving uses the clamped fraction. Growth is not limited (a grown
   part box is always attached to its grower).
+- **Compression** (added 2026-11-15, items 5 and 5.2 of the queue; both off by default). `Compress Added` writes the
+  cells the offset adds as chunks instead of a point per cell: whole cells added by one cell (they copy it, so nothing
+  is lost) merge as octree cubes, then boxes; part boxes from growth join along the axes they fill, with part boxes of
+  exactly their shape (a face's half-deep slabs become one chunk). `Compress Equal Cells` does the same for every
+  whole cell and lone part box of the output, the input's own included, joining cells equal under `Match Attributes`
+  (All, or Listed `ListedAttributes`: with only the offset attribute listed, cells join by offset value and other values
+  come from one cell per chunk). `Compress Max Span` (default 16) caps a chunk per axis. Several boxes on one cell (split
+  corners) stay single. The span attribute is written when any chunk forms; `Voxel | Expand` turns chunks back into
+  cells. The merging is the shared `Voxel/PCGVoxelChunking` code Voxel | Compress uses. Measured: one cell +3 is 13
+  points instead of 343; +1.5 is 33 instead of 125, and meshes to the same closed 4-cube.
 - `Removed Cells` (negative, a cell or more): **Delete** (default) keeps each remaining cell's own values; **Push**
   gives each newly exposed cell the values of the nearest cell of the old surface (hash grid, then a scan), so the surface sinks with its
   look. The geometry is the same.
@@ -831,7 +841,7 @@ be any size and corners come out right. It takes over the planned phase-2 `Dilat
 - Error when the box worked over (bounds plus grown layers plus one) is over `Max Cells` (default 64M), naming its
   size.
 - **Queued (designer, 2026-11-15):** (3, built 2026-11-15 as Cell Properties' shape outputs, section 4b); (4, built
-  2026-11-15 as `Voxel | Fill Gaps`, section 4l); (5) a
+  2026-11-15 as `Voxel | Fill Gaps`, section 4l); (5 and 5.2, built 2026-11-15 as Compression above); (5) a
   `Compress` flag that writes each added run of whole cells as one chunk instead of a point per cell; (5.2, default
   off) also join neighbouring cells with the same offset into box chunks in the same pass. The chunking must be the
   shared code `Voxel | Compress` uses, moved out of `PCGVoxelCompress.cpp` into a `Voxel/` library first (designer:
@@ -1070,6 +1080,10 @@ a cell hash.
   `PCGVoxelMorphology::Erode / Dilate / Open / Close / FloodOutside` with per-axis reach. Offset Surface and Cell
   Properties use it; new nodes must too, rather than writing their own (designer rule, 2026-11-15, which applies to
   compression as well: the chunking in `PCGVoxelCompress.cpp` moves to a shared header before anything else chunks).
+- `Public/Voxel/PCGVoxelChunking.h` (added 2026-11-15) is the shared compression library: `EPCGVoxelChunkShape`,
+  `EPCGVoxelRandomSize`, `EPCGVoxelMatchAttributes`, `FPCGVoxelPointEquality` (which points may share a chunk) and
+  `PCGVoxelChunking::MergeCells` (octree cubes, then boxes), `JoinAlong` and `RandomBoxes`. Voxel | Compress and Voxel
+  | Offset Surface use it; it came out of `PCGVoxelCompress.cpp` unchanged in behaviour (every Compress test passes).
 - `Public/Voxel/PCGVoxelMesher.h` holds the faces → mesh core. It is plain C++, so it can be tested without a graph.
   The bevel path is `Private/Voxel/PCGVoxelBevelMesher.cpp` (`PCGVoxelMesher::BuildBeveledMesh`).
 - `Public/Elements/PCGVoxelToDynMesh.h`, `PCGVoxelPackPoints.h`, `PCGVoxelCompress.h`, `PCGVoxelExpand.h`, `PCGVoxelCellProperties.h`, `PCGVoxelShiftSeams.h`, `PCGVoxelTransformGrid.h`, `PCGVoxelAirFlow.h`, `PCGVoxelRasterize.h`, `PCGVoxelBoolean.h`, `PCGVoxelOffsetSurface.h`, `PCGVoxelMatchRules.h`, `PCGVoxelExtrude.h`, `PCGVoxelFillGaps.h` (15 palette entries; the palette test counts them). All derive from `UPCGSettings`, so each overrides
@@ -1116,6 +1130,9 @@ a cell hash.
     +0.25 is the exact box offset (5.25 x 1.5) with its inside corner an L of 2 boxes; diagonal neighbours; a one-cell
     gap grown 0.75 from both sides is filled exactly once, each box copying its side; a plate of mixed amounts.
   - Offset Surface grow meshes: one cell +0.25 and +1.5 and the L +0.25 mesh closed with the boxes' exact volume.
+  - Offset Surface Compression: +3 compressed is a few chunks with the 7-cube's volume and box, no overlaps, spans
+    written, the input cell alone; +1.5 compressed is at most 40 points and meshes closed as the 4-cube; Compress Equal
+    Cells with All keeps distinct Ids apart, Listed $Density makes one 4-cube; a missing listed name names it.
   - Offset Surface Min Thickness: a 1-thick plate -0.4 keeps 0.5 (edges still pull in 0.4), all flagged; Remove deletes
     it; a lone cell -0.5 stays a quarter cube; a thick block is unchanged and unflagged; a run of 2 shares the cut; a
     per-cell 0 leaves that cell unclamped; a missing attribute names the setting.

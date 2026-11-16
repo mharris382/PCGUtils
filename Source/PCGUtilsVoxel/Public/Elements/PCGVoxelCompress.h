@@ -7,49 +7,9 @@
 #include "Details/PCGUtilsPointShorthands.h"
 #include "Elements/PCGVoxelSettingsBase.h"
 #include "PCGElement.h"
+#include "Voxel/PCGVoxelChunking.h"
 
 #include "PCGVoxelCompress.generated.h"
-
-/** What shapes Voxel | Compress merges cells into. */
-UENUM(BlueprintType)
-enum class EPCGVoxelChunkShape : uint8
-{
-	/** N x N x N chunks on an aligned octree: power-of-two cubes at multiples of their size. */
-	Cubes,
-	/** Cubes first, then neighbouring equal chunks joined along X, Y, then Z into boxes. Usually fewer points. */
-	Boxes,
-	/**
-	 * Boxes of random size, for looks rather than fewer points: a staggered tiling like a wall of uneven slabs. Cells
-	 * are visited in order (Z, then Y, then X); each cell not yet taken starts a box sized by Random Size, Random Span
-	 * and Random Chance, read from that start cell. Uses the node seed.
-	 */
-	Random,
-};
-
-/** Shape Random: what size each box may be. */
-UENUM(BlueprintType)
-enum class EPCGVoxelRandomSize : uint8
-{
-	/** Each box draws a size from 1 to Random Span per axis and grows as far as free, equal cells allow. */
-	UpTo UMETA(DisplayName="Up To"),
-	/** Each box is exactly Random Span, or its start cell stays a single cell when that box does not fit. */
-	Exact,
-	/**
-	 * Each box is a cube: it draws a side from 1 to the smallest axis of Random Span and becomes the largest cube up to
-	 * that side that fits.
-	 */
-	Cubes UMETA(DisplayName="Cubes Up To"),
-};
-
-/** Which values two cells must share to be merged. */
-UENUM(BlueprintType)
-enum class EPCGVoxelMatchAttributes : uint8
-{
-	/** Every point attribute plus $Color, $Density and $Steepness. Nothing is lost. */
-	All,
-	/** Only the attributes in Listed Attributes. Cells keep only the first cell's values for everything else. */
-	Listed,
-};
 
 /**
  * Merges equal neighbouring cells of a voxel set into chunks: one point covering a box of cells, with its span in the

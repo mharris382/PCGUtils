@@ -167,6 +167,8 @@ namespace PCGVoxelOffsetSurfacePrivate
 		FIntVector Cell;
 		int32 Source = INDEX_NONE; // point of In this piece copies
 		bool bFreshEntry = false; // Added Values None: gets a new, default metadata entry
+		bool bAdded = false; // a whole cell the offset added
+		FIntVector Span = FIntVector(1); // a chunk of cells (Compression); Lo and Hi are then relative to its centre
 		FVector Lo = FVector(-0.5);
 		FVector Hi = FVector(0.5);
 	};
@@ -352,6 +354,16 @@ bool FPCGVoxelOffsetSurfaceElement::ExecuteInternal(FPCGContext* Context) const
 		{
 			Fail(ReadError, InputIndex);
 			continue;
+		}
+		FPCGVoxelPointEquality ChunkEqual;
+		if (Settings->bCompressEqualCells)
+		{
+			FName Missing;
+			if (!ChunkEqual.Init(Points, Settings->MatchAttributes, Settings->ListedAttributes, Settings->Grid.SpanAttribute, Settings->Grid.SurroundedAttribute, Missing))
+			{
+				Fail(FText::Format(LOCTEXT("ListedMissing", "Listed Attributes names '{0}', which is not a point attribute of this input."), FText::FromName(Missing)), InputIndex);
+				continue;
+			}
 		}
 		TPCGUtilsPointValues<double> MinThicknessValues;
 		if (Settings->bLimitThinness
@@ -794,6 +806,7 @@ bool FPCGVoxelOffsetSurfaceElement::ExecuteInternal(FPCGContext* Context) const
 					Piece.Cell = Cell;
 					Piece.Source = Grid.CellPoint[Hits[Hit].From];
 					Piece.bFreshEntry = Settings->AddedValues == EPCGVoxelOffsetAddedValues::None;
+					Piece.bAdded = true;
 					Piece.Lo = Lo;
 					Piece.Hi = Hi;
 				});
@@ -809,6 +822,7 @@ bool FPCGVoxelOffsetSurfaceElement::ExecuteInternal(FPCGContext* Context) const
 			Whole.Cell = Cell;
 			Whole.Source = Own[Index];
 			Whole.bFreshEntry = Added[Index] && Settings->AddedValues == EPCGVoxelOffsetAddedValues::None;
+			Whole.bAdded = Added[Index];
 
 			if (!Fraction.IsZero())
 			{
@@ -866,6 +880,114 @@ bool FPCGVoxelOffsetSurfaceElement::ExecuteInternal(FPCGContext* Context) const
 			PieceClamped.Add(Clamped[Index]);
 		}
 
+		// ---- Compression: whole cells joined into chunks by the shared rules (Voxel/PCGVoxelChunking.h) ----
+		bool bAnyChunk = false;
+		if (Settings->bCompressAdded || Settings->bCompressEqualCells)
+		{
+			auto IsWholeBox = [](const FPiece& P) { return P.Lo.Equals(FVector(-0.5), 1e-9) && P.Hi.Equals(FVector(0.5), 1e-9); };
+			// Whole cells merge as octree cubes and boxes; a part box (alone on its cell) joins only along an axis it fills,
+			// with part boxes of exactly its shape, so no gap between them is swallowed.
+			TArray<FIntVector> ChunkCells;
+			TArray<int32> ChunkLabels; // piece index
+			TArray<PCGVoxelChunking::FBox> PartBoxes;
+			TArray<bool> InChunk;
+			InChunk.Init(false, Pieces.Num());
+			for (int32 Index = 0; Index < Pieces.Num(); ++Index)
+			{
+				const FPiece& P = Pieces[Index];
+				if (PieceSplit[Index] || !(Settings->bCompressEqualCells || P.bAdded))
+				{
+					continue;
+				}
+				InChunk[Index] = true;
+				if (IsWholeBox(P) && !PieceShows[Index])
+				{
+					ChunkCells.Add(P.Cell);
+					ChunkLabels.Add(Index);
+				}
+				else
+				{
+					PartBoxes.Add({ P.Cell, FIntVector(1), Index });
+				}
+			}
+			auto Equal = [&](int32 A, int32 B)
+			{
+				const FPiece& PA = Pieces[A];
+				const FPiece& PB = Pieces[B];
+				if (PieceClamped[A] != PieceClamped[B] || PA.bFreshEntry != PB.bFreshEntry)
+				{
+					return false;
+				}
+				if (PA.bFreshEntry)
+				{
+					return true; // both attribute defaults
+				}
+				if (Settings->bCompressEqualCells)
+				{
+					return ChunkEqual(PA.Source, PB.Source);
+				}
+				return PA.bAdded && PB.bAdded && PA.Source == PB.Source;
+			};
+			TArray<PCGVoxelChunking::FBox> Boxes;
+			PCGVoxelChunking::MergeCells(ChunkCells, ChunkLabels, Settings->CompressMaxSpan, /*bJoinBoxes=*/true, Equal, Boxes);
+			for (int32 Axis = 0; Axis < 3; ++Axis)
+			{
+				PCGVoxelChunking::JoinAlong(PartBoxes, Axis, Settings->CompressMaxSpan, [&](int32 A, int32 B)
+				{
+					const FPiece& PA = Pieces[A];
+					const FPiece& PB = Pieces[B];
+					return PA.Lo.Equals(PB.Lo, 1e-9) && PA.Hi.Equals(PB.Hi, 1e-9)
+						&& PA.Lo[Axis] <= -0.5 + 1e-9 && PA.Hi[Axis] >= 0.5 - 1e-9
+						&& PieceShows[A] == PieceShows[B] && Equal(A, B);
+				});
+			}
+			Boxes.Append(PartBoxes);
+
+			TArray<int32> Order; // into the old lists; chunks take their label's flags
+			TArray<FPiece> NewPieces;
+			for (int32 Index = 0; Index < Pieces.Num(); ++Index)
+			{
+				if (!InChunk[Index])
+				{
+					NewPieces.Add(Pieces[Index]);
+					Order.Add(Index);
+				}
+			}
+			for (const PCGVoxelChunking::FBox& Box : Boxes)
+			{
+				FPiece Chunk = Pieces[Box.Rep];
+				Chunk.Cell = Box.First;
+				Chunk.Span = Box.Span;
+				// Relative to the chunk's centre: the span's box, moved in by the piece's own faces.
+				Chunk.Lo = -FVector(Box.Span) * 0.5 + (Chunk.Lo + FVector(0.5));
+				Chunk.Hi = FVector(Box.Span) * 0.5 + (Chunk.Hi - FVector(0.5));
+				bAnyChunk |= Box.Span != FIntVector(1);
+				NewPieces.Add(Chunk);
+				Order.Add(Box.Rep);
+			}
+			// Back in cell order (Z, Y, X), several boxes on one cell keeping their order.
+			TArray<int32> Sorted;
+			Sorted.SetNumUninitialized(NewPieces.Num());
+			for (int32 Index = 0; Index < Sorted.Num(); ++Index)
+			{
+				Sorted[Index] = Index;
+			}
+			Algo::StableSort(Sorted, [&](int32 A, int32 B) { return FPCGVoxelGrid::CellLess(NewPieces[A].Cell, NewPieces[B].Cell); });
+			TArray<FPiece> FinalPieces;
+			TArray<bool> FinalSplit, FinalShows, FinalClamped;
+			for (const int32 Index : Sorted)
+			{
+				FinalPieces.Add(NewPieces[Index]);
+				FinalSplit.Add(PieceSplit[Order[Index]]);
+				FinalShows.Add(PieceShows[Order[Index]]);
+				FinalClamped.Add(PieceClamped[Order[Index]]);
+			}
+			Pieces = MoveTemp(FinalPieces);
+			PieceSplit = MoveTemp(FinalSplit);
+			PieceShows = MoveTemp(FinalShows);
+			PieceClamped = MoveTemp(FinalClamped);
+		}
+
 		// ---- Write: one point per piece, on its cell centre, bounds covering its box ----
 		const FQuat GridRotation = Grid.GridToWorld.GetRotation();
 		auto Emit = [&](const TArray<FPiece>& List, TArray<FPCGVoxelCellOut>& Outs) -> UPCGBasePointData*
@@ -873,9 +995,9 @@ bool FPCGVoxelOffsetSurfaceElement::ExecuteInternal(FPCGContext* Context) const
 			Outs.Reset(List.Num());
 			for (const FPiece& Piece : List)
 			{
-				Outs.Add({ Piece.Source, Piece.Cell, FIntVector(1) });
+				Outs.Add({ Piece.Source, Piece.Cell, Piece.Span });
 			}
-			UPCGBasePointData* Out = PCGVoxelPointIO::WriteCells(Context, Points, Grid, Outs, Settings->Grid.SpanAttribute, /*bWriteSpan=*/false);
+			UPCGBasePointData* Out = PCGVoxelPointIO::WriteCells(Context, Points, Grid, Outs, Settings->Grid.SpanAttribute, /*bWriteSpan=*/bAnyChunk);
 			TPCGValueRange<FTransform> Transforms = Out->GetTransformValueRange();
 			TPCGValueRange<FVector> Mins = Out->GetBoundsMinValueRange();
 			TPCGValueRange<FVector> Maxs = Out->GetBoundsMaxValueRange();

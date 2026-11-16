@@ -7,6 +7,7 @@
 #include "Elements/PCGVoxelSettingsBase.h"
 #include "Metadata/PCGAttributePropertySelector.h"
 #include "PCGElement.h"
+#include "Voxel/PCGVoxelChunking.h"
 
 #include "PCGVoxelOffsetSurface.generated.h"
 
@@ -179,6 +180,39 @@ public:
 	 */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Outputs", meta=(PCG_Overridable, EditCondition="bWriteWasSplit"))
 	FName WasSplitAttribute = TEXT("WasSplit");
+
+	/**
+	 * Write each growing cell's added whole cells as chunks (one point per box of cells, its size in the Span Attribute)
+	 * instead of a point per cell: +3 on one cell adds a handful of boxes, not 342 points. Cells added by one cell copy
+	 * it, so nothing is lost. Part cells (the fraction) join only with part cells of exactly their shape, along the axes
+	 * they fill; the input's own cells and split corners stay single points. Voxel | Expand turns chunks back into cells.
+	 */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Compression", meta=(PCG_Overridable))
+	bool bCompressAdded = false;
+
+	/**
+	 * Join every whole cell of the output (the input's own and the added) with its equal neighbours into chunks, by the
+	 * same rules as Voxel | Compress (Match Attributes). Listed with only the offset attribute joins cells by offset
+	 * value; values not listed are then taken from one cell of each chunk. Part cells join as in Compress Added; split
+	 * corners stay single points.
+	 */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Compression", meta=(PCG_Overridable))
+	bool bCompressEqualCells = false;
+
+	/** Compress Equal Cells: which values cells must share to join. All loses nothing. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Compression", meta=(PCG_Overridable, EditCondition="bCompressEqualCells"))
+	EPCGVoxelMatchAttributes MatchAttributes = EPCGVoxelMatchAttributes::All;
+
+	/**
+	 * Compress Equal Cells with Match Attributes Listed: the values cells must share. Point attribute names, or $Color,
+	 * $Density, $Steepness. Each must exist on the input.
+	 */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Compression", meta=(PCG_Overridable, EditCondition="bCompressEqualCells && MatchAttributes == EPCGVoxelMatchAttributes::Listed"))
+	TArray<FName> ListedAttributes;
+
+	/** The largest chunk along any axis, in cells. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Compression", meta=(PCG_Overridable, ClampMin=1, UIMin=1, UIMax=64))
+	int32 CompressMaxSpan = 16;
 
 	/** The node stops with an error when the box of cells it works over (the set's bounds, plus the added layers) has more cells than this. */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Settings", meta=(PCG_Overridable, ClampMin="1"))

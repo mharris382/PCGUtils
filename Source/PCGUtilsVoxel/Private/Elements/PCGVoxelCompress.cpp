@@ -4,13 +4,13 @@
 
 #include "Data/PCGBasePointData.h"
 #include "Helpers/PCGHelpers.h"
-#include "Math/RandomStream.h"
 #include "Metadata/PCGMetadata.h"
 #include "Metadata/PCGMetadataAttribute.h"
 #include "Metadata/PCGMetadataDomain.h"
 #include "PCGContext.h"
 #include "PCGPin.h"
 #include "Utils/PCGLogErrors.h"
+#include "Voxel/PCGVoxelChunking.h"
 #include "Voxel/PCGVoxelGrid.h"
 #include "Voxel/PCGVoxelPointIO.h"
 
@@ -21,233 +21,6 @@ namespace PCGVoxelCompressPrivate
 	/** Palette entries: the plain node, and the same node preset to Shape Random. */
 	constexpr int32 CompressPreset = 0;
 	constexpr int32 CompressRandomPreset = 1;
-
-	/** Rounds down to a multiple of Size, also for negative values. */
-	int32 FloorAlign(int32 Value, int32 Size)
-	{
-		return (Value >= 0 ? Value / Size : -((-Value + Size - 1) / Size)) * Size;
-	}
-
-	FIntVector FloorAlign(const FIntVector& Cell, int32 Size)
-	{
-		return FIntVector(FloorAlign(Cell.X, Size), FloorAlign(Cell.Y, Size), FloorAlign(Cell.Z, Size));
-	}
-
-	/** Whether two points may share a chunk: equal surface offsets and equal compared values. */
-	struct FPointEquality
-	{
-		TArray<const FPCGMetadataAttributeBase*> Attributes;
-		bool bColor = false;
-		bool bDensity = false;
-		bool bSteepness = false;
-		TConstPCGValueRange<int64> Entries;
-		TConstPCGValueRange<FVector4> Colors;
-		TConstPCGValueRange<float> Densities;
-		TConstPCGValueRange<float> Steepnesses;
-		TArray<FVector> OffsetMin;
-		TArray<FVector> OffsetMax;
-
-		bool operator()(int32 A, int32 B) const
-		{
-			if (A == B)
-			{
-				return true;
-			}
-			if (!OffsetMin[A].Equals(OffsetMin[B], 1e-6) || !OffsetMax[A].Equals(OffsetMax[B], 1e-6))
-			{
-				return false;
-			}
-			if ((bColor && Colors[A] != Colors[B]) || (bDensity && Densities[A] != Densities[B]) || (bSteepness && Steepnesses[A] != Steepnesses[B]))
-			{
-				return false;
-			}
-			for (const FPCGMetadataAttributeBase* Attribute : Attributes)
-			{
-				if (!Attribute->AreValuesEqualForEntryKeys(Entries[A], Entries[B]))
-				{
-					return false;
-				}
-			}
-			return true;
-		}
-	};
-
-	struct FChunkBox
-	{
-		FIntVector First;
-		FIntVector Span;
-		int32 Rep = INDEX_NONE;
-	};
-
-	/** Joins neighbouring equal boxes along Axis where their other two extents match. */
-	void JoinAlong(TArray<FChunkBox>& Boxes, int32 Axis, int32 MaxSpan, const FPointEquality& Equal)
-	{
-		const int32 A1 = (Axis + 1) % 3;
-		const int32 A2 = (Axis + 2) % 3;
-		Boxes.Sort([&](const FChunkBox& L, const FChunkBox& R)
-		{
-			if (L.First[A2] != R.First[A2]) return L.First[A2] < R.First[A2];
-			if (L.First[A1] != R.First[A1]) return L.First[A1] < R.First[A1];
-			if (L.Span[A2] != R.Span[A2]) return L.Span[A2] < R.Span[A2];
-			if (L.Span[A1] != R.Span[A1]) return L.Span[A1] < R.Span[A1];
-			return L.First[Axis] < R.First[Axis];
-		});
-		TArray<FChunkBox> Joined;
-		Joined.Reserve(Boxes.Num());
-		for (const FChunkBox& Box : Boxes)
-		{
-			if (!Joined.IsEmpty())
-			{
-				FChunkBox& Last = Joined.Last();
-				const bool bSameRow = Last.First[A1] == Box.First[A1] && Last.First[A2] == Box.First[A2]
-					&& Last.Span[A1] == Box.Span[A1] && Last.Span[A2] == Box.Span[A2];
-				if (bSameRow && Last.First[Axis] + Last.Span[Axis] == Box.First[Axis]
-					&& Last.Span[Axis] + Box.Span[Axis] <= MaxSpan && Equal(Last.Rep, Box.Rep))
-				{
-					Last.Span[Axis] += Box.Span[Axis];
-					continue;
-				}
-			}
-			Joined.Add(Box);
-		}
-		Boxes = MoveTemp(Joined);
-	}
-
-	/** Shape Random's per-start-cell inputs: the size mode, each point's span and chance. */
-	struct FRandomPlan
-	{
-		EPCGVoxelRandomSize Mode = EPCGVoxelRandomSize::UpTo;
-		FIntVector SingleSpan = FIntVector(3);
-		TArray<FIntVector> PointSpan; // empty: SingleSpan for every point
-		TPCGUtilsPointValues<double> Chance;
-
-		const FIntVector& SpanOf(int32 Point) const { return PointSpan.IsEmpty() ? SingleSpan : PointSpan[Point]; }
-	};
-
-	/**
-	 * Random tiling: cells in Z, Y, X order; each cell not yet taken starts a box, sized by the plan from that start
-	 * cell's span and chance, and grown only over cells that are occupied, free and equal to the start cell. Every cell
-	 * before the start in that order is already taken, so the start is always the box's lowest corner.
-	 */
-	void RandomBoxes(const FPCGVoxelGrid& Grid, const FRandomPlan& Plan, int32 Seed, const FPointEquality& Equal, TArray<FChunkBox>& Boxes)
-	{
-		FRandomStream Stream(Seed);
-		TArray<bool> Taken;
-		Taken.Init(false, Grid.NumCells());
-
-		auto SlabFree = [&](const FIntVector& First, const FIntVector& Span, int32 Axis, int32 Rep)
-		{
-			// The layer of cells just past the box along Axis.
-			FIntVector Lo = First;
-			Lo[Axis] += Span[Axis];
-			FIntVector Size = Span;
-			Size[Axis] = 1;
-			for (int32 Z = 0; Z < Size.Z; ++Z)
-			{
-				for (int32 Y = 0; Y < Size.Y; ++Y)
-				{
-					for (int32 X = 0; X < Size.X; ++X)
-					{
-						const int32 Cell = Grid.FindCellIndex(Lo + FIntVector(X, Y, Z));
-						if (Cell == INDEX_NONE || Taken[Cell] || !Equal(Rep, Grid.CellPoint[Cell]))
-						{
-							return false;
-						}
-					}
-				}
-			}
-			return true;
-		};
-
-		for (int32 Start = 0; Start < Grid.NumCells(); ++Start)
-		{
-			if (Taken[Start])
-			{
-				continue;
-			}
-			const FIntVector First = Grid.Cells[Start];
-			const int32 Rep = Grid.CellPoint[Start];
-			const FIntVector MaxSpan = Plan.SpanOf(Rep);
-
-			FIntVector Span(1);
-			if (Plan.Mode == EPCGVoxelRandomSize::UpTo)
-			{
-				// The draws are the same as before the size modes existed, so older graphs keep their layout.
-				const FIntVector Target(Stream.RandRange(1, MaxSpan.X), Stream.RandRange(1, MaxSpan.Y), Stream.RandRange(1, MaxSpan.Z));
-				int32 Order[3] = { 0, 1, 2 };
-				for (int32 I = 2; I > 0; --I)
-				{
-					Swap(Order[I], Order[Stream.RandRange(0, I)]);
-				}
-				for (const int32 Axis : Order)
-				{
-					while (Span[Axis] < Target[Axis] && SlabFree(First, Span, Axis, Rep))
-					{
-						++Span[Axis];
-					}
-				}
-			}
-			else if (Plan.Mode == EPCGVoxelRandomSize::Exact)
-			{
-				for (int32 Axis = 0; Axis < 3; ++Axis)
-				{
-					while (Span[Axis] < MaxSpan[Axis] && SlabFree(First, Span, Axis, Rep))
-					{
-						++Span[Axis];
-					}
-				}
-				if (Span != MaxSpan)
-				{
-					Span = FIntVector(1); // the whole box does not fit: no compression here
-				}
-			}
-			else
-			{
-				// A cube grows a layer on X, Y and Z together, or not at all.
-				const int32 Side = Stream.RandRange(1, FMath::Min3(MaxSpan.X, MaxSpan.Y, MaxSpan.Z));
-				int32 Size = 1;
-				while (Size < Side)
-				{
-					FIntVector Trial(Size);
-					bool bFits = true;
-					for (int32 Axis = 0; Axis < 3 && bFits; ++Axis)
-					{
-						bFits = SlabFree(First, Trial, Axis, Rep);
-						++Trial[Axis];
-					}
-					if (!bFits)
-					{
-						break;
-					}
-					++Size;
-				}
-				Span = FIntVector(Size);
-			}
-
-			// The chance is rolled only when there is something to compress, and only when below 1 (so a chance of 1
-			// draws nothing and keeps older layouts).
-			if (Span != FIntVector(1))
-			{
-				const double Chance = Plan.Chance.Get(Rep);
-				if (Chance < 1.0 && !(Stream.FRand() < Chance))
-				{
-					Span = FIntVector(1);
-				}
-			}
-
-			for (int32 Z = 0; Z < Span.Z; ++Z)
-			{
-				for (int32 Y = 0; Y < Span.Y; ++Y)
-				{
-					for (int32 X = 0; X < Span.X; ++X)
-					{
-						Taken[Grid.FindCellIndex(First + FIntVector(X, Y, Z))] = true;
-					}
-				}
-			}
-			Boxes.Add({ First, Span, Rep });
-		}
-	}
 
 	/** A Random Span value as whole cell counts, each at least 1. */
 	bool ToSpanVector(const FVector& Value, FIntVector& OutSpan)
@@ -366,60 +139,22 @@ bool FPCGVoxelCompressElement::ExecuteInternal(FPCGContext* Context) const
 			}
 		}
 
-		// What two cells must share.
-		FPointEquality Equal;
-		Equal.Entries = Points->GetConstMetadataEntryValueRange();
-		Equal.Colors = Points->GetConstColorValueRange();
-		Equal.Densities = Points->GetConstDensityValueRange();
-		Equal.Steepnesses = Points->GetConstSteepnessValueRange();
+		// What two cells must share (the shared compression rules, Voxel/PCGVoxelChunking.h).
+		FPCGVoxelPointEquality Equal;
 		Grid.ComputeSurfaceOffsets(Points, Equal.OffsetMin, Equal.OffsetMax);
-		const FPCGMetadataDomain* Domain = Points->ConstMetadata() ? Points->ConstMetadata()->GetConstMetadataDomain(PCGMetadataDomainID::Elements) : nullptr;
-		bool bListFailed = false;
-		if (Settings->MatchAttributes == EPCGVoxelMatchAttributes::All)
+		FName Missing;
+		if (!Equal.Init(Points, Settings->MatchAttributes, Settings->ListedAttributes, Settings->Grid.SpanAttribute, Settings->Grid.SurroundedAttribute, Missing))
 		{
-			Equal.bColor = Equal.bDensity = Equal.bSteepness = true;
-			if (Domain)
-			{
-				TArray<FName> Names;
-				TArray<EPCGMetadataTypes> Types;
-				Domain->GetAttributes(Names, Types);
-				for (const FName Name : Names)
-				{
-					// The span and 'is surrounded' describe the box, not the cell: they are rewritten for every chunk.
-					if (Name != Settings->Grid.SpanAttribute && Name != Settings->Grid.SurroundedAttribute)
-					{
-						Equal.Attributes.Add(Domain->GetConstAttribute(Name));
-					}
-				}
-			}
-		}
-		else
-		{
-			for (const FName Name : Settings->ListedAttributes)
-			{
-				if (Name == TEXT("$Color")) { Equal.bColor = true; continue; }
-				if (Name == TEXT("$Density")) { Equal.bDensity = true; continue; }
-				if (Name == TEXT("$Steepness")) { Equal.bSteepness = true; continue; }
-				const FPCGMetadataAttributeBase* Attribute = Domain ? Domain->GetConstAttribute(Name) : nullptr;
-				if (!Attribute)
-				{
-					PCGLog::LogErrorOnGraph(PCGVoxel::FormatError(Title, Index, FText::Format(
-						LOCTEXT("ListedMissing", "Listed Attributes names '{0}', which is not a point attribute of this input."), FText::FromName(Name))), Context);
-					bListFailed = true;
-					break;
-				}
-				Equal.Attributes.Add(Attribute);
-			}
-		}
-		if (bListFailed)
-		{
+			PCGLog::LogErrorOnGraph(PCGVoxel::FormatError(Title, Index, FText::Format(
+				LOCTEXT("ListedMissing", "Listed Attributes names '{0}', which is not a point attribute of this input."), FText::FromName(Missing))), Context);
 			continue;
 		}
+		auto EqualRef = [&Equal](int32 A, int32 B) { return Equal(A, B); };
 
-		TArray<FChunkBox> Boxes;
+		TArray<PCGVoxelChunking::FBox> Boxes;
 		if (Settings->Shape == EPCGVoxelChunkShape::Random)
 		{
-			FRandomPlan Plan;
+			PCGVoxelChunking::FRandomPlan Plan;
 			Plan.Mode = Settings->RandomSize;
 			FText ReadError;
 			TPCGUtilsPointValues<FVector> Spans;
@@ -454,74 +189,17 @@ bool FPCGVoxelCompressElement::ExecuteInternal(FPCGContext* Context) const
 			{
 				continue;
 			}
-			RandomBoxes(Grid, Plan, PCGHelpers::ComputeSeed(Context->GetSeed(), Index), Equal, Boxes);
+			PCGVoxelChunking::RandomBoxes(Grid, Plan, PCGHelpers::ComputeSeed(Context->GetSeed(), Index), EqualRef, Boxes);
 		}
 		else
 		{
-			// Aligned octree: eight equal full cubes of size S at a multiple of 2S become one cube of size 2S.
-			TMap<FIntVector, int32> Level;
-			Level.Reserve(Grid.NumCells());
-			for (const FIntVector& Cell : Grid.Cells)
-			{
-				Level.Add(Cell, Grid.FindPoint(Cell));
-			}
-			int32 Size = 1;
-			while (Size * 2 <= MaxSpan && !Level.IsEmpty())
-			{
-				TMap<FIntVector, int32> ChildCount;
-				for (const TPair<FIntVector, int32>& Node : Level)
-				{
-					++ChildCount.FindOrAdd(FloorAlign(Node.Key, Size * 2));
-				}
-				TMap<FIntVector, int32> Next;
-				TSet<FIntVector> Merged;
-				for (const TPair<FIntVector, int32>& Parent : ChildCount)
-				{
-					if (Parent.Value != 8)
-					{
-						continue;
-					}
-					const int32 Rep = Level.FindChecked(Parent.Key);
-					bool bEqual = true;
-					for (int32 Child = 1; Child < 8 && bEqual; ++Child)
-					{
-						const FIntVector Offset((Child & 1) ? Size : 0, (Child & 2) ? Size : 0, (Child & 4) ? Size : 0);
-						bEqual = Equal(Rep, Level.FindChecked(Parent.Key + Offset));
-					}
-					if (bEqual)
-					{
-						Next.Add(Parent.Key, Rep);
-						Merged.Add(Parent.Key);
-					}
-				}
-				for (const TPair<FIntVector, int32>& Node : Level)
-				{
-					if (!Merged.Contains(FloorAlign(Node.Key, Size * 2)))
-					{
-						Boxes.Add({ Node.Key, FIntVector(Size), Node.Value });
-					}
-				}
-				Level = MoveTemp(Next);
-				Size *= 2;
-			}
-			for (const TPair<FIntVector, int32>& Node : Level)
-			{
-				Boxes.Add({ Node.Key, FIntVector(Size), Node.Value });
-			}
-
-			if (Settings->Shape == EPCGVoxelChunkShape::Boxes)
-			{
-				for (int32 Axis = 0; Axis < 3; ++Axis)
-				{
-					JoinAlong(Boxes, Axis, MaxSpan, Equal);
-				}
-			}
+			PCGVoxelChunking::MergeCells(Grid.Cells, Grid.CellPoint, MaxSpan, Settings->Shape == EPCGVoxelChunkShape::Boxes, EqualRef, Boxes);
 		}
 
-		Boxes.Sort([](const FChunkBox& A, const FChunkBox& B) { return FPCGVoxelGrid::CellLess(A.First, B.First); });
+		Boxes.Sort([](const PCGVoxelChunking::FBox& A, const PCGVoxelChunking::FBox& B) { return FPCGVoxelGrid::CellLess(A.First, B.First); });
 		TArray<FPCGVoxelCellOut> Out;
 		Out.Reserve(Boxes.Num());
-		for (const FChunkBox& Box : Boxes)
+		for (const PCGVoxelChunking::FBox& Box : Boxes)
 		{
 			Out.Add({ Box.Rep, Box.First, Box.Span });
 		}
