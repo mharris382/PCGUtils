@@ -65,9 +65,14 @@ int64 FPCGVoxelBoxSum::CountSet(const FIntVector& Cell, const FIntVector& Reach)
 
 bool FPCGVoxelBoxSum::AllSet(const FIntVector& Cell, const FIntVector& Reach) const
 {
+	return AllSet(Cell, Reach, Reach);
+}
+
+bool FPCGVoxelBoxSum::AllSet(const FIntVector& Cell, const FIntVector& ReachLo, const FIntVector& ReachHi) const
+{
 	const FIntVector Local = Cell - Min;
-	const FIntVector Lo = Local - Reach;
-	const FIntVector Hi = Local + Reach + FIntVector(1);
+	const FIntVector Lo = Local - ReachLo;
+	const FIntVector Hi = Local + ReachHi + FIntVector(1);
 	if (Lo.X < 0 || Lo.Y < 0 || Lo.Z < 0 || Hi.X > Dims.X || Hi.Y > Dims.Y || Hi.Z > Dims.Z)
 	{
 		return false;

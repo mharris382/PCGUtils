@@ -55,6 +55,9 @@ struct PCGUTILSVOXEL_API FPCGVoxelBoxSum
 	int64 CountSet(const FIntVector& Cell, const FIntVector& Reach) const;
 	/** Every cell in the box Reach around Cell is set (false when the box leaves the mask's box). */
 	bool AllSet(const FIntVector& Cell, const FIntVector& Reach) const;
+
+	/** Whether every cell from Cell - ReachLo to Cell + ReachHi is set (false when that box leaves the dense box). */
+	bool AllSet(const FIntVector& Cell, const FIntVector& ReachLo, const FIntVector& ReachHi) const;
 	/** Some cell in the box Reach around Cell is set. */
 	bool AnySet(const FIntVector& Cell, const FIntVector& Reach) const { return CountSet(Cell, Reach) > 0; }
 

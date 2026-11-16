@@ -23,6 +23,41 @@ enum class EPCGVoxelAxes : uint8
 };
 ENUM_CLASS_FLAGS(EPCGVoxelAxes);
 
+/** Grid directions, each sign of each axis on its own (a bitmask). */
+UENUM(BlueprintType, meta=(Bitflags, UseEnumValuesAsMaskValuesInEditor="true"))
+enum class EPCGVoxelDirections : uint8
+{
+	None = 0 UMETA(Hidden),
+	PosX = 1 << 0 UMETA(DisplayName="+X"),
+	NegX = 1 << 1 UMETA(DisplayName="-X"),
+	PosY = 1 << 2 UMETA(DisplayName="+Y"),
+	NegY = 1 << 3 UMETA(DisplayName="-Y"),
+	PosZ = 1 << 4 UMETA(DisplayName="+Z"),
+	NegZ = 1 << 5 UMETA(DisplayName="-Z"),
+	All = PosX | NegX | PosY | NegY | PosZ | NegZ UMETA(Hidden),
+};
+ENUM_CLASS_FLAGS(EPCGVoxelDirections);
+
+namespace PCGVoxel
+{
+	/** The direction bit for Axis (0 X, 1 Y, 2 Z) towards Sign (+1 or -1). */
+	inline int32 DirectionBit(int32 Axis, int32 Sign) { return 1 << (Axis * 2 + (Sign > 0 ? 0 : 1)); }
+
+	/** Both directions of every axis set in an EPCGVoxelAxes mask. */
+	inline int32 DirectionsFromAxes(int32 Axes)
+	{
+		int32 Out = 0;
+		for (int32 Axis = 0; Axis < 3; ++Axis)
+		{
+			if (Axes & (1 << Axis))
+			{
+				Out |= DirectionBit(Axis, 1) | DirectionBit(Axis, -1);
+			}
+		}
+		return Out;
+	}
+}
+
 UENUM(BlueprintType)
 enum class EPCGVoxelMissingGridTransform : uint8
 {

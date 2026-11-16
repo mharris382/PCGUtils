@@ -63,8 +63,9 @@ namespace PCGUtilsInputShorthands
 			}
 			else if constexpr (std::is_same_v<T, FVector>)
 			{
-				OutExpected = LOCTEXT("ExpectVector", "a Vector");
-				return Source == E::Vector;
+				// A number is broadcast to all three axes (as PCG does), so a setting that became a vector keeps its attributes.
+				OutExpected = LOCTEXT("ExpectVector", "a Vector, or a number (Integer32, Integer64, Float or Double) used on all three axes");
+				return Source == E::Vector || Source == E::Integer32 || Source == E::Integer64 || Source == E::Float || Source == E::Double;
 			}
 			else if constexpr (std::is_same_v<T, FVector4>)
 			{
@@ -505,6 +506,58 @@ namespace PCGUtilsPointShorthands
 	MACRO(Double01, double, true, 0, true, 1) \
 	MACRO(Vector, FVector, false, 0, false, 0)
 
+namespace PCGUtilsInputShorthands
+{
+	namespace
+	{
+		/** An older plain number loads as the constant. */
+		template <typename ShorthandType>
+		bool LoadMismatchedPoint(const FPropertyTag& Tag, FStructuredArchive::FSlot Slot, ShorthandType& Self)
+		{
+			if (!LoadMismatchedConstant(Tag, Slot, Self.Constant))
+			{
+				return false;
+			}
+			Self.Input = EPCGUtilsPointInputValueType::Constant;
+			return true;
+		}
+
+		/**
+		 * A vector also loads an older number shorthand (a setting that became a vector, such as the Amount Scale of
+		 * Offset Surface): its constant on every axis, and its input mode and attribute as they were. A plain number
+		 * loads as that number on every axis.
+		 */
+		bool LoadMismatchedPoint(const FPropertyTag& Tag, FStructuredArchive::FSlot Slot, FPCGUtilsPointShorthandVector& Self)
+		{
+			double Number = 0.0;
+			if (LoadMismatchedConstant(Tag, Slot, Number))
+			{
+				Self.Constant = FVector(Number);
+				Self.Input = EPCGUtilsPointInputValueType::Constant;
+				return true;
+			}
+			if (Tag.GetType().GetName() != NAME_StructProperty || Tag.GetType().GetParameterCount() < 1)
+			{
+				return false;
+			}
+			const FName StructName = Tag.GetType().GetParameterName(0);
+			auto LoadAs = [&](auto Old) -> bool
+			{
+				using OldType = decltype(Old);
+				OldType::StaticStruct()->SerializeItem(Slot, &Old, nullptr);
+				Self.Input = Old.Input;
+				Self.Attribute = Old.Attribute;
+				Self.Constant = FVector(Old.Constant);
+				return true;
+			};
+			if (StructName == FPCGUtilsPointShorthandDouble::StaticStruct()->GetFName()) { return LoadAs(FPCGUtilsPointShorthandDouble()); }
+			if (StructName == FPCGUtilsPointShorthandDoubleAbs::StaticStruct()->GetFName()) { return LoadAs(FPCGUtilsPointShorthandDoubleAbs()); }
+			if (StructName == FPCGUtilsPointShorthandDouble01::StaticStruct()->GetFName()) { return LoadAs(FPCGUtilsPointShorthandDouble01()); }
+			return false;
+		}
+	}
+}
+
 #define PCGUTILS_POINT_SHORTHAND_IMPL(_NAME, _TYPE, _HASMIN, _MIN, _HASMAX, _MAX) \
 	bool FPCGUtilsPointShorthand##_NAME::TryRead(const UPCGBasePointData* Points, TPCGUtilsPointValues<_TYPE>& OutValues, \
 		FText& OutError, const FText& SettingLabel, int32 InputIndex) const \
@@ -525,9 +578,7 @@ namespace PCGUtilsPointShorthands
 	} \
 	bool FPCGUtilsPointShorthand##_NAME::SerializeFromMismatchedTag(const FPropertyTag& Tag, FStructuredArchive::FSlot Slot) \
 	{ \
-		if (!PCGUtilsInputShorthands::LoadMismatchedConstant(Tag, Slot, Constant)) { return false; } \
-		Input = EPCGUtilsPointInputValueType::Constant; \
-		return true; \
+		return PCGUtilsInputShorthands::LoadMismatchedPoint(Tag, Slot, *this); \
 	}
 
 PCGUTILS_FOREACH_POINT_SHORTHAND(PCGUTILS_POINT_SHORTHAND_IMPL)

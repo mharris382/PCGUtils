@@ -765,7 +765,10 @@ the bounds (`BoundsMax += PositiveOpenSides * Amount`, `BoundsMin += NegativeOpe
 under one cell, and leaves inside-corner cells sticking out on a shrink. This node knows the grid, so the offset can
 be any size and corners come out right. It takes over the planned phase-2 `Dilate / Erode`.
 
-- `Amount` (default 0.25) x `Amount Scale` (default 1). Both are point shorthands (changed 2026-11-10 on request; see
+- `Amount` (default 0.25) x `Amount Scale` (default (1, 1, 1); a vector since 2026-11-16 on request, multiplying
+  Amount per axis: (1, 1, 0) leaves tops and bottoms alone, (1, 1, 2) moves them twice as far, a negative axis
+  shrinks along it while the others grow, and the sideways growth then takes the shrunk height; a number attribute is
+  used on all three axes, and graphs saved with a number scale load it on all three). Both are point shorthands (changed 2026-11-10 on request; see
   `PCGUtilsInputShorthands.md`): a constant, a point attribute or property (one value per cell; a chunk's cells share
   its point's value; defaults `OffsetAmount` and `AmountScale`) or `@Data` (one value per set). Positive grows,
   negative shrinks. With one value for the set it is a box
@@ -773,10 +776,12 @@ be any size and corners come out right. It takes over the planned phase-2 `Dilat
   the fraction is part cells. **No box ever leaves its cell** (rule from the designer, 2026-11-15): `+3.5` adds three
   layers, then a layer of cells half deep. `-1.25` removes one layer and pulls the open faces of the cells left in a
   quarter cell; a 5x5x5 block becomes a 2.5-cell cube.
-- `Axes` (added 2026-11-14 on request; bitmask X | Y | Z, default all three): the axes the offset moves along. An
-  axis left out gets no offset at all: no layers added or removed along it, its faces stay put, and inside corners
-  are not carved along it. X | Y offsets sideways only (one cell +1 is a 3x3 plate; -1 on a 3x3x3 keeps the middle
-  column). With some axes off, a growing cell's spare reach is measured over the axes left on.
+- `Directions` (bitmask +X, -X, +Y, -Y, +Z, -Z, default all six; replaced `Axes` on 2026-11-16 on request, and older
+  graphs keep both directions of each axis they had): the directions the offset moves along. A direction left out
+  gets no offset at all: no layers added or removed that way, its faces stay put, and inside corners are not carved
+  towards it. -Z alone grows or shrinks the bottom faces only; the four sideways directions offset sideways only (one
+  cell +1 is a 3x3 plate; -1 on a 3x3x3 keeps the middle column). A growing cell's spare reach is measured over the
+  axes it grows along, in the direction of the cell it reaches.
 - `Units` (added 2026-11-10 on request): **Cells** (default; 1 is one cell width per axis) or **Absolute** (world
   units, turned into cells per axis by Voxel Size, so non-cubic cells get per-axis layers and fractions).
 - **Per-cell values** (either setting from a point attribute): falloff and masking (a scale of 0 leaves a cell
@@ -1125,7 +1130,10 @@ a cell hash.
     offset as 3 cells; the corner reads as its face box; meshed it is closed with the carved boxes' exact volume; a
     notched block's Out is 31 points (middle 3 boxes); stale `IsSurrounded` rewritten.
   - Offset Surface Axes: X | Y grows a quarter sideways only, +1 is a 3x3 plate, -1 on a 3x3x3 keeps the middle
-    column, the L corner carves into 2 full-height boxes; Z only grows a column; no axis leaves the cell alone.
+    column, the L corner carves into 2 full-height boxes; Z only grows a column; no axis leaves the cell alone; -Z
+    alone grows only the cell below and lifts only the bottom face; all but +Z keeps the top; Amount Scale (1, 1, 0)
+    is a plate, (1, 1, 2) reaches twice as far vertically, (1, 1, -1) grows sideways and shrinks vertically with the
+    side growth at the shrunk height; a per point vector attribute works.
   - Offset Surface grow never overlaps: every grow test checks each box stays inside its cell and no two overlap; an L
     +0.25 is the exact box offset (5.25 x 1.5) with its inside corner an L of 2 boxes; diagonal neighbours; a one-cell
     gap grown 0.75 from both sides is filled exactly once, each box copying its side; a plate of mixed amounts.

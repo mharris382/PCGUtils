@@ -363,7 +363,7 @@ bool FPCGVoxelOffsetSurfaceScaleTest::RunTest(const FString& Parameters)
 
 	// Constant scale multiplies.
 	const TArray<FOutPoint> Doubled = Offset(MakeVoxels({ FIntVector(0) }), 0.25,
-		[](UPCGVoxelOffsetSurfaceSettings& S) { S.AmountScale.Constant = 2.0; });
+		[](UPCGVoxelOffsetSurfaceSettings& S) { S.AmountScale.Constant = FVector(2.0); });
 	TestEqual(TEXT("Amount Scale 2: 27 cells"), Doubled.Num(), 27);
 	TestGrown(*this, TEXT("Amount Scale 2"), Doubled, FVector(-100.0), FVector(100.0));
 
@@ -429,7 +429,7 @@ bool FPCGVoxelOffsetSurfaceScaleTest::RunTest(const FString& Parameters)
 	const TArray<FOutPoint> FromDensity = Offset(MakeVoxels({ FIntVector(0) }), 99.0, [](UPCGVoxelOffsetSurfaceSettings& S)
 	{
 		S.Amount.SetAttribute(TEXT("$Density"));
-		S.AmountScale.Constant = 0.25;
+		S.AmountScale.Constant = FVector(0.25);
 	});
 	TestGrown(*this, TEXT("$Density x 0.25 grows a quarter"), FromDensity, FVector(-75.0), FVector(75.0));
 
@@ -561,9 +561,9 @@ bool FPCGVoxelOffsetSurfaceAxesTest::RunTest(const FString& Parameters)
 {
 	using namespace PCGVoxelOffsetSurfaceTests;
 	const int32 XY = static_cast<int32>(EPCGVoxelAxes::X | EPCGVoxelAxes::Y);
-	auto OnlyXY = [XY](UPCGVoxelOffsetSurfaceSettings& S) { S.Axes = XY; };
+	auto OnlyXY = [XY](UPCGVoxelOffsetSurfaceSettings& S) { S.Directions = PCGVoxel::DirectionsFromAxes(XY); };
 
-	TestEqual(TEXT("default: X, Y and Z"), NewObject<UPCGVoxelOffsetSurfaceSettings>()->Axes, static_cast<int32>(EPCGVoxelAxes::All));
+	TestEqual(TEXT("default: X, Y and Z"), NewObject<UPCGVoxelOffsetSurfaceSettings>()->Directions, static_cast<int32>(EPCGVoxelDirections::All));
 
 	// A fraction grows only into X and Y: the cell and its 8 neighbours in the plane.
 	const TArray<FOutPoint> Faces = Offset(MakeVoxels({ FIntVector(0) }), 0.25, OnlyXY);
@@ -592,12 +592,47 @@ bool FPCGVoxelOffsetSurfaceAxesTest::RunTest(const FString& Parameters)
 	TestNearlyEqual(TEXT("X | Y: corner volume"), Volume(Corner), (0.5 + 2.0 * 0.375) * 1e6, 1.0);
 
 	// Only Z: a cell grows up and down.
-	const TArray<FOutPoint> Tall = Offset(MakeVoxels({ FIntVector(0) }), 1.0, [](UPCGVoxelOffsetSurfaceSettings& S) { S.Axes = static_cast<int32>(EPCGVoxelAxes::Z); });
+	const TArray<FOutPoint> Tall = Offset(MakeVoxels({ FIntVector(0) }), 1.0, [](UPCGVoxelOffsetSurfaceSettings& S) { S.Directions = PCGVoxel::DirectionsFromAxes(static_cast<int32>(EPCGVoxelAxes::Z)); });
 	TestEqual(TEXT("Z: +1 gives a column of 3"), Tall.Num(), 3);
 
 	// No axis: nothing moves.
-	const TArray<FOutPoint> Still = Offset(MakeVoxels({ FIntVector(0) }), 1.5, [](UPCGVoxelOffsetSurfaceSettings& S) { S.Axes = 0; });
+	const TArray<FOutPoint> Still = Offset(MakeVoxels({ FIntVector(0) }), 1.5, [](UPCGVoxelOffsetSurfaceSettings& S) { S.Directions = 0; });
 	TestTrue(TEXT("no axis: the cell is left as it is"), Still.Num() == 1 && BoundsAre(&Still[0], FVector(-50.0), FVector(50.0)));
+
+	// One sign of an axis: -Z only grows down, not up.
+	auto OnlyNegZ = [](UPCGVoxelOffsetSurfaceSettings& S) { S.Directions = static_cast<int32>(EPCGVoxelDirections::NegZ); };
+	const TArray<FOutPoint> Down = Offset(MakeVoxels({ FIntVector(0) }), 1.0, OnlyNegZ);
+	TestTrue(TEXT("-Z: +1 adds the cell below only"), Down.Num() == 2 && At(Down, FIntVector(0, 0, -1)) != nullptr);
+	TestGrown(*this, TEXT("-Z: +0.25 grows the bottom only"), Offset(MakeVoxels({ FIntVector(0) }), 0.25, OnlyNegZ), FVector(-50, -50, -75), FVector(50, 50, 50));
+	const TArray<FOutPoint> Lifted = Offset(MakeVoxels({ FIntVector(0) }), -0.25, OnlyNegZ);
+	TestTrue(TEXT("-Z: -0.25 lifts the bottom face only"), Lifted.Num() == 1 && BoundsAre(&Lifted[0], FVector(-50, -50, -25), FVector(50.0)));
+	const TArray<FOutPoint> AllButTop = Offset(MakeVoxels({ FIntVector(0) }), 0.25, [](UPCGVoxelOffsetSurfaceSettings& S)
+	{
+		S.Directions = static_cast<int32>(EPCGVoxelDirections::All & ~EPCGVoxelDirections::PosZ);
+	});
+	TestGrown(*this, TEXT("all but +Z: the top stays"), AllButTop, FVector(-75, -75, -75), FVector(75, 75, 50));
+
+	// Amount Scale per axis: (1, 1, 0) is a plate, (1, 1, 2) reaches twice as far up and down.
+	const TArray<FOutPoint> Flat = Offset(MakeVoxels({ FIntVector(0) }), 1.0, [](UPCGVoxelOffsetSurfaceSettings& S) { S.AmountScale.Constant = FVector(1, 1, 0); });
+	TestTrue(TEXT("scale (1, 1, 0): +1 gives a 3x3 plate"), Flat.Num() == 9 && !Flat.ContainsByPredicate([](const FOutPoint& P) { return P.Cell.Z != 0; }));
+	TestGrown(*this, TEXT("scale (1, 1, 2): +0.5"), Offset(MakeVoxels({ FIntVector(0) }), 0.5, [](UPCGVoxelOffsetSurfaceSettings& S) { S.AmountScale.Constant = FVector(1, 1, 2); }),
+		FVector(-100, -100, -150), FVector(100, 100, 150));
+
+	// A negative axis shrinks while the others grow; the sideways growth takes the shrunk height.
+	const TArray<FOutPoint> Mixed = Offset(MakeVoxels({ FIntVector(0) }), 0.25, [](UPCGVoxelOffsetSurfaceSettings& S) { S.AmountScale.Constant = FVector(1, 1, -1); });
+	TestGrown(*this, TEXT("scale (1, 1, -1): grows sideways, shrinks top and bottom"), Mixed, FVector(-75, -75, -25), FVector(75, 75, 25));
+	TestNearlyEqual(TEXT("scale (1, 1, -1): volume"), Volume(Mixed), 1.5 * 1.5 * 0.5 * 1e6, 1.0);
+
+	// A per point vector attribute, and a number attribute used on all three axes.
+	UPCGPointArrayData* Pair = MakeVoxels({ FIntVector(0), FIntVector(5, 0, 0) });
+	{
+		FPCGMetadataAttribute<FVector>* Scale = Pair->MutableMetadata()->CreateAttribute<FVector>(TEXT("AmountScale"), FVector(1.0), true, false);
+		Scale->SetValue(Pair->GetConstMetadataEntryValueRange()[0], FVector(1, 1, 0));
+		Scale->SetValue(Pair->GetConstMetadataEntryValueRange()[1], FVector(0, 0, 1));
+	}
+	const TArray<FOutPoint> PerPoint = Offset(Pair, 1.0, [](UPCGVoxelOffsetSurfaceSettings& S) { S.AmountScale.Input = EPCGUtilsPointInputValueType::Attribute; });
+	TestEqual(TEXT("vector attribute: a plate of 9 and a column of 3"), PerPoint.Num(), 12);
+	TestTrue(TEXT("vector attribute: the column is the second cell's"), At(PerPoint, FIntVector(5, 0, 1)) != nullptr && At(PerPoint, FIntVector(1, 0, 0)) != nullptr);
 	return true;
 }
 
@@ -750,7 +785,7 @@ bool FPCGVoxelOffsetSurfaceThinnessTest::RunTest(const FString& Parameters)
 	const TArray<FOutPoint> Pair = Offset(MakeVoxels({ FIntVector(0, 0, 0), FIntVector(0, 0, 1) }), -0.8, [&](UPCGVoxelOffsetSurfaceSettings& S)
 	{
 		Limit(1.0)(S);
-		S.Axes = static_cast<int32>(EPCGVoxelAxes::Z);
+		S.Directions = PCGVoxel::DirectionsFromAxes(static_cast<int32>(EPCGVoxelAxes::Z));
 	});
 	TestTrue(TEXT("run of 2: bottom from the middle down half a cell"), BoundsAre(At(Pair, FIntVector(0, 0, 0)), FVector(-50, -50, 0), FVector(50, 50, 50)));
 	TestTrue(TEXT("run of 2: top up half a cell"), BoundsAre(At(Pair, FIntVector(0, 0, 1)), FVector(-50, -50, -50), FVector(50, 50, 0)));

@@ -160,3 +160,4 @@ struct PCGUTILSCORE_API FPCGUtilsPointShorthandVector : public FPCGUtilsPointSho
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Settings", meta=(PCG_Overridable))
 	FVector Constant = FVector::ZeroVector;
 };
+PCGUTILS_INPUT_SHORTHAND_MISMATCHED_TAG_TRAITS(FPCGUtilsPointShorthandVector)

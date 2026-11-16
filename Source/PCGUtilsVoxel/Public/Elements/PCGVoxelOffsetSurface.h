@@ -105,23 +105,27 @@ public:
 	FPCGUtilsPointShorthandDouble Amount = FPCGUtilsPointShorthandDouble(0.25, TEXT("OffsetAmount"));
 
 	/**
-	 * Which grid axes the offset moves along (default X, Y and Z). X | Y offsets sideways only: no layers are added or
-	 * removed above or below, and the top and bottom faces stay where they are. No axis leaves every cell as it is.
+	 * Which grid directions the offset moves along (default all six). Each sign of an axis is its own flag: -Z without
+	 * +Z offsets the bottom faces and leaves the tops where they are; +X, -X, +Y and -Y offsets sideways only. A
+	 * direction left out adds or removes no layers that way, and its faces do not move. None leaves every cell as it is.
 	 */
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Settings", meta=(PCG_Overridable, Bitmask, BitmaskEnum="/Script/PCGUtilsVoxel.EPCGVoxelAxes"))
-	int32 Axes = static_cast<int32>(EPCGVoxelAxes::All);
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Settings", meta=(PCG_Overridable, Bitmask, BitmaskEnum="/Script/PCGUtilsVoxel.EPCGVoxelDirections"))
+	int32 Directions = static_cast<int32>(EPCGVoxelDirections::All);
 
 	/** Cells (default): 1 is one cell width. Absolute: world units, the same distance on every axis. */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Settings", meta=(PCG_Overridable))
 	EPCGVoxelOffsetUnits Units = EPCGVoxelOffsetUnits::Cells;
 
 	/**
-	 * Multiplies Amount, for falloff or masking: 0 leaves a cell alone, negative flips it. Default constant 1 (no
-	 * change). Attribute (a number, required in that mode; default 'AmountScale'): a point attribute or property gives
-	 * each cell its own scale (every cell of a chunk shares its point's value); '@Data.AmountScale' gives one per set.
+	 * Multiplies Amount per axis, for falloff, masking or exaggeration: (1, 1, 0) leaves a cell's top and bottom where
+	 * they are, (1, 1, 2) moves them twice as far as the sides, 0 on every axis leaves the cell alone, and a negative
+	 * axis flips the offset along that axis (a cell can grow sideways and shrink vertically). Default constant (1, 1, 1).
+	 * Attribute (a vector, or a number used on all three axes; required in that mode; default 'AmountScale'): a point
+	 * attribute or property gives each cell its own scale (every cell of a chunk shares its point's value);
+	 * '@Data.AmountScale' gives one per set. Graphs saved with a number scale load it on all three axes.
 	 */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Settings", meta=(PCG_Overridable))
-	FPCGUtilsPointShorthandDouble AmountScale = FPCGUtilsPointShorthandDouble(1.0, TEXT("AmountScale"));
+	FPCGUtilsPointShorthandVector AmountScale = FPCGUtilsPointShorthandVector(FVector(1.0), TEXT("AmountScale"));
 
 	/** Negative offsets of a cell or more: Delete the outer layers, or Push the surface (and its values) inward. */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Settings", meta=(PCG_Overridable))
@@ -219,6 +223,10 @@ public:
 	int64 MaxCells = 64 * 1024 * 1024;
 
 protected:
+	/** Older graphs: the axes the offset moved along (an EPCGVoxelAxes mask), now both directions of each in Directions. */
+	UPROPERTY()
+	int32 Axes = static_cast<int32>(EPCGVoxelAxes::All);
+
 	/** Older graphs: Constant or Attribute for Amount Scale, now AmountScale.Input. */
 	UPROPERTY()
 	EPCGVoxelOffsetScaleInput AmountScaleInput_DEPRECATED = EPCGVoxelOffsetScaleInput::Constant;
