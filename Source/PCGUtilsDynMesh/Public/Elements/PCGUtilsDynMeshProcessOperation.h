@@ -10,6 +10,8 @@
 class UPCGDynamicMeshData;
 class UPCGDynamicMeshSelectionData;
 struct FPCGContext;
+class UPCGData;
+struct FPCGUtilsDynMeshProcessOutcome;
 
 /** Domain in which an optional Selector is evaluated when the process does not require one itself. */
 UENUM(BlueprintType)
@@ -84,6 +86,11 @@ struct PCGUTILSDYNMESH_API FPCGUtilsDynMeshProcessInvocation
 	/** The mesh to operate on. Owned by the caller and safe to mutate in place. */
 	UPCGDynamicMeshData* MeshData = nullptr;
 
+	/** Previous successful step in a sequential operand fold; null outside that executor. */
+	const FPCGUtilsDynMeshProcessOutcome* PreviousOperandOutcome = nullptr;
+	/** Last application in this result's fold; companion data may reference the final mesh without a snapshot. */
+	bool bLastOperand = true;
+
 	/** Read-only second mesh supplied by an operand process. Null for unary processes. */
 	const UPCGDynamicMeshData* OperandMeshData = nullptr;
 
@@ -129,6 +136,14 @@ struct PCGUTILSDYNMESH_API FPCGUtilsDynMeshAuxiliaryMeshOutput
 	UPCGDynamicMeshData* MeshData = nullptr;
 };
 
+/** Tagged companion data for an immediate result. Deferred Builders cannot emit companion data. */
+struct PCGUTILSDYNMESH_API FPCGUtilsDynMeshAuxiliaryDataOutput
+{
+	FName Pin = NAME_None;
+	const UPCGData* Data = nullptr;
+	TSet<FString> Tags;
+};
+
 /** How the operation left the active selection. Defaults to the topology-preserving answer. */
 struct PCGUTILSDYNMESH_API FPCGUtilsDynMeshProcessOutcome
 {
@@ -142,6 +157,9 @@ struct PCGUTILSDYNMESH_API FPCGUtilsDynMeshProcessOutcome
 	 * single-output case. Entries with no Pin or no MeshData are skipped by the executor.
 	 */
 	TArray<FPCGUtilsDynMeshAuxiliaryMeshOutput> AuxiliaryMeshOutputs;
+
+	/** Companion data from the final operand step, inheriting the final result tags plus each entry's tags. */
+	TArray<FPCGUtilsDynMeshAuxiliaryDataOutput> AuxiliaryDataOutputs;
 
 	/**
 	 * A transform the operation applied to the geometry *as a whole*, reported so the Builder frame keeps

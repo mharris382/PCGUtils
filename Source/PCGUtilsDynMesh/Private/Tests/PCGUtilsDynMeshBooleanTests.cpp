@@ -11,6 +11,7 @@
 #include "Elements/Creation/PrimitiveBuilder/PCGPrimitiveBuilderFactory.h"
 #include "Elements/Deform/PCGTransformDynMesh.h"
 #include "Elements/Topology/PCGDynMeshBoolean.h"
+#include "Elements/Topology/PCGBevelEdges.h"
 #include "Factories/PCGUtilsDynMeshOperandProcessBuilderFactory.h"
 #include "Factories/PCGUtilsDynMeshProcessBuilderFactory.h"
 #include "GeometryScript/MeshPrimitiveFunctions.h"
@@ -428,6 +429,202 @@ bool FPCGDynMeshBooleanSeparateContributionsTest::RunTest(const FString&)
 		TestTrue(TEXT("Missing operand passes InA through by reference"), Output[0].Data == A);
 	}
 
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FPCGDynMeshBooleanResultSelectorsTest,
+	"PCGUtils.DynMesh.Boolean.ResultSelectors", EAutomationTestFlags::EditorContext | EAutomationTestFlags::ProductFilter)
+
+bool FPCGDynMeshBooleanResultSelectorsTest::RunTest(const FString&)
+{
+	using namespace PCGUtilsDynMeshBooleanTests;
+	using namespace UE::Geometry;
+	const FName SelectorPin = PCGUtilsDynMeshSelectionFactoryConstants::OutputPin;
+	auto ByPin = [](const TArray<FPCGTaggedData>& Output, FName Pin)
+	{ return Output.FilterByPredicate([Pin](const auto& D) { return D.Pin == Pin; }); };
+	auto Evaluate = [this](const UPCGUtilsDynMeshSelectionFactoryData* Selector, const UPCGDynamicMeshData* Data, EGeometryElementType Type)
+	{
+		FPCGUtilsDynMeshSelectionDomain Domain;
+		Domain.ElementType = Type;
+		FPCGUtilsDynMeshSelectionEvaluationContext Evaluation(Data, Mesh(Data), Domain);
+		FGeometrySelection Selection;
+		TestTrue(TEXT("Result selector evaluates in requested domain"), PCGUtilsDynMeshSelectionFactories::EvaluateFactory(Selector, Evaluation, nullptr, Selection));
+		return Selection;
+	};
+	// Structural opt-in, one correctly typed pin even when concrete output typing is disabled globally.
+	{
+		auto* Node = NewObject<UPCGNode>();
+		auto* Settings = NewObject<UPCGDynMeshBooleanSettings>(Node);
+		Node->SetSettingsInterface(Settings);
+		TestNull(TEXT("Selectors are off by default"), Node->GetOutputPin(SelectorPin));
+		Settings->bOutputSelectors = true;
+		Node->SetSettingsInterface(Settings);
+		const UPCGPin* Pin = Node->GetOutputPin(SelectorPin);
+		if (!TestNotNull(TEXT("One optional selector output"), Pin)) { return false; }
+		TestTrue(TEXT("Output retains selector type"), Pin->GetCurrentTypesID() == FPCGDataTypeIdentifier(FPCGUtilsDynMeshSelectionFactoryDataTypeInfo::AsId()));
+		TestFalse(TEXT("Selector output requires concrete meshes"), Settings->SupportsDeferredBuilderProcessing());
+		TestFalse(TEXT("Primary rejects deferred Builders"), Node->GetInputPin(TEXT("InA"))->Properties.AllowedTypes.Intersects(FPCGDataTypeIdentifier(FPCGUtilsDynMeshBuilderFactoryDataTypeInfo::AsId())));
+	}
+	auto* A = Box();
+	auto* B = Box(FVector(40, 15, 10), 80);
+	for (int32 Op = 0; Op <= static_cast<int32>(EGeometryScriptBooleanOperation::NewPolyGroupOutside); ++Op)
+	{
+		auto* Settings = NewObject<UPCGDynMeshBooleanSettings>();
+		Settings->bOutputSelectors = true;
+		Settings->BooleanOperation = static_cast<EGeometryScriptBooleanOperation>(Op);
+		Settings->BooleanOperationOptions.bAllowEmptyResult = true;
+		Settings->BooleanOperationOptions.bFillHoles = false;
+		Settings->OverlappingSelectorTag = TEXT("Rim");
+		Settings->EffectedSelectorTag = TEXT("Changed");
+		const auto Output = Run(Settings, { Tagged(A, TEXT("A")) }, { Tagged(B, TEXT("B")) });
+		const auto Meshes = ByPin(Output, TEXT("Out"));
+		const auto Selectors = ByPin(Output, SelectorPin);
+		if (!TestEqual(TEXT("One result mesh"), Meshes.Num(), 1) || !TestEqual(TEXT("Two categories share one pin"), Selectors.Num(), 2)) { return false; }
+		const auto* Result = CastChecked<UPCGDynamicMeshData>(Meshes[0].Data);
+		UPCGDynamicMeshData* Expected = CastChecked<UPCGDynamicMeshData>(A->DuplicateData(nullptr));
+		UGeometryScriptLibrary_MeshBooleanFunctions::ApplyMeshBoolean(Expected->GetMutableDynamicMesh(), FTransform::Identity,
+			B->GetMutableDynamicMesh(), FTransform::Identity, Settings->BooleanOperation, Settings->BooleanOperationOptions);
+		TestTrue(TEXT("Tracking preserves Geometry Script geometry and groups"), SameMesh(Expected, Result));
+		TSet<int32> RimVertices, EffectedVertices;
+		for (const auto& TaggedSelector : Selectors)
+		{
+			const auto* Selector = CastChecked<UPCGDynMeshBooleanSelectionFactoryData>(TaggedSelector.Data);
+			TestTrue(TEXT("Selector inherits final mesh tags"), TaggedSelector.Tags.Contains(TEXT("A")) && TaggedSelector.Tags.Contains(TEXT("B")));
+			TestTrue(TEXT("Editable category tag is used"), TaggedSelector.Tags.Contains(Selector->bOverlapping ? TEXT("Rim") : TEXT("Changed")));
+			for (auto Domain : { EGeometryElementType::Vertex, EGeometryElementType::Edge, EGeometryElementType::Face })
+			{
+				const auto Selection = Evaluate(Selector, Result, Domain);
+				TestTrue(*FString::Printf(TEXT("Operation %d has a nonempty result region in domain %d"), Op, int32(Domain)), !Selection.IsEmpty());
+			}
+			(Selector->bOverlapping ? RimVertices : EffectedVertices) = Selector->VertexIDs;
+			const auto* Copy = CastChecked<UPCGDynamicMeshData>(Result->DuplicateData(nullptr));
+			TestEqual(TEXT("Selector also applies to geometry-identical copies"), Evaluate(Selector, Copy, EGeometryElementType::Vertex).Selection.Num(), Selector->VertexIDs.Num());
+			TestTrue(TEXT("An unrelated mesh is an empty match"), Evaluate(Selector, Box(FVector(1000, 0, 0)), EGeometryElementType::Vertex).IsEmpty());
+			TestTrue(TEXT("Selector CRC is available"), Selector->GetOrComputeCrc(true).IsValid());
+		}
+		for (int32 VID : RimVertices) { TestTrue(TEXT("Effected contains the complete rim"), EffectedVertices.Contains(VID)); }
+	}
+	// A contained cutter creates cavity faces without an intersection rim. Effected AND NOT Overlapping
+	// must still select those cavity vertices, while excluding the untouched exterior.
+	{
+		auto* Settings = NewObject<UPCGDynMeshBooleanSettings>();
+		Settings->bOutputSelectors = true;
+		Settings->BooleanOperation = EGeometryScriptBooleanOperation::Subtract;
+		const auto Output = Run(Settings, { Tagged(A, TEXT("A")) }, { Tagged(Box(FVector::ZeroVector, 40), TEXT("B")) });
+		const auto Selectors = ByPin(Output, SelectorPin);
+		if (!TestEqual(TEXT("Cavity emits both categories"), Selectors.Num(), 2)) { return false; }
+		for (const auto& D : Selectors)
+		{
+			const auto* S = CastChecked<UPCGDynMeshBooleanSelectionFactoryData>(D.Data);
+			if (S->bOverlapping) { TestEqual(TEXT("Contained cavity has no intersection rim"), S->EdgeIDs.Num(), 0); }
+			else
+			{
+				TestEqual(TEXT("Only the eight cutter vertices are effected"), S->VertexIDs.Num(), 8);
+				for (int32 VID : S->VertexIDs)
+				{ TestTrue(TEXT("Effected vertices lie inside the cavity"), Mesh(S->ReferenceMesh).GetVertex(VID).GetAbsMax() < 21.0); }
+			}
+		}
+	}
+	// Verify the intended graph: Boolean mesh + tagged rim Selector directly into Bevel Edges.
+	{
+		auto* Settings = NewObject<UPCGDynMeshBooleanSettings>();
+		Settings->bOutputSelectors = true;
+		Settings->BooleanOperation = EGeometryScriptBooleanOperation::Subtract;
+		auto* Cutter = Box(FVector(40, 15, 11), 80);
+		const auto Output = Run(Settings, { Tagged(A, TEXT("A")) }, { Tagged(Cutter, TEXT("B")) });
+		const auto Meshes = ByPin(Output, TEXT("Out"));
+		const auto Selectors = ByPin(Output, SelectorPin);
+		if (Meshes.Num() != 1 || Selectors.Num() != 2) { return false; }
+		const auto* Result = CastChecked<UPCGDynamicMeshData>(Meshes[0].Data);
+		const UPCGDynMeshBooleanSelectionFactoryData* Rim = nullptr;
+		for (const auto& D : Selectors)
+		{
+			const auto* S = CastChecked<UPCGDynMeshBooleanSelectionFactoryData>(D.Data);
+			if (S->bOverlapping) { Rim = S; }
+		}
+		if (!TestNotNull(TEXT("Overlapping selector exists for bevel"), Rim)) { return false; }
+		for (int32 EID : Rim->EdgeIDs)
+		{
+			const auto V = Mesh(Result).GetEdgeV(EID);
+			const FVector3d Mid = (Mesh(Result).GetVertex(V.A) + Mesh(Result).GetVertex(V.B)) * 0.5;
+			const FVector3d ToolMid = Mid - FVector3d(40, 15, 11);
+			auto OnBoxSurface = [](const FVector3d& P, double HalfSize)
+			{
+				return FMath::IsNearlyEqual(FMath::Abs(P.X), HalfSize, 1.e-5) ||
+					FMath::IsNearlyEqual(FMath::Abs(P.Y), HalfSize, 1.e-5) ||
+					FMath::IsNearlyEqual(FMath::Abs(P.Z), HalfSize, 1.e-5);
+			};
+			TestTrue(TEXT("Every rim edge is on both source surfaces, excluding cavity diagonals"), OnBoxSurface(Mid, 50) && OnBoxSurface(ToolMid, 40));
+		}
+		auto* Bevel = NewObject<UPCGBevelEdgesSettings>();
+		Bevel->bRequireSelection = true;
+		Bevel->bOutputSelectionData = true;
+		Bevel->BevelDistance.Constant = 1.0;
+		FPCGDataCollection Input;
+		auto& MeshInput = Input.TaggedData.Emplace_GetRef(Meshes[0]); MeshInput.Pin = TEXT("Mesh");
+		auto& SelectorInput = Input.TaggedData.Emplace_GetRef(); SelectorInput.Data = Rim; SelectorInput.Pin = TEXT("Selector");
+		Input.TaggedData.Emplace_GetRef().Data = Bevel;
+		const auto Element = Bevel->GetElement();
+		TUniquePtr<FPCGContext> Context(Element->Initialize(FPCGInitializeElementParams(&Input, nullptr, nullptr)));
+		Context->AsyncState.bIsRunningOnMainThread = true;
+		Context->AsyncState.NumAvailableTasks = 1;
+		for (int32 Iteration = 0; Iteration < 10; ++Iteration) { if (Element->Execute(Context.Get())) { break; } }
+		const auto BeveledOutputs = Context->OutputData.GetInputsByPin(TEXT("Out"));
+		if (!TestEqual(TEXT("Bevel consumes the Boolean selector"), BeveledOutputs.Num(), 1)) { return false; }
+		const auto* Beveled = Cast<UPCGDynamicMeshSelectionData>(BeveledOutputs[0].Data);
+		if (!TestNotNull(TEXT("Bevel produces its result face selection"), Beveled)) { return false; }
+		TestTrue(TEXT("The intersection rim produces actual bevel faces"), !Beveled->GetSelection().IsEmpty());
+		TestTrue(TEXT("Bevel adds geometry to the Boolean result"), Mesh(Beveled->GetSourceMeshData()).TriangleCount() > Mesh(Result).TriangleCount());
+	}
+	// No operand and a rejected empty Boolean both emit empty categories, avoiding an implicit select-all.
+	for (bool bMissing : { true, false })
+	{
+		auto* Settings = NewObject<UPCGDynMeshBooleanSettings>();
+		Settings->bOutputSelectors = true;
+		Settings->BooleanOperation = EGeometryScriptBooleanOperation::Intersection;
+		const auto Output = Run(Settings, { Tagged(A, TEXT("A")) }, bMissing ? TArray<FPCGTaggedData>() : TArray<FPCGTaggedData>{ Tagged(Box(FVector(1000, 0, 0)), TEXT("B")) });
+		const auto Selectors = ByPin(Output, SelectorPin);
+		if (!TestEqual(TEXT("No-op emits both empty categories"), Selectors.Num(), 2)) { return false; }
+		for (const auto& D : Selectors) { TestTrue(TEXT("No-op selector is empty"), Evaluate(CastChecked<UPCGUtilsDynMeshSelectionFactoryData>(D.Data), A, EGeometryElementType::Vertex).IsEmpty()); }
+	}
+	// Sequential cutters on opposite sides keep both rims in the one final selector per category.
+	for (bool bOnlyEffected : { false, true })
+	{
+		auto* Settings = NewObject<UPCGDynMeshBooleanSettings>();
+		Settings->bOutputSelectors = true;
+		Settings->bOverlappingSelector = !bOnlyEffected;
+		Settings->BooleanOperation = EGeometryScriptBooleanOperation::Subtract;
+		Settings->Mode = EPCGBooleanOperationMode::EachAWithEachBSequentially;
+		const auto Output = Run(Settings, { Tagged(A, TEXT("A")) }, { Tagged(Box(FVector(45, 0, 0), 30), TEXT("B1")), Tagged(Box(FVector(-45, 0, 0), 30), TEXT("B2")) });
+		const auto Selectors = ByPin(Output, SelectorPin);
+		if (!TestEqual(TEXT("Sequential operands combine each category"), Selectors.Num(), bOnlyEffected ? 1 : 2)) { return false; }
+		for (const auto& D : Selectors)
+		{
+			const auto* S = CastChecked<UPCGDynMeshBooleanSelectionFactoryData>(D.Data);
+			bool bLeft = false, bRight = false;
+			for (int32 EID : S->RimEdgeIDs)
+			{
+				const auto EV = Mesh(S->ReferenceMesh).GetEdgeV(EID);
+				const double X = Mesh(S->ReferenceMesh).GetVertex(EV.A).X;
+				bLeft |= X < -49; bRight |= X > 49;
+			}
+			TestTrue(TEXT("Final selector retains both cutters' rims"), bLeft && bRight);
+		}
+	}
+	// Contribution compaction must remap selectors separately for both final meshes.
+	{
+		auto* Settings = NewObject<UPCGDynMeshBooleanSettings>();
+		Settings->bOutputSelectors = Settings->bSeparateOperandContributions = true;
+		Settings->BooleanOperation = EGeometryScriptBooleanOperation::Subtract;
+		const auto Output = Run(Settings, { Tagged(A, TEXT("A")) }, { Tagged(B, TEXT("B")) });
+		const auto Selectors = ByPin(Output, SelectorPin);
+		TestEqual(TEXT("Each partition has its two categories"), Selectors.Num(), 4);
+		for (const auto& D : Selectors)
+		{
+			const auto* S = CastChecked<UPCGDynMeshBooleanSelectionFactoryData>(D.Data);
+			TestTrue(TEXT("Partition selector is nonempty and valid after compaction"), !Evaluate(S, S->ReferenceMesh, EGeometryElementType::Edge).IsEmpty());
+		}
+	}
 	return true;
 }
 

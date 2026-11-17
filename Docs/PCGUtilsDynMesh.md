@@ -249,6 +249,39 @@ Both meshes must already be in the same coordinate space (normally target-actor-
   `FPCGUtilsDynMeshProcessOutcome::AuxiliaryMeshOutputs` channel, so it is a reusable secondary-output mechanism
   rather than a Boolean-specific one.
 
+**Output Selectors** (off by default) adds one `Selector` output. It requires concrete DynMesh inputs;
+realize Builders before enabling it. The Boolean still operates on whole solids. This output does not add a
+Selector input or enable partial Boolean operations.
+
+- **Overlapping Selector** (on by default when output is enabled) selects the intersection rim: its exact
+  edges, the vertices on those edges, or incident faces, according to the consuming node's domain. Internal
+  triangulation diagonals are excluded from the edge domain. For `Trim*`, this is the new cut boundary; for
+  `New PolyGroup*`, it is the interface between newly assigned groups and retained groups. Existing mesh/group
+  boundaries are excluded. All seven Boolean operations support both categories.
+- **Effected Selector** (on by default) selects surviving source faces that were split or modified, added
+  operand/cavity faces, repair faces, and the intersection rim. The vertex and edge domains include the vertices
+  and edges of those faces. Deleted geometry has no membership in the result. Use `Effected AND NOT Overlapping`
+  in vertex-domain Selection Logic to exclude the rim from a cavity-coloring selection.
+- **Overlapping Selector Tag** and **Effected Selector Tag** are editable (defaults `Overlapping` and `Effected`).
+  Each selector also inherits its result's A/B/Both tags. Filter the output by category before connecting to a
+  process's single-Selector input. Several result meshes produce one selector per enabled category per result;
+  combine the same category with Selection Logic OR when processing several results together.
+- Sequential operands combine surviving regions from all applications into each final category. With **Separate
+  Operand Contributions**, each emitted partition gets its own selectors, remapped after compaction. As with the
+  existing geometry outputs, only the final operand's B partition is emitted.
+- Missing operands, unchanged geometry, or an empty result rejected by **Allow Empty Result** produce empty
+  categories. In a sequential fold, rejecting a later result retains the earlier regions. An operand entirely
+  inside the primary can produce cavity faces without any intersection rim.
+
+Result selectors capture element membership on their corresponding Boolean output and geometry-identical
+copies. They are intended for immediate downstream postprocessing. An unrelated mesh is an empty match; after
+changing topology or positions, regenerate the selectors from a Boolean result. Membership tracking does not
+write PCG attributes, recolor the mesh, or replace existing PolyGroups. With output disabled, the ordinary
+Geometry Script execution and deferred Builder support are unchanged.
+
+For a hole-rim bevel: connect the Boolean's mesh output to **DynMesh | Bevel Edges**, filter `Selector` by
+`Overlapping`, and connect the filtered selector to the bevel's `Selector` input.
+
 Material handling follows the vanilla element: primary material slots are retained, and this node does not merge
 or remap separate operand material-slot tables. Operand material IDs should already use the primary's slot layout.
 

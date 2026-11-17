@@ -182,6 +182,7 @@ bool FPCGUtilsDynMeshOperandProcessBaseElement::ExecuteInternal(FPCGContext* Con
 			FPCGTaggedData& Output = Context->OutputData.TaggedData.Emplace_GetRef(Input);
 			Output.Pin = Settings->GetMainOutputPinLabel();
 		}
+		Settings->EmitAdditionalOutputs(Context);
 		return true;
 	}
 
@@ -217,7 +218,7 @@ bool FPCGUtilsDynMeshOperandProcessBaseElement::ExecuteInternal(FPCGContext* Con
 		bool bSucceeded = true;
 		// Auxiliary mesh outputs from the final operand application, routed once the primary result is known.
 		// A sequential fold reports them only for its last operand; that is the documented behaviour.
-		TArray<FPCGUtilsDynMeshAuxiliaryMeshOutput> PendingAuxiliaryOutputs;
+		FPCGUtilsDynMeshProcessOutcome PendingOutcome;
 		for (int32 BIndex = FirstB; BIndex < EndB; ++BIndex)
 		{
 			if (bBuilders)
@@ -238,6 +239,8 @@ bool FPCGUtilsDynMeshOperandProcessBaseElement::ExecuteInternal(FPCGContext* Con
 				Invocation.MeshData = WorkingMesh;
 				Invocation.SourceMeshData = CastChecked<UPCGDynamicMeshData>(Inputs[AIndex].Data);
 				Invocation.OperandMeshData = CastChecked<UPCGDynamicMeshData>(Operands[BIndex].Data);
+				Invocation.PreviousOperandOutcome = &PendingOutcome;
+				Invocation.bLastOperand = BIndex + 1 == EndB;
 				Invocation.InputIndex = OutputIndex;
 				Invocation.InputCount = OutputCount;
 				FPCGUtilsDynMeshProcessOutcome Outcome;
@@ -247,7 +250,7 @@ bool FPCGUtilsDynMeshOperandProcessBaseElement::ExecuteInternal(FPCGContext* Con
 					break;
 				}
 				Output.Data = WorkingMesh;
-				PendingAuxiliaryOutputs = MoveTemp(Outcome.AuxiliaryMeshOutputs);
+				PendingOutcome = MoveTemp(Outcome);
 			}
 			if (Settings->TagInheritanceMode == EPCGBooleanOperationTagInheritanceMode::B)
 			{
@@ -260,12 +263,21 @@ bool FPCGUtilsDynMeshOperandProcessBaseElement::ExecuteInternal(FPCGContext* Con
 		}
 		if (bSucceeded)
 		{
-			for (const FPCGUtilsDynMeshAuxiliaryMeshOutput& Aux : PendingAuxiliaryOutputs)
+			for (const FPCGUtilsDynMeshAuxiliaryMeshOutput& Aux : PendingOutcome.AuxiliaryMeshOutputs)
 			{
 				if (Aux.Pin.IsNone() || !Aux.MeshData) { continue; }
 				FPCGTaggedData& AuxOutput = Context->OutputData.TaggedData.Emplace_GetRef();
 				AuxOutput.Data = Aux.MeshData;
 				AuxOutput.Tags = Output.Tags;
+				AuxOutput.Pin = Aux.Pin;
+			}
+			for (const FPCGUtilsDynMeshAuxiliaryDataOutput& Aux : PendingOutcome.AuxiliaryDataOutputs)
+			{
+				if (Aux.Pin.IsNone() || !Aux.Data) { continue; }
+				FPCGTaggedData& AuxOutput = Context->OutputData.TaggedData.Emplace_GetRef();
+				AuxOutput.Data = Aux.Data;
+				AuxOutput.Tags = Output.Tags;
+				AuxOutput.Tags.Append(Aux.Tags);
 				AuxOutput.Pin = Aux.Pin;
 			}
 			Context->OutputData.TaggedData.Add(MoveTemp(Output));

@@ -4,6 +4,7 @@
 
 #include "Elements/PCGUtilsDynMeshOperandProcessBase.h"
 #include "GeometryScript/MeshBooleanFunctions.h"
+#include "Factories/PCGUtilsDynMeshSelectionFactory.h"
 
 #include "PCGDynMeshBoolean.generated.h"
 
@@ -13,6 +14,31 @@ namespace PCGDynMeshBooleanConstants
 	inline const FName OutputContributionPinA = TEXT("Out A");
 	inline const FName OutputContributionPinB = TEXT("Out B");
 }
+
+/** Internal mesh-bound result selector. IDs describe ReferenceMesh and geometry-identical copies only. */
+UCLASS()
+class PCGUTILSDYNMESH_API UPCGDynMeshBooleanSelectionFactoryData : public UPCGUtilsDynMeshSelectionFactoryData
+{
+	GENERATED_BODY()
+public:
+	UPROPERTY()
+	TObjectPtr<const UPCGDynamicMeshData> ReferenceMesh;
+	UPROPERTY()
+	TSet<int32> VertexIDs;
+	UPROPERTY()
+	TSet<int32> EdgeIDs;
+	/** Exact rim retained even when only the effected category is emitted. */
+	UPROPERTY()
+	TSet<int32> RimEdgeIDs;
+	UPROPERTY()
+	TSet<int32> TriangleIDs;
+	UPROPERTY()
+	bool bOverlapping = false;
+	virtual bool SupportsDomain(const FPCGUtilsDynMeshSelectionDomain& Domain) const override;
+protected:
+	virtual TSharedPtr<FPCGUtilsDynMeshSelectionOperation> CreateOperationInternal() const override;
+	virtual void AddToCrc(FArchiveCrc32& Ar, bool bFullDataCrc) const override;
+};
 
 /** Whole-solid boolean. Partial mesh selections are intentionally unsupported. */
 UCLASS(BlueprintType, ClassGroup=(Procedural), Category="PCGUtils|DynMesh|Topology", HideCategories=(Selector), meta=(Keywords="DynMesh mesh boolean union subtract intersect csg"))
@@ -28,10 +54,32 @@ public:
 #endif
 	virtual TSharedPtr<const FPCGUtilsDynMeshProcessOperation> CreateProcessOperation(FPCGContext* Context) const override;
 
-	/** Contribution separation reproduces the boolean directly and cannot defer to a Builder. */
-	virtual bool SupportsDeferredBuilderProcessing() const override { return !bSeparateOperandContributions; }
+	/** Contribution partitions and result selectors require concrete Boolean geometry. */
+	virtual bool SupportsDeferredBuilderProcessing() const override { return !bSeparateOperandContributions && !bOutputSelectors; }
 
 	virtual FString GetAdditionalTitleInformation() const override;
+	virtual bool HasDynamicPins() const override { return true; }
+	virtual FPCGDataTypeIdentifier GetCurrentPinTypesID(const UPCGPin* InPin) const override;
+
+	/** Adds one Selector output carrying the enabled tagged result regions. Requires concrete DynMeshes. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Output Selectors")
+	bool bOutputSelectors = false;
+
+	/** Select the intersection rim: exact cut edges, their vertices, and incident faces. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Output Selectors", meta=(PCG_Overridable, EditCondition="bOutputSelectors", EditConditionHides))
+	bool bOverlappingSelector = true;
+
+	/** Tag added to each overlapping selector. None omits the category tag. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Output Selectors", meta=(PCG_Overridable, EditCondition="bOutputSelectors && bOverlappingSelector", EditConditionHides))
+	FName OverlappingSelectorTag = TEXT("Overlapping");
+
+	/** Select added faces, split/modified source faces, and the rim. Deleted geometry cannot be selected. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Output Selectors", meta=(PCG_Overridable, EditCondition="bOutputSelectors", EditConditionHides))
+	bool bEffectedSelector = true;
+
+	/** Tag added to each effected selector. None omits the category tag. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Output Selectors", meta=(PCG_Overridable, EditCondition="bOutputSelectors && bEffectedSelector", EditConditionHides))
+	FName EffectedSelectorTag = TEXT("Effected");
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category=Settings, meta=(PCG_Overridable))
 	EGeometryScriptBooleanOperation BooleanOperation = EGeometryScriptBooleanOperation::Intersection;
@@ -77,4 +125,5 @@ protected:
 			: Super::GetMainOutputPinLabel();
 	}
 	virtual TArray<FPCGPinProperties> OutputPinProperties() const override;
+	virtual void EmitAdditionalOutputs(FPCGContext* Context) const override;
 };
