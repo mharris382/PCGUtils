@@ -156,3 +156,191 @@ namespace PCGVoxelMorphology
 		}
 	}
 }
+
+namespace PCGVoxelMorphology
+{
+	void ErodeBox(const FPCGVoxelDenseMask& In, const FIntVector& ReachLo, const FIntVector& ReachHi, FPCGVoxelDenseMask& Out)
+	{
+		FPCGVoxelBoxSum Sum;
+		Sum.Build(In);
+		Out.InitLike(In);
+		ParallelFor(TEXT("PCGVoxelMorphology.ErodeBox"), static_cast<int32>(In.Num()), 4096, [&](int32 I)
+		{
+			Out.Bits[I] = In.Bits[I] && Sum.AllSet(In.Cell(I), ReachLo, ReachHi) ? 1 : 0;
+		});
+	}
+
+	void DilateByDistance(const FPCGVoxelDenseMask& In, TFunctionRef<double(int64 Index)> RadiusOf, FPCGVoxelDenseMask& Out)
+	{
+		static const FIntVector Faces[6] = {
+			FIntVector(1, 0, 0), FIntVector(-1, 0, 0), FIntVector(0, 1, 0), FIntVector(0, -1, 0), FIntVector(0, 0, 1), FIntVector(0, 0, -1) };
+		Out = In;
+		// One stamp of offsets per distinct radius: every d with sum over axes of max(0, |d| - 1)^2 < Radius^2.
+		TMap<double, TArray<FIntVector>> Stamps;
+		auto StampOf = [&](double Radius) -> const TArray<FIntVector>&
+		{
+			if (const TArray<FIntVector>* Found = Stamps.Find(Radius))
+			{
+				return *Found;
+			}
+			TArray<FIntVector> Offsets;
+			const int32 Reach = FMath::CeilToInt32(Radius) + 1;
+			const double RadiusSquared = Radius * Radius;
+			for (int32 Z = -Reach; Z <= Reach; ++Z)
+				for (int32 Y = -Reach; Y <= Reach; ++Y)
+					for (int32 X = -Reach; X <= Reach; ++X)
+					{
+						const double GX = FMath::Max(0, FMath::Abs(X) - 1);
+						const double GY = FMath::Max(0, FMath::Abs(Y) - 1);
+						const double GZ = FMath::Max(0, FMath::Abs(Z) - 1);
+						if ((X | Y | Z) != 0 && GX * GX + GY * GY + GZ * GZ < RadiusSquared)
+						{
+							Offsets.Add(FIntVector(X, Y, Z));
+						}
+					}
+			return Stamps.Add(Radius, MoveTemp(Offsets));
+		};
+		for (int64 I = 0; I < In.Num(); ++I)
+		{
+			if (!In.Bits[I])
+			{
+				continue;
+			}
+			const double Radius = RadiusOf(I);
+			if (!(Radius > 0.0))
+			{
+				continue;
+			}
+			const FIntVector Cell = In.Cell(I);
+			bool bExposed = false;
+			for (const FIntVector& Step : Faces)
+			{
+				bExposed |= !In.Get(Cell + Step);
+			}
+			if (!bExposed)
+			{
+				continue;
+			}
+			for (const FIntVector& Offset : StampOf(Radius))
+			{
+				const FIntVector Other = Cell + Offset;
+				if (Out.Contains(Other))
+				{
+					Out.Bits[Out.Index(Other)] = 1;
+				}
+			}
+		}
+	}
+
+	void NearestSet(const FPCGVoxelDenseMask& In, const FVector& VoxelSize, const int32 AxisPriority[3], FNearestSet& Out)
+	{
+		const int64 Num = In.Num();
+		constexpr double Far = TNumericLimits<double>::Max();
+		Out.DistanceSquared.Init(Far, Num);
+		Out.Source.Init(INDEX_NONE, Num);
+		if (Num == 0)
+		{
+			return;
+		}
+		// Per axis cost of a k-cell offset, centre to box: (|k| - 0.5) cells, squared, or 0 on the same row.
+		auto Cost = [&](int32 Axis, int32 K)
+		{
+			if (K == 0)
+			{
+				return 0.0;
+			}
+			const double Cells = FMath::Abs(K) - 0.5;
+			return Cells * Cells * VoxelSize[Axis] * VoxelSize[Axis];
+		};
+		// Of two sources at the same distance from Cell, whether A should win.
+		auto Prefer = [&](int64 Cell, int64 A, int64 B)
+		{
+			const FIntVector C = In.Cell(Cell);
+			const FIntVector DA = In.Cell(A) - C;
+			const FIntVector DB = In.Cell(B) - C;
+			for (int32 K = 0; K < 3; ++K)
+			{
+				const int32 Axis = AxisPriority[K];
+				if (FMath::Abs(DA[Axis]) != FMath::Abs(DB[Axis]))
+				{
+					return FMath::Abs(DA[Axis]) > FMath::Abs(DB[Axis]);
+				}
+			}
+			for (int32 K = 0; K < 3; ++K)
+			{
+				const int32 Axis = AxisPriority[K];
+				if (DA[Axis] != DB[Axis])
+				{
+					return DA[Axis] < DB[Axis];
+				}
+			}
+			return false;
+		};
+		const FIntVector Dims = In.Dims;
+		auto Stride = [&](int32 Axis) -> int64 { return Axis == 0 ? 1 : (Axis == 1 ? Dims.X : static_cast<int64>(Dims.X) * Dims.Y); };
+
+		for (int64 I = 0; I < Num; ++I)
+		{
+			if (In.Bits[I])
+			{
+				Out.DistanceSquared[I] = 0.0;
+				Out.Source[I] = I;
+			}
+		}
+		// One pass per axis: each cell takes the best of the cells on its line plus the cost of the offset along it.
+		// Lines are independent. The scan stops once the offset alone costs more than the best found.
+		for (int32 Axis = 0; Axis < 3; ++Axis)
+		{
+			const int32 Length = Dims[Axis];
+			const int64 Step = Stride(Axis);
+			const int32 A1 = (Axis + 1) % 3;
+			const int32 A2 = (Axis + 2) % 3;
+			const int32 NumLines = Dims[A1] * Dims[A2];
+			TArray<double> NewDistance = Out.DistanceSquared;
+			TArray<int64> NewSource = Out.Source;
+			ParallelFor(TEXT("PCGVoxelMorphology.NearestSet"), NumLines, 64, [&](int32 Line)
+			{
+				FIntVector L(0);
+				L[A1] = Line % Dims[A1];
+				L[A2] = Line / Dims[A1];
+				const int64 Base = L.X + static_cast<int64>(Dims.X) * (L.Y + static_cast<int64>(Dims.Y) * L.Z);
+				for (int32 I = 0; I < Length; ++I)
+				{
+					const int64 Cell = Base + I * Step;
+					double Best = Out.DistanceSquared[Cell];
+					int64 BestSource = Out.Source[Cell];
+					for (int32 K = 1; K < Length; ++K)
+					{
+						const double Offset = Cost(Axis, K);
+						if (Offset > Best)
+						{
+							break;
+						}
+						for (const int32 J : { I - K, I + K })
+						{
+							if (J < 0 || J >= Length)
+							{
+								continue;
+							}
+							const int64 Other = Base + J * Step;
+							if (Out.Source[Other] == INDEX_NONE)
+							{
+								continue;
+							}
+							const double D = Out.DistanceSquared[Other] + Offset;
+							if (D < Best || (D == Best && BestSource != INDEX_NONE && Prefer(Cell, Out.Source[Other], BestSource)))
+							{
+								Best = D;
+								BestSource = Out.Source[Other];
+							}
+						}
+					}
+					NewDistance[Cell] = Best;
+					NewSource[Cell] = BestSource;
+				}
+			});
+			Out.DistanceSquared = MoveTemp(NewDistance);
+			Out.Source = MoveTemp(NewSource);
+		}
+	}
+}

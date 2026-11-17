@@ -534,7 +534,7 @@ off by default.
 ### No dependency in either direction
 
 `PCGUtilsFracture` does not link against PCGExtendedToolkit. The entire cluster contract is two int64
-attributes and three tags, so it is reproduced in `PCGUtilsClusterInterop` rather than depended upon:
+attributes and three tags, so it is reproduced in `PCGUtilsClusterInterop` (PCGUtilsCore, `Data/PCGUtilsClusterInterop.h`, shared with Voxel | Build Nav Grid since 2026-11-16) rather than depended upon:
 
 | | Vtx (Points pin) | Edges pin |
 |---|---|---|

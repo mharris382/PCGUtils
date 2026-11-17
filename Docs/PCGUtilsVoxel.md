@@ -914,6 +914,60 @@ Cells are in Z, Y, X order.
 - Error when the cells would add or remove more than `Max Cells` (default 64M) in total.
 - Tests: `PCGUtils.Voxel.Extrude.Grow`, `.Remove`.
 
+## 4m. Voxel | Build Nav Grid
+
+Started 2026-11-16 from the designer's spec (vault note `Excalidraw/Voxel Element - Create Nav Grid`), for a baked
+flying-cube effect in a tower. Builds a navigation graph from a voxel set as a **PCGEx cluster**. Plan: pass 1
+(flying, one vertex per cell) is built; pass 2 compresses free space into boxes; pass 3 adds Surface mode. Digger
+mode (caves, tunnels) is deferred.
+
+**Pins.** In: `VoxelGrid` (required, voxel sets, one cluster per input) and `Bounds` (optional Spatial: one data for
+all inputs or one per input). Out: `Vtx` and `Edges`.
+
+**Cluster contract** (shared `Data/PCGUtilsClusterInterop.h` in PCGUtilsCore, moved there from PCGUtilsFracture on
+2026-11-16 so both modules emit clusters without linking PCGEx): Vtx tagged `PCGEx/Vtx` with int64 `PCGEx/VData` =
+(vertex id << 32) | degree, the id being the point index; each island's Edges tagged `PCGEx/Edges` with int64
+`PCGEx/EData` = (A << 32) | B; every data of one input shares the value tag `PCGEx/Cluster:<id>`. One Edges data per
+connected island, all sharing the one Vtx data. A cell with no edge is left out (PCGEx has no cluster of one). Edge
+points sit midway along their edge with zero bounds; vertex points carry the grid rotation and the agent's box as
+bounds. Input tags are kept on both outputs.
+
+**Flying (pass 1).**
+1. Filled = the set's cells; with `Ignore Gaps` (default on) also the gaps a closing by `Gap Radius` (default 1)
+   fills (`PCGVoxelMorphology::Close`, as Fill Gaps uses).
+2. Blocked = Filled grown by `Surface Clearance` (point shorthand, Double >= 0, default constant 1, attribute
+   `SurfaceClearance`, per filled point so hazardous cells get a wider berth): a cell is blocked when its box lies
+   closer than the clearance to a filled cell's box, in cells, Euclidean box to box (1: every face, edge and corner
+   neighbour). Gap cells take the widest clearance of the filled points around them.
+   (`PCGVoxelMorphology::DilateByDistance`.)
+3. `Agent Size` (data shorthand Vector, default (1, 1, 2), attribute `AgentSize`, in cells, each axis > 0): each axis
+   rounds up to whole cells; a vertex needs that box of unblocked cells (`PCGVoxelMorphology::ErodeBox`, uneven reach
+   so an even size extends to the + side) and sits at the box's middle, so a 2 tall agent's vertex is on the boundary
+   between its two cells.
+4. Where: `Flying Space` Padded Box (default: the set's bounds plus `Padding` cells, default 2), Enclosed Only (empty
+   space with no face path to the outside of Filled), Outside Only. A connected `Bounds` replaces the padded box: the
+   cells whose box overlaps its bounds, kept only where the vertex position samples a density above 0.
+5. Edges to the face neighbours; `Enable Diagonals` (default off) adds edge and corner neighbours where every cell of
+   the box the move spans is a vertex too (no corner cut).
+
+**Outputs on Vtx** (each name exposed, each can be turned off): `SurfaceDistance` (Double, on: world distance from the
+vertex's cell centre to the nearest filled cell's box, ignoring gap fills; -1 when the set is empty) and
+`NearestVoxelIndex` (Integer32, off: input index of the point filling that cell, a chunk's own point for a chunked set;
+`Nearest Voxel Axis Priority` settles equal distances, the cell further along the first axis winning). Both come from
+`PCGVoxelMorphology::NearestSet`, an exact separable distance-to-box field with that tie rule.
+
+**Errors and warnings.** Surface mode is an error (not built yet). An enabled output with an empty name, two outputs
+sharing a name, an output named `PCGEx/VData`, Padding below 0, a Bounds count that is neither 1 nor the input count,
+non-spatial or empty Bounds, an Agent Size axis that is not a number above 0 (names the axis), and a working box over
+`Max Cells` (default 64M; names the box) are errors. No two vertices connecting is a warning naming how many cells the
+agent fits in.
+
+**Tests** (`PCGUtils.Voxel.BuildNavGrid`): Flying checks a sealed 7 wide room (125 vertices and 300 edges at clearance
+1, nearest wall 150 away; 343 at clearance 0; 100 for a 1 x 1 x 2 agent, vertices on cell boundaries, bounds the
+agent's box; 1036 edges with diagonals), the padded box round one cell (124) and Outside Only round a room. Islands
+checks two rooms (two Edges datas, one Vtx data), per point clearance and a Bounds box. Every case also checks the
+PCGEx contract: tags, ids, EData endpoints and every vertex's VData degree against its edges.
+
 ## 4j. Voxel | Match Rules (rule tiles)
 
 Designed with the designer on 2026-11-10; first version built the same day. The 2D rule-tile idea in 3D, with a

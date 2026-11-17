@@ -85,4 +85,35 @@ namespace PCGVoxelMorphology
 	 * in Out is an enclosed cavity (pad Solid by at least one so its outside is connected).
 	 */
 	PCGUTILSVOXEL_API void FloodOutside(const FPCGVoxelDenseMask& Solid, FPCGVoxelDenseMask& Out);
+
+	/**
+	 * Out = cells whose box from Cell - ReachLo to Cell + ReachHi is all set in In (an uneven erosion: an agent two
+	 * cells tall standing on a cell needs ReachHi.Z = 1). A box leaving In's box is not all set. Same box as In.
+	 */
+	PCGUTILSVOXEL_API void ErodeBox(const FPCGVoxelDenseMask& In, const FIntVector& ReachLo, const FIntVector& ReachHi, FPCGVoxelDenseMask& Out);
+
+	/**
+	 * Out = In plus every cell whose box lies closer than RadiusOf(set cell) to that set cell's box, measured in cells
+	 * (Euclidean, box to box: a face, edge or corner neighbour is 0 away, a cell two along one axis is 1 away). Radius
+	 * per set cell (its dense index); 0 or less adds nothing. Only set cells with a clear face neighbour stamp, since a
+	 * buried cell's reach is covered by the cells around it. Same box as In.
+	 */
+	PCGUTILSVOXEL_API void DilateByDistance(const FPCGVoxelDenseMask& In, TFunctionRef<double(int64 Index)> RadiusOf, FPCGVoxelDenseMask& Out);
+
+	/** Per cell of a mask: the nearest set cell and the squared distance to its box (NearestSet). */
+	struct PCGUTILSVOXEL_API FNearestSet
+	{
+		/** Squared distance in world units from the cell's centre to the nearest set cell's box (0 on set cells). Max where there is no set cell. */
+		TArray<double> DistanceSquared;
+		/** Dense index of that set cell, or INDEX_NONE when the mask has none. */
+		TArray<int64> Source;
+	};
+
+	/**
+	 * For every cell, the nearest set cell of In, by distance from the cell's centre to the set cell's box (VoxelSize
+	 * per axis, so cells need not be cubes). Exact, in three separable passes. Equal distances are settled by
+	 * AxisPriority (axis indices, most important first): the cell lying further along AxisPriority[0] wins, then
+	 * AxisPriority[1], then [2]; then the one at the lower coordinate.
+	 */
+	PCGUTILSVOXEL_API void NearestSet(const FPCGVoxelDenseMask& In, const FVector& VoxelSize, const int32 AxisPriority[3], FNearestSet& Out);
 }

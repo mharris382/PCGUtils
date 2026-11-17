@@ -493,7 +493,7 @@ names are still exposed so they can be matched against that node.
 
 `GC Bones To Points` can emit the bone adjacency graph as a PCGEx-compatible cluster. `PCGUtilsFracture` must
 **not** gain a dependency on PCGExtendedToolkit to do it - the whole contract is two int64 attributes and three
-tags, reproduced in `PCGUtilsClusterInterop` (`Data/PCGGeometryCollectionClusterData.h`) with the source files
+tags, reproduced in `PCGUtilsClusterInterop` (PCGUtilsCore `Data/PCGUtilsClusterInterop.h`, moved from this module 2026-11-16) with the source files
 it was verified against listed in the comment.
 
 Two things to preserve if you touch this:

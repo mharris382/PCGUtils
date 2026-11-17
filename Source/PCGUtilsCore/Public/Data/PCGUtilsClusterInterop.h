@@ -8,10 +8,10 @@
 /**
  * The convention PCGEx uses to recognise a pair of point datas as a cluster.
  *
- * Reproduced here rather than depended upon: PCGUtilsFracture must not link against PCGExtendedToolkit, and
+ * Reproduced here rather than depended upon: no PCGUtils module may link against PCGExtendedToolkit, and
  * the whole contract is two int64 attributes plus three tags. Emitting it means every PCGEx cluster node -
- * flood fill and its heuristics library, pathfinding, refinement, connectivity filters - works on a fractured
- * Geometry Collection with no bridge node and no dependency in either direction.
+ * flood fill and its heuristics library, pathfinding, refinement, connectivity filters - works on what PCGUtils
+ * emits (a fractured Geometry Collection, a voxel nav grid) with no bridge node and no dependency either way.
  *
  * A cluster half is ordinary point data on an ordinary Point pin. PCGEx declares its cluster pins - inputs and
  * outputs alike - with PCGEX_PIN_POINTS, i.e. FPCGDataTypeInfoPoint, and that is what keeps a cluster usable
@@ -25,19 +25,19 @@
 namespace PCGUtilsClusterInterop
 {
 	/** PCGEx/VData - int64 on each vtx point. */
-	PCGUTILSFRACTURE_API extern const FName VtxDataAttribute;
+	PCGUTILSCORE_API extern const FName VtxDataAttribute;
 
 	/** PCGEx/EData - int64 on each edge point. */
-	PCGUTILSFRACTURE_API extern const FName EdgeDataAttribute;
+	PCGUTILSCORE_API extern const FName EdgeDataAttribute;
 
 	/** Raw tag marking a point data as the vtx half. */
-	PCGUTILSFRACTURE_API extern const FString VtxTag;
+	PCGUTILSCORE_API extern const FString VtxTag;
 
 	/** Raw tag marking a point data as the edges half. */
-	PCGUTILSFRACTURE_API extern const FString EdgesTag;
+	PCGUTILSCORE_API extern const FString EdgesTag;
 
 	/** Key of the value tag pairing the two halves; flattens to "PCGEx/Cluster:<id>". */
-	PCGUTILSFRACTURE_API extern const FString ClusterPairTagKey;
+	PCGUTILSCORE_API extern const FString ClusterPairTagKey;
 
 	/**
 	 * PCGEx packs two 32-bit values into one int64 as (A << 32) | B - PCGEx::H64. Reproduced rather than
@@ -52,7 +52,7 @@ namespace PCGUtilsClusterInterop
 	 * Value written to PCGEx/VData.
 	 *
 	 * InVtxId is NOT required to be the point's index: PCGEx's reader (BuildEndpointsLookup) builds a
-	 * VtxId -> point-index map from it, so any unique id works. We pass the Geometry Collection bone index,
+	 * VtxId -> point-index map from it, so any unique id works. PCGUtilsFracture passes the Geometry Collection bone index,
 	 * which makes the PCGEx vertex id and GC_BoneIndex literally the same number - so a selection round-tripped
 	 * through PCGEx cluster nodes still resolves through Select Bones From Points unchanged.
 	 */
@@ -68,5 +68,5 @@ namespace PCGUtilsClusterInterop
 	}
 
 	/** Builds the "PCGEx/Cluster:<id>" value tag that pairs a vtx data with its edges data. */
-	PCGUTILSFRACTURE_API FString MakeClusterPairTag(int64 InPairId);
+	PCGUTILSCORE_API FString MakeClusterPairTag(int64 InPairId);
 }
