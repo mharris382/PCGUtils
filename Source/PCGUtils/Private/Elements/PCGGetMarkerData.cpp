@@ -53,6 +53,7 @@ void FPCGGetMarkerDataElement::ProcessActor(
 {
 	check(Context && Settings);
 	const UPCGGetMarkerDataSettings* ShapeSettings = CastChecked<UPCGGetMarkerDataSettings>(Settings);
+	const FPCGDataFromActorContext* ActorContext = static_cast<const FPCGDataFromActorContext*>(Context);
 	check(ShapeSettings);
 	
 	if (!FoundActor || !IsValid(FoundActor))
@@ -68,7 +69,7 @@ void FPCGGetMarkerDataElement::ProcessActor(
 	for (UPCGMarkerComponent* ShapeComp : ShapeComps)
 	{
 		if (!IsValid(ShapeComp)
-			|| !ShapeSettings->ComponentSelector.FilterComponent(ShapeComp)
+			|| !ActorContext->ComponentSelector.FilterComponent(ShapeComp)
 			|| !ShouldFilterMarker(ShapeSettings, ShapeComp))
 		{
 			continue;

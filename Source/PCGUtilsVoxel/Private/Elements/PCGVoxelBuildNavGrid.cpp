@@ -5,10 +5,12 @@
 #include "Data/PCGBasePointData.h"
 #include "Data/PCGPointArrayData.h"
 #include "Data/PCGSpatialData.h"
+#include "Algo/Unique.h"
 #include "Data/PCGUtilsClusterInterop.h"
 #include "PCGContext.h"
 #include "PCGPin.h"
 #include "Utils/PCGLogErrors.h"
+#include "Voxel/PCGVoxelChunking.h"
 #include "Voxel/PCGVoxelGrid.h"
 #include "Voxel/PCGVoxelMorphology.h"
 #include "Voxel/PCGVoxelPointIO.h"
@@ -69,6 +71,16 @@ namespace PCGVoxelBuildNavGridPrivate
 		Out[2] = Orders[Index][2];
 	}
 
+	/** A graph vertex in cell space: position, half size of its bounds, the box it stands for, aerial, portal. */
+	struct FNavVertex
+	{
+		FVector CellPos;
+		FVector HalfCells;
+		FVector ChunkSize;
+		bool bAerial = false;
+		bool bPortal = false;
+	};
+
 	struct FUnionFind
 	{
 		TArray<int32> Parent;
@@ -126,6 +138,9 @@ bool FPCGVoxelBuildNavGridElement::ExecuteInternal(FPCGContext* Context) const
 	const FNamedOutput Outputs[] = {
 		{ Settings->bOutputSurfaceDistance, Settings->SurfaceDistanceAttribute, LOCTEXT("SurfaceDistanceLabel", "Surface Distance Attribute") },
 		{ Settings->bOutputNearestVoxelIndex, Settings->NearestVoxelIndexAttribute, LOCTEXT("NearestLabel", "Nearest Voxel Index Attribute") },
+		{ Settings->bOutputIsAerial, Settings->IsAerialAttribute, LOCTEXT("IsAerialLabel", "Is Aerial Attribute") },
+		{ Settings->bOutputIsPortal, Settings->IsPortalAttribute, LOCTEXT("IsPortalLabel", "Is Portal Attribute") },
+		{ Settings->bOutputChunkSize, Settings->ChunkSizeAttribute, LOCTEXT("ChunkSizeLabel", "Chunk Size Attribute") },
 	};
 	for (int32 A = 0; A < UE_ARRAY_COUNT(Outputs); ++A)
 	{
@@ -158,6 +173,35 @@ bool FPCGVoxelBuildNavGridElement::ExecuteInternal(FPCGContext* Context) const
 	{
 		Fail(FText::Format(LOCTEXT("NegativePadding", "Padding is {0}; it must be 0 or greater."), Settings->Padding));
 		return true;
+	}
+
+	if (Settings->HubCubes < 0)
+	{
+		Fail(FText::Format(LOCTEXT("NegativeHubCubes", "Hub Cubes is {0}; it must be 0 or greater."), Settings->HubCubes));
+		return true;
+	}
+	if (Settings->HubSubdivisions < 1)
+	{
+		Fail(FText::Format(LOCTEXT("BadHubSubdivisions", "Hub Subdivisions is {0}; it must be 1 or greater."), Settings->HubSubdivisions));
+		return true;
+	}
+	if (Settings->AerialCellDistance < 0)
+	{
+		Fail(FText::Format(LOCTEXT("NegativeAerial", "Aerial Cell Distance is {0}; it must be 0 or greater."), Settings->AerialCellDistance));
+		return true;
+	}
+	if (Settings->bEnableCompression && Settings->bCollapseAerialCells)
+	{
+		static const TCHAR* CollapseAxes[3] = { TEXT("X"), TEXT("Y"), TEXT("Z") };
+		for (int32 Axis = 0; Axis < 3; ++Axis)
+		{
+			if (Settings->AerialCellCollapseSize[Axis] < 1)
+			{
+				Fail(FText::Format(LOCTEXT("BadCollapse", "Aerial Cell Collapse Size {0} is {1}; each axis must be 1 or greater."),
+					FText::FromString(CollapseAxes[Axis]), Settings->AerialCellCollapseSize[Axis]));
+				return true;
+			}
+		}
 	}
 
 	const TArray<FPCGTaggedData> Inputs = Context->InputData.GetInputsByPin(PCGVoxelBuildNavGridPins::VoxelGrid);
@@ -230,6 +274,23 @@ bool FPCGVoxelBuildNavGridElement::ExecuteInternal(FPCGContext* Context) const
 		}
 		const FVector AgentOffset = FVector(ReachHi - ReachLo) * 0.5; // cells from the vertex's cell centre to the agent's centre
 
+		int32 CompressionCells = 1;
+		if (Settings->bEnableCompression)
+		{
+			double Compression = 0.0;
+			if (!Settings->CompressionSize.TryReadDataValue(Points, Compression, Error, LOCTEXT("CompressionLabel", "Compression Size"), InputIndex))
+			{
+				Fail(Error, InputIndex);
+				continue;
+			}
+			if (!FMath::IsFinite(Compression) || Compression < 1.0)
+			{
+				Fail(FText::Format(LOCTEXT("BadCompression", "Compression Size is {0}; it must be 1 or greater."), FText::AsNumber(Compression)), InputIndex);
+				continue;
+			}
+			CompressionCells = FMath::Max(1, FMath::RoundToInt32(Compression));
+		}
+
 		TPCGUtilsPointValues<double> Clearance;
 		if (!Settings->SurfaceClearance.TryRead(Points, Clearance, Error, LOCTEXT("ClearanceLabel", "Surface Clearance"), InputIndex))
 		{
@@ -292,13 +353,13 @@ bool FPCGVoxelBuildNavGridElement::ExecuteInternal(FPCGContext* Context) const
 		// Room for clearance stamps, the agent's box, the gap closing and one clear layer for the outside flood.
 		const int32 PadCells = FMath::CeilToInt32(MaxClearance) + 2 + FMath::Max3(ReachLo.GetMax(), ReachHi.GetMax(), 0)
 			+ (Settings->bIgnoreGaps ? 2 * FMath::Max(1, Settings->GapRadius) : 0) + 1;
-		const FIntVector Box = DomainHi - DomainLo + FIntVector(1 + 2 * PadCells);
-		const int64 BoxCells = static_cast<int64>(Box.X) * Box.Y * Box.Z;
+		const FIntVector DomainSize = DomainHi - DomainLo + FIntVector(1 + 2 * PadCells);
+		const int64 BoxCells = static_cast<int64>(DomainSize.X) * DomainSize.Y * DomainSize.Z;
 		if (BoxCells > Settings->MaxCells || BoxCells >= MAX_int32)
 		{
 			Fail(FText::Format(LOCTEXT("TooBig", "the box of cells to work over is {0} x {1} x {2} = {3} cells (the set and the space to fly in, "
 				"plus room for clearance, the agent and gaps), over Max Cells ({4}, and under 2^31 at most). Raise Max Cells, shrink the Bounds or Padding, or split the set."),
-				Box.X, Box.Y, Box.Z, FText::AsNumber(BoxCells), FText::AsNumber(Settings->MaxCells)), InputIndex);
+				DomainSize.X, DomainSize.Y, DomainSize.Z, FText::AsNumber(BoxCells), FText::AsNumber(Settings->MaxCells)), InputIndex);
 			continue;
 		}
 
@@ -360,14 +421,23 @@ bool FPCGVoxelBuildNavGridElement::ExecuteInternal(FPCGContext* Context) const
 			PCGVoxelMorphology::FloodOutside(Filled, Outside);
 		}
 
-		auto VertexPosition = [&](const FIntVector& Cell)
+		auto VertexPosition = [&](const FVector& CellPos)
 		{
-			return Grid.GridToWorld.TransformPositionNoScale((FVector(Cell) + AgentOffset) * Grid.VoxelSize);
+			return Grid.GridToWorld.TransformPositionNoScale((CellPos + AgentOffset) * Grid.VoxelSize);
 		};
 
-		// ---- Vertices ----
-		TArray<int32> VtxOfDense;
-		VtxOfDense.Init(INDEX_NONE, static_cast<int32>(Solid.Num()));
+		// Aerial cells: at least Aerial Cell Distance (box to box) from every filled cell.
+		const bool bCompress = Settings->bEnableCompression;
+		const bool bNeedAerial = Settings->bOutputIsAerial || (bCompress && Settings->bCollapseAerialCells);
+		FPCGVoxelDenseMask Near;
+		if (bNeedAerial)
+		{
+			const double AerialDistance = static_cast<double>(Settings->AerialCellDistance);
+			PCGVoxelMorphology::DilateByDistance(Filled, [AerialDistance](int64) { return AerialDistance; }, Near);
+		}
+		auto IsAerialCell = [&](int64 I) { return bNeedAerial && !Near.Bits[I] && !Filled.Bits[I]; };
+
+		// ---- Cells the agent may occupy ----
 		TArray<int64> VtxDense;
 		for (int32 Z = WorkLo.Z; Z <= WorkHi.Z; ++Z)
 			for (int32 Y = WorkLo.Y; Y <= WorkHi.Y; ++Y)
@@ -387,54 +457,378 @@ bool FPCGVoxelBuildNavGridElement::ExecuteInternal(FPCGContext* Context) const
 					{
 						continue;
 					}
-					if (Bounds && !(Bounds->GetDensityAtPosition(VertexPosition(Cell)) > 0.0f))
+					if (Bounds && !(Bounds->GetDensityAtPosition(VertexPosition(FVector(Cell))) > 0.0f))
 					{
 						continue;
 					}
-					VtxOfDense[I] = VtxDense.Add(I);
+					VtxDense.Add(I);
 				}
 
-		// ---- Edges: each neighbour once (the positive half of the offsets), no corner cut on a diagonal ----
-		TArray<FIntVector> Offsets;
-		for (int32 Z = -1; Z <= 1; ++Z)
-			for (int32 Y = -1; Y <= 1; ++Y)
-				for (int32 X = -1; X <= 1; ++X)
-				{
-					const FIntVector D(X, Y, Z);
-					const int32 Moved = FMath::Abs(X) + FMath::Abs(Y) + FMath::Abs(Z);
-					const bool bPositive = Z > 0 || (Z == 0 && (Y > 0 || (Y == 0 && X > 0)));
-					if (bPositive && (Moved == 1 || (Settings->bEnableDiagonals && Moved > 1)))
-					{
-						Offsets.Add(D);
-					}
-				}
+		// ---- The graph: vertices in cell space, edges between them ----
+		TArray<FNavVertex> Verts;
 		TArray<FIntVector2> EdgeList;
-		auto IsVtx = [&](const FIntVector& Cell) { return Solid.Contains(Cell) && VtxOfDense[Solid.Index(Cell)] != INDEX_NONE; };
-		for (int32 V = 0; V < VtxDense.Num(); ++V)
+		if (!bCompress)
 		{
-			const FIntVector Cell = Solid.Cell(VtxDense[V]);
-			for (const FIntVector& D : Offsets)
+			// One vertex per cell; each neighbour once (the positive half of the offsets), no corner cut on a diagonal.
+			TArray<int32> VtxOfDense;
+			VtxOfDense.Init(INDEX_NONE, static_cast<int32>(Solid.Num()));
+			Verts.Reserve(VtxDense.Num());
+			for (const int64 I : VtxDense)
 			{
-				if (!IsVtx(Cell + D))
-				{
-					continue;
-				}
-				// Every cell of the box the move spans must be a vertex too.
-				bool bClear = true;
-				for (int32 Corner = 1; Corner < 7 && bClear; ++Corner)
-				{
-					const FIntVector Part((Corner & 1) ? D.X : 0, (Corner & 2) ? D.Y : 0, (Corner & 4) ? D.Z : 0);
-					if (Part != FIntVector::ZeroValue && Part != D)
+				VtxOfDense[I] = Verts.Add({ FVector(Solid.Cell(I)), FVector(AgentCells) * 0.5, FVector(1.0), IsAerialCell(I) });
+			}
+			TArray<FIntVector> Offsets;
+			for (int32 Z = -1; Z <= 1; ++Z)
+				for (int32 Y = -1; Y <= 1; ++Y)
+					for (int32 X = -1; X <= 1; ++X)
 					{
-						bClear = IsVtx(Cell + Part);
+						const FIntVector D(X, Y, Z);
+						const int32 Moved = FMath::Abs(X) + FMath::Abs(Y) + FMath::Abs(Z);
+						const bool bPositive = Z > 0 || (Z == 0 && (Y > 0 || (Y == 0 && X > 0)));
+						if (bPositive && (Moved == 1 || (Settings->bEnableDiagonals && Moved > 1)))
+						{
+							Offsets.Add(D);
+						}
 					}
-				}
-				if (bClear)
+			auto IsVtx = [&](const FIntVector& Cell) { return Solid.Contains(Cell) && VtxOfDense[Solid.Index(Cell)] != INDEX_NONE; };
+			for (int32 V = 0; V < VtxDense.Num(); ++V)
+			{
+				const FIntVector Cell = Solid.Cell(VtxDense[V]);
+				for (const FIntVector& D : Offsets)
 				{
-					EdgeList.Add(FIntVector2(V, VtxOfDense[Solid.Index(Cell + D)]));
+					if (!IsVtx(Cell + D))
+					{
+						continue;
+					}
+					// Every cell of the box the move spans must be a vertex too.
+					bool bClear = true;
+					for (int32 Corner = 1; Corner < 7 && bClear; ++Corner)
+					{
+						const FIntVector Part((Corner & 1) ? D.X : 0, (Corner & 2) ? D.Y : 0, (Corner & 4) ? D.Z : 0);
+						if (Part != FIntVector::ZeroValue && Part != D)
+						{
+							bClear = IsVtx(Cell + Part);
+						}
+					}
+					if (bClear)
+					{
+						EdgeList.Add(FIntVector2(V, VtxOfDense[Solid.Index(Cell + D)]));
+					}
 				}
 			}
 		}
+		else
+		{
+			// Free boxes (shared greedy chunking); aerial and near cells never share a box.
+			TArray<FIntVector> FreeCells;
+			TArray<int32> FreeLabels;
+			FreeCells.Reserve(VtxDense.Num());
+			FreeLabels.Reserve(VtxDense.Num());
+			for (const int64 I : VtxDense)
+			{
+				FreeCells.Add(Solid.Cell(I));
+				FreeLabels.Add(IsAerialCell(I) ? 1 : 0);
+			}
+			const bool bCollapse = Settings->bCollapseAerialCells;
+			auto MaxSpanOf = [&](int32 Label) { return (bCollapse && Label == 1) ? Settings->AerialCellCollapseSize : FIntVector(CompressionCells); };
+			TArray<PCGVoxelChunking::FBox> Boxes;
+			PCGVoxelChunking::GrowBoxes(FreeCells, FreeLabels, MaxSpanOf, [](int32 A, int32 B) { return A == B; }, Boxes);
+
+			TArray<int32> BoxOfDense;
+			BoxOfDense.Init(INDEX_NONE, static_cast<int32>(Solid.Num()));
+			auto ForBoxCells = [](const PCGVoxelChunking::FBox& Box, TFunctionRef<void(const FIntVector&)> Fn)
+			{
+				for (int32 Z = 0; Z < Box.Span.Z; ++Z)
+					for (int32 Y = 0; Y < Box.Span.Y; ++Y)
+						for (int32 X = 0; X < Box.Span.X; ++X)
+						{
+							Fn(Box.First + FIntVector(X, Y, Z));
+						}
+			};
+			for (int32 B = 0; B < Boxes.Num(); ++B)
+			{
+				ForBoxCells(Boxes[B], [&](const FIntVector& Cell) { BoxOfDense[Solid.Index(Cell)] = B; });
+			}
+			// The layer of cells just outside one face of a box: Side 0 below First, 1 past First + Span.
+			auto ForFaceLayer = [&](const PCGVoxelChunking::FBox& Box, int32 Axis, int32 Side, TFunctionRef<void(int32 Other)> Fn)
+			{
+				PCGVoxelChunking::FBox Layer = Box;
+				Layer.First[Axis] = Side ? Box.First[Axis] + Box.Span[Axis] : Box.First[Axis] - 1;
+				Layer.Span[Axis] = 1;
+				ForBoxCells(Layer, [&](const FIntVector& Cell)
+				{
+					if (Solid.Contains(Cell) && BoxOfDense[Solid.Index(Cell)] != INDEX_NONE)
+					{
+						Fn(BoxOfDense[Solid.Index(Cell)]);
+					}
+				});
+			};
+			// A box of more than one cell touching no other box would be a cluster of one vertex, which PCGEx drops:
+			// split it in two along its longest side so the pocket stays reachable as a pair.
+			const int32 NumGrown = Boxes.Num();
+			for (int32 B = 0; B < NumGrown; ++B)
+			{
+				const FIntVector Span = Boxes[B].Span;
+				if (Span == FIntVector(1))
+				{
+					continue;
+				}
+				bool bTouches = false;
+				for (int32 Face = 0; Face < 6 && !bTouches; ++Face)
+				{
+					ForFaceLayer(Boxes[B], Face / 2, Face % 2, [&](int32) { bTouches = true; });
+				}
+				if (bTouches)
+				{
+					continue;
+				}
+				const int32 Axis = Span.X >= Span.Y && Span.X >= Span.Z ? 0 : (Span.Y >= Span.Z ? 1 : 2);
+				PCGVoxelChunking::FBox Upper = Boxes[B];
+				Boxes[B].Span[Axis] = Span[Axis] / 2;
+				Upper.First[Axis] += Boxes[B].Span[Axis];
+				Upper.Span[Axis] = Span[Axis] - Boxes[B].Span[Axis];
+				const int32 U = Boxes.Add(Upper);
+				ForBoxCells(Upper, [&](const FIntVector& Cell) { BoxOfDense[Solid.Index(Cell)] = U; });
+			}
+
+			// Centre vertices: vertex B is box B.
+			Verts.Reserve(Boxes.Num() * 2);
+			for (const PCGVoxelChunking::FBox& Box : Boxes)
+			{
+				Verts.Add({ FVector(Box.First) + FVector(Box.Span - FIntVector(1)) * 0.5, FVector(Box.Span - FIntVector(1) + AgentCells) * 0.5,
+					FVector(Box.Span), Box.Rep == 1 });
+			}
+			// Shared faces, each found once from the box below it: same face, centre to centre; otherwise portals.
+			TArray<TArray<int32>> PortalsOf; // per box: its portal vertices
+			PortalsOf.SetNum(Boxes.Num());
+			TArray<int32> Neighbours;
+			for (int32 B = 0; B < Boxes.Num(); ++B)
+			{
+				const PCGVoxelChunking::FBox& Box = Boxes[B];
+				for (int32 Axis = 0; Axis < 3; ++Axis)
+				{
+					const int32 A1 = (Axis + 1) % 3;
+					const int32 A2 = (Axis + 2) % 3;
+					Neighbours.Reset();
+					ForFaceLayer(Box, Axis, 1, [&](int32 Other) { Neighbours.AddUnique(Other); });
+					for (const int32 N : Neighbours)
+					{
+						const PCGVoxelChunking::FBox& Other = Boxes[N];
+						if (Other.First[A1] == Box.First[A1] && Other.First[A2] == Box.First[A2]
+							&& Other.Span[A1] == Box.Span[A1] && Other.Span[A2] == Box.Span[A2])
+						{
+							EdgeList.Add(FIntVector2(B, N)); // the two make one box, so the line between centres stays inside
+							continue;
+						}
+						const FIntVector TileMax(
+							FMath::Min(MaxSpanOf(Box.Rep).X, MaxSpanOf(Other.Rep).X),
+							FMath::Min(MaxSpanOf(Box.Rep).Y, MaxSpanOf(Other.Rep).Y),
+							FMath::Min(MaxSpanOf(Box.Rep).Z, MaxSpanOf(Other.Rep).Z));
+						int32 Lo[3] = { 0, 0, 0 }, Count[3] = { 0, 0, 0 }, Tiles[3] = { 1, 1, 1 };
+						for (const int32 A : { A1, A2 })
+						{
+							Lo[A] = FMath::Max(Box.First[A], Other.First[A]);
+							Count[A] = FMath::Min(Box.First[A] + Box.Span[A], Other.First[A] + Other.Span[A]) - Lo[A];
+							Tiles[A] = FMath::DivideAndRoundUp(Count[A], FMath::Max(1, TileMax[A]));
+						}
+						for (int32 T2 = 0; T2 < Tiles[A2]; ++T2)
+						{
+							for (int32 T1 = 0; T1 < Tiles[A1]; ++T1)
+							{
+								FVector Pos, Half;
+								Pos[Axis] = Box.First[Axis] + Box.Span[Axis] - 0.5;
+								Half[Axis] = AgentCells[Axis] * 0.5;
+								for (const int32 A : { A1, A2 })
+								{
+									const int32 K = A == A1 ? T1 : T2;
+									const int32 TileLo = Lo[A] + (K * Count[A]) / Tiles[A];
+									const int32 TileHi = Lo[A] + ((K + 1) * Count[A]) / Tiles[A] - 1;
+									Pos[A] = (TileLo + TileHi) * 0.5;
+									Half[A] = (TileHi - TileLo + AgentCells[A]) * 0.5;
+								}
+								const int32 P = Verts.Add({ Pos, Half, FVector::ZeroVector, Box.Rep == 1 && Other.Rep == 1, true });
+								EdgeList.Add(FIntVector2(B, P));
+								EdgeList.Add(FIntVector2(N, P));
+								PortalsOf[B].Add(P);
+								PortalsOf[N].Add(P);
+							}
+						}
+					}
+				}
+			}
+			// Hub cubes (designer's sketch, 2026-11-17): in each box two or more portals open into, nested cubes round the
+			// centre, cube c of N at (c + 1) / (N + 1) of the way from the centre to the box's extent (one cube: halfway).
+			// Each cube's surface is a lattice of Hub Subdivisions steps per side joined along its lines; the innermost
+			// cube's corners join the centre, each outer cube's points join the same points of the cube inside it, and
+			// each portal joins the outermost cube's nearest point (every point tied for nearest). Everything stays
+			// inside the convex box, so every edge stays in free space.
+			const int32 NumCubes = Settings->HubCubes;
+			const int32 S = FMath::Max(1, Settings->HubSubdivisions);
+			const int32 Side = S + 1;
+			for (int32 B = 0; NumCubes > 0 && B < Boxes.Num(); ++B)
+			{
+				if (PortalsOf[B].Num() < 2)
+				{
+					continue; // a dead end or a corridor link: nothing to shape a path through
+				}
+				const PCGVoxelChunking::FBox& Box = Boxes[B];
+				const FVector Centre = Verts[B].CellPos;
+				const FVector Half = FVector(Box.Span - FIntVector(1)) * 0.5;
+				const bool bAerial = Box.Rep == 1;
+				TArray<int32> Inner; // lattice ids of the last cube built, INDEX_NONE where none
+				bool bInnerCollapsed[3] = { false, false, false };
+				for (int32 Cube = 0; Cube < NumCubes; ++Cube)
+				{
+					const double T = static_cast<double>(Cube + 1) / (NumCubes + 1);
+					bool bCollapsed[3];
+					for (int32 Axis = 0; Axis < 3; ++Axis)
+					{
+						bCollapsed[Axis] = T * Half[Axis] < 0.25; // under a quarter cell: the cube is flat on this axis
+					}
+					if (bCollapsed[0] && bCollapsed[1] && bCollapsed[2])
+					{
+						continue; // no more than the centre
+					}
+					TArray<int32> Ids;
+					Ids.Init(INDEX_NONE, Side * Side * Side);
+					auto LatticeIndex = [Side](int32 I, int32 J, int32 K) { return I + Side * (J + Side * K); };
+					for (int32 K = 0; K < Side; ++K)
+						for (int32 J = 0; J < Side; ++J)
+							for (int32 I = 0; I < Side; ++I)
+							{
+								const int32 Index[3] = { I, J, K };
+								bool bValid = true, bSurface = false;
+								FVector Pos;
+								for (int32 Axis = 0; Axis < 3; ++Axis)
+								{
+									if (bCollapsed[Axis])
+									{
+										bValid &= Index[Axis] == 0;
+										bSurface = true;
+										Pos[Axis] = Centre[Axis];
+									}
+									else
+									{
+										bSurface |= Index[Axis] == 0 || Index[Axis] == S;
+										Pos[Axis] = Centre[Axis] + T * Half[Axis] * (-1.0 + 2.0 * Index[Axis] / S);
+									}
+								}
+								if (!bValid || !bSurface)
+								{
+									continue;
+								}
+								Ids[LatticeIndex(I, J, K)] = Pos.Equals(Centre, 1e-6) ? B
+									: Verts.Add({ Pos, FVector(AgentCells) * 0.5, FVector::ZeroVector, bAerial, false });
+							}
+					// Lines of the lattice.
+					for (int32 K = 0; K < Side; ++K)
+						for (int32 J = 0; J < Side; ++J)
+							for (int32 I = 0; I < Side; ++I)
+							{
+								const int32 From = Ids[LatticeIndex(I, J, K)];
+								if (From == INDEX_NONE)
+								{
+									continue;
+								}
+								const int32 Steps[3][3] = { { I + 1, J, K }, { I, J + 1, K }, { I, J, K + 1 } };
+								for (int32 Axis = 0; Axis < 3; ++Axis)
+								{
+									if (Steps[Axis][Axis] < Side)
+									{
+										const int32 To = Ids[LatticeIndex(Steps[Axis][0], Steps[Axis][1], Steps[Axis][2])];
+										if (To != INDEX_NONE)
+										{
+											EdgeList.Add(FIntVector2(From, To));
+										}
+									}
+								}
+							}
+					if (Inner.IsEmpty())
+					{
+						// Innermost cube: its corners join the centre.
+						for (int32 Corner = 0; Corner < 8; ++Corner)
+						{
+							const int32 Index[3] = { (Corner & 1) ? S : 0, (Corner & 2) ? S : 0, (Corner & 4) ? S : 0 };
+							int32 At[3];
+							for (int32 Axis = 0; Axis < 3; ++Axis)
+							{
+								At[Axis] = bCollapsed[Axis] ? 0 : Index[Axis];
+							}
+							const int32 Id = Ids[LatticeIndex(At[0], At[1], At[2])];
+							if (Id != INDEX_NONE)
+							{
+								EdgeList.Add(FIntVector2(B, Id));
+							}
+						}
+					}
+					else
+					{
+						// Each point joins the same point of the cube inside (flat axes of that cube read index 0).
+						for (int32 K = 0; K < Side; ++K)
+							for (int32 J = 0; J < Side; ++J)
+								for (int32 I = 0; I < Side; ++I)
+								{
+									const int32 Id = Ids[LatticeIndex(I, J, K)];
+									if (Id == INDEX_NONE)
+									{
+										continue;
+									}
+									const int32 Index[3] = { I, J, K };
+									int32 At[3];
+									for (int32 Axis = 0; Axis < 3; ++Axis)
+									{
+										At[Axis] = bInnerCollapsed[Axis] ? 0 : Index[Axis];
+									}
+									const int32 InnerId = Inner[LatticeIndex(At[0], At[1], At[2])];
+									if (InnerId != INDEX_NONE)
+									{
+										EdgeList.Add(FIntVector2(Id, InnerId));
+									}
+								}
+					}
+					Inner = MoveTemp(Ids);
+					for (int32 Axis = 0; Axis < 3; ++Axis)
+					{
+						bInnerCollapsed[Axis] = bCollapsed[Axis];
+					}
+				}
+				if (Inner.IsEmpty())
+				{
+					continue;
+				}
+				// Portals join the outermost cube's nearest points.
+				for (const int32 Portal : PortalsOf[B])
+				{
+					const FVector& P = Verts[Portal].CellPos;
+					double Best = TNumericLimits<double>::Max();
+					for (const int32 Id : Inner)
+					{
+						if (Id != INDEX_NONE)
+						{
+							Best = FMath::Min(Best, FVector::DistSquared(P, Verts[Id].CellPos));
+						}
+					}
+					for (const int32 Id : Inner)
+					{
+						if (Id != INDEX_NONE && FVector::DistSquared(P, Verts[Id].CellPos) <= Best + 1e-6)
+						{
+							EdgeList.Add(FIntVector2(Portal, Id));
+						}
+					}
+				}
+			}
+		}
+		// One edge per pair (hub lattices and centre links can meet the same pair twice), none from a vertex to itself.
+		for (FIntVector2& Edge : EdgeList)
+		{
+			if (Edge.X > Edge.Y)
+			{
+				Swap(Edge.X, Edge.Y);
+			}
+		}
+		EdgeList.RemoveAll([](const FIntVector2& Edge) { return Edge.X == Edge.Y; });
+		EdgeList.Sort([](const FIntVector2& A, const FIntVector2& B) { return A.X != B.X ? A.X < B.X : A.Y < B.Y; });
+		EdgeList.SetNum(Algo::Unique(EdgeList));
 		if (EdgeList.IsEmpty())
 		{
 			PCGLog::LogWarningOnGraph(PCGVoxel::FormatError(Title, InputIndex, FText::Format(
@@ -444,9 +838,9 @@ bool FPCGVoxelBuildNavGridElement::ExecuteInternal(FPCGContext* Context) const
 		}
 
 		// ---- Islands; vertices with no edge are left out (PCGEx has no cluster of one) ----
-		FUnionFind Islands(VtxDense.Num());
+		FUnionFind Islands(Verts.Num());
 		TArray<int32> Degree;
-		Degree.Init(0, VtxDense.Num());
+		Degree.Init(0, Verts.Num());
 		for (const FIntVector2& Edge : EdgeList)
 		{
 			Islands.Union(Edge.X, Edge.Y);
@@ -454,9 +848,9 @@ bool FPCGVoxelBuildNavGridElement::ExecuteInternal(FPCGContext* Context) const
 			++Degree[Edge.Y];
 		}
 		TArray<int32> FinalOf;
-		FinalOf.Init(INDEX_NONE, VtxDense.Num());
+		FinalOf.Init(INDEX_NONE, Verts.Num());
 		TArray<int32> Kept;
-		for (int32 V = 0; V < VtxDense.Num(); ++V)
+		for (int32 V = 0; V < Verts.Num(); ++V)
 		{
 			if (Degree[V] > 0)
 			{
@@ -475,15 +869,15 @@ bool FPCGVoxelBuildNavGridElement::ExecuteInternal(FPCGContext* Context) const
 			TPCGValueRange<float> Densities = VtxData->GetDensityValueRange();
 			TPCGValueRange<int32> Seeds = VtxData->GetSeedValueRange();
 			TPCGValueRange<int64> Entries = VtxData->GetMetadataEntryValueRange();
-			const FVector HalfAgent = FVector(AgentCells) * Grid.VoxelSize * 0.5;
 			for (int32 K = 0; K < NumVtx; ++K)
 			{
-				const FIntVector Cell = Solid.Cell(VtxDense[Kept[K]]);
-				Transforms[K] = FTransform(Grid.GridToWorld.GetRotation(), VertexPosition(Cell));
-				Mins[K] = -HalfAgent;
-				Maxs[K] = HalfAgent;
+				const FNavVertex& Vert = Verts[Kept[K]];
+				Transforms[K] = FTransform(Grid.GridToWorld.GetRotation(), VertexPosition(Vert.CellPos));
+				Mins[K] = -Vert.HalfCells * Grid.VoxelSize;
+				Maxs[K] = Vert.HalfCells * Grid.VoxelSize;
 				Densities[K] = 1.0f;
-				Seeds[K] = static_cast<int32>(HashCombineFast(GetTypeHash(Cell), 0x9E3779B9u));
+				const FIntVector Scaled(FMath::RoundToInt32(Vert.CellPos.X * 64.0), FMath::RoundToInt32(Vert.CellPos.Y * 64.0), FMath::RoundToInt32(Vert.CellPos.Z * 64.0));
+				Seeds[K] = static_cast<int32>(HashCombineFast(GetTypeHash(Scaled), 0x9E3779B9u));
 				Entries[K] = VtxData->MutableMetadata()->AddEntry();
 			}
 		}
@@ -496,33 +890,92 @@ bool FPCGVoxelBuildNavGridElement::ExecuteInternal(FPCGContext* Context) const
 			}
 			PCGVoxelPointIO::WritePointAttribute<int64>(VtxData, PCGUtilsClusterInterop::VtxDataAttribute, 0, VData);
 		}
+		if (Settings->bOutputIsAerial)
+		{
+			TArray<bool> Values;
+			Values.SetNumUninitialized(NumVtx);
+			for (int32 K = 0; K < NumVtx; ++K)
+			{
+				Values[K] = Verts[Kept[K]].bAerial;
+			}
+			PCGVoxelPointIO::WritePointAttribute<bool>(VtxData, Settings->IsAerialAttribute, false, Values);
+		}
+		if (Settings->bOutputIsPortal)
+		{
+			TArray<bool> Values;
+			Values.SetNumUninitialized(NumVtx);
+			for (int32 K = 0; K < NumVtx; ++K)
+			{
+				Values[K] = Verts[Kept[K]].bPortal;
+			}
+			PCGVoxelPointIO::WritePointAttribute<bool>(VtxData, Settings->IsPortalAttribute, false, Values);
+		}
+		if (Settings->bOutputChunkSize)
+		{
+			TArray<FVector> Values;
+			Values.SetNumUninitialized(NumVtx);
+			for (int32 K = 0; K < NumVtx; ++K)
+			{
+				Values[K] = Verts[Kept[K]].ChunkSize;
+			}
+			PCGVoxelPointIO::WritePointAttribute<FVector>(VtxData, Settings->ChunkSizeAttribute, FVector::ZeroVector, Values);
+		}
 		if (Settings->bOutputSurfaceDistance || Settings->bOutputNearestVoxelIndex)
 		{
 			PCGVoxelMorphology::FNearestSet Nearest;
 			PCGVoxelMorphology::NearestSet(Solid, Grid.VoxelSize, AxisPriority, Nearest);
+			// Of the nearest filled cells of every cell the vertex touches (one inside a cell, two to eight on a boundary), the
+			// one closest to the vertex itself; on a cell centre this is exactly NearestSet.
+			TArray<double> Distances;
+			TArray<int32> Indices;
+			Distances.SetNumUninitialized(NumVtx);
+			Indices.SetNumUninitialized(NumVtx);
+			for (int32 K = 0; K < NumVtx; ++K)
+			{
+				const FVector& Pos = Verts[Kept[K]].CellPos;
+				FIntVector Lo, Hi;
+				for (int32 Axis = 0; Axis < 3; ++Axis)
+				{
+					Lo[Axis] = FMath::FloorToInt32(Pos[Axis] + 0.5 - 1e-6);
+					Hi[Axis] = FMath::FloorToInt32(Pos[Axis] + 0.5 + 1e-6);
+				}
+				double Best = TNumericLimits<double>::Max();
+				int64 BestSource = INDEX_NONE;
+				for (int32 Z = Lo.Z; Z <= Hi.Z; ++Z)
+					for (int32 Y = Lo.Y; Y <= Hi.Y; ++Y)
+						for (int32 X = Lo.X; X <= Hi.X; ++X)
+						{
+							const FIntVector Touched(X, Y, Z);
+							if (!Solid.Contains(Touched))
+							{
+								continue;
+							}
+							const int64 Source = Nearest.Source[Solid.Index(Touched)];
+							if (Source == INDEX_NONE)
+							{
+								continue;
+							}
+							const FVector Gap = (Pos - FVector(Solid.Cell(Source))).GetAbs() - FVector(0.5);
+							const double Distance = (FVector::Max(Gap, FVector::ZeroVector) * Grid.VoxelSize).Size();
+							if (Distance < Best)
+							{
+								Best = Distance;
+								BestSource = Source;
+							}
+						}
+				Distances[K] = BestSource == INDEX_NONE ? -1.0 : Best;
+				Indices[K] = BestSource == INDEX_NONE ? INDEX_NONE : PointOfDense[BestSource];
+			}
 			if (Settings->bOutputSurfaceDistance)
 			{
-				TArray<double> Values;
-				Values.SetNumUninitialized(NumVtx);
-				for (int32 K = 0; K < NumVtx; ++K)
-				{
-					const double D = Nearest.DistanceSquared[VtxDense[Kept[K]]];
-					Values[K] = Nearest.Source[VtxDense[Kept[K]]] == INDEX_NONE ? -1.0 : FMath::Sqrt(D);
-				}
-				PCGVoxelPointIO::WritePointAttribute<double>(VtxData, Settings->SurfaceDistanceAttribute, -1.0, Values);
+				PCGVoxelPointIO::WritePointAttribute<double>(VtxData, Settings->SurfaceDistanceAttribute, -1.0, Distances);
 			}
 			if (Settings->bOutputNearestVoxelIndex)
 			{
-				TArray<int32> Values;
-				Values.SetNumUninitialized(NumVtx);
-				for (int32 K = 0; K < NumVtx; ++K)
-				{
-					const int64 Source = Nearest.Source[VtxDense[Kept[K]]];
-					Values[K] = Source == INDEX_NONE ? INDEX_NONE : PointOfDense[Source];
-				}
-				PCGVoxelPointIO::WritePointAttribute<int32>(VtxData, Settings->NearestVoxelIndexAttribute, INDEX_NONE, Values);
+				PCGVoxelPointIO::WritePointAttribute<int32>(VtxData, Settings->NearestVoxelIndexAttribute, INDEX_NONE, Indices);
 			}
 		}
+
 		const int64 PairId = static_cast<int64>(VtxData->GetUniqueID());
 		FPCGTaggedData& VtxTagged = Context->OutputData.TaggedData.Emplace_GetRef(Inputs[InputIndex]);
 		VtxTagged.Data = VtxData;

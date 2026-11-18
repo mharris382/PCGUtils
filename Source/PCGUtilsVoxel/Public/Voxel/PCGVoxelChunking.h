@@ -105,6 +105,15 @@ namespace PCGVoxelChunking
 	PCGUTILSVOXEL_API void MergeCells(TConstArrayView<FIntVector> Cells, TConstArrayView<int32> Labels, int32 MaxSpan, bool bJoinBoxes,
 		FEqual Equal, TArray<FBox>& Out);
 
+	/**
+	 * Greedy boxes, unaligned: cells visited in order (Z, then Y, then X); each cell not yet taken starts a box that grows
+	 * along X, then Y (whole rows), then Z (whole slabs), only over listed cells that are not taken and equal to the start
+	 * cell, up to MaxSpanOf(start label) on each axis. Fewer boxes than MergeCells where the region is not aligned to the
+	 * octree (rooms, corridors). Appends to Out, sorted by first cell.
+	 */
+	PCGUTILSVOXEL_API void GrowBoxes(TConstArrayView<FIntVector> Cells, TConstArrayView<int32> Labels,
+		TFunctionRef<FIntVector(int32 Label)> MaxSpanOf, FEqual Equal, TArray<FBox>& Out);
+
 	/** Joins neighbouring equal boxes along Axis where their other two extents match, up to MaxSpan along Axis. */
 	PCGUTILSVOXEL_API void JoinAlong(TArray<FBox>& Boxes, int32 Axis, int32 MaxSpan, FEqual Equal);
 

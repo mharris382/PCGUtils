@@ -53,6 +53,7 @@ void FPCGGetPointDataElement::ProcessActor(
 	}
 
 	const UPCGGetPointDataSettings* GetSettings = CastChecked<UPCGGetPointDataSettings>(Settings);
+	const FPCGDataFromActorContext* ActorContext = static_cast<const FPCGDataFromActorContext*>(Context);
 	const auto NameToString = [](const FName& Name) { return Name.ToString(); };
 	TSet<FString> ActorTags;
 	Algo::Transform(FoundActor->Tags, ActorTags, NameToString);
@@ -62,7 +63,7 @@ void FPCGGetPointDataElement::ProcessActor(
 	for (UActorComponent* Component : Components)
 	{
 		if (!IsValid(Component)
-			|| !Settings->ComponentSelector.FilterComponent(Component)
+			|| !ActorContext->ComponentSelector.FilterComponent(Component)
 			|| !Component->GetClass()->ImplementsInterface(UPCGPointProvider::StaticClass()))
 		{
 			continue;

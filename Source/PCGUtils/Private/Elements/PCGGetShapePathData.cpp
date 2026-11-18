@@ -59,6 +59,7 @@ void FPCGGetShapePathElement::ProcessActor(
 		return;
 	}
 	const UPCGGetShapePathSettings* GetSettings = CastChecked<UPCGGetShapePathSettings>(Settings);
+	const FPCGDataFromActorContext* ActorContext = static_cast<const FPCGDataFromActorContext*>(Context);
 
 	auto NameToString = [](const FName& N) { return N.ToString(); };
 	TSet<FString> ActorTags;
@@ -71,7 +72,8 @@ void FPCGGetShapePathElement::ProcessActor(
 	
 	for (UShapePathComponent* Comp : ShapeComps)
 	{
-		if (!Comp || !IsValid(Comp))// || Settings->ComponentSelector.FilterComponent(Comp))
+		if (!IsValid(Comp)
+			|| !ActorContext->ComponentSelector.FilterComponent(Comp))
 		{
 			continue;
 		}

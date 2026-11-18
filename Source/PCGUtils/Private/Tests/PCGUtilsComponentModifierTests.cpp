@@ -319,7 +319,8 @@ bool FPCGUtilsModifierGetNodesTest::RunTest(const FString& Parameters)
 	// Get Marker Data: one marker, four points out.
 	{
 		UPCGGetMarkerDataSettings* Settings = NewObject<UPCGGetMarkerDataSettings>();
-		FPCGContext Context;
+		FPCGDataFromActorContext Context;
+		Context.ComponentSelector = Settings->ComponentSelector;
 		FMarkerElement().ProcessActor(&Context, Settings, Actor);
 		if (!TestEqual(TEXT("Marker: one output"), Context.OutputData.TaggedData.Num(), 1)) return false;
 		const UPCGBasePointData* Points = Cast<UPCGBasePointData>(Context.OutputData.TaggedData[0].Data);
@@ -329,7 +330,8 @@ bool FPCGUtilsModifierGetNodesTest::RunTest(const FString& Parameters)
 	// Get PCG Point Data reads the marker through its point provider interface, with the same stack.
 	{
 		UPCGGetPointDataSettings* Settings = NewObject<UPCGGetPointDataSettings>();
-		FPCGContext Context;
+		FPCGDataFromActorContext Context;
+		Context.ComponentSelector = Settings->ComponentSelector;
 		FPointElement().ProcessActor(&Context, Settings, Actor);
 		if (!TestEqual(TEXT("Point provider: one output"), Context.OutputData.TaggedData.Num(), 1)) return false;
 		const UPCGBasePointData* Points = Cast<UPCGBasePointData>(Context.OutputData.TaggedData[0].Data);
@@ -352,7 +354,8 @@ bool FPCGUtilsModifierGetNodesTest::RunTest(const FString& Parameters)
 	{
 		UPCGGetPathDataSettings* Settings = NewObject<UPCGGetPathDataSettings>();
 		Settings->OutputMode = Mode;
-		FPCGContext Context;
+		FPCGDataFromActorContext Context;
+		Context.ComponentSelector = Settings->ComponentSelector;
 		FPathElement().ProcessActor(&Context, Settings, Actor);
 		const FString ModeName = Mode == EPCGPathDataOutputMode::SplineData ? TEXT("Spline") : TEXT("Points");
 		if (!TestEqual(ModeName + TEXT(": one fused path"), Context.OutputData.TaggedData.Num(), 1)) return false;

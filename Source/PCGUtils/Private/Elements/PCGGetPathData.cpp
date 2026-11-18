@@ -73,6 +73,7 @@ void FPCGGetPathElement::ProcessActor(
 	if (!IsValid(FoundActor)) return;
 
 	const UPCGGetPathDataSettings* GetSettings = CastChecked<UPCGGetPathDataSettings>(Settings);
+	const FPCGDataFromActorContext* ActorContext = static_cast<const FPCGDataFromActorContext*>(Context);
 	if (GetSettings->bOutputPathIndex && GetSettings->PathIndexAttributeName.IsNone())
 	{
 		PCGLog::LogWarningOnGraph(LOCTEXT("NoPathIndexName", "Output Path Index is on but Path Index Attribute Name is None; no path index is written."), Context);
@@ -322,7 +323,7 @@ void FPCGGetPathElement::ProcessActor(
 	for (UActorComponent* Component : Components)
 	{
 		if (!IsValid(Component)
-			|| !Settings->ComponentSelector.FilterComponent(Component)
+			|| !ActorContext->ComponentSelector.FilterComponent(Component)
 			|| !Component->GetClass()->ImplementsInterface(UPCGPathProvider::StaticClass()))
 		{
 			continue;

@@ -195,6 +195,85 @@ namespace PCGVoxelChunking
 		Out.Append(MoveTemp(Boxes));
 	}
 
+	void GrowBoxes(TConstArrayView<FIntVector> Cells, TConstArrayView<int32> Labels,
+		TFunctionRef<FIntVector(int32 Label)> MaxSpanOf, FEqual Equal, TArray<FBox>& Out)
+	{
+		check(Cells.Num() == Labels.Num());
+		TMap<FIntVector, int32> IndexOf;
+		IndexOf.Reserve(Cells.Num());
+		TArray<int32> Order;
+		Order.Reserve(Cells.Num());
+		for (int32 Index = 0; Index < Cells.Num(); ++Index)
+		{
+			if (!IndexOf.Contains(Cells[Index]))
+			{
+				IndexOf.Add(Cells[Index], Index);
+				Order.Add(Index);
+			}
+		}
+		Order.Sort([&](int32 A, int32 B) { return FPCGVoxelGrid::CellLess(Cells[A], Cells[B]); });
+		TArray<bool> Taken;
+		Taken.Init(false, Cells.Num());
+
+		// Is every cell of the box from Lo spanning Size listed, free and equal to Rep?
+		auto BlockFree = [&](const FIntVector& Lo, const FIntVector& Size, int32 Rep)
+		{
+			for (int32 Z = 0; Z < Size.Z; ++Z)
+			{
+				for (int32 Y = 0; Y < Size.Y; ++Y)
+				{
+					for (int32 X = 0; X < Size.X; ++X)
+					{
+						const int32* Found = IndexOf.Find(Lo + FIntVector(X, Y, Z));
+						if (!Found || Taken[*Found] || !Equal(Rep, Labels[*Found]))
+						{
+							return false;
+						}
+					}
+				}
+			}
+			return true;
+		};
+
+		for (const int32 Start : Order)
+		{
+			if (Taken[Start])
+			{
+				continue;
+			}
+			const FIntVector First = Cells[Start];
+			const int32 Rep = Labels[Start];
+			const FIntVector MaxSpan = MaxSpanOf(Rep);
+			FIntVector Span(1);
+			for (int32 Axis = 0; Axis < 3; ++Axis)
+			{
+				while (Span[Axis] < MaxSpan[Axis])
+				{
+					FIntVector Lo = First;
+					Lo[Axis] += Span[Axis];
+					FIntVector Size = Span;
+					Size[Axis] = 1;
+					if (!BlockFree(Lo, Size, Rep))
+					{
+						break;
+					}
+					++Span[Axis];
+				}
+			}
+			for (int32 Z = 0; Z < Span.Z; ++Z)
+			{
+				for (int32 Y = 0; Y < Span.Y; ++Y)
+				{
+					for (int32 X = 0; X < Span.X; ++X)
+					{
+						Taken[IndexOf.FindChecked(First + FIntVector(X, Y, Z))] = true;
+					}
+				}
+			}
+			Out.Add({ First, Span, Rep });
+		}
+	}
+
 	void RandomBoxes(const FPCGVoxelGrid& Grid, const FRandomPlan& Plan, int32 Seed, FEqual Equal, TArray<FBox>& Out)
 	{
 		FRandomStream Stream(Seed);

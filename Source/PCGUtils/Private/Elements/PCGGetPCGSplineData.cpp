@@ -48,6 +48,7 @@ void FPCGGetPCGSplineDataElement::ProcessActor(
 	}
 
 	const UPCGGetPCGSplineDataSettings* GetSettings = CastChecked<UPCGGetPCGSplineDataSettings>(Settings);
+	const FPCGDataFromActorContext* ActorContext = static_cast<const FPCGDataFromActorContext*>(Context);
 
 	auto NameTagsToStringTags = [](const FName& InName) { return InName.ToString(); };
 	TSet<FString> ActorTags;
@@ -58,7 +59,8 @@ void FPCGGetPCGSplineDataElement::ProcessActor(
 
 	for (USplineComponent* SplineComponent : SplineComponents)
 	{
-		if (!SplineComponent || !IsValid(SplineComponent))
+		if (!IsValid(SplineComponent)
+			|| !ActorContext->ComponentSelector.FilterComponent(SplineComponent))
 		{
 			continue;
 		}

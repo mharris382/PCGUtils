@@ -918,7 +918,8 @@ Cells are in Z, Y, X order.
 
 Started 2026-11-16 from the designer's spec (vault note `Excalidraw/Voxel Element - Create Nav Grid`), for a baked
 flying-cube effect in a tower. Builds a navigation graph from a voxel set as a **PCGEx cluster**. Plan: pass 1
-(flying, one vertex per cell) is built; pass 2 compresses free space into boxes; pass 3 adds Surface mode. Digger
+(flying, one vertex per cell) and pass 2 (compression into free boxes, aerial collapse; 2026-11-17) are built; pass 3
+adds Surface mode and Use Surface Offset. Digger
 mode (caves, tunnels) is deferred.
 
 **Pins.** In: `VoxelGrid` (required, voxel sets, one cluster per input) and `Bounds` (optional Spatial: one data for
@@ -950,8 +951,37 @@ bounds. Input tags are kept on both outputs.
 5. Edges to the face neighbours; `Enable Diagonals` (default off) adds edge and corner neighbours where every cell of
    the box the move spans is a vertex too (no corner cut).
 
-**Outputs on Vtx** (each name exposed, each can be turned off): `SurfaceDistance` (Double, on: world distance from the
-vertex's cell centre to the nearest filled cell's box, ignoring gap fills; -1 when the set is empty) and
+**Compression (pass 2, `Enable Compression`, default on).** The cells from step 4 are merged into boxes with
+`PCGVoxelChunking::GrowBoxes` (shared, added for this node: greedy unaligned boxes grown along X, then Y, then Z, which
+suit rooms and corridors better than the octree of `MergeCells`). Every edge is then a straight line inside one box of
+free cells, so it never leaves free space and never cuts a corner (Enable Diagonals only affects the uncompressed grid).
+- `Compression Size` (data shorthand Double >= 1, default 4, attribute `CompressionSize`, rounded to whole cells): the
+  largest box side near surfaces, and the widest portal tile.
+- Aerial cells: those whose box is at least `Aerial Cell Distance` (default 2, cells, Euclidean box to box,
+  `DilateByDistance` again) from every filled cell. Aerial and near cells never share a box. With `Collapse Aerial
+  Cells` (default on) aerial boxes grow up to `Aerial Cell Collapse Size` (default 16 x 16 x 16) instead.
+- Each box gets a centre vertex (bounds: everywhere the agent can be inside the box). Each face two boxes share is cut
+  into tiles no wider than the smaller box limit of the two, with a portal vertex at each tile's middle on the face,
+  joined to both centres. Two boxes with the same face (the pair is itself a box) join centre to centre with no portal,
+  so a tunnel becomes a chain of centres.
+- Hub cubes (designer's sketch 2026-11-17, `Excalidraw/Attachments/Pasted image 20261117182737.png`; replaced a Link
+  Portals option that joined every two portals of a box, rejected as thousands of edges where a path uses a few). In a
+  box two or more portals open into, `Hub Cubes` (default 1, 0 to 3) nested cubes round the centre, cube c of N at
+  (c + 1) / (N + 1) of the way from the centre to the box's extent (one cube: halfway). `Hub Subdivisions` (default 1:
+  corners only) steps per side of each cube's surface lattice, joined along its lines. The innermost cube's corners
+  join the centre, an outer cube's points join the same points of the cube inside, and each portal joins its centre
+  plus the outermost cube's nearest point (all tied: a face-centre portal joins the 4 corners facing it). A cube flat
+  on an axis (under a quarter cell of reach) collapses there; a cube with no reach at all is skipped. Paths then bend
+  round a box's middle instead of all crossing one vertex; to drop portals from a found path, filter on `IsPortal`.
+- A box of more than one cell that touches no other box (a sealed pocket) is split in two along its longest side, so it
+  stays a cluster of two instead of a lone vertex PCGEx would drop.
+
+**Outputs on Vtx** (each name exposed, each can be turned off): `IsAerial` (Boolean, on: a centre takes its box's cells,
+a portal is aerial when both boxes are), `IsPortal` (Boolean, on: true on face portals), `ChunkSize` (Vector, on: the box a centre stands
+for, (1, 1, 1) uncompressed, (0, 0, 0) on portals and hub points), `SurfaceDistance` (Double, on: world distance from the vertex to the closest of the nearest
+filled cells of every cell it touches (exact on a cell centre; a vertex on a cell boundary touches two to eight),
+ignoring gap fills; -1 when the set is
+empty) and
 `NearestVoxelIndex` (Integer32, off: input index of the point filling that cell, a chunk's own point for a chunked set;
 `Nearest Voxel Axis Priority` settles equal distances, the cell further along the first axis winning). Both come from
 `PCGVoxelMorphology::NearestSet`, an exact separable distance-to-box field with that tie rule.
@@ -959,13 +989,19 @@ vertex's cell centre to the nearest filled cell's box, ignoring gap fills; -1 wh
 **Errors and warnings.** Surface mode is an error (not built yet). An enabled output with an empty name, two outputs
 sharing a name, an output named `PCGEx/VData`, Padding below 0, a Bounds count that is neither 1 nor the input count,
 non-spatial or empty Bounds, an Agent Size axis that is not a number above 0 (names the axis), and a working box over
-`Max Cells` (default 64M; names the box) are errors. No two vertices connecting is a warning naming how many cells the
+`Max Cells` (default 64M; names the box), Aerial Cell Distance below 0, an Aerial Cell Collapse Size axis below 1
+(names the axis) a Compression Size below 1, Hub Cubes below 0 and Hub Subdivisions below 1 are errors. No two vertices connecting is a warning naming how many cells the
 agent fits in.
 
 **Tests** (`PCGUtils.Voxel.BuildNavGrid`): Flying checks a sealed 7 wide room (125 vertices and 300 edges at clearance
 1, nearest wall 150 away; 343 at clearance 0; 100 for a 1 x 1 x 2 agent, vertices on cell boundaries, bounds the
 agent's box; 1036 edges with diagonals), the padded box round one cell (124) and Outside Only round a room. Islands
-checks two rooms (two Edges datas, one Vtx data), per point clearance and a Bounds box. Every case also checks the
+checks two rooms (two Edges datas, one Vtx data), per point clearance and a Bounds box (both turn compression off to
+count cells). Compression checks a 1 x 1 x 10 tunnel (three centres at 4, 4 and 2 cells, two edges, 50 from the walls),
+a sealed 2 x 2 x 2 pocket (split into two vertices), a room with a pillar at 0, 1 and 2 hub cubes and 2 subdivisions (the
+boxes cover every free cell once, portals exist, every edge sampled stays in free cells, hubs add only hub points), a
+5 x 5 x 5 box with two portals (13 vertices, 32 edges, corners exactly halfway) and an open room (the 3 x 3 x 3 aerial
+middle is one box). Every case also checks the
 PCGEx contract: tags, ids, EData endpoints and every vertex's VData degree against its edges.
 
 ## 4j. Voxel | Match Rules (rule tiles)
@@ -1155,7 +1191,8 @@ a cell hash.
   compression as well: the chunking in `PCGVoxelCompress.cpp` moves to a shared header before anything else chunks).
 - `Public/Voxel/PCGVoxelChunking.h` (added 2026-11-15) is the shared compression library: `EPCGVoxelChunkShape`,
   `EPCGVoxelRandomSize`, `EPCGVoxelMatchAttributes`, `FPCGVoxelPointEquality` (which points may share a chunk) and
-  `PCGVoxelChunking::MergeCells` (octree cubes, then boxes), `JoinAlong` and `RandomBoxes`. Voxel | Compress and Voxel
+  `PCGVoxelChunking::MergeCells` (octree cubes, then boxes), `JoinAlong`, `RandomBoxes` and `GrowBoxes` (greedy
+unaligned boxes with a per-label limit, added 2026-11-17 for Build Nav Grid). Voxel | Compress and Voxel
   | Offset Surface use it; it came out of `PCGVoxelCompress.cpp` unchanged in behaviour (every Compress test passes).
 - `Public/Voxel/PCGVoxelMesher.h` holds the faces → mesh core. It is plain C++, so it can be tested without a graph.
   The bevel path is `Private/Voxel/PCGVoxelBevelMesher.cpp` (`PCGVoxelMesher::BuildBeveledMesh`).
