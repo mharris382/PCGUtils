@@ -23,7 +23,9 @@
 #include "PCGContext.h"
 #include "PCGNode.h"
 #include "PCGPin.h"
+#include "Settings/PCGUtilsDynMeshSettings.h"
 #include "UDynamicMesh.h"
+#include "UObject/UnrealType.h"
 
 namespace PCGUtilsDynMeshTopologyResultTests
 {
@@ -294,6 +296,58 @@ bool FPCGDynMeshTopologyEmptyTest::RunTest(const FString&)
 	return true;
 }
 
+#if WITH_EDITOR
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FPCGDynMeshTopologyResultPinTest,
+	"PCGUtils.DynMesh.TopologyResult.OptionalSelectorPin", EAutomationTestFlags::EditorContext | EAutomationTestFlags::ProductFilter)
+
+bool FPCGDynMeshTopologyResultPinTest::RunTest(const FString&)
+{
+	const FPCGDataTypeIdentifier SelectorType(FPCGUtilsDynMeshSelectionFactoryDataTypeInfo::AsId());
+	TGuardValue<bool> ConcreteTypes(GetMutableDefault<UPCGUtilsDynMeshSettings>()->bShowConcreteOutputPinTypes, false);
+	for (bool bBevel : { false, true })
+	{
+		auto* Node = NewObject<UPCGNode>();
+		UPCGUtilsDynMeshTopologyProcessBaseSettings* Settings = bBevel
+			? static_cast<UPCGUtilsDynMeshTopologyProcessBaseSettings*>(NewObject<UPCGBevelEdgesSettings>(Node))
+			: NewObject<UPCGDynMeshInsetSettings>(Node);
+		Node->SetSettingsInterface(Settings);
+		const auto RefreshPins = [Settings](FName PropertyName)
+		{
+			FPropertyChangedEvent Change(FindFProperty<FProperty>(Settings->GetClass(), PropertyName));
+			static_cast<UObject*>(Settings)->PostEditChangeProperty(Change);
+		};
+		TestNull(TEXT("Selector output is absent by default"), Node->GetOutputPin(TEXT("Result")));
+
+		Settings->bOutputResultSelector = true;
+		RefreshPins(GET_MEMBER_NAME_CHECKED(UPCGUtilsDynMeshTopologyProcessBaseSettings, bOutputResultSelector));
+		UPCGPin* ResultPin = Node->GetOutputPin(TEXT("Result"));
+		if (!TestNotNull(TEXT("Enabling selector output creates the pin"), ResultPin)) { return false; }
+		TestTrue(TEXT("Result has the Selector type"), ResultPin->GetCurrentTypesID() == SelectorType);
+
+		// Reproduce the fallback that used to infer the mesh input's type onto the Result pin.
+		if (bBevel) { CastChecked<UPCGBevelEdgesSettings>(Settings)->BevelDistance.Input = EPCGUtilsInputValueType::Attribute; }
+		else { CastChecked<UPCGDynMeshInsetSettings>(Settings)->Distance.Input = EPCGUtilsInputValueType::Attribute; }
+		RefreshPins(bBevel ? GET_MEMBER_NAME_CHECKED(UPCGBevelEdgesSettings, BevelDistance)
+			: GET_MEMBER_NAME_CHECKED(UPCGDynMeshInsetSettings, Distance));
+		TestTrue(TEXT("Topology pins stay dynamic without Builder support"), Settings->HasDynamicPins());
+		auto* Anchor = NewObject<UPCGNode>();
+		Anchor->SetSettingsInterface(Anchor->GetSettings());
+		Anchor->GetOutputPin(TEXT("Out"))->Properties.AllowedTypes = FPCGDataTypeIdentifier(EPCGDataType::DynamicMesh);
+		Node->GetInputPin(bBevel ? TEXT("Mesh") : TEXT("In"))->AddEdgeTo(Anchor->GetOutputPin(TEXT("Out")));
+		ResultPin = Node->GetOutputPin(TEXT("Result"));
+		TestTrue(TEXT("Result stays Selector with a mesh wired in and concrete pin types disabled"),
+			ResultPin && ResultPin->GetCurrentTypesID() == SelectorType);
+
+		Settings->bOutputResultSelector = false;
+		RefreshPins(GET_MEMBER_NAME_CHECKED(UPCGUtilsDynMeshTopologyProcessBaseSettings, bOutputResultSelector));
+		TestNull(TEXT("Disabling selector output removes the pin"), Node->GetOutputPin(TEXT("Result")));
+		TestNotNull(TEXT("Main output remains available"), Node->GetOutputPin(TEXT("Out")));
+	}
+	return true;
+}
+
+#endif // WITH_EDITOR
+
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(FPCGDynMeshTopologyIdentityTest,
 	"PCGUtils.DynMesh.TopologyResult.NamesPinsAndMultipleMeshes", EAutomationTestFlags::EditorContext | EAutomationTestFlags::ProductFilter)
 
@@ -314,6 +368,7 @@ bool FPCGDynMeshTopologyIdentityTest::RunTest(const FString&)
 		MainPin->AllowedTypes.Intersects(FPCGDataTypeIdentifier(FPCGUtilsDynMeshBuilderFactoryDataTypeInfo::AsId())));
 	auto* Node = NewObject<UPCGNode>();
 	auto* NodeSettings = NewObject<UPCGDynMeshExtrudeSettings>(Node);
+	NodeSettings->bOutputResultSelector = true;
 	Node->SetSettingsInterface(NodeSettings);
 	auto* Anchor = NewObject<UPCGNode>();
 	Anchor->SetSettingsInterface(Anchor->GetSettings());

@@ -1,17 +1,21 @@
 // Copyright Max Harris
 
 #include "Misc/AutomationTest.h"
+#include "Factories/PCGUtilsDynMeshRoutedSelectionFactory.h"
 
 #if WITH_AUTOMATION_TESTS
 
 #include "Data/PCGDynamicMeshData.h"
 #include "Data/PCGDynamicMeshSelectionData.h"
+#include "Data/PCGBasePointData.h"
 #include "DynamicMesh/DynamicMesh3.h"
 #include "Elements/Creation/CreatePrimitive/PCGCreatePrimitiveSettingsBase.h"
 #include "Elements/Creation/PrimitiveBuilder/PCGPrimitiveBuilderFactory.h"
 #include "Elements/Deform/PCGTransformDynMesh.h"
 #include "Elements/Topology/PCGDynMeshBoolean.h"
 #include "Elements/Topology/PCGBevelEdges.h"
+#include "Elements/Selections/PCGBuildDynMeshSelection.h"
+#include "Elements/Conversion/PCGDynamicMeshSelectionToPoints.h"
 #include "Factories/PCGUtilsDynMeshOperandProcessBuilderFactory.h"
 #include "Factories/PCGUtilsDynMeshProcessBuilderFactory.h"
 #include "GeometryScript/MeshPrimitiveFunctions.h"
@@ -618,11 +622,120 @@ bool FPCGDynMeshBooleanResultSelectorsTest::RunTest(const FString&)
 		Settings->BooleanOperation = EGeometryScriptBooleanOperation::Subtract;
 		const auto Output = Run(Settings, { Tagged(A, TEXT("A")) }, { Tagged(B, TEXT("B")) });
 		const auto Selectors = ByPin(Output, SelectorPin);
-		TestEqual(TEXT("Each partition has its two categories"), Selectors.Num(), 4);
+		TestEqual(TEXT("All partitions share one selector per category"), Selectors.Num(), 2);
 		for (const auto& D : Selectors)
 		{
-			const auto* S = CastChecked<UPCGDynMeshBooleanSelectionFactoryData>(D.Data);
-			TestTrue(TEXT("Partition selector is nonempty and valid after compaction"), !Evaluate(S, S->ReferenceMesh, EGeometryElementType::Edge).IsEmpty());
+			const auto* S = CastChecked<UPCGUtilsDynMeshRoutedSelectionFactoryData>(D.Data);
+			TestEqual(TEXT("Both partitions are routed"), S->Routes.Num(), 2);
+			for (const auto& Route : S->Routes)
+			{
+				TestTrue(TEXT("Partition selector is nonempty and valid after compaction"), !Evaluate(S, Route.Mesh, EGeometryElementType::Edge).IsEmpty());
+			}
+		}
+	}
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FPCGDynMeshBooleanAdjacentVerticesTest,
+	"PCGUtils.DynMesh.Boolean.OptionalAdjacentVertices", EAutomationTestFlags::EditorContext | EAutomationTestFlags::ProductFilter)
+
+bool FPCGDynMeshBooleanAdjacentVerticesTest::RunTest(const FString&)
+{
+	using namespace PCGUtilsDynMeshBooleanTests;
+	using namespace UE::Geometry;
+	auto* Settings = NewObject<UPCGDynMeshBooleanSettings>();
+	TestFalse(TEXT("Adjacent vertices are excluded by default"), Settings->bIncludeAdjacentVertices);
+	Settings->bOutputSelectors = true;
+	Settings->BooleanOperation = EGeometryScriptBooleanOperation::Subtract;
+	auto* A = Box();
+	auto* B = Box(FVector(40, 15, 11), 80);
+	auto RunNode = [this](UPCGSettings* NodeSettings, FPCGDataCollection Input)
+	{
+		Input.TaggedData.Emplace_GetRef().Data = NodeSettings;
+		const auto Element = NodeSettings->GetElement();
+		TUniquePtr<FPCGContext> Context(Element->Initialize(FPCGInitializeElementParams(&Input, nullptr, nullptr)));
+		Context->AsyncState.bIsRunningOnMainThread = true;
+		Context->AsyncState.NumAvailableTasks = 1;
+		for (int32 Iteration = 0; Iteration < 10; ++Iteration)
+		{
+			if (Element->Execute(Context.Get())) { return Context->OutputData; }
+		}
+		AddError(TEXT("Selection preview node did not finish"));
+		return FPCGDataCollection();
+	};
+	auto PreviewPoints = [&RunNode, this](const UPCGDynMeshBooleanSelectionFactoryData* Selector,
+		EPCGUtilsDynMeshSelectionElementType Domain)
+	{
+		auto* Realize = NewObject<UPCGBuildDynMeshSelectionSettings>();
+		Realize->ElementType = Domain;
+		FPCGDataCollection Input;
+		auto& MeshInput = Input.TaggedData.Emplace_GetRef(); MeshInput.Data = Selector->ReferenceMesh; MeshInput.Pin = TEXT("Mesh");
+		auto& SelectorInput = Input.TaggedData.Emplace_GetRef(); SelectorInput.Data = Selector; SelectorInput.Pin = TEXT("Selectors");
+		const auto Selections = RunNode(Realize, MoveTemp(Input));
+		FPCGDataCollection PointsInput;
+		for (const auto& Selection : Selections.TaggedData)
+		{
+			if (Cast<UPCGDynamicMeshSelectionData>(Selection.Data))
+			{ auto& D = PointsInput.TaggedData.Emplace_GetRef(Selection); D.Pin = TEXT("Selection"); }
+		}
+		auto* ToPoints = NewObject<UPCGDynamicMeshSelectionToPointsSettings>();
+		ToPoints->bOutputToWorldSpace = false;
+		const auto Points = RunNode(ToPoints, MoveTemp(PointsInput));
+		const auto Outputs = Points.GetInputsByPin(TEXT("Points"));
+		if (!TestEqual(TEXT("Overlap preview emits one point dataset"), Outputs.Num(), 1)) { return -1; }
+		const auto* PointData = Cast<UPCGBasePointData>(Outputs[0].Data);
+		return PointData ? PointData->GetNumPoints() : -1;
+	};
+	for (bool bSeparate : { false, true })
+	{
+		Settings->bSeparateOperandContributions = bSeparate;
+		TArray<const UPCGDynMeshBooleanSelectionFactoryData*> Narrow, Broad;
+		TArray<const UPCGDynMeshBooleanSelectionFactoryData*> NarrowEffected, BroadEffected;
+		for (bool bInclude : { false, true })
+		{
+			Settings->bIncludeAdjacentVertices = bInclude;
+			const auto Output = Run(Settings, { Tagged(A, TEXT("A")) }, { Tagged(B, TEXT("B")) });
+			auto Collect = [&](const UPCGDynMeshBooleanSelectionFactoryData* S)
+			{
+				if (!S) { return; }
+				if (S->bOverlapping) { (bInclude ? Broad : Narrow).Add(S); }
+				else { (bInclude ? BroadEffected : NarrowEffected).Add(S); }
+			};
+			for (const auto& D : Output)
+			{
+				Collect(Cast<UPCGDynMeshBooleanSelectionFactoryData>(D.Data));
+				if (const auto* Routed = Cast<UPCGUtilsDynMeshRoutedSelectionFactoryData>(D.Data))
+				{
+					for (const auto& Route : Routed->Routes) { Collect(Cast<UPCGDynMeshBooleanSelectionFactoryData>(Route.Selector)); }
+				}
+			}
+		}
+		if (!TestEqual(TEXT("Every partition has an overlap selector"), Narrow.Num(), bSeparate ? 2 : 1) ||
+			!TestEqual(TEXT("Option preserves selector count"), Narrow.Num(), Broad.Num()) ||
+			!TestEqual(TEXT("Option preserves effected selector count"), NarrowEffected.Num(), BroadEffected.Num())) { return false; }
+		for (int32 Index = 0; Index < Narrow.Num(); ++Index)
+		{
+			const auto* N = Narrow[Index]; const auto* W = Broad[Index];
+			TestTrue(TEXT("Option preserves Boolean geometry"), SameMesh(N->ReferenceMesh, W->ReferenceMesh));
+			TSet<int32> ExactVertices, AdjacentVertices;
+			for (int32 EID : N->RimEdgeIDs)
+			{
+				const FIndex2i EV = Mesh(N->ReferenceMesh).GetEdgeV(EID);
+				ExactVertices.Add(EV.A); ExactVertices.Add(EV.B);
+			}
+			for (int32 TID : N->TriangleIDs)
+			{
+				const FIndex3i TV = Mesh(N->ReferenceMesh).GetTriangle(TID);
+				for (int32 C = 0; C < 3; ++C) { AdjacentVertices.Add(TV[C]); }
+			}
+			TestTrue(TEXT("Default selects only vertices on the actual rim"), N->VertexIDs.Difference(ExactVertices).IsEmpty() && ExactVertices.Difference(N->VertexIDs).IsEmpty());
+			TestTrue(TEXT("Opt-in includes the incident triangle corners"), W->VertexIDs.Difference(AdjacentVertices).IsEmpty() && AdjacentVertices.Difference(W->VertexIDs).IsEmpty());
+			TestTrue(TEXT("Fixture contains off-rim triangle corners like the reported preview"), W->VertexIDs.Num() > N->VertexIDs.Num());
+			TestTrue(TEXT("Bevel edge membership never expands"), N->EdgeIDs.Difference(W->EdgeIDs).IsEmpty() && W->EdgeIDs.Difference(N->EdgeIDs).IsEmpty());
+			TestTrue(TEXT("Effected vertex membership is unchanged"), NarrowEffected[Index]->VertexIDs.Difference(BroadEffected[Index]->VertexIDs).IsEmpty() && BroadEffected[Index]->VertexIDs.Difference(NarrowEffected[Index]->VertexIDs).IsEmpty());
+			TestEqual(TEXT("Vertex realization keeps the narrow point preview"), PreviewPoints(N, EPCGUtilsDynMeshSelectionElementType::Vertex), N->VertexIDs.Num());
+			TestEqual(TEXT("Vertex realization honors the adjacent-vertex option"), PreviewPoints(W, EPCGUtilsDynMeshSelectionElementType::Vertex), W->VertexIDs.Num());
+			TestEqual(TEXT("Triangle realization reproduces the reported extra points"), PreviewPoints(N, EPCGUtilsDynMeshSelectionElementType::Triangle), W->VertexIDs.Num());
 		}
 	}
 	return true;

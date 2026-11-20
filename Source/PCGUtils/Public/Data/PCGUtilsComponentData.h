@@ -30,6 +30,10 @@ struct PCGUTILS_API FPathComponentData
 	
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "PCG")
 	FPCGOverrideGraph ProcessPathGraph;
+
+	/** Optional authored path label, independent of the component's object name and GroupID. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="PCG")
+	FName PathName = NAME_None;
 	
 	
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="PCG", meta = (DisplayName = "PathGroup", ToolTip = "General Purpose path ID. intended use case is to make it easy to union grouped path into single path"))
@@ -75,6 +79,15 @@ USTRUCT(BlueprintType)
 struct PCGUTILS_API FGetPathElementSettingsConfiguration
 {
 	GENERATED_BODY()
+
+	/** Write the authored PathName as an optional Name attribute in @Data. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Settings", meta=(PCG_Overridable, InlineEditConditionToggle))
+	bool bExtractPathName = false;
+
+	/** Name of the optional @Data Name attribute containing the authored path label. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Settings",
+		meta=(PCG_Overridable, EditCondition="bExtractPathName", EditConditionHides))
+	FName PathNameAttributeName = TEXT("PathName");
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Settings", meta = (InlineEditConditionToggle))
 	bool bExtractProcessPathGraph = true;
@@ -130,6 +143,10 @@ struct PCGUTILS_API FPointComponentData
 	
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "PCG")
 	FPCGOverrideGraph ProcessPointGraph;
+
+	/** Optional authored marker label, shared by the points supplied by this component. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="PCG")
+	FName MarkerName = NAME_None;
 	
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="PCG", meta = (DisplayName = "GroupID", ToolTip = "General Purpose path ID. intended use case is to make it easy to union grouped path into single path"))
 	int32 GroupID = 0;
@@ -172,6 +189,15 @@ USTRUCT(BlueprintType)
 struct PCGUTILS_API FGetPointElementSettingsConfiguration
 {
 	GENERATED_BODY()
+
+	/** Write the authored MarkerName as an optional Name attribute in the selected Attribute Domain. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Settings", meta=(PCG_Overridable, InlineEditConditionToggle))
+	bool bExtractMarkerName = false;
+
+	/** Name of the optional Name attribute containing the authored marker label, shared by its output points. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Settings",
+		meta=(PCG_Overridable, EditCondition="bExtractMarkerName", EditConditionHides))
+	FName MarkerNameAttributeName = TEXT("MarkerName");
 
 	/** Domain used for per-point attributes. Process Point Graph is always written to @Data. */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Settings")

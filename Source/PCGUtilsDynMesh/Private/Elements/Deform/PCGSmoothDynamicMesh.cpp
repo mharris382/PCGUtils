@@ -5,7 +5,6 @@
 #include "DynamicMesh/DynamicMesh3.h"
 #include "DynamicMesh/DynamicMeshAttributeSet.h"
 #include "GeometryScript/GeometryScriptSelectionTypes.h"
-#include "GeometryScript/MeshDeformFunctions.h"
 #include "GeometryScript/MeshNormalsFunctions.h"
 #include "Materials/MaterialInterface.h"
 #include "MeshTarget/PCGUtilsMeshTargetFunctions.h"
@@ -21,49 +20,136 @@ namespace
 {
 	using namespace UE::Geometry;
 
-	/**
-	 * One-ring-centroid Laplacian pass, mirroring the primitive GeometryScript's own
-	 * ApplyIterativeSmoothingToMesh uses internally (see Engine's MeshDeformFunctions.cpp). Alpha > 0 pulls
-	 * vertices toward their neighborhood average (expansion/smoothing); Alpha < 0 pushes them away from it
-	 * (contraction). Alternating a positive and a negative pass is the Taubin lambda|mu smoothing scheme.
-	 */
-	void ApplyLaplacianPass(FDynamicMesh3& Mesh, double Alpha)
+	/** What a guarded pass needs: each vertex's share of the move (0 = locked), and the triangles' starting shape. */
+	struct FSmoothPassContext
 	{
-		const int32 MaxVertices = Mesh.MaxVertexID();
-		TArray<FVector3d> SmoothPositions;
-		SmoothPositions.SetNum(MaxVertices);
+		const TArray<float>* Weights = nullptr;
+		bool bGuard = true;
+		double MinAreaRatio = 0.1;
+		/** Per triangle, before any smoothing: normal and area. A triangle that started degenerate is not checked. */
+		TArray<FVector3d> StartNormals;
+		TArray<double> StartAreas;
+	};
 
-		ParallelFor(MaxVertices, [&Mesh, &SmoothPositions, Alpha](int32 VertexID)
+	void CaptureStartShape(const FDynamicMesh3& Mesh, FSmoothPassContext& Pass)
+	{
+		Pass.StartNormals.SetNumZeroed(Mesh.MaxTriangleID());
+		Pass.StartAreas.SetNumZeroed(Mesh.MaxTriangleID());
+		for (const int32 Tri : Mesh.TriangleIndicesItr())
 		{
-			if (Mesh.IsVertex(VertexID))
-			{
-				FVector3d Centroid;
-				Mesh.GetVtxOneRingCentroid(VertexID, Centroid);
-				SmoothPositions[VertexID] = Lerp(Mesh.GetVertex(VertexID), Centroid, Alpha);
-			}
-		});
-
-		for (int32 VertexID = 0; VertexID < MaxVertices; ++VertexID)
-		{
-			if (Mesh.IsVertex(VertexID))
-			{
-				Mesh.SetVertex(VertexID, SmoothPositions[VertexID]);
-			}
+			FVector3d Normal;
+			double Area = 0.0;
+			FVector3d Centroid;
+			Mesh.GetTriInfo(Tri, Normal, Area, Centroid);
+			Pass.StartNormals[Tri] = Normal;
+			Pass.StartAreas[Tri] = Area;
 		}
 	}
 
-	/**
-	 * Taubin (lambda|mu) no-shrink smoothing. Geometry Script does not expose this algorithm - its only
-	 * smoothing entry point (ApplyIterativeSmoothingToMesh) is a plain uniform Laplacian smoother - so this is
-	 * a small native implementation, kept local to this element rather than a separate class since it is only
-	 * two alternating calls to the Laplacian pass above.
-	 */
-	void ApplyTaubinSmoothing(FDynamicMesh3& Mesh, int32 Iterations, double Lambda, double Mu)
+	/** Whether a triangle is still acceptable: not turned over against its starting facing, not collapsed. */
+	bool IsTriangleAcceptable(const FDynamicMesh3& Mesh, int32 Tri, const FSmoothPassContext& Pass)
 	{
-		for (int32 Iteration = 0; Iteration < Iterations; ++Iteration)
+		const double StartArea = Pass.StartAreas.IsValidIndex(Tri) ? Pass.StartAreas[Tri] : 0.0;
+		if (StartArea <= UE_DOUBLE_SMALL_NUMBER)
 		{
-			ApplyLaplacianPass(Mesh, Lambda);
-			ApplyLaplacianPass(Mesh, Mu);
+			return true; // Already degenerate before smoothing: nothing to protect.
+		}
+		FVector3d Normal;
+		double Area = 0.0;
+		FVector3d Centroid;
+		Mesh.GetTriInfo(Tri, Normal, Area, Centroid);
+		return Area >= Pass.MinAreaRatio * StartArea && Normal.Dot(Pass.StartNormals[Tri]) > 0.0;
+	}
+
+	/**
+	 * One Jacobi pass of one-ring-centroid Laplacian smoothing (the same as GeometryScript's
+	 * ApplyIterativeSmoothingToMesh), each vertex moving Alpha times its weight toward its neighbours' average. Alpha < 0
+	 * pushes away (Taubin's mu pass). Locked vertices (weight 0) stay put, so free ones relax against them.
+	 *
+	 * With the guard on, a move that would turn a triangle over or collapse it is undone: every vertex of an
+	 * unacceptable triangle that moved goes back, and that repeats until every triangle is acceptable. Undoing only ever
+	 * restores the previous, acceptable state, so it settles.
+	 */
+	void ApplyWeightedLaplacianPass(FDynamicMesh3& Mesh, double Alpha, const FSmoothPassContext& Pass)
+	{
+		const int32 MaxVertices = Mesh.MaxVertexID();
+		const TArray<float>& Weights = *Pass.Weights;
+		TArray<FVector3d> Previous;
+		TArray<FVector3d> Smoothed;
+		Previous.SetNumUninitialized(MaxVertices);
+		Smoothed.SetNumUninitialized(MaxVertices);
+
+		ParallelFor(MaxVertices, [&Mesh, &Previous, &Smoothed, &Weights, Alpha](int32 VertexID)
+		{
+			if (!Mesh.IsVertex(VertexID))
+			{
+				return;
+			}
+			const FVector3d Position = Mesh.GetVertex(VertexID);
+			Previous[VertexID] = Position;
+			const double Weight = Weights.IsValidIndex(VertexID) ? static_cast<double>(Weights[VertexID]) : 1.0;
+			if (Weight <= 0.0)
+			{
+				Smoothed[VertexID] = Position;
+				return;
+			}
+			FVector3d Centroid;
+			Mesh.GetVtxOneRingCentroid(VertexID, Centroid);
+			Smoothed[VertexID] = Lerp(Position, Centroid, Alpha * Weight);
+		});
+
+		TArray<int32> Moved;
+		for (int32 VertexID = 0; VertexID < MaxVertices; ++VertexID)
+		{
+			if (Mesh.IsVertex(VertexID) && Smoothed[VertexID] != Previous[VertexID])
+			{
+				Mesh.SetVertex(VertexID, Smoothed[VertexID]);
+				Moved.Add(VertexID);
+			}
+		}
+		if (!Pass.bGuard || Moved.IsEmpty())
+		{
+			return;
+		}
+
+		TArray<bool> IsMoved;
+		IsMoved.Init(false, MaxVertices);
+		for (const int32 VertexID : Moved)
+		{
+			IsMoved[VertexID] = true;
+		}
+		TArray<int32> ToCheck = Moved;
+		while (!ToCheck.IsEmpty())
+		{
+			TSet<int32> Revert;
+			TSet<int32> Checked;
+			for (const int32 VertexID : ToCheck)
+			{
+				for (const int32 Tri : Mesh.VtxTrianglesItr(VertexID))
+				{
+					bool bAlreadyChecked = false;
+					Checked.Add(Tri, &bAlreadyChecked);
+					if (bAlreadyChecked || IsTriangleAcceptable(Mesh, Tri, Pass))
+					{
+						continue;
+					}
+					const FIndex3i T = Mesh.GetTriangle(Tri);
+					for (int32 J = 0; J < 3; ++J)
+					{
+						if (IsMoved[T[J]])
+						{
+							Revert.Add(T[J]);
+						}
+					}
+				}
+			}
+			ToCheck.Reset();
+			for (const int32 VertexID : Revert)
+			{
+				Mesh.SetVertex(VertexID, Previous[VertexID]);
+				IsMoved[VertexID] = false;
+				ToCheck.Add(VertexID); // Its other triangles changed too: check them again.
+			}
 		}
 	}
 
@@ -153,6 +239,8 @@ TSharedPtr<const FPCGUtilsDynMeshProcessOperation> UPCGSmoothDynamicMeshSettings
 	Operation->SelectionBlend = SelectionBlend;
 	Operation->TaubinLambda = TaubinLambda;
 	Operation->TaubinMu = TaubinMu;
+	Operation->bPreventDegenerateTriangles = bPreventDegenerateTriangles;
+	Operation->MinimumTriangleAreaRatio = MinimumTriangleAreaRatio;
 	Operation->bLogMeshStats = bLogMeshStats;
 	return Operation;
 }
@@ -198,22 +286,11 @@ bool FPCGUtilsDynMeshSmoothOperation::Execute(
 	const int32 InputTriangleCount = PreSmoothMesh->TriangleCount();
 	const int32 MaxVertexID = PreSmoothMesh->MaxVertexID();
 
-	// Per-vertex blend factor between the original position (0) and the fully-smoothed position (1),
-	// combining boundary preservation, sharp-edge locking, and the optional smooth-weight attribute.
-	// Using a blend rather than excluding vertices from the smoothing pass itself means locked/dampened
-	// vertices end up exactly at their original position, regardless of which method produced the pass.
+	// Per-vertex share of each smoothing move (0 = locked, 1 = full), combining boundary preservation, sharp-edge
+	// locking, the optional smooth-weight attribute and (below) the selection. It is applied inside every pass, so a
+	// locked vertex never moves and its free neighbours relax against where it really is.
 	TArray<float> BlendWeight;
 	BlendWeight.Init(1.0f, MaxVertexID);
-
-	// Snapshot the pre-smoothing positions rather than reading them back from a separate source mesh: the
-	// working mesh may *be* the caller's mesh (whole-mesh input, or any deferred Builder evaluation), in
-	// which case there is no untouched copy left to compare against once smoothing has run.
-	TArray<FVector3d> OriginalPositions;
-	OriginalPositions.SetNumUninitialized(MaxVertexID);
-	for (const int32 VertexID : PreSmoothMesh->VertexIndicesItr())
-	{
-		OriginalPositions[VertexID] = PreSmoothMesh->GetVertex(VertexID);
-	}
 
 	if (bPreserveBoundaries)
 	{
@@ -267,55 +344,67 @@ bool FPCGUtilsDynMeshSmoothOperation::Execute(
 		}
 	}
 
-	if (Iterations > 0)
+	// A selection: only its vertices move during smoothing. The working copy is the whole mesh, and smoothing it all
+	// then snapping the unselected vertices back (as the final restore alone would) leaves the selected ones placed
+	// against neighbours that are no longer there, folding triangles along the selection's edge.
+	if (Handle.IsSelection())
 	{
-		switch (SmoothingMethod)
+		TArray<bool> IsSelected;
+		IsSelected.Init(false, MaxVertexID);
+		Handle.GetSelection().ProcessByVertexID(*PreSmoothMesh, [&IsSelected](int32 VertexID)
 		{
-		case EPCGUtilsDynamicMeshSmoothingMethod::UniformLaplacian:
-		{
-			FGeometryScriptIterativeMeshSmoothingOptions SmoothingOptions;
-			SmoothingOptions.NumIterations = Iterations;
-			SmoothingOptions.Alpha = FMath::Clamp(Strength, 0.0f, 1.0f);
-			UGeometryScriptLibrary_MeshDeformFunctions::ApplyIterativeSmoothingToMesh(
-				WorkingMesh, FGeometryScriptMeshSelection(), SmoothingOptions);
-			break;
-		}
-		case EPCGUtilsDynamicMeshSmoothingMethod::TaubinNoShrink:
-		{
-			const double Lambda = TaubinLambda;
-			const double Mu = TaubinMu;
-			const int32 LocalIterations = Iterations;
-			WorkingMesh->EditMesh([LocalIterations, Lambda, Mu](FDynamicMesh3& EditMesh)
+			if (IsSelected.IsValidIndex(VertexID))
 			{
-				ApplyTaubinSmoothing(EditMesh, LocalIterations, Lambda, Mu);
-			});
-			break;
-		}
-		default:
-			PCGLog::LogWarningOnGraph(LOCTEXT("UnsupportedMethod",
-				"Smooth Dynamic Mesh: unsupported smoothing method, mesh passed through unsmoothed."),
-				Invocation.Context);
-			break;
+				IsSelected[VertexID] = true;
+			}
+		});
+		for (const int32 VertexID : PreSmoothMesh->VertexIndicesItr())
+		{
+			if (!IsSelected[VertexID])
+			{
+				BlendWeight[VertexID] = 0.0f;
+			}
 		}
 	}
 
-	WorkingMesh->EditMesh([&OriginalPositions, &BlendWeight](FDynamicMesh3& EditMesh)
+	if (Iterations > 0)
 	{
-		for (const int32 VertexID : EditMesh.VertexIndicesItr())
+		if (SmoothingMethod != EPCGUtilsDynamicMeshSmoothingMethod::UniformLaplacian
+			&& SmoothingMethod != EPCGUtilsDynamicMeshSmoothingMethod::TaubinNoShrink)
 		{
-			if (!BlendWeight.IsValidIndex(VertexID))
-			{
-				continue;
-			}
-			const float Weight = BlendWeight[VertexID];
-			if (Weight >= 1.0f)
-			{
-				continue;
-			}
-			const FVector3d SmoothedPos = EditMesh.GetVertex(VertexID);
-			EditMesh.SetVertex(VertexID, Lerp(OriginalPositions[VertexID], SmoothedPos, (double)Weight));
+			PCGLog::LogWarningOnGraph(LOCTEXT("UnsupportedMethod",
+				"Smooth Dynamic Mesh: unsupported smoothing method, mesh passed through unsmoothed."),
+				Invocation.Context);
 		}
-	});
+		else
+		{
+			FSmoothPassContext Pass;
+			Pass.Weights = &BlendWeight;
+			Pass.bGuard = bPreventDegenerateTriangles;
+			Pass.MinAreaRatio = FMath::Clamp(static_cast<double>(MinimumTriangleAreaRatio), 0.0, 1.0);
+			const bool bTaubin = SmoothingMethod == EPCGUtilsDynamicMeshSmoothingMethod::TaubinNoShrink;
+			const double Alpha = FMath::Clamp(static_cast<double>(Strength), 0.0, 1.0);
+			const double Lambda = TaubinLambda;
+			const double Mu = TaubinMu;
+			const int32 LocalIterations = Iterations;
+			WorkingMesh->EditMesh([&Pass, bTaubin, Alpha, Lambda, Mu, LocalIterations](FDynamicMesh3& EditMesh)
+			{
+				CaptureStartShape(EditMesh, Pass);
+				for (int32 Iteration = 0; Iteration < LocalIterations; ++Iteration)
+				{
+					if (bTaubin)
+					{
+						ApplyWeightedLaplacianPass(EditMesh, Lambda, Pass);
+						ApplyWeightedLaplacianPass(EditMesh, Mu, Pass);
+					}
+					else
+					{
+						ApplyWeightedLaplacianPass(EditMesh, Alpha, Pass);
+					}
+				}
+			});
+		}
+	}
 
 	if (bRecomputeNormalsAfterSmoothing)
 	{

@@ -90,6 +90,20 @@ public:
 		EditCondition="bUseSmoothWeightAttribute", EditConditionHides))
 	FName SmoothWeightAttributeName = "SmoothWeight";
 
+	/**
+	 * Never folds or collapses a triangle: a vertex move that would flip a triangle (turn it over against its original
+	 * facing) or shrink it below Minimum Triangle Area Ratio of its original area is not made that iteration. Uniform
+	 * Laplacian pulls a vertex toward the plain average of its neighbours, which on the uneven triangles a boolean
+	 * leaves can drag it across a neighbour; this stops that. Off reproduces unguarded smoothing.
+	 */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Smoothing|Safety", meta=(PCG_Overridable))
+	bool bPreventDegenerateTriangles = true;
+
+	/** The smallest a triangle may become, as a fraction of its area before smoothing (0.1 = a tenth). */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Smoothing|Safety", meta=(PCG_Overridable, ClampMin="0.0", ClampMax="1.0",
+		UIMin="0.0", UIMax="0.9", EditCondition="bPreventDegenerateTriangles", EditConditionHides))
+	float MinimumTriangleAreaRatio = 0.1f;
+
 	/** Recomputes smooth (area/angle-weighted) per-vertex normals after smoothing. This only affects shading; it does not remove geometric ridges by itself, so it is a shading cleanup step, not a substitute for smoothing. */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Smoothing", meta=(PCG_Overridable))
 	bool bRecomputeNormalsAfterSmoothing = true;
@@ -129,7 +143,9 @@ class PCGUTILSDYNMESH_API FPCGSmoothDynamicMeshElement : public FPCGUtilsDynMesh
 
 /**
  * Laplacian / Taubin smoothing with per-vertex locking, run through the Mesh Target layer so a selection is
- * blended back rather than hard-cut.
+ * blended back rather than hard-cut. Locks (unselected vertices, boundaries, sharp edges, the weight map) apply inside
+ * every iteration, so free vertices relax against fixed ones rather than being smoothed against neighbours that are
+ * snapped back afterwards (which folds triangles along the selection's edge).
  */
 class PCGUTILSDYNMESH_API FPCGUtilsDynMeshSmoothOperation final : public FPCGUtilsDynMeshProcessOperation
 {
@@ -147,6 +163,8 @@ public:
 	FPCGUtilsSelectionBlendOptions SelectionBlend;
 	float TaubinLambda = 0.5f;
 	float TaubinMu = -0.53f;
+	bool bPreventDegenerateTriangles = true;
+	float MinimumTriangleAreaRatio = 0.1f;
 	bool bLogMeshStats = false;
 
 	virtual bool Execute(

@@ -283,6 +283,7 @@ bool FPCGUtilsDynMeshOperandProcessBaseElement::ExecuteInternal(FPCGContext* Con
 			Context->OutputData.TaggedData.Add(MoveTemp(Output));
 		}
 	}
+	Settings->EmitAdditionalOutputs(Context);
 	return true;
 }
 

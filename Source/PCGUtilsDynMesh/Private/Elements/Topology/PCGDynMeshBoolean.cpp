@@ -4,6 +4,7 @@
 #include "Helpers/PCGUtilsParallelInputs.h"
 
 #include "Data/PCGDynamicMeshData.h"
+#include "Factories/PCGUtilsDynMeshRoutedSelectionFactory.h"
 #include "DynamicMesh/DynamicMesh3.h"
 #include "DynamicMesh/MeshTransforms.h"
 #include "Materials/MaterialInterface.h"
@@ -162,7 +163,8 @@ namespace
 			const FDynamicMesh3* Reference = Selector->ReferenceMesh->GetDynamicMesh()->GetMeshPtr();
 			FDynamicMesh3::FSameAsOptions Options;
 			Options.bCheckEdgeIDs = true;
-			bMatches = Reference == &Evaluation.Mesh || Reference->IsSameAs(Evaluation.Mesh, Options);
+			bMatches = PCGUtilsDynMeshSelectionRouting::GetMatchDistance(Evaluation.MeshData, Selector->RouteMesh ? Selector->RouteMesh.Get() : Selector->ReferenceMesh.Get()) != INDEX_NONE &&
+				(Reference == &Evaluation.Mesh || Reference->IsSameAs(Evaluation.Mesh, Options));
 			return true; // Another result mesh is an empty match, never an application of stale element IDs.
 		}
 		virtual bool TestElement(int32 ID) const override
@@ -226,8 +228,8 @@ namespace
 	}
 
 	void BooleanEmitSelectors(const UPCGDynamicMeshData* Reference, const FBooleanResultRegions& Regions,
-		bool bOverlap, bool bEffected, FName OverlapTag, FName EffectedTag, FPCGContext* Context,
-		FPCGUtilsDynMeshProcessOutcome& Outcome)
+		bool bOverlap, bool bEffected, bool bIncludeAdjacentVertices, FName OverlapTag, FName EffectedTag, FPCGContext* Context,
+		FPCGUtilsDynMeshProcessOutcome& Outcome, const UPCGDynamicMeshData* RouteMesh = nullptr)
 	{
 		using namespace UE::Geometry;
 		const FDynamicMesh3& Mesh = *Reference->GetDynamicMesh()->GetMeshPtr();
@@ -236,6 +238,7 @@ namespace
 			if (bRim ? !bOverlap : !bEffected) { continue; }
 			auto* Selector = PCGUtilsAsyncObjects::NewObject<UPCGDynMeshBooleanSelectionFactoryData>(Context);
 			Selector->ReferenceMesh = Reference;
+			Selector->RouteMesh = RouteMesh ? RouteMesh : Reference;
 			Selector->bOverlapping = bRim;
 			for (int32 EID : Regions.RimEdges) { if (Mesh.IsEdge(EID)) { Selector->RimEdgeIDs.Add(EID); } }
 			if (bRim)
@@ -248,6 +251,16 @@ namespace
 					Selector->VertexIDs.Add(V.A); Selector->VertexIDs.Add(V.B);
 					if (Mesh.IsTriangle(T.A)) { Selector->TriangleIDs.Add(T.A); }
 					if (Mesh.IsTriangle(T.B)) { Selector->TriangleIDs.Add(T.B); }
+				}
+				if (bIncludeAdjacentVertices)
+				{
+					// Triangle -> vertex conversion includes these corners. Make that broader vertex region
+					// explicit and optional, without expanding the edge selection used by bevel operations.
+					for (int32 TID : Selector->TriangleIDs)
+					{
+						const FIndex3i V = Mesh.GetTriangle(TID);
+						for (int32 Corner = 0; Corner < 3; ++Corner) { Selector->VertexIDs.Add(V[Corner]); }
+					}
 				}
 			}
 			else
@@ -320,6 +333,7 @@ namespace
 		bool bOutputSelectors = false;
 		bool bOverlap = true;
 		bool bEffected = true;
+		bool bIncludeAdjacentVertices = false;
 		FName OverlapTag;
 		FName EffectedTag;
 
@@ -397,7 +411,7 @@ namespace
 				{
 					// Rejected empty result is a no-op; retain regions from earlier sequential applications.
 					if (Invocation.PreviousOperandOutcome) { OutOutcome.AuxiliaryDataOutputs = Invocation.PreviousOperandOutcome->AuxiliaryDataOutputs; }
-					if (OutOutcome.AuxiliaryDataOutputs.IsEmpty()) { BooleanEmitSelectors(Invocation.MeshData, {}, bOverlap, bEffected, OverlapTag, EffectedTag, Invocation.Context, OutOutcome); }
+					if (OutOutcome.AuxiliaryDataOutputs.IsEmpty()) { BooleanEmitSelectors(Invocation.MeshData, {}, bOverlap, bEffected, bIncludeAdjacentVertices, OverlapTag, EffectedTag, Invocation.Context, OutOutcome); }
 				}
 				return true;
 			}
@@ -446,7 +460,7 @@ namespace
 			{
 				Target->SetMesh(MoveTemp(ResultMesh));
 				const auto* Reference = Invocation.bLastOperand ? Invocation.MeshData : CastChecked<UPCGDynamicMeshData>(Invocation.MeshData->DuplicateData(Invocation.Context));
-				BooleanEmitSelectors(Reference, Regions, bOverlap, bEffected, OverlapTag, EffectedTag, Invocation.Context, OutOutcome);
+				BooleanEmitSelectors(Reference, Regions, bOverlap, bEffected, bIncludeAdjacentVertices, OverlapTag, EffectedTag, Invocation.Context, OutOutcome, Invocation.MeshData);
 				return true;
 			}
 
@@ -462,7 +476,7 @@ namespace
 			if (bOutputSelectors)
 			{
 				const auto* Reference = Invocation.bLastOperand ? Invocation.MeshData : CastChecked<UPCGDynamicMeshData>(Invocation.MeshData->DuplicateData(Invocation.Context));
-				BooleanEmitSelectors(Reference, RegionsA, bOverlap, bEffected, OverlapTag, EffectedTag, Invocation.Context, OutOutcome);
+				BooleanEmitSelectors(Reference, RegionsA, bOverlap, bEffected, bIncludeAdjacentVertices, OverlapTag, EffectedTag, Invocation.Context, OutOutcome, Invocation.MeshData);
 			}
 
 			if (MeshB.TriangleCount() > 0)
@@ -478,7 +492,7 @@ namespace
 				BData->InitializeFromData(Invocation.OperandMeshData);
 				BData->Initialize(MoveTemp(MeshB), Materials);
 				OutOutcome.AuxiliaryMeshOutputs.Add({ ContributionPinB, BData });
-				if (bOutputSelectors) { BooleanEmitSelectors(BData, RegionsB, bOverlap, bEffected, OverlapTag, EffectedTag, Invocation.Context, OutOutcome); }
+				if (bOutputSelectors) { BooleanEmitSelectors(BData, RegionsB, bOverlap, bEffected, bIncludeAdjacentVertices, OverlapTag, EffectedTag, Invocation.Context, OutOutcome); }
 			}
 			return true;
 		}
@@ -493,7 +507,7 @@ FText UPCGDynMeshBooleanSettings::GetDefaultNodeTitle() const
 
 FText UPCGDynMeshBooleanSettings::GetNodeTooltipText() const
 {
-	return LOCTEXT("Tooltip", "Boolean operation on whole DynMeshes or deferred Builders. InA passes through unchanged when InB provides no data. Partial input selections are unsupported. Output Selectors adds one pin carrying tagged intersection-rim and effected-geometry selectors for downstream beveling, painting, and Selection Logic. Selectors require concrete DynMeshes and describe the Boolean result or geometry-identical copies. Union and Subtract can place operand faces in a fresh PolyGroup. Separate Operand Contributions splits the result into Out A and Out B by triangle provenance and also requires concrete meshes. Both meshes must already share the same coordinate space.");
+	return LOCTEXT("Tooltip", "Boolean operation on whole DynMeshes or deferred Builders. InA passes through unchanged when InB provides no data. Partial input selections are unsupported. Output Selectors adds one pin carrying tagged intersection-rim and effected-geometry selectors for downstream beveling, painting, and Selection Logic. Selectors require concrete DynMeshes and describe the matching Boolean result or unchanged copies retaining PCG metadata inheritance. Union and Subtract can place operand faces in a fresh PolyGroup. Separate Operand Contributions splits the result into Out A and Out B by triangle provenance and also requires concrete meshes. Both meshes must already share the same coordinate space.");
 }
 #endif
 
@@ -502,6 +516,7 @@ TSharedPtr<const FPCGUtilsDynMeshProcessOperation> UPCGDynMeshBooleanSettings::C
 	TSharedPtr<FDynMeshBooleanOperation> Operation = MakeShared<FDynMeshBooleanOperation>();
 	Operation->bOutputSelectors = bOutputSelectors;
 	Operation->bOverlap = bOverlappingSelector;
+	Operation->bIncludeAdjacentVertices = bIncludeAdjacentVertices;
 	Operation->bEffected = bEffectedSelector;
 	Operation->OverlapTag = OverlappingSelectorTag;
 	Operation->EffectedTag = EffectedSelectorTag;
@@ -531,7 +546,7 @@ TArray<FPCGPinProperties> UPCGDynMeshBooleanSettings::OutputPinProperties() cons
 	{
 		Pins.Emplace(PCGUtilsDynMeshSelectionFactoryConstants::OutputPin,
 			FPCGUtilsDynMeshSelectionFactoryDataTypeInfo::AsId(), true, true,
-			LOCTEXT("SelectorPin", "Tagged overlapping and effected regions of each Boolean result. Filter by tag before connecting to a Selector input."));
+			LOCTEXT("SelectorPin", "One tagged selector per region category across all Boolean results. Each selector routes to the matching mesh. Filter by category tag before connecting to a Selector input."));
 	}
 	return Pins;
 }
@@ -547,19 +562,47 @@ void UPCGDynMeshBooleanSettings::EmitAdditionalOutputs(FPCGContext* Context) con
 {
 	// The operand base's by-reference passthrough skips the operation. Still emit empty selectors so a
 	// downstream Selector input cannot become disconnected in effect and accidentally process the whole mesh.
-	if (!bOutputSelectors || !Context->InputData.GetInputsByPin(PCGUtilsDynMeshOperandProcessConstants::OperandPin).IsEmpty()) { return; }
-	const TArray<FPCGTaggedData> MeshOutputs = Context->OutputData.TaggedData;
-	for (const auto& MeshOutput : MeshOutputs)
+	if (!bOutputSelectors) { return; }
+	if (Context->InputData.GetInputsByPin(PCGUtilsDynMeshOperandProcessConstants::OperandPin).IsEmpty())
 	{
-		const auto* MeshData = Cast<UPCGDynamicMeshData>(MeshOutput.Data);
-		if (!MeshData) { continue; }
-		FPCGUtilsDynMeshProcessOutcome Outcome;
-		BooleanEmitSelectors(MeshData, {}, bOverlappingSelector, bEffectedSelector, OverlappingSelectorTag, EffectedSelectorTag, Context, Outcome);
-		for (const auto& Aux : Outcome.AuxiliaryDataOutputs)
+		const TArray<FPCGTaggedData> MeshOutputs = Context->OutputData.TaggedData;
+		for (const auto& MeshOutput : MeshOutputs)
 		{
-			auto& Output = Context->OutputData.TaggedData.Emplace_GetRef(MeshOutput);
-			Output.Data = Aux.Data; Output.Pin = Aux.Pin; Output.Tags.Append(Aux.Tags);
+			const auto* MeshData = Cast<UPCGDynamicMeshData>(MeshOutput.Data);
+			if (!MeshData) { continue; }
+			FPCGUtilsDynMeshProcessOutcome Outcome;
+			BooleanEmitSelectors(MeshData, {}, bOverlappingSelector, bEffectedSelector, bIncludeAdjacentVertices, OverlappingSelectorTag, EffectedSelectorTag, Context, Outcome);
+			for (const auto& Aux : Outcome.AuxiliaryDataOutputs)
+			{
+				auto& Output = Context->OutputData.TaggedData.Emplace_GetRef(MeshOutput);
+				Output.Data = Aux.Data; Output.Pin = Aux.Pin; Output.Tags.Append(Aux.Tags);
+			}
 		}
+	}
+	// Bundle by category, not by inherited tags or output order. Each route retains its own result identity.
+	// Leave a single result's selector as-is; multi-mesh output is one datum per enabled category.
+	for (bool bRim : { true, false })
+	{
+		TArray<int32> Indices;
+		for (int32 I = 0; I < Context->OutputData.TaggedData.Num(); ++I)
+		{
+			const auto& Output = Context->OutputData.TaggedData[I];
+			const auto* Child = Cast<UPCGDynMeshBooleanSelectionFactoryData>(Output.Data);
+			if (Output.Pin == PCGUtilsDynMeshSelectionFactoryConstants::OutputPin && Child && Child->bOverlapping == bRim) { Indices.Add(I); }
+		}
+		if (Indices.Num() < 2) { continue; }
+		auto* Routed = PCGUtilsAsyncObjects::NewObject<UPCGUtilsDynMeshRoutedSelectionFactoryData>(Context);
+		TSet<FString> Tags;
+		for (int32 I : Indices)
+		{
+			const auto& Output = Context->OutputData.TaggedData[I];
+			const auto* Child = CastChecked<UPCGDynMeshBooleanSelectionFactoryData>(Output.Data);
+			auto& Route = Routed->Routes.Emplace_GetRef(); Route.Mesh = Child->RouteMesh ? Child->RouteMesh : Child->ReferenceMesh; Route.Selector = Child;
+			Routed->AddDataDependency(Child); Routed->AddDataDependency(Child->ReferenceMesh);
+			Tags.Append(Output.Tags);
+		}
+		auto& Output = Context->OutputData.TaggedData[Indices[0]]; Output.Data = Routed; Output.Tags = MoveTemp(Tags);
+		for (int32 I = Indices.Num() - 1; I > 0; --I) { Context->OutputData.TaggedData.RemoveAt(Indices[I], 1, EAllowShrinking::No); }
 	}
 }
 
@@ -581,6 +624,10 @@ void UPCGDynMeshBooleanSelectionFactoryData::AddToCrc(FArchiveCrc32& Ar, bool bF
 	if (!bFullDataCrc) { return; }
 	uint32 MeshCrc = ReferenceMesh ? ReferenceMesh->GetOrComputeCrc(true).GetValue() : 0;
 	Ar << MeshCrc;
+	uint32 Identity = ReferenceMesh ? ReferenceMesh->GetUniqueID() : 0;
+	Ar << Identity;
+	uint32 RouteIdentity = RouteMesh ? RouteMesh->GetUniqueID() : 0;
+	Ar << RouteIdentity;
 	bool bRim = bOverlapping;
 	Ar << bRim;
 	for (const TSet<int32>* IDs : { &VertexIDs, &EdgeIDs, &RimEdgeIDs, &TriangleIDs })

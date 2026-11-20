@@ -68,12 +68,15 @@ public:
 public:
 	UPCGUtilsDynMeshTopologyProcessBaseSettings();
 
+	virtual bool HasDynamicPins() const override { return true; }
+	virtual FPCGDataTypeIdentifier GetCurrentPinTypesID(const UPCGPin* InPin) const override;
+
 	/** Put the result faces in one fresh default PolyGroup, and record membership in a named extended layer. */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Result", meta=(PCG_Overridable, EditCondition="!bOutputResultSelector"))
 	bool bAssignResultPolygroup = false;
 
-	/** Emit a reusable Selector on the Result pin. Automatically enables result PolyGroup assignment, including on deferred Builders. */
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Result", meta=(PCG_Overridable))
+	/** Show the Result pin and emit a reusable Selector. Automatically enables result PolyGroup assignment, including on deferred Builders. Changes graph layout, so this option cannot be overridden during execution. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Result")
 	bool bOutputResultSelector = false;
 
 	/**

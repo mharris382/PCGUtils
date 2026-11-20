@@ -84,8 +84,10 @@ from a separate **Select | By PolyGroup** node (set **Group Layer Name** to that
 Reusing an explicit name replaces that region. Empty result regions clear the named layer and produce an empty
 Selector result; there is no fallback to the highest group. The emitted Selector also selects nothing on
 meshes that lack its named layer. One descriptor serves all outputs and all Builder seeds without owning a mesh.
-The **Result** pin is always declared and keeps its Selector type when `Out` becomes a Builder pin, so
-property overrides may enable it. It emits data only when enabled and a primary output was produced.
+The **Result** pin appears only while **Output Result Selector** is enabled. It keeps its Selector type
+when `Out` becomes a Builder pin or an `@Data` distance disables Builder support. The toggle controls graph
+layout and cannot be overridden during execution; enable it on the node before wiring its Result output.
+It emits data only when a primary output was produced.
 
 **Output pin type.** By default a process node's `Out` pin shows the type it will emit: purple Dynamic Mesh,
 or DynMesh Selection when **Output Selection Data** is on, and a Builder pin when a Builder is wired in. This
@@ -149,6 +151,47 @@ named region. Each retained region adds one extended integer PolyGroup layer.
   Its existing bare-mesh behavior (bevel every edge) is retained. It now supports result Selection data and a
   reusable Selector on its **Result** pin. `Bevel Distance` is a non-negative input shorthand (default attribute
   `BevelDistance`); a negative `@Data` value is an error, not clamped.
+- **Clamp Overlap** defaults on, including for existing Bevel nodes. Its **Clamp Mode** appears only while
+  enabled. **Per Vertex** (default, replacing the old Regional behavior without changing its saved enum value)
+  reduces only endpoints involved in a geometric conflict. It has no region radius or distance-based propagation;
+  one end of an edge can keep the requested offset while the other is reduced. The solver first tries the smallest
+  single-endpoint reduction that resolves each conflict, then tries to restore reduced amounts against the complete
+  result. This is a local solve, not a proof of a globally optimal offset assignment.
+  **Selection Island** uses one amount per connected selected-edge island; connections through unselected
+  edges do not merge islands. **Whole Mesh** applies the smallest limit
+  to the complete selection. Selection and face-angle filtering happen before islands are formed.
+  The resolver measures the engine operation's offset motion, limits amounts before the first retained face/edge
+  collapse with 1% clearance, and reduces offsets when the candidate introduces folds, degenerate generated faces or
+  non-adjacent intersections. Chamfers, rounded profiles, per-mesh `@Data` distances and deferred Builders are
+  supported. **Minimum Bevel Distance** (default `0.001` mesh units) sets the smallest positive offset to retain.
+  In Per Vertex mode, an endpoint requiring less than this distance, or one unable to form valid positive-width
+  geometry, causes only its incident selected edges to be omitted. The bevel is rebuilt from the original mesh
+  with the remaining selection, avoiding coincident vertices or zero-area faces. A warning reports the omitted
+  edge count. The minimum is a constant or a required non-negative numeric `@Data.MinimumBevelDistance` value;
+  attribute mode requires realized meshes while clamping is enabled. It is ignored with Clamp Overlap disabled.
+  If every edge is unusable, or the native operation cannot be resolved, the input passes through with an empty
+  result selection and an explanatory warning. Disable **Clamp Overlap** to apply the requested distance directly.
+  This is conservative geometric limiting, not a guarantee against every possible self-intersection (pairs
+  sharing a vertex are excluded from the intersection query). Existing unrelated intersections are tolerated,
+  including original shared point/edge contacts whose vertex IDs were separated by the engine's bowtie repair.
+  New crossings beyond those original contacts are still rejected.
+  The geometry-only `PCGUtilsDynMeshAmountClamp` library owns island resolution, endpoint limits and validation;
+  `PCGUtilsDynMeshBevelClamp` adapts the native bevel, rebuilds after omissions, and refreshes non-uniform
+  normals/UVs. A real native Inset regression exercises the shared library.
+  **Inset Faces does not yet expose Clamp Overlap**; its future adapter
+  must honor the library's stable-topology/affine-motion contract, especially when projection or relaxation is on.
+- **Filter By Face Angle** on Bevel Edges optionally narrows its incoming edges using the geometric normals of
+  each edge's two adjacent faces. **Face Normal Comparison** and its visual preview appear only when enabled.
+  It uses the same normal-agreement control as **Select | By Normal**: the default **Degrees / Less or Equal /
+  45 / Unsigned Comparison** keeps unsigned normal differences of at least 45 degrees (raw face turns from
+  45 to 135 degrees). Opposite normals count as aligned. Flat triangulation edges
+  are excluded. Boundary edges and edges incident to a degenerate face have no usable face pair and are excluded.
+  An explicit selection that the comparison empties does no work; the filter never selects other edges instead.
+  The filter defaults off to preserve existing graphs. Constant thresholds also work in deferred Builder chains.
+  Attribute mode reads a required numeric `@Data` threshold per realized mesh (default `@Data.FaceAngleThreshold`);
+  missing or invalid values are errors, with no constant fallback. Realize Builders first for attribute thresholds.
+  **Select | By Face Angle** exposes the same predicate independently in Selector and materialized Selection modes,
+  with normal automatic conversion from native edges to vertex or face domains.
 
 Extrude and Inset enable **Require Selection** by default; Bevel leaves it off for compatibility. All three accept
 DynMesh, Selection and Builder inputs and the optional Selector. The shared resolver converts input selection
@@ -258,23 +301,36 @@ Selector input or enable partial Boolean operations.
   triangulation diagonals are excluded from the edge domain. For `Trim*`, this is the new cut boundary; for
   `New PolyGroup*`, it is the interface between newly assigned groups and retained groups. Existing mesh/group
   boundaries are excluded. All seven Boolean operations support both categories.
+- **Include Adjacent Vertices** (off by default) also selects off-rim corner vertices of triangles touching the
+  intersection rim. Enable it when the surrounding triangulation should participate in smoothing or painting.
+  It changes only the Overlapping selector's vertex domain: exact rim edges used by beveling and the Effected
+  category are unchanged. For a point preview, set **Realize Selection > Element Type** to **Vertex** before
+  **Selection To Points**. Realizing as triangles selects whole faces; converting those faces to vertices
+  includes their other corners regardless of this Boolean option.
 - **Effected Selector** (on by default) selects surviving source faces that were split or modified, added
   operand/cavity faces, repair faces, and the intersection rim. The vertex and edge domains include the vertices
   and edges of those faces. Deleted geometry has no membership in the result. Use `Effected AND NOT Overlapping`
   in vertex-domain Selection Logic to exclude the rim from a cavity-coloring selection.
 - **Overlapping Selector Tag** and **Effected Selector Tag** are editable (defaults `Overlapping` and `Effected`).
-  Each selector also inherits its result's A/B/Both tags. Filter the output by category before connecting to a
-  process's single-Selector input. Several result meshes produce one selector per enabled category per result;
-  combine the same category with Selection Logic OR when processing several results together.
+  Each enabled category emits **one selector datum across the complete result batch**. For multiple meshes,
+  that selector contains an internal switchboard selecting the matching result's membership. Filter the output
+  by category before connecting to a process's single-Selector input; the mesh batch can remain on one wire.
+  Bundles carry the union of their results' inherited A/B/Both tags. Tags filter categories/batches; routing is
+  determined by mesh identity, independently of tags, input order or identical geometry. Missing routes select
+  nothing. With one result, the category uses its ordinary result selector directly.
 - Sequential operands combine surviving regions from all applications into each final category. With **Separate
-  Operand Contributions**, each emitted partition gets its own selectors, remapped after compaction. As with the
+  Operand Contributions**, each emitted partition gets its own route, remapped after compaction. As with the
   existing geometry outputs, only the final operand's B partition is emitted.
 - Missing operands, unchanged geometry, or an empty result rejected by **Allow Empty Result** produce empty
   categories. In a sequential fold, rejecting a later result retains the earlier regions. An operand entirely
   inside the primary can produce cavity faces without any intersection rim.
 
-Result selectors capture element membership on their corresponding Boolean output and geometry-identical
-copies. They are intended for immediate downstream postprocessing. An unrelated mesh is an empty match; after
+Result selectors capture element membership on their corresponding Boolean output and unchanged descendant
+copies. Routing uses native PCG metadata inheritance through `InitializeFromData` / `DuplicateData`, so it needs
+no extra `@Data` identifier or authored attribute. An unrelated identical mesh or a sibling branch is an empty
+match. Copies that discard metadata inheritance also lose the route. Bevel/Extrude/Inset result selectors already
+use one named-region selector for the complete batch, including deferred Builders; they retain that contract.
+Selectors are intended for immediate downstream postprocessing. After
 changing topology or positions, regenerate the selectors from a Boolean result. Membership tracking does not
 write PCG attributes, recolor the mesh, or replace existing PolyGroups. With output disabled, the ordinary
 Geometry Script execution and deferred Builder support are unchanged.
@@ -676,6 +732,35 @@ methods honour a selection.
 Lightmap channel: UV Channels (Copy UV0 to UV1) or Auto UV on layer 1, then Pack UV Islands on layer 1 with
 Fraction margin about 2 / lightmap resolution. Coverage: `PCGUtils.DynMesh.UV`.
 
+## Tangents
+
+**DynMesh | Compute Tangents** (`Elements/Attributes/PCGDynMeshComputeTangents.h`) computes the tangent and bitangent
+overlays of the whole mesh from its normals and `UV Layer` (default 0), with Geometry Script `ComputeTangents`.
+`Tangent Type` is Fast MikkT (default, close to a static mesh build), Standard MikkT, or Per Triangle. A missing normal
+overlay or an out-of-range UV layer is a warning, and the mesh passes through unchanged.
+
+Run it after the last boolean, append or merge and before Spawn Dynamic Mesh. A spawned Dynamic Mesh Component
+defaults to Externally Provided tangents. If any piece of a merged mesh brought tangents, triangles from a piece that
+didn't (a mesh built in code, the cut faces of a boolean) have none. Without any tangents, the component makes a frame
+from the normal alone. Either way a normal-mapped material lights those triangles differently: a seam that shows when
+lit but not in Unlit. A Difference boolean also negates any tangents the cut mesh had, along with its normals.
+
+Whole mesh only: tangents are averaged across neighbouring triangles, so a partial recompute would leave a seam at
+the selection's edge. A selection or Selector is ignored, with a warning. Coverage: `PCGUtils.DynMesh.ComputeTangents`.
+
+## Smoothing
+
+**DynMesh | Smooth** runs Uniform Laplacian or Taubin No-Shrink as one native, weighted Jacobi pass (the same
+one-ring maths as Geometry Script's `ApplyIterativeSmoothingToMesh`). Each vertex's share of a move combines the
+selection, Preserve Boundaries, Preserve Sharp Edges and the weight map, and applies **inside every pass**: a locked
+vertex never moves and its free neighbours relax against it. Until 2026-11-18 the whole working copy was smoothed and
+locked vertices were snapped back afterwards, which folded triangles along a selection's edge.
+
+**Prevent Degenerate Triangles** (on) undoes any move that would turn a triangle over against its original facing, or
+shrink it below **Minimum Triangle Area Ratio** (0.1) of its original area. Uniform Laplacian pulls a vertex toward the
+plain average of its neighbours, which on a boolean's uneven triangles can lie outside them. Coverage:
+`PCGUtils.DynMesh.Smooth.NoDegenerateTriangles`.
+
 ## Mesh properties
 
 **DynMesh | Properties** writes facts about each mesh to its `@Data` domain and passes the mesh through. The
@@ -840,11 +925,27 @@ node's optional `Selector` input, including processes in deferred Builder chains
   true (any incident selected face); disable it to require all incident faces. Existing incoming selections are
   intersected by the standard process resolver.
 
-### Inside Mesh Selector
+### Mesh Inclusion Selector
 
-**Select | Inside Mesh** selects the vertices, edges or triangles of the tested mesh that lie inside the volume
-enclosed by the DynMeshes on its `Volume` pin. **Invert Selection** selects what lies outside instead.
+**Select | Mesh Inclusion** (formerly Select | Inside Mesh; same class, so existing graphs keep working) selects
+the vertices, edges or triangles of the tested mesh by how they relate to the volume enclosed by the DynMeshes on
+its `Volume` pin. **Check Type** mirrors PCGEx's *Filter : Inclusion (Dynamic Mesh)*:
 
+| Check Type | Selects an element when |
+|---|---|
+| Is Inside (default) | its center is inside a Volume mesh |
+| Intersects | its center is outside, and the element (grown by Expansion) touches or crosses a Volume surface |
+| Is Inside or Intersects | its center is inside, or the element crosses a surface |
+| Is Outside or Intersects | its center is outside every Volume mesh, or the element crosses a surface |
+| Is Fully Inside | its center is inside and the element stays clear of the surface |
+
+**Invert Selection** complements the result.
+
+- PCGEx tests a point's bounds box. Mesh elements have no bounds, so crossing tests the element's exact shape: the
+  triangle itself, the edge segment, or the vertex point. **Expansion** (constant or `@Data`, default attribute
+  `Expansion`, must be 0 or greater, ignored by Is Inside) grows that shape into a capsule of that radius, so an
+  element within Expansion of a surface counts as crossing. At 0, a triangle that passes through the surface
+  crosses it, but a vertex crosses only if it lies exactly on it.
 - Inside is the generalized winding number (`TFastWindingTree`) above **Winding Threshold** (0.5, advanced),
   so volumes with small holes or overlapping parts still have a sensible inside. Each element is tested at its
   center (vertex, edge midpoint, triangle centroid). Several Volume meshes act as their union.
@@ -883,6 +984,17 @@ NOT has exactly one child, so priority only matters when that NOT group is neste
 
 Attribute-only whole-mesh operations may eventually need dedicated compositors for colors, UVs, normals,
 materials, polygroups, or weight maps. Do not misuse vertex-position restoration for non-position results.
+
+## Mesh vertices to points
+
+`DynMesh | To Points` emits one point per mesh vertex in vertex-index order. Point Z follows
+the vertex normal. When a usable tangent is available, point X follows that tangent after
+orthogonalization against the normal; missing, unset, zero, or parallel tangents retain the
+normal-only rotation. At split overlays, the normal and tangent come from the same face corner.
+World-space output rotates both directions by the target actor rotation. Vertex colors and
+the optional source vertex ID are preserved.
+
+`Selector From Points` uses the same compact conversion icon as `DynMesh | To Points`.
 
 ## Coordinate spaces
 
@@ -955,3 +1067,7 @@ The current base can be improved further:
   for each input.
 - Add automation tests covering whole mesh, materialized selection, selector selection, intersection, empty
   selections, required-selection failures, domain conversion, and each restoration strategy.
+
+## Mesh repair
+
+See [Mesh Repair](Mesh%20Repair.md) for Select | Mesh Issues and DynMesh | Repair Mesh: intersection, collapsed-face and sliver detection, local patch repair, and optional planar cleanup.

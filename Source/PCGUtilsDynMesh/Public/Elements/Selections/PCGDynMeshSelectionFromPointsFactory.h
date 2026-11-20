@@ -3,6 +3,7 @@
 #pragma once
 
 #include "CoreMinimal.h"
+#include "PCGCommon.h"
 #include "Elements/Selections/PCGUtilsDynMeshSelectionSource.h"
 #include "Factories/PCGUtilsDynMeshDomainSelectionFactory.h"
 
@@ -73,6 +74,12 @@ class PCGUTILSDYNMESH_API UPCGDynMeshSelectionFromPointsFactoryProviderSettings
 
 public:
 #if WITH_EDITOR
+	virtual bool ShouldDrawNodeCompact() const override { return true; }
+	virtual bool GetCompactNodeIcon(FName& OutCompactNodeIcon) const override
+	{
+		OutCompactNodeIcon = PCGNodeConstants::Icons::CompactNodeConvert;
+		return true;
+	}
 	virtual FName GetDefaultNodeName() const override { return TEXT("DynMeshSelectionFromPointsFactory"); }
 	virtual FText GetDefaultNodeTitle() const override;
 	virtual FText GetNodeTooltipText() const override;

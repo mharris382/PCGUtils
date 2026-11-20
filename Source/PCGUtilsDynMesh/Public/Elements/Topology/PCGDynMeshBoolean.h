@@ -15,7 +15,7 @@ namespace PCGDynMeshBooleanConstants
 	inline const FName OutputContributionPinB = TEXT("Out B");
 }
 
-/** Internal mesh-bound result selector. IDs describe ReferenceMesh and geometry-identical copies only. */
+/** Internal mesh-bound result selector. IDs describe ReferenceMesh and unchanged descendants only. */
 UCLASS()
 class PCGUTILSDYNMESH_API UPCGDynMeshBooleanSelectionFactoryData : public UPCGUtilsDynMeshSelectionFactoryData
 {
@@ -23,6 +23,9 @@ class PCGUTILSDYNMESH_API UPCGDynMeshBooleanSelectionFactoryData : public UPCGUt
 public:
 	UPROPERTY()
 	TObjectPtr<const UPCGDynamicMeshData> ReferenceMesh;
+	/** Output identity is independent of an intermediate immutable geometry snapshot in ReferenceMesh. */
+	UPROPERTY()
+	TObjectPtr<const UPCGDynamicMeshData> RouteMesh;
 	UPROPERTY()
 	TSet<int32> VertexIDs;
 	UPROPERTY()
@@ -61,13 +64,23 @@ public:
 	virtual bool HasDynamicPins() const override { return true; }
 	virtual FPCGDataTypeIdentifier GetCurrentPinTypesID(const UPCGPin* InPin) const override;
 
-	/** Adds one Selector output carrying the enabled tagged result regions. Requires concrete DynMeshes. */
+	/** Adds one Selector output carrying one routed selector per enabled tagged region, across all result meshes.
+	 * Filter by category tag before connecting to a process Selector input. Requires concrete DynMeshes.
+	 */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Output Selectors")
 	bool bOutputSelectors = false;
 
 	/** Select the intersection rim: exact cut edges, their vertices, and incident faces. */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Output Selectors", meta=(PCG_Overridable, EditCondition="bOutputSelectors", EditConditionHides))
 	bool bOverlappingSelector = true;
+
+	/** In vertex selections, also include off-rim corners of triangles touching the intersection rim.
+	 * Off selects only vertices on the rim. Edge selections keep the exact rim in either case.
+	 * Realize Selection must use the Vertex domain to preserve this choice when converting to points.
+	 */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Output Selectors", meta=(PCG_Overridable,
+		EditCondition="bOutputSelectors && bOverlappingSelector", EditConditionHides))
+	bool bIncludeAdjacentVertices = false;
 
 	/** Tag added to each overlapping selector. None omits the category tag. */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Output Selectors", meta=(PCG_Overridable, EditCondition="bOutputSelectors && bOverlappingSelector", EditConditionHides))

@@ -346,6 +346,7 @@ bool FPCGUtilsConcreteOutputPinTypeTest::RunTest(const FString&)
 
 	auto* Node = NewObject<UPCGNode>();
 	auto* Settings = NewObject<UPCGDynMeshExtrudeSettings>(Node);
+	Settings->bOutputResultSelector = true;
 	Node->SetSettingsInterface(Settings);
 	UPCGPin* Out = Node->GetOutputPin(TEXT("Out"));
 	TestTrue(TEXT("Unconnected output shows Dynamic Mesh"), Out->GetCurrentTypesID() == MeshType);

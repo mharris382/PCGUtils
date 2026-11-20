@@ -6,6 +6,9 @@
 #include "Data/PCGDynamicMeshData.h"
 #include "DynamicMesh/DynamicMesh3.h"
 #include "DynamicMesh/DynamicMeshAABBTree3.h"
+#include "Distance/DistPoint3Triangle3.h"
+#include "Distance/DistSegment3Triangle3.h"
+#include "Distance/DistTriangle3Triangle3.h"
 #include "Elements/PCGUtilsDynMeshSpaceHelpers.h"
 #include "PCGContext.h"
 #include "PCGPin.h"
@@ -26,6 +29,14 @@ namespace
 		FTransform TestedToVolume = FTransform::Identity;
 	};
 
+	/** A mesh element's exact shape: 1 point (vertex), 2 (edge) or 3 (triangle), plus the center tested for inside. */
+	struct FElementShape
+	{
+		FVector3d Points[3];
+		FVector3d Center = FVector3d::Zero();
+		int32 Count = 0;
+	};
+
 	class FInsideMeshSelectionOperation final : public FPCGUtilsDynMeshSelectionOperation
 	{
 	public:
@@ -44,15 +55,38 @@ namespace
 			}
 			if (!FMath::IsFinite(Factory->Offset))
 			{
-				PCGLog::LogErrorOnGraph(LOCTEXT("NonFiniteOffset", "Select | Inside Mesh: Offset is not a finite number."), Context);
+				PCGLog::LogErrorOnGraph(LOCTEXT("NonFiniteOffset", "Select | Mesh Inclusion: Offset is not a finite number."), Context);
 				return false;
 			}
 			if (!(Factory->WindingThreshold > 0.0 && Factory->WindingThreshold < 1.0))
 			{
 				PCGLog::LogErrorOnGraph(FText::Format(LOCTEXT("BadThreshold",
-					"Select | Inside Mesh: Winding Threshold is {0}; it must be greater than 0 and less than 1."),
+					"Select | Mesh Inclusion: Winding Threshold is {0}; it must be greater than 0 and less than 1."),
 					FText::AsNumber(Factory->WindingThreshold)), Context);
 				return false;
+			}
+
+			if (Factory->CheckType != EPCGDynMeshInclusionCheck::IsInside)
+			{
+				FText Error;
+				if (!Factory->Expansion.TryReadDataValue(InSelectionContext.MeshData, Expansion, Error,
+					LOCTEXT("ExpansionLabel", "Expansion")))
+				{
+					PCGLog::LogErrorOnGraph(Error, Context);
+					return false;
+				}
+				if (!FMath::IsFinite(Expansion))
+				{
+					PCGLog::LogErrorOnGraph(LOCTEXT("NonFiniteExpansion", "Select | Mesh Inclusion: Expansion is not a finite number."), Context);
+					return false;
+				}
+				if (Expansion < 0.0)
+				{
+					PCGLog::LogErrorOnGraph(FText::Format(LOCTEXT("NegativeExpansion",
+						"Select | Mesh Inclusion: Expansion is {0}; it must be 0 or greater."),
+						FText::AsNumber(Expansion)), Context);
+					return false;
+				}
 			}
 
 			const FTransform TestedActor = Factory->bMeshesAreActorLocal
@@ -67,7 +101,7 @@ namespace
 				if (!VolumeMesh || VolumeMesh->TriangleCount() == 0)
 				{
 					PCGLog::LogWarningOnGraph(FText::Format(LOCTEXT("EmptyVolume",
-						"Select | Inside Mesh: Volume input {0} has no triangles and encloses nothing; it is ignored."),
+						"Select | Mesh Inclusion: Volume input {0} has no triangles and encloses nothing; it is ignored."),
 						FText::AsNumber(Index)), Context);
 					continue;
 				}
@@ -85,7 +119,7 @@ namespace
 			if (Volumes.IsEmpty())
 			{
 				PCGLog::LogErrorOnGraph(LOCTEXT("NoVolumes",
-					"Select | Inside Mesh needs at least one DynMesh with triangles on its Volume pin."), Context);
+					"Select | Mesh Inclusion needs at least one DynMesh with triangles on its Volume pin."), Context);
 				return false;
 			}
 			return true;
@@ -93,19 +127,50 @@ namespace
 
 		virtual bool TestElement(int32 ElementID) const override
 		{
-			FVector3d Center;
-			if (!GetElementCenter(ElementID, Center))
+			FElementShape Shape;
+			if (!GetElementShape(ElementID, Shape))
 			{
 				return false;
 			}
+
+			// Same per-mesh logic and union semantics as PCGEx's FDynamicMeshFilter::TestQuery.
+			const EPCGDynMeshInclusionCheck CheckType = Factory->CheckType;
+			bool bFoundInside = false;
 			for (const FVolume& Volume : Volumes)
 			{
-				if (IsInside(Volume, FVector3d(Volume.TestedToVolume.TransformPosition(Center))))
+				FElementShape Local;
+				Local.Count = Shape.Count;
+				for (int32 i = 0; i < Shape.Count; ++i)
 				{
-					return true;
+					Local.Points[i] = FVector3d(Volume.TestedToVolume.TransformPosition(Shape.Points[i]));
+				}
+				Local.Center = FVector3d(Volume.TestedToVolume.TransformPosition(Shape.Center));
+
+				const bool bInside = IsInside(Volume, Local.Center);
+				switch (CheckType)
+				{
+				case EPCGDynMeshInclusionCheck::IsInside:
+					if (bInside) { return true; }
+					break;
+				case EPCGDynMeshInclusionCheck::Intersects:
+					if (!bInside && Crosses(Volume, Local)) { return true; }
+					break;
+				case EPCGDynMeshInclusionCheck::IsInsideOrIntersects:
+					if (bInside || Crosses(Volume, Local)) { return true; }
+					break;
+				case EPCGDynMeshInclusionCheck::IsOutsideOrIntersects:
+					if (bInside) { bFoundInside = true; }
+					else if (Crosses(Volume, Local)) { return true; }
+					break;
+				case EPCGDynMeshInclusionCheck::IsFullyInside:
+					if (bInside && !Crosses(Volume, Local)) { return true; }
+					break;
+				default:
+					checkNoEntry();
+					break;
 				}
 			}
-			return false;
+			return CheckType == EPCGDynMeshInclusionCheck::IsOutsideOrIntersects && !bFoundInside;
 		}
 
 	private:
@@ -125,25 +190,89 @@ namespace
 			return Offset > 0.0 ? DistanceSq <= Offset * Offset : DistanceSq > Offset * Offset;
 		}
 
-		bool GetElementCenter(int32 ElementID, FVector3d& OutCenter) const
+		/**
+		 * True when the element comes within Expansion of any Volume triangle: it touches or crosses the surface,
+		 * or (with Expansion) a whole Volume part sits inside the grown element.
+		 */
+		bool Crosses(const FVolume& Volume, const FElementShape& Shape) const
+		{
+			using namespace UE::Geometry;
+
+			// A small tolerance so an element lying exactly on, or passing through, the surface counts at Expansion 0.
+			const double Reach = Expansion + UE_KINDA_SMALL_NUMBER;
+			FAxisAlignedBox3d ShapeBox = FAxisAlignedBox3d::Empty();
+			for (int32 i = 0; i < Shape.Count; ++i)
+			{
+				ShapeBox.Contain(Shape.Points[i]);
+			}
+			ShapeBox.Expand(Reach);
+			if (!Volume.Tree->GetBoundingBox().Intersects(ShapeBox))
+			{
+				return false;
+			}
+
+			const FDynamicMesh3* VolumeMesh = Volume.Tree->GetMesh();
+			const double ReachSq = Reach * Reach;
+			bool bHit = false;
+			FDynamicMeshAABBTree3::FTreeTraversal Traversal;
+			Traversal.NextBoxF = [&bHit, &ShapeBox](const FAxisAlignedBox3d& NodeBox, int32)
+			{
+				return !bHit && NodeBox.Intersects(ShapeBox);
+			};
+			Traversal.NextTriangleF = [&](int32 TriangleID)
+			{
+				if (bHit)
+				{
+					return;
+				}
+				FVector3d A, B, C;
+				VolumeMesh->GetTriVertices(TriangleID, A, B, C);
+				const FTriangle3d VolumeTriangle(A, B, C);
+				double DistanceSq = TNumericLimits<double>::Max();
+				switch (Shape.Count)
+				{
+				case 1:
+					DistanceSq = FDistPoint3Triangle3d(Shape.Points[0], VolumeTriangle).GetSquared();
+					break;
+				case 2:
+					DistanceSq = FDistSegment3Triangle3d(FSegment3d(Shape.Points[0], Shape.Points[1]), VolumeTriangle).GetSquared();
+					break;
+				default:
+					DistanceSq = FDistTriangle3Triangle3d(FTriangle3d(Shape.Points[0], Shape.Points[1], Shape.Points[2]), VolumeTriangle).GetSquared();
+					break;
+				}
+				bHit = DistanceSq <= ReachSq;
+			};
+			Volume.Tree->DoTraversal(Traversal);
+			return bHit;
+		}
+
+		bool GetElementShape(int32 ElementID, FElementShape& OutShape) const
 		{
 			const UE::Geometry::FDynamicMesh3& Mesh = SelectionContext->Mesh;
 			switch (SelectionContext->Domain.ElementType)
 			{
 			case UE::Geometry::EGeometryElementType::Vertex:
 				if (!Mesh.IsVertex(ElementID)) { return false; }
-				OutCenter = Mesh.GetVertex(ElementID);
+				OutShape.Count = 1;
+				OutShape.Points[0] = Mesh.GetVertex(ElementID);
+				OutShape.Center = OutShape.Points[0];
 				return true;
 			case UE::Geometry::EGeometryElementType::Edge:
 			{
 				if (!Mesh.IsEdge(ElementID)) { return false; }
 				const UE::Geometry::FIndex2i Edge = Mesh.GetEdgeV(ElementID);
-				OutCenter = (Mesh.GetVertex(Edge.A) + Mesh.GetVertex(Edge.B)) * 0.5;
+				OutShape.Count = 2;
+				OutShape.Points[0] = Mesh.GetVertex(Edge.A);
+				OutShape.Points[1] = Mesh.GetVertex(Edge.B);
+				OutShape.Center = (OutShape.Points[0] + OutShape.Points[1]) * 0.5;
 				return true;
 			}
 			case UE::Geometry::EGeometryElementType::Face:
 				if (!Mesh.IsTriangle(ElementID)) { return false; }
-				OutCenter = Mesh.GetTriCentroid(ElementID);
+				OutShape.Count = 3;
+				Mesh.GetTriVertices(ElementID, OutShape.Points[0], OutShape.Points[1], OutShape.Points[2]);
+				OutShape.Center = Mesh.GetTriCentroid(ElementID);
 				return true;
 			default:
 				return false;
@@ -152,6 +281,8 @@ namespace
 
 		TObjectPtr<const UPCGDynMeshInsideMeshSelectionFactoryData> Factory;
 		TArray<FVolume> Volumes;
+		/** Resolved once per evaluation from the Expansion shorthand (constant or the tested mesh's @Data). */
+		double Expansion = 0.0;
 	};
 }
 
@@ -176,6 +307,14 @@ void UPCGDynMeshInsideMeshSelectionFactoryData::AddToCrc(FArchiveCrc32& Ar, bool
 		double ThresholdValue = WindingThreshold;
 		double OffsetValue = Offset;
 		bool bLocal = bMeshesAreActorLocal;
+		uint8 CheckValue = static_cast<uint8>(CheckType);
+		uint8 ExpansionInput = static_cast<uint8>(Expansion.Input);
+		double ExpansionConstant = Expansion.Constant;
+		FString ExpansionAttribute = Expansion.Attribute.ToString();
+		Ar << CheckValue;
+		Ar << ExpansionInput;
+		Ar << ExpansionConstant;
+		Ar << ExpansionAttribute;
 		Ar << ThresholdValue;
 		Ar << OffsetValue;
 		Ar << bLocal;
@@ -185,21 +324,35 @@ void UPCGDynMeshInsideMeshSelectionFactoryData::AddToCrc(FArchiveCrc32& Ar, bool
 #if WITH_EDITOR
 FText UPCGDynMeshInsideMeshSelectionFactoryProviderSettings::GetDefaultNodeTitle() const
 {
-	return LOCTEXT("Title", "Select | Inside Mesh");
+	return LOCTEXT("Title", "Select | Mesh Inclusion");
 }
 
 FText UPCGDynMeshInsideMeshSelectionFactoryProviderSettings::GetNodeTooltipText() const
 {
 	return LOCTEXT("Tooltip",
-		"Selects the vertices, edges or triangles that lie inside the volume enclosed by the DynMeshes on the Volume "
-		"pin (winding number, tested at each element's center). Invert Selection selects what lies outside. Offset "
-		"grows or shrinks the volume by a distance from its surface.");
+		"Selects the vertices, edges or triangles that are inside, crossing the surface of, or fully inside the volume "
+		"enclosed by the DynMeshes on the Volume pin (see Check Type; mirrors PCGEx Filter : Inclusion (Dynamic Mesh)). "
+		"Inside is the winding number at each element's center; crossing tests the element's exact shape grown by "
+		"Expansion. Offset grows or shrinks the volume for the inside test. Invert Selection complements the result.");
 }
 
 FString UPCGDynMeshInsideMeshSelectionFactoryProviderSettings::GetAdditionalTitleInformation() const
 {
-	const TCHAR* Side = bInvertSelection ? TEXT("Outside") : TEXT("Inside");
-	return Offset == 0.0 ? FString(Side) : FString::Printf(TEXT("%s %+g"), Side, Offset);
+	const TCHAR* Check = TEXT("Inside");
+	switch (CheckType)
+	{
+	case EPCGDynMeshInclusionCheck::Intersects: Check = TEXT("Intersects"); break;
+	case EPCGDynMeshInclusionCheck::IsInsideOrIntersects: Check = TEXT("Inside or Intersects"); break;
+	case EPCGDynMeshInclusionCheck::IsOutsideOrIntersects: Check = TEXT("Outside or Intersects"); break;
+	case EPCGDynMeshInclusionCheck::IsFullyInside: Check = TEXT("Fully Inside"); break;
+	default: break;
+	}
+	FString Title = bInvertSelection ? FString::Printf(TEXT("Not %s"), Check) : FString(Check);
+	if (Offset != 0.0)
+	{
+		Title += FString::Printf(TEXT(" %+g"), Offset);
+	}
+	return Title;
 }
 #endif
 
@@ -232,7 +385,7 @@ UPCGUtilsDynMeshFactoryData* UPCGDynMeshInsideMeshSelectionFactoryProviderSettin
 	if (Volumes.IsEmpty())
 	{
 		PCGLog::LogErrorOnGraph(LOCTEXT("MissingVolume",
-			"Select | Inside Mesh needs DynMesh data on its Volume pin."), InContext);
+			"Select | Mesh Inclusion needs DynMesh data on its Volume pin."), InContext);
 		return nullptr;
 	}
 
@@ -246,6 +399,8 @@ UPCGUtilsDynMeshFactoryData* UPCGDynMeshInsideMeshSelectionFactoryProviderSettin
 
 	Factory->Priority = Priority;
 	Factory->VolumeMeshes = MoveTemp(Volumes);
+	Factory->CheckType = CheckType;
+	Factory->Expansion = Expansion;
 	Factory->WindingThreshold = WindingThreshold;
 	Factory->Offset = Offset;
 	Factory->bMeshesAreActorLocal = bMeshesAreActorLocal;

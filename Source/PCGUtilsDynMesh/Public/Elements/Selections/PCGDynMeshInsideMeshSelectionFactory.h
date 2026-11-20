@@ -3,6 +3,7 @@
 #pragma once
 
 #include "CoreMinimal.h"
+#include "Details/PCGUtilsInputShorthands.h"
 #include "Elements/Selections/PCGUtilsDynMeshSelectionSource.h"
 #include "Factories/PCGUtilsDynMeshSelectionFactory.h"
 
@@ -15,7 +16,26 @@ namespace PCGDynMeshInsideMeshSelectionFactoryConstants
 	inline const FName VolumeInputPin = TEXT("Volume");
 }
 
-/** Selection factory testing whether each mesh element lies inside the volume enclosed by other DynMeshes. */
+/**
+ * How Select | Mesh Inclusion tests a mesh element against the Volume meshes. Mirrors the check types of PCGEx's
+ * Filter : Inclusion (Dynamic Mesh), with each element's own shape standing in for a point's bounds.
+ */
+UENUM(BlueprintType)
+enum class EPCGDynMeshInclusionCheck : uint8
+{
+	/** The element's center (vertex, edge midpoint, triangle centroid) is inside a Volume mesh. Expansion is ignored. */
+	IsInside = 0 UMETA(DisplayName="Is Inside"),
+	/** The element's center is outside, but the element (grown by Expansion) touches or crosses a Volume mesh's surface. */
+	Intersects = 1 UMETA(DisplayName="Intersects"),
+	/** The element's center is inside a Volume mesh, or the element (grown by Expansion) touches or crosses its surface. */
+	IsInsideOrIntersects = 2 UMETA(DisplayName="Is Inside or Intersects"),
+	/** The element's center is outside every Volume mesh, or the element (grown by Expansion) touches or crosses a surface. */
+	IsOutsideOrIntersects = 3 UMETA(DisplayName="Is Outside or Intersects"),
+	/** The element's center is inside a Volume mesh and the element (grown by Expansion) stays clear of its surface. */
+	IsFullyInside = 4 UMETA(DisplayName="Is Fully Inside"),
+};
+
+/** Selection factory testing each mesh element for inclusion in the volume enclosed by other DynMeshes. */
 UCLASS(BlueprintType, ClassGroup=(Procedural), Category="PCGUtils|DynMesh|Selections")
 class PCGUTILSDYNMESH_API UPCGDynMeshInsideMeshSelectionFactoryData
 	: public UPCGUtilsDynMeshSelectionFactoryData
@@ -25,6 +45,12 @@ class PCGUTILSDYNMESH_API UPCGDynMeshInsideMeshSelectionFactoryData
 public:
 	UPROPERTY()
 	TArray<TObjectPtr<const UPCGDynamicMeshData>> VolumeMeshes;
+
+	UPROPERTY()
+	EPCGDynMeshInclusionCheck CheckType = EPCGDynMeshInclusionCheck::IsInside;
+
+	UPROPERTY()
+	FPCGUtilsInputShorthandDoubleAbs Expansion = FPCGUtilsInputShorthandDoubleAbs(0.0, TEXT("Expansion"));
 
 	UPROPERTY()
 	double WindingThreshold = 0.5;
@@ -43,20 +69,23 @@ protected:
 };
 
 /**
- * Selects the vertices, edges or triangles of a mesh that lie inside the volume enclosed by the DynMeshes on
- * the Volume pin. Turn on Invert Selection to select what lies outside instead.
+ * Selects the vertices, edges or triangles of a mesh by how they relate to the volume enclosed by the DynMeshes
+ * on the Volume pin: inside it, crossing its surface, or both (see Check Type). The check types mirror PCGEx's
+ * Filter : Inclusion (Dynamic Mesh). Invert Selection complements the result.
  *
- * Inside is decided by the generalized winding number, so a volume mesh with small holes or overlapping parts
- * still has a sensible inside. An element is tested at its center: the vertex, the edge midpoint or the
- * triangle centroid. Several Volume meshes act as their union.
+ * Inside is decided by the generalized winding number at the element's center (the vertex, the edge midpoint or
+ * the triangle centroid), so a volume mesh with small holes or overlapping parts still has a sensible inside.
+ * Crossing uses the element's exact shape - the triangle itself, the edge segment, the vertex point - grown by
+ * Expansion into a capsule of that radius: the element crosses when it comes within Expansion of a Volume
+ * surface. Several Volume meshes act as their union.
  *
- * Offset grows (positive) or shrinks (negative) the volume by a distance from its surface. Use a small
- * positive Offset to count elements lying on the volume's surface as inside, and a negative one to keep only
- * elements at least that deep inside, e.g. to pick the faces a boolean carved into the volume while leaving
- * the volume's own surface out.
+ * Offset grows (positive) or shrinks (negative) the volume by a distance from its surface for the inside test.
+ * Use a small positive Offset to count elements lying on the volume's surface as inside, and a negative one to
+ * keep only elements at least that deep inside, e.g. to pick the faces a boolean carved into the volume while
+ * leaving the volume's own surface out.
  */
 UCLASS(BlueprintType, ClassGroup=(Procedural), Category="PCGUtils|DynMesh|Selections",
-	meta=(Keywords="DynMesh Select inside outside overlap overlapping intersect intersection contained enclosed volume winding other mesh"))
+	meta=(Keywords="DynMesh Select inclusion inside outside fully overlap overlapping intersect intersects intersection crosses contained enclosed volume winding other mesh"))
 class PCGUTILSDYNMESH_API UPCGDynMeshInsideMeshSelectionFactoryProviderSettings
 	: public UPCGUtilsDynMeshSelectionSourceSettings
 {
@@ -70,8 +99,24 @@ public:
 	virtual FString GetAdditionalTitleInformation() const override;
 #endif
 
+	/** Which relation to the Volume meshes selects an element. Default Is Inside matches the node's original behaviour. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Selection", meta=(PCG_Overridable))
+	EPCGDynMeshInclusionCheck CheckType = EPCGDynMeshInclusionCheck::IsInside;
+
 	/**
-	 * Distance from the volume's surface, in the volume mesh's units. Positive also selects elements outside the
+	 * Radius, in the Volume mesh's units, that each element is grown by before testing whether it crosses a Volume
+	 * surface: an element within this distance of a surface counts as crossing it. 0 counts only elements that
+	 * actually touch or pass through a surface. Must be 0 or greater. Ignored by Is Inside.
+	 *
+	 * In @Data mode it reads a numeric attribute (default name 'Expansion', optional) from the @Data domain of the
+	 * tested mesh; a missing or negative value is an error.
+	 */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Selection",
+		meta=(PCG_Overridable, EditCondition="CheckType != EPCGDynMeshInclusionCheck::IsInside", EditConditionHides))
+	FPCGUtilsInputShorthandDoubleAbs Expansion = FPCGUtilsInputShorthandDoubleAbs(0.0, TEXT("Expansion"));
+
+	/**
+	 * Distance from the volume's surface, in the volume mesh's units, applied to the inside test. Positive also selects elements outside the
 	 * volume within this distance of its surface; negative only selects elements inside by more than this
 	 * distance. 0 is the volume as it is.
 	 */

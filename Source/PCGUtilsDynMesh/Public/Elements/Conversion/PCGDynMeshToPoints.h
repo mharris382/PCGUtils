@@ -41,14 +41,14 @@ public:
 	virtual FText GetNodeTooltipText() const override
 	{
 		return NSLOCTEXT("PCGUtils", "DynMeshToPoints_Tooltip",
-			"Converts Dynamic Mesh vertices to PCG points in vertex-index order, preserving position, vertex color, and normal-derived rotation.");
+			"Converts Dynamic Mesh vertices to PCG points in vertex-index order, preserving position and vertex color. Point Z follows the normal; point X follows the tangent when available, otherwise rotation is derived from the normal alone.");
 	}
 #endif
 
 	virtual TArray<FPCGPinProperties> InputPinProperties() const override;
 	virtual TArray<FPCGPinProperties> OutputPinProperties() const override;
 
-	/** Transform local mesh vertices and normals into the PCG target actor's world space. */
+	/** Transform local mesh vertices, normals, and tangents into the PCG target actor's world space. */
 	UPROPERTY(BlueprintReadWrite, EditAnywhere, Category = "Settings", meta = (PCG_Overridable))
 	bool bOutputToWorldSpace = false;
 

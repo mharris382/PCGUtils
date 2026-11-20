@@ -701,6 +701,16 @@ bool FPCGUtilsDynMeshProcessBaseElement::ExecuteInternal(FPCGContext* Context) c
 			AuxOutput.Data = Aux.MeshData;
 			AuxOutput.Pin = Aux.Pin;
 		}
+
+		// Generic companion data inherits the corresponding primary input's tags.
+		for (const FPCGUtilsDynMeshAuxiliaryDataOutput& Aux : Outcome.AuxiliaryDataOutputs)
+		{
+			if (Aux.Pin.IsNone() || !Aux.Data) { continue; }
+			FPCGTaggedData& AuxOutput = Context->OutputData.TaggedData.Emplace_GetRef(Input);
+			AuxOutput.Data = Aux.Data;
+			AuxOutput.Pin = Aux.Pin;
+			AuxOutput.Tags.Append(Aux.Tags);
+		}
 	}
 	Settings->EmitAdditionalOutputs(Context);
 	return true;

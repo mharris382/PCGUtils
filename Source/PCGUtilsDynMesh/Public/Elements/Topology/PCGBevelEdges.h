@@ -3,9 +3,13 @@
 #include "CoreMinimal.h"
 #include "Details/PCGUtilsInputShorthands.h"
 #include "Elements/PCGUtilsDynMeshTopologyProcessBase.h"
+#include "Factories/PCGUtilsDynMeshDotComparison.h"
+#include "Geometry/PCGUtilsDynMeshAmountClampTypes.h"
 
 #include "PCGUtilsDynMeshNodeColor.h"
 #include "PCGBevelEdges.generated.h"
+
+namespace PCGUtilsDynMeshAmountClamp { struct FResult; }
 
 /**
  * Bevels all edges or the effective edge selection using Geometry Script's underlying bevel operation.
@@ -38,6 +42,45 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Bevel", meta=(PCG_Overridable))
 	FPCGUtilsInputShorthandDoubleAbs BevelDistance;
 
+	/** Automatically reduce Bevel Distance to preserve nearby face/edge clearance and reject new overlaps.
+	 * Uses Clamp Mode after angle/selection filtering. A small clearance is retained at limiting geometry.
+	 * Per Vertex omits only edges incident to unusable endpoints and rebuilds the remaining selection.
+	 * If the remaining selection is empty or the backend cannot solve it, the mesh passes through unchanged.
+	 * Disable to use the requested distance directly. Enabled by default, including on existing nodes.
+	 */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Bevel", meta=(PCG_Overridable))
+	bool bClampOverlap = true;
+
+	/** Per Vertex reduces only conflicting endpoints, without a region radius or taper propagation.
+	 * Selection Island shares one amount per connected selected-edge island;
+	 * Whole Mesh uses one amount for the complete selection. Unselected connectivity does not join islands.
+	 */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Bevel", meta=(PCG_Overridable, EditCondition="bClampOverlap", EditConditionHides))
+	EPCGUtilsDynMeshAmountClampMode ClampMode = EPCGUtilsDynMeshAmountClampMode::Regional;
+
+	/** Smallest positive offset retained by Clamp Overlap, in mesh units. Per Vertex omits edges incident
+	 * to endpoints that cannot retain this amount, then rebuilds the remaining bevel. It does not leave
+	 * coincident bevel vertices or zero-area faces. @Data mode requires a non-negative numeric
+	 * MinimumBevelDistance on each realized mesh; Builders require a constant while clamping is enabled.
+	 */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Bevel", meta=(PCG_Overridable, EditCondition="bClampOverlap", EditConditionHides))
+	FPCGUtilsInputShorthandDoubleAbs MinimumBevelDistance;
+
+	/** Restrict the incoming edge selection to edges passing a comparison of their adjacent face normals.
+	 * Boundary edges and degenerate faces are excluded while enabled. Off preserves the incoming selection.
+	 */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Bevel", meta=(PCG_Overridable))
+	bool bFilterByFaceAngle = false;
+
+	/** Same normal-agreement comparison and visual preview as Select By Normal, applied between adjacent faces.
+	 * Default Less or Equal at 45 degrees with Unsigned Comparison keeps unsigned normal differences of at least
+	 * 45 degrees (raw turns from 45 to 135 degrees). Opposite normals count as aligned.
+	 * Attribute thresholds are required numeric @Data values on each input mesh; realize Builders first in that mode.
+	 */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Bevel", meta=(PCG_Overridable,
+		EditCondition="bFilterByFaceAngle", EditConditionHides, DisplayName="Face Normal Comparison"))
+	FPCGUtilsDynMeshDotComparison FaceAngleComparison;
+
 	/** Number of edge loops added along the bevel faces. 0 produces a single planar chamfer face per edge - eg for a golf ramp rather than a rounded decorative bevel. */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Bevel", meta=(PCG_Overridable, ClampMin="0"))
 	int32 Subdivisions = 0;
@@ -67,8 +110,9 @@ public:
 		return true;
 	}
 
-	/** A Builder carries no @Data until realized, so @Data-driven Bevel Distance only runs on realized meshes. */
-	virtual bool SupportsDeferredBuilderProcessing() const override { return BevelDistance.IsConstant(); }
+	/** A Builder carries no @Data until realized; distance, enabled minimum and angle thresholds must be constants. */
+	virtual bool SupportsDeferredBuilderProcessing() const override
+	{ return BevelDistance.IsConstant() && (!bClampOverlap || MinimumBevelDistance.IsConstant()) && (!bFilterByFaceAngle || FaceAngleComparison.ThresholdInput == EPCGUtilsDynMeshInputValueType::Constant); }
 	virtual FText GetBuilderInputRejectionReason() const override;
 
 protected:
@@ -91,7 +135,14 @@ class PCGUTILSDYNMESH_API FPCGUtilsDynMeshBevelEdgesOperation final : public FPC
 public:
 	/** Per-input source of the distance; in @Data mode Execute resolves it into BevelDistance on a local copy. */
 	FPCGUtilsInputShorthandDoubleAbs BevelDistanceInput;
-	float BevelDistance = 1.0f;
+	double BevelDistance = 1.0;
+	FPCGUtilsInputShorthandDoubleAbs MinimumBevelDistanceInput;
+	double MinimumBevelDistance = 0.001;
+	bool bClampOverlap = true;
+	EPCGUtilsDynMeshAmountClampMode ClampMode = EPCGUtilsDynMeshAmountClampMode::Regional;
+	bool bFilterByFaceAngle = false;
+	FPCGUtilsDynMeshDotComparison FaceAngleComparison;
+	double FaceAngleThresholdDot = 1.0;
 	int32 Subdivisions = 0;
 	float RoundWeight = 1.0f;
 	bool bInferMaterialID = false;
@@ -103,4 +154,8 @@ public:
 protected:
 	virtual bool Apply(UE::Geometry::FDynamicMesh3& Mesh,
 		const UE::Geometry::FGeometrySelection* Selection, TArray<int32>& OutResultTriangles) const override;
+
+private:
+	/** Only set on Execute's stack-local operation copy, never on the shared captured operation. */
+	PCGUtilsDynMeshAmountClamp::FResult* InvocationClampResult = nullptr;
 };

@@ -132,10 +132,23 @@ void UPCGUtilsDynMeshTopologyProcessBaseSettings::ApplyDeprecationBeforeUpdatePi
 TArray<FPCGPinProperties> UPCGUtilsDynMeshTopologyProcessBaseSettings::OutputPinProperties() const
 {
 	TArray<FPCGPinProperties> Pins = Super::OutputPinProperties();
-	// Always declared so a PCG property override can enable output without changing graph wiring.
-	Pins.Emplace(PCGUtilsDynMeshTopologyProcessConstants::ResultSelectorPin,
-		FPCGUtilsDynMeshSelectionFactoryDataTypeInfo::AsId(), false, false);
+	if (bOutputResultSelector)
+	{
+		Pins.Emplace(PCGUtilsDynMeshTopologyProcessConstants::ResultSelectorPin,
+			FPCGUtilsDynMeshSelectionFactoryDataTypeInfo::AsId(), false, false);
+	}
 	return Pins;
+}
+
+FPCGDataTypeIdentifier UPCGUtilsDynMeshTopologyProcessBaseSettings::GetCurrentPinTypesID(const UPCGPin* InPin) const
+{
+	if (InPin && InPin->IsOutputPin() && InPin->Properties.Label == PCGUtilsDynMeshTopologyProcessConstants::ResultSelectorPin)
+	{
+		// Keep the Selector type even when @Data settings disable Builders and the process base falls back
+		// to the engine's dynamic-pin inference from the primary mesh input.
+		return InPin->Properties.AllowedTypes;
+	}
+	return Super::GetCurrentPinTypesID(InPin);
 }
 
 void UPCGUtilsDynMeshTopologyProcessBaseSettings::EmitAdditionalOutputs(FPCGContext* Context) const

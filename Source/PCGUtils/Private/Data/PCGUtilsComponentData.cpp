@@ -5,9 +5,29 @@
 
 #include "Components/SceneComponent.h"
 #include "GameFramework/Actor.h"
+#include "Utils/PCGLogErrors.h"
 
 namespace 
 {
+	void PCGUtilsComponentDataAssignNameAttribute(UPCGMetadata* Meta, FName AttributeName, FName Value,
+		const FPCGMetadataDomainID& DomainID = PCGMetadataDomainID::Data,
+		const int64 Key = PCGInvalidEntryKey)
+	{
+		// Preserve existing metadata of a different type rather than replacing it with the optional label.
+		if (FPCGMetadataAttribute<FName>* Attribute = Meta->FindOrCreateAttribute<FName>(
+			FPCGAttributeIdentifier(AttributeName, DomainID), Value, false, false, false))
+		{
+			Attribute->SetValue(Key, Value);
+		}
+		else
+		{
+			PCGLog::LogWarningOnGraph(FText::Format(
+				NSLOCTEXT("PCGUtilsComponentData", "NameAttributeCreationFailed",
+					"Could not create Name attribute '{0}' for the authored component name; existing metadata and output data are retained."),
+				FText::FromName(AttributeName)));
+		}
+	}
+
 	bool AssignInt32Attribute(UPCGMetadata* Meta, FName AttributeName, int32 Value, 
 	const FPCGMetadataDomainID& DomainID = PCGMetadataDomainID::Data,
 	const int64 Key = PCGInvalidEntryKey)
@@ -92,6 +112,19 @@ void UPCGUtilPathDataLibrary::GetPathDataFromSettings(UPCGMetadata* Meta,
 {
 	if (!Meta || !Settings || !Data)
 		return;
+
+	if (Settings->bExtractPathName)
+	{
+		if (Settings->PathNameAttributeName.IsNone())
+		{
+			PCGLog::LogWarningOnGraph(NSLOCTEXT("PCGUtilsComponentData", "MissingPathNameAttribute",
+				"Extract Path Name is enabled but Path Name Attribute Name is None; no path name attribute is written."));
+		}
+		else
+		{
+			PCGUtilsComponentDataAssignNameAttribute(Meta, Settings->PathNameAttributeName, Data->PathName);
+		}
+	}
 	
 	if (Settings->bExtractProcessPathGraph && !Settings->ProcessPathGraphAttributeName.IsEmpty())
 	{
@@ -152,6 +185,19 @@ void UPCGUtilPathDataLibrary::GetPointDataFromSettings(UPCGMetadata* Meta,	const
 {
 	if (!Meta || !Settings || !Data)
 		return;
+
+	if (Settings->bExtractMarkerName)
+	{
+		if (Settings->MarkerNameAttributeName.IsNone())
+		{
+			PCGLog::LogWarningOnGraph(NSLOCTEXT("PCGUtilsComponentData", "MissingMarkerNameAttribute",
+				"Extract Marker Name is enabled but Marker Name Attribute Name is None; no marker name attribute is written."));
+		}
+		else
+		{
+			PCGUtilsComponentDataAssignNameAttribute(Meta, Settings->MarkerNameAttributeName, Data->MarkerName, Domain, Key);
+		}
+	}
 	
 	if (Settings->bExtractProcessPointGraph && !Settings->ProcessPointGraphAttributeName.IsEmpty())
 	{

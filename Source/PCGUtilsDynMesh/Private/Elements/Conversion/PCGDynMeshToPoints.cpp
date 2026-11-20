@@ -41,11 +41,12 @@ FPCGContext* FPCGDynMeshToPointsElement::CreateContext()
 namespace
 {
 	template<typename OverlayType, typename ValueType>
-	ValueType GetFirstVertexOverlayElement(
+	ValueType DynMeshToPointsGetFirstVertexOverlayElement(
 		const FDynamicMesh3* Mesh,
 		const OverlayType* Overlay,
 		const int32 VID,
-		const ValueType& DefaultValue)
+		const ValueType& DefaultValue,
+		FIndex2i* OutTriangleCorner = nullptr)
 	{
 		if (!Mesh || !Overlay)
 		{
@@ -69,6 +70,10 @@ namespace
 				if (TriVerts[Corner] == VID && Overlay->IsElement(TriElems[Corner]))
 				{
 					Result = Overlay->GetElement(TriElems[Corner]);
+					if (OutTriangleCorner)
+					{
+						*OutTriangleCorner = FIndex2i(TID, Corner);
+					}
 					bFound = true;
 					break;
 				}
@@ -132,12 +137,14 @@ bool FPCGDynMeshToPointsElement::ExecuteInternal(FPCGContext* InContext) const
 		}
 
 		const FDynamicMeshNormalOverlay* NormalOverlay = nullptr;
+		const FDynamicMeshNormalOverlay* TangentOverlay = nullptr;
 		const FDynamicMeshColorOverlay* ColorOverlay = nullptr;
 
 		if (Mesh->HasAttributes())
 		{
 			const FDynamicMeshAttributeSet* Attributes = Mesh->Attributes();
 			NormalOverlay = Attributes ? Attributes->PrimaryNormals() : nullptr;
+			TangentOverlay = Attributes ? Attributes->PrimaryTangents() : nullptr;
 			ColorOverlay = Attributes ? Attributes->PrimaryColors() : nullptr;
 		}
 
@@ -150,17 +157,39 @@ bool FPCGDynMeshToPointsElement::ExecuteInternal(FPCGContext* InContext) const
 		for (const int32 VID : Mesh->VertexIndicesItr())
 		{
 			const FVector3d Position = Mesh->GetVertex(VID);
+			FIndex2i NormalCorner(INDEX_NONE, INDEX_NONE);
 			FVector3f Normal = NormalOverlay
-				? GetFirstVertexOverlayElement(Mesh, NormalOverlay, VID, FVector3f::UnitZ())
+				? DynMeshToPointsGetFirstVertexOverlayElement(Mesh, NormalOverlay, VID, FVector3f::UnitZ(), &NormalCorner)
 				: (Mesh->HasVertexNormals() ? Mesh->GetVertexNormal(VID) : FVector3f::UnitZ());
-			if (!Normal.Normalize())
+			if (Normal.ContainsNaN() || !Normal.Normalize())
 			{
 				Normal = FVector3f::UnitZ();
 			}
 
+			FVector3f Tangent = FVector3f::ZeroVector;
+			if (TangentOverlay)
+			{
+				// One point represents a vertex, including at seams. Keep its frame on the same face corner.
+				if (NormalCorner.A != INDEX_NONE)
+				{
+					if (TangentOverlay->IsSetTriangle(NormalCorner.A))
+					{
+						const int32 ElementID = TangentOverlay->GetTriangle(NormalCorner.A)[NormalCorner.B];
+						if (TangentOverlay->IsElement(ElementID))
+						{
+							Tangent = TangentOverlay->GetElement(ElementID);
+						}
+					}
+				}
+				else
+				{
+					Tangent = DynMeshToPointsGetFirstVertexOverlayElement(Mesh, TangentOverlay, VID, FVector3f::ZeroVector);
+				}
+			}
+
 			const FVector3f VertexColor = Mesh->HasVertexColors() ? Mesh->GetVertexColor(VID) : FVector3f::One();
 			const FVector4f Color = ColorOverlay
-				? GetFirstVertexOverlayElement(Mesh, ColorOverlay, VID, FVector4f(1.0f, 1.0f, 1.0f, 1.0f))
+				? DynMeshToPointsGetFirstVertexOverlayElement(Mesh, ColorOverlay, VID, FVector4f(1.0f, 1.0f, 1.0f, 1.0f))
 				: FVector4f(VertexColor.X, VertexColor.Y, VertexColor.Z, 1.0f);
 
 			FPCGPoint& Point = Points.Emplace_GetRef();
@@ -171,8 +200,23 @@ bool FPCGDynMeshToPointsElement::ExecuteInternal(FPCGContext* InContext) const
 			const FVector OutputPosition = Settings->bOutputToWorldSpace
 				? MeshToOutput.TransformPosition(FVector(Position))
 				: FVector(Position);
+			FQuat Rotation = FRotationMatrix::MakeFromZ(OutputNormal).ToQuat();
+			if (!Tangent.ContainsNaN())
+			{
+				FVector OutputTangent(Tangent);
+				if (Settings->bOutputToWorldSpace)
+				{
+					OutputTangent = MeshToOutput.TransformVectorNoScale(OutputTangent);
+				}
+				// Preserve Z exactly and remove any normal component from the tangent before constructing X.
+				OutputTangent -= OutputNormal * FVector::DotProduct(OutputTangent, OutputNormal);
+				if (OutputTangent.Normalize())
+				{
+					Rotation = FRotationMatrix::MakeFromZX(OutputNormal, OutputTangent).ToQuat();
+				}
+			}
 			Point.Transform = FTransform(
-				FRotationMatrix::MakeFromZ(OutputNormal).ToQuat(),
+				Rotation,
 				OutputPosition,
 				FVector::OneVector);
 			Point.Color = FVector4(Color.X, Color.Y, Color.Z, Color.W);
