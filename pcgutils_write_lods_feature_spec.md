@@ -14,7 +14,7 @@ If anything below conflicts with an established convention you find in the codeb
 
 ## Goal
 
-A native C++ PCG element that takes a Static Mesh asset (by soft object path) and a set of `UPCGDynamicMeshData` inputs, and writes each input as a specific LOD on that Static Mesh asset — an editor-time operation intended to run inside standalone/batch-run PCG graphs (batch graph execution already exists elsewhere in this module) as part of an automated LOD-generation pipeline: upstream Simplify nodes produce progressively decimated dynamic meshes, this element commits them to the asset.
+A native C++ PCG element that takes a Static Mesh asset (by soft object path) and a set of `UPCGDynamicMeshData` inputs, and writes each input as a specific LOD on that Static Mesh asset — an editor-time operation intended to run inside standalone/batch-run PCG graphs (using the engine's standalone asset-graph execution) as part of an automated LOD-generation pipeline: upstream Simplify nodes produce progressively decimated dynamic meshes, this element commits them to the asset.
 
 ## Pins
 

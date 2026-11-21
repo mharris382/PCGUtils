@@ -1,6 +1,5 @@
 #include "Customizations/PluginCustomizations.h"
 #include "Customizations/PCGOverrideGraphCustomization.h"
-#include "Customizations/PCGUtilsGraphBatchDetails.h"
 #include "Customizations/PCGUtilsDotComparisonCustomization.h"
 #include "Customizations/PCGUtilsInputShorthandCustomization.h"
 #include "Customizations/PCGVoxelRuleCustomization.h"
@@ -8,7 +7,6 @@
 #include "PropertyEditorModule.h"
 #include "AssetToolsModule.h"
 #include "DetailLayoutBuilder.h"
-#include "Data/PCGUtilsGraphBatch.h"
 #include "Elements/PCGUtilsDynMeshProcessBase.h"
 #include "IDetailCustomization.h"
 
@@ -87,9 +85,6 @@ namespace PluginCustomizations
 			UPCGUtilsDynMeshProcessBaseSettings::StaticClass()->GetFName(),
 			FOnGetDetailCustomizationInstance::CreateStatic(
 				&FPCGUtilsDynMeshProcessBaseCustomization::MakeInstance));
-		PropEd.RegisterCustomClassLayout(
-			UPCGUtilsGraphBatch::StaticClass()->GetFName(),
-			FOnGetDetailCustomizationInstance::CreateStatic(&FPCGUtilsGraphBatchDetails::MakeInstance));
 		PropEd.NotifyCustomizationModuleChanged();
 	}
 
@@ -117,7 +112,6 @@ namespace PluginCustomizations
 
 			PropertyEditor.UnregisterCustomClassLayout(
 				UPCGUtilsDynMeshProcessBaseSettings::StaticClass()->GetFName());
-			PropertyEditor.UnregisterCustomClassLayout(UPCGUtilsGraphBatch::StaticClass()->GetFName());
 			PropertyEditor.NotifyCustomizationModuleChanged();
 		}
 	}

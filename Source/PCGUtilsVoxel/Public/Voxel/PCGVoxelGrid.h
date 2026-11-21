@@ -10,7 +10,18 @@
 class UPCGBasePointData;
 struct FPCGContext;
 
-/** Where a voxel set's grid sits when its data has no grid transform attribute. */
+/** Which neighbours join cells into one component (island). */
+UENUM(BlueprintType)
+enum class EPCGVoxelConnectivity : uint8
+{
+	/** Cells sharing a face (6 neighbours). */
+	Faces,
+	/** Cells sharing a face or an edge (18 neighbours). */
+	Edges,
+	/** Cells sharing a face, an edge or a corner (26 neighbours). */
+	Corners,
+};
+
 /** Grid axes, as flags. */
 UENUM(BlueprintType, meta=(Bitflags, UseEnumValuesAsMaskValuesInEditor="true"))
 enum class EPCGVoxelAxes : uint8

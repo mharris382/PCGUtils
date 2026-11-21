@@ -176,6 +176,8 @@ first cell's values. A test checks it.
 | 1 | `Voxel \| Compress Random` | The same node preset to Shape Random: random-size boxes for looks (section 1.2). |
 | 1 | `Voxel \| Shift Seams` | Slides interior seams so boxes become uneven but fill the same space (section 4c). |
 | 1 | `Voxel \| Transform Grid` | Moves, turns and scales whole voxel sets about a per-set pivot; values per set from @Data (section 4e). |
+| 1 | `Voxel \| Separate Islands` | One voxel set per connected island; optionally re-anchors each island's grid at its own centre cell so the grid origin is its pivot (section 4n). |
+| 1 | `Voxel \| Slice` | Cuts each set into slabs across one grid axis (chunks split at the cuts); writes slice index and 0-1 fraction for twists (section 4o). |
 | 1 | `Voxel \| Air Flow` | Wind around a voxel set: a smooth flow field on air cells (a voxel set of its own), wind shadows, exposure per solid cell (section 4f). |
 | 1 | `Voxel \| Rasterize` | A DynMesh or a closed point path to cells: Fill, Intersect and Surround modes, on its own grid or another set's (section 4g). |
 | 1 | `Voxel \| Boolean` | Union, intersect or subtract voxel sets by cell index; Out is In, mutated (section 4h). |
@@ -605,6 +607,67 @@ last, like a twisting tiled tunnel). The graph splits a grid into parts first an
 The math, in the input grid's space with pivot P, rotation R, scale S and translation T: `x -> P + R(S*(x - P)) + T`.
 The new grid has rotation `G.R * R`, origin `G(P - R(S*P) + T)` and Voxel Size `S * VoxelSize`; a point at grid
 position x goes to `NewGrid(S * x)`. World-space values are converted first: `R = G.R^-1 * Rw * G.R`, `T = G.R^-1 * Tw`.
+
+## 4n. Voxel | Separate Islands
+
+Built 2026-11-20 on request, for spiralling columns and anything else that needs islands apart. The designer chose a
+separate node over a "per island" mode on Transform Grid: islands turned by different amounts cannot share one grid,
+so a fused node would emit one set per island anyway, which is this node followed by Transform Grid.
+
+- **One output set per island**, input by input, islands numbered in cell order (Z, then Y, then X, by each island's
+  lowest cell). Each set is the island's points copied unchanged (chunks stay chunks, nothing moves) from the input,
+  with the input's metadata, `@Data` and tags (initialized from the input, per the mutated-input rule).
+  `IsSurrounded` stays valid: a cell's face neighbours are always in its own island.
+- `Connectivity: Faces | Edges | Corners` (default Faces), the same enum as Cell Properties' components.
+- `Min Cells` (default 1): smaller islands are dropped; the rest are numbered without gaps.
+- A point Duplicate Cells ignored goes with the island of the cell at its first cell (Offset Surface's split cells
+  stay together).
+- **Re-anchor Grid** (default on): each island's `Grid Transform Attribute` origin moves to a cell of the island picked
+  by `Anchor Alignment` (Constant or `@Data.AnchorAlignment`, default 0.5 = centre; same meaning as Transform Grid's
+  Pivot Alignment). No point moves, only the cell numbering. The origin then *is* the island's pivot: Transform Grid
+  with `Pivot = Location`, `Space = Grid`, `Pivot Location = 0` turns each island about its centre, and any set later
+  cut from an island (slices of a column) keeps the island's grid and so turns about the same axis. This is why there
+  is no `@Data.Pivot` output (designer, 2026-11-20).
+  - The origin must be a cell centre, so on an axis where the island is an even number of cells wide the anchor is half
+    a cell off the true centre (rounded toward the max side). Agreed to accept for now; if twisted columns wobble, add
+    an optional residual-offset attribute (0 or 0.5 cells per axis) or an offset on a Transform Grid "Grid Origin" pivot.
+- Optional `@Data` outputs, each with its own toggle and name: `IslandIndex` (Integer32, on), `IslandCount`
+  (Integer32, islands from that input after Min Cells), `IslandCellCount` (Integer32), `IslandCenter` (Vector, world,
+  exact bounds centre, not snapped).
+- Errors: an enabled output with an empty name, two outputs sharing a name, an output named like the grid transform or
+  Voxel Size attribute, Re-anchor Grid with an empty Grid Transform Attribute, and the Anchor Alignment shorthand's own.
+
+Island labelling is the shared `Voxel/PCGVoxelIslands` library (`PCGVoxel::FindIslands`, `HalfNeighbourSteps`);
+Cell Properties' Component ID / Component Size now use it too. New nodes that need islands must use it.
+
+## 4o. Voxel | Slice
+
+Built 2026-11-20 on request, the second half of spiralling columns: Separate Islands (re-anchored) -> Slice ->
+something that sets `@Data.Rotation` from `SliceFraction` (or `SliceIndex`) -> Transform Grid with `Pivot = Location`,
+`Space = Grid`, `Pivot Location = 0`. Every slice keeps its input's grid transform, so all slices of one island turn
+about that island's centre.
+
+- **One output set per slice that has cells**, input by input, lowest slice first. Points are copied from the input
+  (metadata, `@Data`, tags, grid kept; initialized from the input per the mutated-input rule).
+- `Axis: X | Y | Z` (grid axis, default Z), `Thickness` in cells (default 1; below 1 is an error naming the value).
+- `Start: Set Bounds | Grid Origin`. Set Bounds (default): slice 0 starts at the set's lowest cell. Grid Origin:
+  boundaries at multiples of Thickness in cell index, indices may be negative; after re-anchoring, slice 0 holds each
+  island's centre cell.
+- **Chunks crossing a cut are split.** Each piece is a copy of the chunk (all attributes, unique metadata entry) with
+  its `VoxelSpan`, position and bounds cut to the slice. Outer sides keep the chunk's surface offset; a cut side gets
+  the natural extent. Only the point's local axis nearest the grid axis changes (points are assumed aligned with the
+  grid, as `ComputeSurfaceOffsets` assumes). Pieces get the Volume Sampler seed of their first cell; whole points keep
+  their seed. Written by hand rather than `PCGVoxelPointIO::WriteCells`, which would put surface offsets on cut faces
+  and rewrite Offset Surface's several-boxes-per-cell points as one box.
+- A point Duplicate Cells ignored goes to the slice(s) of its own box, like any other point.
+- `IsSurrounded` (when the input has it) is rewritten: `Cut Faces Are Open` (default on) judges each slice alone, so
+  cells on the cuts show (slices are usually turned apart); off judges against the whole input set.
+- Optional `@Data` outputs, each with a toggle and name: `SliceIndex` (Integer32, on), `SliceFraction` (Double, on: 0
+  lowest to 1 highest slice of that input, by index, 0 if only one), `SliceCount` (Integer32, lowest to highest index,
+  empty slices counted), `SliceDistance` (Double: the slice's middle along the axis from the grid origin, cell index x
+  Voxel Size; equal heights give equal values across sets sharing a grid). Same name checks as Separate Islands.
+- Not built: a node that writes a Rotation from a fraction (any PCG attribute math does it today), and a combined
+  Twist mode on Transform Grid (only if the chain proves tedious).
 
 ## 4f. Voxel | Air Flow
 
@@ -1189,6 +1252,9 @@ a cell hash.
   `PCGVoxelMorphology::Erode / Dilate / Open / Close / FloodOutside` with per-axis reach. Offset Surface and Cell
   Properties use it; new nodes must too, rather than writing their own (designer rule, 2026-11-15, which applies to
   compression as well: the chunking in `PCGVoxelCompress.cpp` moves to a shared header before anything else chunks).
+- `Public/Voxel/PCGVoxelIslands.h` (added 2026-11-20) is the shared island library: `FPCGVoxelIslands` (island per
+  cell and per point, cell count and cell bounds per island) and `PCGVoxel::FindIslands`. Separate Islands and Cell
+  Properties use it. `EPCGVoxelConnectivity` moved to `PCGVoxelGrid.h` for it.
 - `Public/Voxel/PCGVoxelChunking.h` (added 2026-11-15) is the shared compression library: `EPCGVoxelChunkShape`,
   `EPCGVoxelRandomSize`, `EPCGVoxelMatchAttributes`, `FPCGVoxelPointEquality` (which points may share a chunk) and
   `PCGVoxelChunking::MergeCells` (octree cubes, then boxes), `JoinAlong`, `RandomBoxes` and `GrowBoxes` (greedy

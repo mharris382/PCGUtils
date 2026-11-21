@@ -8,6 +8,7 @@
 #include "PCGPin.h"
 #include "Utils/PCGLogErrors.h"
 #include "Voxel/PCGVoxelGrid.h"
+#include "Voxel/PCGVoxelIslands.h"
 #include "Voxel/PCGVoxelMorphology.h"
 #include "Voxel/PCGVoxelPointIO.h"
 
@@ -41,60 +42,6 @@ namespace PCGVoxelCellPropertiesPrivate
 		}
 		Direction.Normalize();
 		return Space == EPCGVoxelDirectionSpace::World ? GridToWorld.TransformVectorNoScale(Direction) : Direction;
-	}
-
-	struct FUnionFind
-	{
-		TArray<int32> Parent;
-		explicit FUnionFind(int32 Num)
-		{
-			Parent.SetNumUninitialized(Num);
-			for (int32 Index = 0; Index < Num; ++Index)
-			{
-				Parent[Index] = Index;
-			}
-		}
-		int32 Find(int32 X)
-		{
-			while (Parent[X] != X)
-			{
-				Parent[X] = Parent[Parent[X]];
-				X = Parent[X];
-			}
-			return X;
-		}
-		void Union(int32 A, int32 B)
-		{
-			A = Find(A);
-			B = Find(B);
-			if (A != B)
-			{
-				Parent[FMath::Max(A, B)] = FMath::Min(A, B);
-			}
-		}
-	};
-
-	/** Neighbour steps for a connectivity, only one of each opposite pair (first non-zero component positive). */
-	TArray<FIntVector> HalfNeighbourSteps(EPCGVoxelConnectivity Connectivity)
-	{
-		const int32 MaxNonZero = Connectivity == EPCGVoxelConnectivity::Faces ? 1 : (Connectivity == EPCGVoxelConnectivity::Edges ? 2 : 3);
-		TArray<FIntVector> Steps;
-		for (int32 Z = -1; Z <= 1; ++Z)
-		{
-			for (int32 Y = -1; Y <= 1; ++Y)
-			{
-				for (int32 X = -1; X <= 1; ++X)
-				{
-					const int32 NonZero = (X != 0) + (Y != 0) + (Z != 0);
-					const int32 FirstNonZero = X != 0 ? X : (Y != 0 ? Y : Z);
-					if (NonZero > 0 && NonZero <= MaxNonZero && FirstNonZero > 0)
-					{
-						Steps.Add(FIntVector(X, Y, Z));
-					}
-				}
-			}
-		}
-		return Steps;
 	}
 }
 
@@ -477,35 +424,10 @@ bool FPCGVoxelCellPropertiesElement::ExecuteInternal(FPCGContext* Context) const
 
 		if (Settings->bWriteComponentID || Settings->bWriteComponentSize)
 		{
-			const TArray<FIntVector> Steps = HalfNeighbourSteps(Settings->Connectivity);
-			FUnionFind Components(NumCells);
-			for (int32 Cell = 0; Cell < NumCells; ++Cell)
-			{
-				for (const FIntVector& Step : Steps)
-				{
-					const int32 Other = Grid.FindCellIndex(Grid.Cells[Cell] + Step);
-					if (Other != INDEX_NONE)
-					{
-						Components.Union(Cell, Other);
-					}
-				}
-			}
-			// Numbered in cell order, so the result does not depend on the union order.
-			TArray<int32> RootID;
-			RootID.Init(INDEX_NONE, NumCells);
-			TArray<int32> ComponentOf;
-			ComponentOf.SetNumUninitialized(NumCells);
-			TArray<int32> Size;
-			for (int32 Cell = 0; Cell < NumCells; ++Cell)
-			{
-				const int32 Root = Components.Find(Cell);
-				if (RootID[Root] == INDEX_NONE)
-				{
-					RootID[Root] = Size.Add(0);
-				}
-				ComponentOf[Cell] = RootID[Root];
-				++Size[RootID[Root]];
-			}
+			FPCGVoxelIslands Islands;
+			PCGVoxel::FindIslands(Grid, Settings->Connectivity, Islands);
+			const TArray<int32>& ComponentOf = Islands.CellIsland;
+			const TArray<int32>& Size = Islands.CellCount;
 			Write(Settings->bWriteComponentID, Settings->ComponentIDAttribute, int32(0), [&](int32 I) { return ComponentOf[OutCell[I]]; });
 			Write(Settings->bWriteComponentSize, Settings->ComponentSizeAttribute, int32(0), [&](int32 I) { return Size[ComponentOf[OutCell[I]]]; });
 		}

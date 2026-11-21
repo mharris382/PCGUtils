@@ -68,7 +68,7 @@ bookkeeping is automated where practical.
 | `PCGUtilsFracture` | **Experimental.** Geometry Collection fracture as a step in a procedural geometry pipeline |
 | `PCGUtilsDataCache` | Saving and reloading PCG data as cache assets |
 | `PCGUtilsMaterialCache` | Shared material-variant cache and the node that resolves against it |
-| `PCGUtilsEditor` | Component visualizers, details customizations, editor styling, Graph Batch asset |
+| `PCGUtilsEditor` | Component visualizers, details customizations, editor styling |
 
 ---
 
@@ -508,12 +508,7 @@ It marks the package dirty and deliberately **does not save it** — a batch run
 rather than once per asset. The node is editor-only, main-thread, and never cached, because it writes to state
 that PCG's cache cannot see.
 
-### Batch runs and data caching
-
-**PCG Graph Batch** is an editor-only Data Asset holding an ordered list of standalone PCG graphs (Asset usage
-context). Press Run Batch and they execute in sequence, with Stop-on-Failure, a cancel button, and Data
-Validation integration that reports missing references, wrong usage contexts and duplicate entries. It controls
-execution order; it does not pass data between entries.
+### Data caching
 
 **Save PCG Cache Data** / **Get PCG Cache Data**, with the `PCGDataCacheComponent`, persist PCG data into cache
 assets — a runtime folder for data intended to be cooked and loaded in game, and an offline folder for
@@ -656,7 +651,6 @@ Deeper written documentation lives in `Docs/`:
 | `Docs/PCGUtilsFracture.md` | The full fracture pipeline, node reference, cluster interop and troubleshooting |
 | `Docs/PCGUtilsVoxel.md` | The voxel contract, chunks, and the Voxel nodes |
 | `Docs/PCGUtilsDynMesh/PrimitiveBuilder.md` | Builder fitting, padding and alignment |
-| `Docs/PCGUtils/PCGGraphBatch.md` | Running batches of standalone PCG graphs |
 | `Docs/PCGUtils/BitPackAttributes.md` | Packing small attributes into one value for Per Instance Custom Data; the Step node's Multi Step |
 
 Full node and API reference documentation is planned for a dedicated documentation site; this README is an

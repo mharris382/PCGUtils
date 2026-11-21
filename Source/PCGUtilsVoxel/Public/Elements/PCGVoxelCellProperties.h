@@ -8,17 +8,7 @@
 
 #include "PCGVoxelCellProperties.generated.h"
 
-/** Which neighbours join cells into one component. */
-UENUM(BlueprintType)
-enum class EPCGVoxelConnectivity : uint8
-{
-	/** Cells sharing a face (6 neighbours). */
-	Faces,
-	/** Cells sharing a face or an edge (18 neighbours). */
-	Edges,
-	/** Cells sharing a face, an edge or a corner (26 neighbours). */
-	Corners,
-};
+// EPCGVoxelConnectivity lives in Voxel/PCGVoxelGrid.h (shared with Separate Islands).
 
 /** The space Open Normal is written in. */
 UENUM(BlueprintType)
