@@ -146,12 +146,18 @@ void FPCGUtilsEditor::RegisterPinIcons()
 
 	FPCGModule::GetMutableDataTypeRegistry().RegisterPinIconsFunction(
 		FPCGVoxelPatternDataTypeInfo::AsId(),
-		[](const FPCGDataTypeIdentifier&, const FPCGPinProperties&, const bool bIsInput)
+		[](const FPCGDataTypeIdentifier&, const FPCGPinProperties& PinProperties, const bool bIsInput)
 		{
-			const FSlateBrush* Brush = FPCGUtilsEditorStyle::Get().GetBrush(
-				bIsInput
+			const bool bIsMultiple =
+				PinProperties.bAllowMultipleData || PinProperties.AllowsMultipleConnections();
+			const FName& BrushName = bIsMultiple
+				? (bIsInput
+					? FPCGUtilsEditorStyle::VoxelPatternsInputPinIcon
+					: FPCGUtilsEditorStyle::VoxelPatternsOutputPinIcon)
+				: (bIsInput
 					? FPCGUtilsEditorStyle::VoxelPatternInputPinIcon
 					: FPCGUtilsEditorStyle::VoxelPatternOutputPinIcon);
+			const FSlateBrush* Brush = FPCGUtilsEditorStyle::Get().GetBrush(BrushName);
 			return MakeTuple(Brush, Brush);
 		});
 

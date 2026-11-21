@@ -34,6 +34,8 @@ public:
 	// PCGUtilsVoxel. One glyph for both directions.
 	static const FName VoxelPatternInputPinIcon;
 	static const FName VoxelPatternOutputPinIcon;
+	static const FName VoxelPatternsInputPinIcon;
+	static const FName VoxelPatternsOutputPinIcon;
 
 private:
 	static TSharedRef<FSlateStyleSet> Create();

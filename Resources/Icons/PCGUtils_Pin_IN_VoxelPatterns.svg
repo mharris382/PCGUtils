@@ -1,0 +1,61 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" viewBox="0 0 128 128">
+  <defs>
+    <style>
+      .cls-1{opacity:0.35}
+      .cls-2{fill:#ffffff}
+      .cls-3{fill:#b3b3b3}
+      .cls-4{fill:#e6e6e6}
+      .cls-5{fill:#cccccc}
+      .cls-6{opacity:0.65}
+    </style>
+    <filter id="filter-1" filterUnits="userSpaceOnUse" x="23.107" y="14.653" width="90.857" height="85.598" data-vc-blend="multiply" color-interpolation-filters="sRGB"><feGaussianBlur in="SourceAlpha" stdDeviation="0"/><feOffset dx="2" dy="2" result="shadow"/><feFlood flood-color="#000000" flood-opacity="0.75"/><feComposite in2="shadow" operator="in" result="paint"/><feMerge><feMergeNode in="paint"/><feMergeNode in="SourceGraphic"/></feMerge></filter>
+    <filter id="filter-2" filterUnits="userSpaceOnUse" x="17.469" y="20.916" width="90.857" height="85.598" data-vc-blend="multiply" color-interpolation-filters="sRGB"><feGaussianBlur in="SourceAlpha" stdDeviation="0"/><feOffset dx="2" dy="2" result="shadow"/><feFlood flood-color="#000000" flood-opacity="0.75"/><feComposite in2="shadow" operator="in" result="paint"/><feMerge><feMergeNode in="paint"/><feMergeNode in="SourceGraphic"/></feMerge></filter>
+    <filter id="filter-3" filterUnits="userSpaceOnUse" x="11.096" y="27.339" width="90.857" height="85.598" data-vc-blend="multiply" color-interpolation-filters="sRGB"><feGaussianBlur in="SourceAlpha" stdDeviation="0"/><feOffset dx="2" dy="2" result="shadow"/><feFlood flood-color="#000000" flood-opacity="0.75"/><feComposite in2="shadow" operator="in" result="paint"/><feMerge><feMergeNode in="paint"/><feMergeNode in="SourceGraphic"/></feMerge></filter>
+  </defs>
+  <title>Multipe</title>
+  <g id="Cube">
+  </g>
+  <g id="Layer_5" data-name="Layer 5">
+    <g filter="url(#filter-1)">
+      <g class="cls-1">
+        <path id="Top" d="M27.961 63.051 L47.439 52.597 L66.918 63.051 L47.439 73.504 Z" class="cls-2"/>
+        <path id="Left" d="M27.107 85.237 L27.107 64.33 L46.674 74.83 L46.674 95.737 Z" class="cls-3"/>
+        <path id="Top-2" data-name="Top" d="M70.154 63.051 L89.633 52.597 L109.111 63.051 L89.633 73.504 Z" class="cls-2"/>
+        <path id="Right" d="M90.398 74.83 L109.964 64.33 L109.964 85.695 L90.398 95.737 Z" class="cls-4"/>
+        <path id="Top-3" data-name="Top" d="M50.619 73.608 L68.672 63.919 L86.725 73.608 Z" class="cls-2"/>
+        <path d="M48.204 96.251 L48.204 75.138 L88.868 75.138 L88.868 96.251 Z" class="cls-5"/>
+        <path id="Top-4" data-name="Top" d="M48.786 29.25 L68.532 18.653 L88.558 51.437 L68.812 62.034 Z" class="cls-2"/>
+        <path id="Left-2" data-name="Left" d="M48.477 51.271 L48.477 31.767 L66.648 61.023 Z" class="cls-3"/>
+      </g>
+    </g>
+    <g filter="url(#filter-2)">
+      <g class="cls-6">
+        <path id="Top-5" data-name="Top" d="M22.322 69.314 L41.8 58.861 L61.279 69.314 L41.8 79.768 Z" class="cls-2"/>
+        <path id="Left-3" data-name="Left" d="M21.469 91.501 L21.469 70.593 L41.035 81.094 L41.035 102.001 Z" class="cls-3"/>
+        <path id="Top-6" data-name="Top" d="M64.515 69.314 L83.994 58.861 L103.473 69.314 L83.994 79.768 Z" class="cls-2"/>
+        <path id="Right-2" data-name="Right" d="M84.76 81.094 L104.326 70.593 L104.326 91.501 L84.76 102.001 Z" class="cls-4"/>
+        <path id="Top-7" data-name="Top" d="M44.981 79.871 L63.033 70.183 L81.087 79.871 Z" class="cls-2"/>
+        <path d="M42.566 102.515 L42.566 81.401 L83.229 81.401 L83.229 102.515 Z" class="cls-5"/>
+        <path id="Top-8" data-name="Top" d="M43.148 35.514 L62.894 24.916 L82.919 57.701 L63.173 68.297 Z" class="cls-2"/>
+        <path id="Left-4" data-name="Left" d="M42.838 57.535 L42.838 38.031 L61.009 67.286 Z" class="cls-3"/>
+      </g>
+    </g>
+    <g filter="url(#filter-3)">
+      <g>
+        <path id="Top-9" data-name="Top" d="M15.95 75.736 L35.428 65.283 L54.907 75.736 L35.428 86.19 Z" class="cls-2"/>
+        <path id="Left-5" data-name="Left" d="M15.096 97.923 L15.096 77.015 L34.663 87.516 L34.663 108.423 Z" class="cls-3"/>
+        <path id="Top-10" data-name="Top" d="M58.143 75.736 L77.622 65.283 L97.1 75.736 L77.622 86.19 Z" class="cls-2"/>
+        <path id="Right-3" data-name="Right" d="M78.387 87.516 L97.953 77.015 L97.953 97.923 L78.387 108.423 Z" class="cls-4"/>
+        <path id="Top-11" data-name="Top" d="M38.608 86.293 L56.661 76.605 L74.714 86.293 Z" class="cls-2"/>
+        <path d="M36.193 108.937 L36.193 87.824 L76.857 87.824 L76.857 108.937 Z" class="cls-5"/>
+        <path id="Top-12" data-name="Top" d="M36.775 41.936 L56.521 31.339 L76.547 64.123 L56.801 74.719 Z" class="cls-2"/>
+        <path id="Left-6" data-name="Left" d="M36.465 63.957 L36.465 44.453 L54.637 73.709 Z" class="cls-3"/>
+      </g>
+    </g>
+  </g>
+  <g id="BH">
+  </g>
+  <g id="Layer_4" data-name="Layer 4">
+  </g>
+</svg>

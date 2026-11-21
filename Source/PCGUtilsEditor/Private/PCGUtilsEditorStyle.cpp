@@ -24,6 +24,8 @@ const FName FPCGUtilsEditorStyle::GCSelectionFactoryInputPinIcon(TEXT("PCGUtils.
 const FName FPCGUtilsEditorStyle::GCSelectionFactoryOutputPinIcon(TEXT("PCGUtils.Pin.OUT_GCSelectionFactory"));
 const FName FPCGUtilsEditorStyle::VoxelPatternInputPinIcon(TEXT("PCGUtils.Pin.IN_VoxelPattern"));
 const FName FPCGUtilsEditorStyle::VoxelPatternOutputPinIcon(TEXT("PCGUtils.Pin.OUT_VoxelPattern"));
+const FName FPCGUtilsEditorStyle::VoxelPatternsInputPinIcon(TEXT("PCGUtils.Pin.IN_VoxelPatterns"));
+const FName FPCGUtilsEditorStyle::VoxelPatternsOutputPinIcon(TEXT("PCGUtils.Pin.OUT_VoxelPatterns"));
 
 void FPCGUtilsEditorStyle::Initialize()
 {
@@ -118,6 +120,14 @@ TSharedRef<FSlateStyleSet> FPCGUtilsEditorStyle::Create()
 	Style->Set(VoxelPatternOutputPinIcon,
 		new FSlateVectorImageBrush(
 			Style->RootToContentDir(TEXT("Icons/PCGUtils_Pin_OUT_VoxelPattern"), TEXT(".svg")),
+			FVector2D(22.0f, 22.0f)));
+	Style->Set(VoxelPatternsInputPinIcon,
+		new FSlateVectorImageBrush(
+			Style->RootToContentDir(TEXT("Icons/PCGUtils_Pin_IN_VoxelPatterns"), TEXT(".svg")),
+			FVector2D(22.0f, 22.0f)));
+	Style->Set(VoxelPatternsOutputPinIcon,
+		new FSlateVectorImageBrush(
+			Style->RootToContentDir(TEXT("Icons/PCGUtils_Pin_OUT_VoxelPatterns"), TEXT(".svg")),
 			FVector2D(22.0f, 22.0f)));
 
 	RegisterActionIcons(Style);

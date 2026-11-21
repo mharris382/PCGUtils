@@ -1,65 +1,36 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<svg id="Builder" xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" viewBox="0 0 64.44 63.6">
+<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" viewBox="0 0 64.44 63.6">
   <defs>
     <style>
-      .cls-1 {
-        filter: url(#drop-shadow-2);
-      }
-
-      .cls-2 {
-        fill: #fff;
-      }
-
-      .cls-3 {
-        filter: url(#drop-shadow-1);
-      }
-
-      .cls-4 {
-        filter: url(#drop-shadow-3);
-      }
+      .cls-1{opacity:0.35}
+      .cls-2{fill:#ffffff}
+      .cls-3{opacity:0.65}
     </style>
-    <filter id="drop-shadow-1" x="1.65" y="27.56" width="30.85" height="31.31" filterUnits="userSpaceOnUse">
-      <feOffset dx="1" dy="1"/>
-      <feGaussianBlur result="blur" stdDeviation="0"/>
-      <feFlood flood-color="#231f20" flood-opacity="1"/>
-      <feComposite in2="blur" operator="in"/>
-      <feComposite in="SourceGraphic"/>
-    </filter>
-    <filter id="drop-shadow-2" x="32.49" y="27.56" width="30.85" height="31.31" filterUnits="userSpaceOnUse">
-      <feOffset dx="1" dy="1"/>
-      <feGaussianBlur result="blur-2" stdDeviation="0"/>
-      <feFlood flood-color="#231f20" flood-opacity="1"/>
-      <feComposite in2="blur-2" operator="in"/>
-      <feComposite in="SourceGraphic"/>
-    </filter>
-    <filter id="drop-shadow-3" x="17.07" y="2.02" width="30.85" height="31.31" filterUnits="userSpaceOnUse">
-      <feOffset dx="1" dy="1"/>
-      <feGaussianBlur result="blur-3" stdDeviation="0"/>
-      <feFlood flood-color="#231f20" flood-opacity="1"/>
-      <feComposite in2="blur-3" operator="in"/>
-      <feComposite in="SourceGraphic"/>
-    </filter>
+    <filter id="filter-1" filterUnits="userSpaceOnUse" x="11.501" y="6.183" width="44.978" height="45.537" data-vc-blend="multiply" color-interpolation-filters="sRGB"><feGaussianBlur in="SourceAlpha" stdDeviation="0"/><feOffset dx="2" dy="2" result="shadow"/><feFlood flood-color="#000000" flood-opacity="0.75"/><feComposite in2="shadow" operator="in" result="paint"/><feMerge><feMergeNode in="paint"/><feMergeNode in="SourceGraphic"/></feMerge></filter>
+    <filter id="filter-2" filterUnits="userSpaceOnUse" x="8.062" y="9.035" width="44.978" height="45.537" data-vc-blend="multiply" color-interpolation-filters="sRGB"><feGaussianBlur in="SourceAlpha" stdDeviation="0"/><feOffset dx="2" dy="2" result="shadow"/><feFlood flood-color="#000000" flood-opacity="0.75"/><feComposite in2="shadow" operator="in" result="paint"/><feMerge><feMergeNode in="paint"/><feMergeNode in="SourceGraphic"/></feMerge></filter>
+    <filter id="filter-3" filterUnits="userSpaceOnUse" x="4.491" y="11.879" width="44.978" height="45.537" data-vc-blend="multiply" color-interpolation-filters="sRGB"><feGaussianBlur in="SourceAlpha" stdDeviation="0"/><feOffset dx="2" dy="2" result="shadow"/><feFlood flood-color="#000000" flood-opacity="0.75"/><feComposite in2="shadow" operator="in" result="paint"/><feMerge><feMergeNode in="paint"/><feMergeNode in="SourceGraphic"/></feMerge></filter>
   </defs>
-  <g id="Layer_12_copy_2" data-name="Layer 12 copy 2">
-    <g class="cls-3">
-      <g>
-        <polygon class="cls-2" points="1.65 51.47 15.59 57.87 15.59 41.65 1.65 35.33 1.65 51.47"/>
-        <polygon class="cls-2" points="16.58 27.56 3.1 33.73 16.58 39.9 30.06 33.73 16.58 27.56"/>
-        <polygon class="cls-2" points="17.57 57.87 31.51 51.47 31.51 35.33 17.57 41.65 17.57 57.87"/>
+  <title>PCGUtils_Pin_IN_PrimitiveFactories</title>
+  <g id="Layer_12_copy" data-name="Layer 12 copy">
+    <g filter="url(#filter-1)">
+      <g class="cls-1">
+        <path d="M15.501 39.802 L32.762 47.721 L32.762 27.631 L15.501 19.805 Z" class="cls-2"/>
+        <path d="M33.99 10.183 L17.297 17.823 L33.99 25.463 L50.684 17.823 Z" class="cls-2"/>
+        <path d="M35.218 47.721 L52.479 39.802 L52.479 19.805 L35.218 27.631 Z" class="cls-2"/>
       </g>
     </g>
-    <g class="cls-1">
-      <g>
-        <polygon class="cls-2" points="32.49 51.47 46.43 57.87 46.43 41.65 32.49 35.33 32.49 51.47"/>
-        <polygon class="cls-2" points="47.42 27.56 33.94 33.73 47.42 39.9 60.9 33.73 47.42 27.56"/>
-        <polygon class="cls-2" points="48.41 57.87 62.35 51.47 62.35 35.33 48.41 41.65 48.41 57.87"/>
+    <g filter="url(#filter-2)">
+      <g class="cls-3">
+        <path d="M12.062 42.653 L29.323 50.573 L29.323 30.483 L12.062 22.657 Z" class="cls-2"/>
+        <path d="M30.551 13.035 L13.857 20.675 L30.551 28.315 L47.245 20.675 Z" class="cls-2"/>
+        <path d="M31.779 50.573 L49.04 42.653 L49.04 22.657 L31.779 30.483 Z" class="cls-2"/>
       </g>
     </g>
-    <g class="cls-4">
+    <g filter="url(#filter-3)">
       <g>
-        <polygon class="cls-2" points="17.07 25.93 31.01 32.33 31.01 16.11 17.07 9.79 17.07 25.93"/>
-        <polygon class="cls-2" points="32 2.02 18.52 8.19 32 14.36 45.48 8.19 32 2.02"/>
-        <polygon class="cls-2" points="32.99 32.33 46.93 25.93 46.93 9.79 32.99 16.11 32.99 32.33"/>
+        <path d="M8.491 45.497 L25.752 53.417 L25.752 33.327 L8.491 25.501 Z" class="cls-2"/>
+        <path d="M26.98 15.879 L10.286 23.519 L26.98 31.158 L43.673 23.519 Z" class="cls-2"/>
+        <path d="M28.208 53.417 L45.469 45.497 L45.469 25.501 L28.208 33.327 Z" class="cls-2"/>
       </g>
     </g>
   </g>

@@ -1,29 +1,39 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<svg id="Builder" xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" viewBox="0 0 64.44 63.6">
+<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" width="64.44" height="63.6" viewBox="0 0 64.44 63.6">
   <defs>
-    <style>
-      .cls-1 {
-        fill: #fff;
-      }
-
-      .cls-2 {
-        filter: url(#drop-shadow-1);
-      }
-    </style>
-    <filter id="drop-shadow-1" x="8.21" y="7.57" width="48.57" height="49.3" filterUnits="userSpaceOnUse">
-      <feOffset dx="1" dy="1"/>
-      <feGaussianBlur result="blur" stdDeviation="0"/>
-      <feFlood flood-color="#231f20" flood-opacity="1"/>
-      <feComposite in2="blur" operator="in"/>
-      <feComposite in="SourceGraphic"/>
-    </filter>
+    <filter id="filter-1" filterUnits="userSpaceOnUse" x="4.21" y="3.57" width="55.58" height="56.3" data-vc-blend="multiply" color-interpolation-filters="sRGB"><feGaussianBlur in="SourceAlpha" stdDeviation="0"/><feOffset dx="2" dy="2" result="shadow"/><feFlood flood-color="#000000" flood-opacity="0.75"/><feComposite in2="shadow" operator="in" result="paint"/><feMerge><feMergeNode in="paint"/><feMergeNode in="SourceGraphic"/></feMerge></filter>
+    <filter id="filter-2" filterUnits="userSpaceOnUse" x="102.632" y="11.067" width="40.968" height="41.467" data-vc-blend="multiply" color-interpolation-filters="sRGB"><feGaussianBlur in="SourceAlpha" stdDeviation="0"/><feOffset dx="2" dy="2" result="shadow"/><feFlood flood-color="#000000" flood-opacity="0.75"/><feComposite in2="shadow" operator="in" result="paint"/><feMerge><feMergeNode in="paint"/><feMergeNode in="SourceGraphic"/></feMerge></filter>
+    <filter id="filter-3" filterUnits="userSpaceOnUse" x="96.176" y="15.002" width="40.968" height="41.467" data-vc-blend="multiply" color-interpolation-filters="sRGB"><feGaussianBlur in="SourceAlpha" stdDeviation="0"/><feOffset dx="2" dy="2" result="shadow"/><feFlood flood-color="#000000" flood-opacity="0.75"/><feComposite in2="shadow" operator="in" result="paint"/><feMerge><feMergeNode in="paint"/><feMergeNode in="SourceGraphic"/></feMerge></filter>
+    <filter id="filter-4" filterUnits="userSpaceOnUse" x="89.659" y="17.335" width="40.968" height="41.467" data-vc-blend="multiply" color-interpolation-filters="sRGB"><feGaussianBlur in="SourceAlpha" stdDeviation="0"/><feOffset dx="2" dy="2" result="shadow"/><feFlood flood-color="#000000" flood-opacity="0.75"/><feComposite in2="shadow" operator="in" result="paint"/><feMerge><feMergeNode in="paint"/><feMergeNode in="SourceGraphic"/></feMerge></filter>
   </defs>
+  <title>PCGUtils_Pin_Out_PrimitiveFactory.svg</title>
   <g id="Layer_12_copy" data-name="Layer 12 copy">
-    <g class="cls-2">
+    <g filter="url(#filter-1)">
       <g>
-        <polygon class="cls-1" points="8.21 45.68 30.42 55.87 30.42 30.02 8.21 19.95 8.21 45.68"/>
-        <polygon class="cls-1" points="32 7.57 10.52 17.4 32 27.23 53.48 17.4 32 7.57"/>
-        <polygon class="cls-1" points="33.58 55.87 55.79 45.68 55.79 19.95 33.58 30.02 33.58 55.87"/>
+        <path d="M8.21 45.68 L30.42 55.87 L30.42 30.02 L8.21 19.95 Z" fill="#ffffff"/>
+        <path d="M32 7.57 L10.52 17.4 L32 27.23 L53.48 17.4 Z" fill="#ffffff"/>
+        <path d="M33.58 55.87 L55.79 45.68 L55.79 19.95 L33.58 30.02 Z" fill="#ffffff"/>
+      </g>
+    </g>
+    <g filter="url(#filter-2)">
+      <g opacity="0.35">
+        <path d="M106.632 41.473 L122.021 48.533 L122.021 30.622 L106.632 23.645 Z" fill="#ffffff"/>
+        <path d="M123.116 15.067 L108.233 21.878 L123.116 28.689 L137.999 21.878 Z" fill="#ffffff"/>
+        <path d="M124.211 48.533 L139.6 41.473 L139.6 23.645 L124.211 30.622 Z" fill="#ffffff"/>
+      </g>
+    </g>
+    <g filter="url(#filter-3)">
+      <g opacity="0.65">
+        <path d="M100.176 45.408 L115.565 52.469 L115.565 34.557 L100.176 27.58 Z" fill="#ffffff"/>
+        <path d="M116.66 19.002 L101.777 25.813 L116.66 32.624 L131.543 25.813 Z" fill="#ffffff"/>
+        <path d="M117.755 52.469 L133.144 45.408 L133.144 27.58 L117.755 34.557 Z" fill="#ffffff"/>
+      </g>
+    </g>
+    <g filter="url(#filter-4)">
+      <g>
+        <path d="M93.659 47.741 L109.048 54.802 L109.048 36.891 L93.659 29.913 Z" fill="#ffffff"/>
+        <path d="M110.143 21.335 L95.259 28.146 L110.143 34.957 L125.026 28.146 Z" fill="#ffffff"/>
+        <path d="M111.237 54.802 L126.626 47.741 L126.626 29.913 L111.237 36.891 Z" fill="#ffffff"/>
       </g>
     </g>
   </g>
