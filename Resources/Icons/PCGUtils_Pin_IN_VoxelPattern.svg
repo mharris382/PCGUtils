@@ -1,0 +1,33 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" viewBox="0 0 128 128">
+  <defs>
+    <style>
+      .cls-1{fill:#ffffff}
+      .cls-2{fill:#b3b3b3}
+      .cls-3{fill:#e6e6e6}
+      .cls-4{fill:#cccccc}
+    </style>
+    <filter id="filter-1" filterUnits="userSpaceOnUse" x="8" y="6.267" width="116.281" height="109.409" data-vc-blend="multiply" color-interpolation-filters="sRGB"><feGaussianBlur in="SourceAlpha" stdDeviation="0"/><feOffset dx="2" dy="2" result="shadow"/><feFlood flood-color="#000000" flood-opacity="0.75"/><feComposite in2="shadow" operator="in" result="paint"/><feMerge><feMergeNode in="paint"/><feMergeNode in="SourceGraphic"/></feMerge></filter>
+  </defs>
+  <title>ICON_2</title>
+  <g id="Cube">
+  </g>
+  <g id="Layer_5" data-name="Layer 5">
+    <g filter="url(#filter-1)">
+      <g>
+        <path id="Top" d="M13.115 68.288 L38.57 54.627 L64.026 68.288 L38.57 81.949 Z" class="cls-1"/>
+        <path id="Left" d="M12 97.282 L12 69.959 L37.57 83.682 L37.57 111.004 Z" class="cls-2"/>
+        <path id="Top-2" data-name="Top" d="M68.255 68.288 L93.711 54.627 L119.166 68.288 L93.711 81.949 Z" class="cls-1"/>
+        <path id="Right" d="M94.711 83.682 L120.281 69.959 L120.281 97.282 L94.711 111.004 Z" class="cls-3"/>
+        <path id="Top-3" data-name="Top" d="M42.726 82.084 L66.318 69.423 L89.911 82.084 Z" class="cls-1"/>
+        <path d="M39.57 111.676 L39.57 84.084 L92.711 84.084 L92.711 111.676 Z" class="cls-4"/>
+        <path id="Top-4" data-name="Top" d="M40.331 24.116 L66.136 10.267 L92.306 53.111 L66.501 66.959 Z" class="cls-1"/>
+        <path id="Left-2" data-name="Left" d="M39.926 52.894 L39.926 27.405 L63.673 65.638 Z" class="cls-2"/>
+      </g>
+    </g>
+  </g>
+  <g id="BH">
+  </g>
+  <g id="Layer_4" data-name="Layer 4">
+  </g>
+</svg>

@@ -31,6 +31,10 @@ public:
 	static const FName GCSelectionFactoryInputPinIcon;
 	static const FName GCSelectionFactoryOutputPinIcon;
 
+	// PCGUtilsVoxel. One glyph for both directions.
+	static const FName VoxelPatternInputPinIcon;
+	static const FName VoxelPatternOutputPinIcon;
+
 private:
 	static TSharedRef<FSlateStyleSet> Create();
 	static void RegisterActionIcons(const TSharedRef<FSlateStyleSet>& Style);

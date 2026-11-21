@@ -185,6 +185,8 @@ first cell's values. A test checks it.
 | 1 | `Voxel \| Fill Gaps` | Fills thin gaps (what a closing fills) and, optionally, enclosed cavities; Out is In with the cells added, Gaps has only them (section 4l). |
 | 1 | `Voxel \| Extrude` | Grows each cell along Direction × Amount (whole cells, rounded up), or with a negative Amount removes it and the cells beyond; separate runs per axis or a box; added cells numbered by step (section 4k). |
 | 1 | `Voxel \| Match Rules` | Rule tiles: ordered rules (open faces, thin) that may turn to fit; turns each cell's point and writes a mesh index for a collection downstream (section 4j). |
+| 1 | `Voxel \| Pattern` | One authored pattern (probes, boxes with mesh index and mesh turn, turns, joining) for Apply Patterns; presets Top Edge, Upright Corner, Inside Corner Fill (section 4p). |
+| 1 | `Voxel \| Apply Patterns` | Runs the connected patterns in order: each claims cells as oriented chunks (or adds cells), one point per chunk with a mesh index; span stays in grid axes (section 4p). |
 | 1 | `Voxel \| Expand` | Turns chunks back into one point per cell (section 1.2). |
 | 1 | `Voxel \| Pack Points` | Packs loose points into free cells of a voxel grid, fully or part way, without overlaps (section 4). |
 | 1 | `Voxel \| Cell Properties` | Writes per-cell attributes: open sides, surrounded, inside corners, neighbourhood, depth, column, components and shape (protrusions, thickness, gaps, cavities) (section 4b). Replaces the planned `Voxel \| Neighbors`. |
@@ -1165,6 +1167,146 @@ preview with meshes in the asset editor.
    64-mask table.
 2. Edge and corner neighbours in the Faces pattern (inner corners).
 3. Attribute-compare rules (surface area, chunk volume, Depth, Component Size).
+
+## 4p. Voxel | Pattern and Voxel | Apply Patterns
+
+Built 2026-11-20 from the designer's sketches and the Sol handoff (`VoxelPatternFactory_UE58`). One small set of
+right-angle wedge meshes (`/PCGUtils/Assets/Meshes`) scales to any chunk, so shaped edges and corners come down to
+two decisions per place: which cells form a chunk, and how the mesh is turned in it. A pattern authors both. Fitting
+the mesh to the chunk stays downstream (a PCGEx mesh collection read by `MeshIndex`, fitted to the point's bounds).
+
+Match Rules (4j) answers "which mesh fits this one cell" from its six faces. Patterns answer "which group of cells
+becomes which chunks": they look further than the faces, make chunks bigger than a cell, run in order, and can add
+cells. Match Rules is unchanged.
+
+### 4p.1 A pattern
+
+`FPCGVoxelPattern`, a plain struct (inline on a `Voxel | Pattern` node, or in a `UPCGVoxelPatternAsset`). Everything
+is written in the pattern's own frame, which is also the frame of the mesh it places.
+
+| Part | Meaning |
+|---|---|
+| `Name`, `Debug Color` | For reading graphs and errors; the colour goes on the points the pattern makes. |
+| `Operation` | **Claim** (default): the boxes take filled cells. **Add**: the boxes are new cells in empty space. |
+| `Probes` | Cells around the origin that must be `Filled`, `Empty`, `Unclaimed` or `Solid Face` (with a `Face` side). Read only. Cells not listed do not matter. Each probe: `Offset`, `State`, and `Count` + `Step` to cover a row of cells with one probe (Count 3, Step -X: three cells running toward -X from Offset). |
+| `Boxes` | The chunks made where the pattern fits, all or none. Each: `First`, `Span`, `Mesh Index`, `Mesh Forward` (+Y of the mesh) and `Mesh Up` (+Z of the mesh), and `Open Sides` (the sides the mesh cuts away), in the pattern's frame. |
+| `Turns` | Exact / About Up (4) / About Up + Flip (8) / Any (24), as Match Rules. Probes and boxes turn together. |
+| `Join Along`, `Max Joined Span` | Pattern axes along which neighbouring fits (same turn, same box, end to end) join into one longer chunk. Uses the shared chunking (`PCGVoxelChunking::JoinAlong`). |
+| `Probes See Added Cells` | Off: probes read the input set only. On: cells added by earlier patterns count as filled. |
+
+Rules that hold everywhere:
+
+- **The origin cell (0,0,0) is always a filled cell.** A pattern is tried at every filled cell (Z, then Y, then X),
+  under each of its turns in fixed order (as drawn first).
+- **Claiming does not empty a cell.** A claimed cell cannot be claimed again, but every probe still reads it as
+  filled. So a 2 x 2 corner taken first leaves no fake holes for the 1 x 1 pattern after it.
+- **Unclaimed asks for plain wall** (added 2026-11-20, after the first barrier test made corners against other
+  patterns' chunks, on lone blocks and on wall ends). An `Unclaimed` probe needs a cell of the set that no *earlier*
+  pattern claimed; added cells never count. Cells the same pattern takes do count, so two fits of one pattern never
+  block each other and the visiting order does not change the result. "How much room does a corner need" is the
+  `Count` of its Unclaimed probes: N on one wall, M on the other.
+- **A chunk is solid on its back and air on its cut sides** (added 2026-11-21 from the designer's sketch: a fill
+  behind a 2 x 2 corner was wrongly refused because the bend cell was claimed). Each box lists its `Open Sides`. A
+  `Solid Face` probe names one side of the probed cell (`Face`) and passes on a plain cell, or on a cell of an
+  earlier pattern's chunk that does not list that side as open. Diagonal cells are not looked at unless a probe is
+  put there. As with Unclaimed, a pattern's own chunks read as plain to it.
+- **Exact boxes.** A box is its authored size or the pattern does not fit. Longer chunks come only from Join Along.
+- **All or nothing.** Several boxes in one pattern are one layout; a fit takes every box or none.
+- **Added cells appear after their pattern has finished**, so the order cells are visited in never changes what an
+  Add pattern sees.
+- An added chunk copies the point of the cell its pattern started on (metadata kept), with whole-cell bounds.
+
+### 4p.2 Mesh convention
+
+Measured from the meshes on 2026-11-20 (each a 200 unit cell, pivot at the centre):
+
+| Mesh | Solid part | Open (cut) sides |
+|---|---|---|
+| `SM_Voxel_Edge` | Wedge along Y; whole faces on -X and -Z | +X and +Z (one slope across the +X / +Z edge) |
+| `SM_Voxel_Corner_Ex_2Sides` | Pyramid on the -Z face, apex at (-X,-Y,+Z) | +X, +Y, +Z (slopes across +X/+Z and +Y/+Z: a hip) |
+| `SM_Voxel_Corner_Ex_3Sides` | Corner tetrahedron at (-X,-Y,-Z) | +X, +Y, +Z (one diagonal face) |
+| `SM_Voxel_Corner_In_2Sides` | Two wedges joined; only the (+X,+Y,+Z) corner missing | +Z (a valley) |
+| `SM_Voxel_Corner_In_3Sides` | Cube minus the (+X,+Y,+Z) corner | only the +X+Y+Z diagonal |
+| `SM_Voxel_Corner_Int_Out` | Upright half cube on the +X+Y side, top corner cut | -X, -Y upright diagonal; use not confirmed |
+
+So the convention the presets use: **a mesh's cut sides face +X (then +Y), and +Z.** A pattern written as drawn for
+the Edge mesh has `Empty` probes on (1,0,0) and (0,0,1). To use the same mesh another way round inside a pattern, set
+the box's `Mesh Forward` / `Mesh Up`: the upright corner stands the Edge mesh on end with Mesh Forward -Z, Mesh Up +Y
+(its +X stays +X, its +Z points along +Y).
+
+### 4p.3 The nodes
+
+`Voxel | Pattern`: no inputs; `Pattern Source` Inline or Asset; `Order` (lower runs first; ties run in connection
+order). Output pin `Pattern` (its own data type, so the pin takes nothing else). Palette presets:
+
+| Entry | Pattern |
+|---|---|
+| `Voxel \| Pattern` | Blank: one single-cell box, no probes. |
+| `Voxel \| Pattern Top Edge` | +X and +Z open, About Up, joined along Y: one long edge per wall top. |
+| `Voxel \| Pattern Upright Corner` | The origin is the corner cell; +X and +Y open; Edge mesh on end; joined along Z. Two `Unclaimed` probes, (-1,0,0) stepping -X and (0,-1,0) stepping -Y, Count 1: both walls must run on from the corner as plain cells. `Presets::UprightCorner(Size, WallCells)` in C++ makes the Size x Size version. |
+| `Voxel \| Pattern Upright Corner 2 x 2` | The same with a 2 x 2 x 1 box behind the corner cell, four Empty probes, and four Unclaimed wall probes (each wall, both rows of the corner's width). |
+| `Voxel \| Pattern Inside Corner Fill` | Add. The origin is the cell in the bend, diagonal to the empty corner; (1,0,0) `Solid Face` +Y and (0,1,0) `Solid Face` +X (the sides facing the fill), (1,1,0) empty, the bend cell free; adds (1,1,0); Edge mesh on end; joined along Z. |
+
+The wall probes are what stop a corner being made on a lone block, on the end of a wall, or beside a chunk an earlier
+pattern made. Raise their `Count` to ask for more wall; delete them to get the old behaviour (any outside corner).
+The preset boxes set `Open Sides`: Top Edge +X and +Z; the upright corners and the fill +X and +Y.
+Nodes placed before 2026-11-21 keep their old probes and no Open Sides: place the presets again or set them by hand.
+
+`Voxel | Apply Patterns`: pins `In` (voxel sets), `Patterns`; outputs `Out`, `Unmatched`.
+
+- Out: In, mutated. One point per chunk, at the chunk centre, rotation = grid rotation x the mesh turn, **scale 1**,
+  bounds covering the chunk in the turned frame (surface offsets of claimed cells are kept, turned with it).
+  `VoxelSpan` stays in **grid axes** however the point is turned.
+- `Unmatched`: **Pin** (default; cells no pattern took, unturned, an untouched input chunk stays a chunk, a chunk
+  that lost cells gives the rest one by one) / **Keep** (after the chunks in Out, Mesh Index -1) / **Drop**.
+- `Set Point Color` (default on): the pattern's Debug Color goes to `$Color`.
+- Attributes, every name a setting: `MeshIndex` (int32, required), `PatternIndex` (int32, on by default: position in
+  run order), `PatternName` (Name), `PatternColor` (Vector4), `IsAdded` (Boolean); the last three off by default.
+- Validation, each its own error naming the pattern and the box or probe: no boxes; a span below 1 or above 256;
+  negative mesh index; Mesh Forward and Mesh Up on one axis; overlapping boxes; an Add box on the origin; an Empty
+  probe on the origin; a probe Count below 1 or above 256; a probe that contradicts another probe or a box; empty or clashing attribute names.
+
+Out is for spawning: a turned multi-cell point is not a clean voxel set for other Voxel nodes (they ignore point
+rotation when reading bounds). Unmatched is a clean voxel set.
+
+### 4p.4 The golf barrier and the centre patch
+
+The barrier (Voxel Grid 2), three patterns on one Apply Patterns node:
+
+1. Order 0, `Pattern Upright Corner 2 x 2`: outside corners that have a full 2 x 2 behind them.
+2. Order 1, Upright Corner 1 x 1: the outside corners left over that still have plain wall on both sides, so none
+   lands against a 2 x 2 chunk. **Square ends on thin extrusions** come from the same two wall probes: a wall end one
+   cell thick has one wall missing, so it stays square. Delete the two probes to chamfer the ends too. That is the
+   one switch between the two Pass 1 pictures. A wall end two cells thick does have two real 1 x 1 corners (each has
+   one cell of wall both ways); set the wall probes' Count to 2 to leave those square as well.
+3. Order 2, Inside Corner Fill: adds the corner cells of Pass 2 wherever both walls show a whole side to the fill,
+   so also behind a 2 x 2 corner chunk, and never against a chunk's cut side.
+
+Unmatched carries the straight barrier cells for the default mesh.
+
+The centre patch (Voxel Grid 1) turned out not to be a pattern job as first set up (designer, 2026-11-20): a flat
+one-cell-thick patch has no +X / +Z corner to find, so it is either built separately or extruded down first to make a
+real corner, with the lower cells removed afterwards. Drawn by hand it still works: a pattern with Turns Exact, no probes, and the boxes drawn by hand: three
+3 x 1 x 1 boxes for three ramp strips, or any other layout, each box with its own Mesh Forward / Mesh Up, which is
+how the hip and ridge layouts in the sketches are made from the one Edge mesh.
+
+Order matters at corners: a corner cell also fits an edge pattern (as drawn first), so put corner patterns before
+edge patterns.
+
+### 4p.5 Not built yet
+
+1. **Selective application.** The designer ruled out a point-data selector and bool attributes. The seam is in:
+   `PCGVoxelPatterns::FLimits` has `CanStart(pattern, origin cell)` and `CanEdit(pattern, cell)`; neither changes
+   what probes read (a protected cell still counts as filled). A voxel selector (or a reused selector family) and a
+   PCGEx filter input in `PCGUtilsPCGExInterop` both plug in there; `UPCGVoxelPatternData` is meant to be derived
+   from for that. This is what will keep the open course entrances square.
+2. Attribute equality when joining (today a joined chunk takes its first cell's values, as Compress `Listed` with
+   nothing listed), and equal surface offsets.
+3. A slice-grid editor for probes and boxes, and a text form.
+4. Face patterns (`SM_Voxel_Plane_Inset`): a box that makes a point per open face rather than per chunk.
+5. Mirrored turns.
+6. Choosing which way a corner faces when two turns fit (a wall end three wide): today, Turns Exact and one pattern
+   per direction. The designer expects this to wait for the editor layer (item 3).
 
 ## 4d. Shared voxel grid (design, not built)
 

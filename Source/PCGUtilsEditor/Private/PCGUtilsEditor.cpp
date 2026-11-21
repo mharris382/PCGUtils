@@ -4,6 +4,7 @@
 #include "PCGPin.h"
 #include "Customizations/PluginCustomizations.h"
 #include "Data/Registry/PCGDataTypeRegistry.h"
+#include "Elements/PCGVoxelPattern.h"
 #include "Factories/PCGUtilsDynMeshBuilderFactory.h"
 #include "Factories/PCGUtilsDynMeshPainterFactory.h"
 #include "Factories/PCGUtilsDynMeshSelectionFactory.h"
@@ -143,6 +144,17 @@ void FPCGUtilsEditor::RegisterPinIcons()
 			return MakeTuple(Brush, Brush);
 		});
 
+	FPCGModule::GetMutableDataTypeRegistry().RegisterPinIconsFunction(
+		FPCGVoxelPatternDataTypeInfo::AsId(),
+		[](const FPCGDataTypeIdentifier&, const FPCGPinProperties&, const bool bIsInput)
+		{
+			const FSlateBrush* Brush = FPCGUtilsEditorStyle::Get().GetBrush(
+				bIsInput
+					? FPCGUtilsEditorStyle::VoxelPatternInputPinIcon
+					: FPCGUtilsEditorStyle::VoxelPatternOutputPinIcon);
+			return MakeTuple(Brush, Brush);
+		});
+
 	bPinIconsRegistered = true;
 }
 
@@ -163,6 +175,8 @@ void FPCGUtilsEditor::UnregisterPinIcons()
 		FPCGUtilsFractureFactoryDataTypeInfo::AsId());
 	FPCGModule::GetMutableDataTypeRegistry().UnregisterPinIconsFunction(
 		FPCGUtilsGeometryCollectionSelectionFactoryDataTypeInfo::AsId());
+	FPCGModule::GetMutableDataTypeRegistry().UnregisterPinIconsFunction(
+		FPCGVoxelPatternDataTypeInfo::AsId());
 	bPinIconsRegistered = false;
 }
 
