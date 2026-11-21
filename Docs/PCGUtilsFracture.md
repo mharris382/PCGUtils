@@ -45,7 +45,6 @@ subcategories. Titles retain the `GC | ` search prefix, so searching `GC` return
 |---|---|---|
 | **GC \| From Asset** | *(none)* - reads a Geometry Collection asset | `GC` |
 | **GC \| Save Asset** | `GC` | `AssetPath` - Attribute Set containing the saved asset reference |
-| **GC \| Spawn Component** *(PCGUtilsSimulation)* | `Asset` (points or `AssetPath` attribute set), `Init Fields` and `Solver` (each opt-in) | `Out` - the input plus a `ComponentReference` per spawned PCG-managed GC Component |
 | **GC \| Get GC Data** | *(none)* - reads placed GC Components | `GC` (one per component) |
 | **GC \| From DynMesh** (compact) | `DynMesh` | `GC` |
 | **GC \| Fracture** | `GC`, `Fracture`, `Selection` (optional) | `GC`, `Result` (opt-in) |

@@ -333,9 +333,9 @@ Before saving:
 Saving is an explicit authoring action. Treat the output asset like any other baked asset: review its collision,
 damage thresholds, material slots, and level hierarchy before using it in gameplay.
 
-To use it for destruction, place the saved asset as a Geometry Collection component or use
-**GC | Spawn Component** from `PCGUtilsSimulation`. Runtime breakage, fields, solver configuration, and removal
-behaviour belong to the Chaos setup; the fracture graph determines the authored pieces and hierarchy.
+To use it for destruction, place the saved asset as a Geometry Collection component. Runtime breakage, fields,
+solver configuration, and removal behaviour belong to the Chaos setup; the fracture graph determines the
+authored pieces and hierarchy.
 
 ## Iterating safely in the PCG Editor
 

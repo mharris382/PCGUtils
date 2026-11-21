@@ -1,6 +1,7 @@
 // Copyright Max Harris
 
 #include "PCGUtilsTexturesShaders.h"
+#include "Modules/ModuleManager.h"
 
 #include "DataDrivenShaderPlatformInfo.h"
 #include "GlobalShader.h"

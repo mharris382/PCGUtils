@@ -2,7 +2,7 @@
 
 #include "Misc/AutomationTest.h"
 
-#if WITH_AUTOMATION_TESTS
+#if WITH_AUTOMATION_TESTS && WITH_EDITOR
 
 #include "DynamicMesh/DynamicMesh3.h"
 #include "Elements/Painters/PCGDynMeshDistancePainter.h"

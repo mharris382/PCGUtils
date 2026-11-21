@@ -28,6 +28,16 @@
 
 namespace
 {
+	FText PathToMeshDataClassText(const UPCGData* Data)
+	{
+		if (!Data) return LOCTEXT("NoData", "no data");
+#if WITH_EDITOR
+		return Data->GetClass()->GetDisplayNameText();
+#else
+		return FText::FromName(Data->GetClass()->GetFName());
+#endif
+	}
+
 	constexpr int32 PathToMeshPathsAlias = 0;
 	constexpr int32 PathToMeshSplinesAlias = 1;
 
@@ -362,7 +372,7 @@ bool FPCGDynMeshPathToMeshElement::ExecuteInternal(FPCGContext* Context) const
 			{
 				PCGLog::LogWarningOnGraph(FText::Format(LOCTEXT("NotAPath",
 					"{0}: expected a path (point data) but got {1}; it was skipped. Turn on Input Splines for splines."),
-					PathToMeshInputText(InputIndex), Input.Data ? Input.Data->GetClass()->GetDisplayNameText() : LOCTEXT("NoData", "no data")), Context);
+					PathToMeshInputText(InputIndex), PathToMeshDataClassText(Input.Data)), Context);
 				continue;
 			}
 			bGathered = GatherPathToMeshPath(PointData, Settings->ClosedAttributeName, InputIndex, Outline, Reason);
@@ -380,7 +390,7 @@ bool FPCGDynMeshPathToMeshElement::ExecuteInternal(FPCGContext* Context) const
 		{
 			PCGLog::LogWarningOnGraph(FText::Format(LOCTEXT("NotASpline",
 				"{0}: expected a spline or 2D polygon but got {1}; it was skipped. Turn off Input Splines for paths."),
-				PathToMeshInputText(InputIndex), Input.Data ? Input.Data->GetClass()->GetDisplayNameText() : LOCTEXT("NoData", "no data")), Context);
+				PathToMeshInputText(InputIndex), PathToMeshDataClassText(Input.Data)), Context);
 			continue;
 		}
 		if (!bGathered)

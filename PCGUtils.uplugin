@@ -62,21 +62,6 @@
             "LoadingPhase": "PreDefault"
         },
         {
-            "Name": "PCGUtilsMaterialCache",
-            "Type": "Runtime",
-            "LoadingPhase": "PreDefault"
-        },
-        {
-            "Name": "PCGUtilsSimulation",
-            "Type": "Runtime",
-            "LoadingPhase": "PreDefault"
-        },
-        {
-            "Name": "PCGUtilsChaosCache",
-            "Type": "Runtime",
-            "LoadingPhase": "PreDefault"
-        },
-        {
             "Name": "PCGUtilsVoxel",
             "Type": "Runtime",
             "LoadingPhase": "PreDefault"
@@ -108,10 +93,6 @@
         },
         {
             "Name": "PlanarCut",
-            "Enabled": true
-        },
-        {
-            "Name": "ChaosCaching",
             "Enabled": true
         }
     ]

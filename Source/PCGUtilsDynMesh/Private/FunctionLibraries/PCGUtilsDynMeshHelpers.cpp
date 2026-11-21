@@ -5,6 +5,7 @@
 #include "Engine/StaticMesh.h"
 #include "GeometryScript/MeshAssetFunctions.h"
 #include "UDynamicMesh.h"
+#include "UObject/Package.h"
 
 namespace
 {

@@ -10,7 +10,7 @@
 #include "UDynamicMesh.h"
 #include "Utils/PCGLogErrors.h"
 
-#if WITH_AUTOMATION_TESTS
+#if WITH_DEV_AUTOMATION_TESTS && WITH_EDITOR
 #include "GeometryScript/MeshPrimitiveFunctions.h"
 #include "Misc/AutomationTest.h"
 #endif
@@ -127,7 +127,7 @@ bool FPCGUtilsDynMeshMirrorOperation::Execute(
 
 #undef LOCTEXT_NAMESPACE
 
-#if WITH_AUTOMATION_TESTS
+#if WITH_DEV_AUTOMATION_TESTS && WITH_EDITOR
 
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(FPCGDynMeshMirrorGeometryTest,
 	"PCGUtils.DynMesh.Mirror.Geometry",
@@ -143,6 +143,8 @@ bool FPCGDynMeshMirrorGeometryTest::RunTest(const FString&)
 	FPCGUtilsDynMeshMirrorOperation Operation;
 	Operation.Space = EPCGUtilsDynMeshTransformSpace::ActorLocal;
 	Operation.MirrorPlane = FTransform::Identity;
+	// This fixture lies on +Z; explicitly keep that side before mirroring.
+	Operation.Options.bFlipCutSide = true;
 	FPCGUtilsDynMeshProcessInvocation Invocation;
 	Invocation.MeshData = Data;
 	FPCGUtilsDynMeshProcessOutcome Outcome;

@@ -9,6 +9,7 @@
 #include "Helpers/PCGUtilsDataDomainHelpers.h"
 #include "Helpers/PCGUtilsParallelInputs.h"
 #include "Materials/Material.h"
+#include "MaterialDomain.h"
 #include "Materials/MaterialInterface.h"
 #include "PCGContext.h"
 #include "PCGPin.h"

@@ -32,7 +32,11 @@ void FPCGUtilsModifierContext::Warn(const UPCGUtilsComponentModifier* Modifier, 
 
 FText UPCGUtilsComponentModifier::GetModifierDisplayName() const
 {
+#if WITH_EDITOR
 	return GetClass()->GetDisplayNameText();
+#else
+	return FText::FromName(GetClass()->GetFName());
+#endif
 }
 
 void UPCGUtilsComponentModifier::ModifyPoints(const FPCGUtilsModifierContext& Context, const UPCGBasePointData* In, TArray<UPCGBasePointData*>& Out) const

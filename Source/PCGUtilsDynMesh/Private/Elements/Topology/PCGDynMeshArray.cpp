@@ -17,7 +17,7 @@
 #include "UDynamicMesh.h"
 #include "Utils/PCGLogErrors.h"
 
-#if WITH_AUTOMATION_TESTS
+#if WITH_DEV_AUTOMATION_TESTS && WITH_EDITOR
 #include "Misc/AutomationTest.h"
 #endif
 
@@ -540,7 +540,7 @@ bool FPCGUtilsDynMeshArrayOperation::Execute(
 
 #undef LOCTEXT_NAMESPACE
 
-#if WITH_AUTOMATION_TESTS
+#if WITH_DEV_AUTOMATION_TESTS && WITH_EDITOR
 
 namespace PCGDynMeshArrayTests
 {
@@ -631,7 +631,9 @@ bool FPCGDynMeshArrayPinContractTest::RunTest(const FString&)
 {
 	UPCGDynMeshArraySettings* Settings = NewObject<UPCGDynMeshArraySettings>();
 	Settings->Mode = EPCGUtilsDynMeshArrayMode::Spline;
-	const TArray<FPCGPinProperties> Pins = Settings->AllInputPinProperties();
+	TArray<FPCGPinProperties> Pins = Settings->AllInputPinProperties();
+	// Advanced settings override pins follow the authored data pins.
+	Pins.RemoveAll([](const FPCGPinProperties& Pin) { return Pin.IsAdvancedPin(); });
 	TestTrue(TEXT("Mutated DynMesh input is first"),
 		Pins.Num() >= 3 && Pins[0].Label == PCGUtilsDynMeshProcessConstants::InputPin);
 	TestTrue(TEXT("Required spline dependency follows the mutated input"),

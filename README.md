@@ -32,7 +32,7 @@ Unreal Engine **5.8** · MIT licensed · <https://github.com/mharris382/PCGUtils
   - [Save parameters and bake identity](#save-parameters-and-bake-identity)
   - [A representative workflow](#a-representative-workflow)
   - [Committing LODs](#committing-lods)
-  - [Batch runs and data caching](#batch-runs-and-data-caching)
+  - [Data caching](#data-caching)
 - [Voxels](#voxels)
 - [Experimental — Procedural Fracture](#experimental--procedural-fracture)
 - [Also in the plugin](#also-in-the-plugin)
@@ -67,7 +67,6 @@ bookkeeping is automated where practical.
 | `PCGUtilsCore` | Shared factory foundation used by the Selector, Builder and Painter families |
 | `PCGUtilsFracture` | **Experimental.** Geometry Collection fracture as a step in a procedural geometry pipeline |
 | `PCGUtilsDataCache` | Saving and reloading PCG data as cache assets |
-| `PCGUtilsMaterialCache` | Shared material-variant cache and the node that resolves against it |
 | `PCGUtilsEditor` | Component visualizers, details customizations, editor styling |
 
 ---
@@ -594,10 +593,8 @@ clustering and damage settings needed to produce a configured asset.
 
 ## Also in the plugin
 
-**PCGUtilsMaterialCache** — a world-scoped cache of material variants, keyed on (parent material + parameter
-overrides), so a graph that needs many parameterized materials reuses them instead of creating a dynamic
-instance per element. A request with no overrides resolves to the parent asset directly. The
-**Resolve Material Variants** node is the graph-facing entry point.
+Chaos Cache, Material Cache and Simulation development modules are preserved on `5.8-Experimental`; they are
+not part of the main release plugin. Textures and Texture Shaders remain included.
 
 **PCGUtilsDataCache** — described under *Procedural Asset Authoring* above.
 
@@ -613,8 +610,9 @@ instance per element. A request with no overrides resolves to the parent asset d
 
 2. Ensure the required engine plugins are enabled (see below). PCGUtils enables them through its descriptor,
    so this normally happens automatically.
-3. Regenerate project files and build. PCGUtils contains C++ modules, so the project must be a C++ project —
-   a Blueprint-only project needs to be converted first.
+3. For a source checkout, compile the plugin in a C++ host or package it with Unreal Automation Tool. For a
+   matching precompiled distribution, copy the installed plugin into Plugins/PCGUtils; Blueprint-only projects
+   can open it without converting the project to C++ or compiling the plugin.
 4. Restart the editor. DynMesh and GC nodes appear under `PCGUtils | DynMesh` and `PCGUtils | GC`, split into
    functional subcategories such as Selection, Topology, Deform, Attributes, Creation, Fracture, Edit, and
    Conversion.
@@ -625,7 +623,7 @@ instance per element. A request with no overrides resolves to the parent asset d
 
 - **Unreal Engine 5.8** (`"EngineVersion": "5.8.0"`).
 - Engine plugins, all enabled by the PCGUtils descriptor: `PCG`, `GeometryScripting`,
-  `PCGGeometryScriptInterop`, `Fracture`, `PlanarCut`, `ChaosCaching`.
+  `PCGGeometryScriptInterop`, `Fracture`, `PlanarCut`.
 - Dynamic Mesh functionality additionally uses Unreal's Geometry Framework, Geometry Core and Modeling modules
   through the module dependencies declared in `Source/`.
 

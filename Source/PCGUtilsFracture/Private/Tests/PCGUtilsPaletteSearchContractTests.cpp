@@ -82,7 +82,7 @@ namespace PCGUtilsPaletteSearchContract
 	{
 		static const TSet<FString> Packages = {
 			TEXT("/Script/PCGUtilsDynMesh"), TEXT("/Script/PCGUtilsFracture"), TEXT("/Script/PCGUtilsPainter"),
-			TEXT("/Script/PCGUtilsSimulation"), TEXT("/Script/PCGUtilsChaosCache"), TEXT("/Script/PCGUtilsVoxel")};
+			TEXT("/Script/PCGUtilsVoxel")};
 
 		TArray<FEntry> Entries;
 		for (TObjectIterator<UClass> It; It; ++It)
@@ -167,15 +167,12 @@ bool FPCGUtilsPaletteSearchContractTest::RunTest(const FString&)
 	bool bFoundSwizzleBounds = false;
 	bool bFoundGetMPCValues = false;
 	bool bFoundBitPack = false;
-	bool bFoundSpawnComponent = false;
 	int32 VoxelCount = 0;
 
 	for (const FEntry& Entry : Entries)
 	{
 		const FString Where = FString::Printf(TEXT("%s (%s)"), *Entry.Label, *Entry.ClassName);
 
-		// PCGUtilsSimulation's GC nodes (GC | Spawn Component) belong to the GC family and obey every GC rule; its
-		// other nodes are neither GC nor DynMesh. PCGUtilsChaosCache is wholly GC family (GC | Load Chaos Cache).
 		if (Entry.ClassName == TEXT("PCGSwizzleBoundsSettings"))
 		{
 			bFoundSwizzleBounds = true;
@@ -220,28 +217,21 @@ bool FPCGUtilsPaletteSearchContractTest::RunTest(const FString&)
 			TestFalse(*FString::Printf(TEXT("%s subtitle is not a qualified enum value"), *Where), Entry.Subtitle.Contains(TEXT("::")));
 			continue;
 		}
-        const bool bIsSimulation = Entry.Package == TEXT("/Script/PCGUtilsSimulation");
-		const bool bIsChaosCache = Entry.Package == TEXT("/Script/PCGUtilsChaosCache");
-		const bool bIsFracture = Entry.Package == TEXT("/Script/PCGUtilsFracture") || bIsChaosCache ||
-			(bIsSimulation && Entry.Label.StartsWith(TEXT("GC | ")));
-		if (Entry.ClassName == TEXT("PCGSpawnGeometryCollectionComponentSettings"))
-		{
-			bFoundSpawnComponent = true;
-		}
+		const bool bIsFracture = Entry.Package == TEXT("/Script/PCGUtilsFracture");
 
 		if (Entry.Package == TEXT("/Script/PCGUtilsDynMesh") && !IsDynMeshFamilyExempt(Entry.ClassName))
 		{
 			TestTrue(*FString::Printf(TEXT("%s has a PCGUtils DynMesh menu category"), *Where),
 				Entry.Category.StartsWith(TEXT("PCGUtils|DynMesh")));
 		}
-		if (Entry.Package == TEXT("/Script/PCGUtilsFracture") || bIsChaosCache)
+		if (bIsFracture)
 		{
 			TestTrue(*FString::Printf(TEXT("%s has a PCGUtils GC menu category"), *Where),
 				Entry.Category.StartsWith(TEXT("PCGUtils|GC")));
 		}
 
 		// "DynMesh" returns every DynMesh element.
-		if (!bIsFracture && !bIsSimulation && !IsDynMeshFamilyExempt(Entry.ClassName))
+		if (!bIsFracture && !IsDynMeshFamilyExempt(Entry.ClassName))
 		{
 			TestTrue(*FString::Printf(TEXT("'DynMesh' finds %s"), *Where), Matches(Entry.SearchText, TEXT("DynMesh")));
 		}
@@ -339,7 +329,6 @@ bool FPCGUtilsPaletteSearchContractTest::RunTest(const FString&)
 		}));
 
 	TestTrue(TEXT("Realize Builders is exposed"), bFoundRealizeBuilders);
-	TestTrue(TEXT("GC | Spawn Component is checked"), bFoundSpawnComponent);
 	TestEqual(TEXT("Primitive Builders and both placement decorators are present"), BuilderCount, 13);
 	for (const FString& Title : {FString(TEXT("Builder | Refit")), FString(TEXT("Builder | Retarget")),
 		FString(TEXT("GC | Transform Bones")), FString(TEXT("GC | Project Bones")),
