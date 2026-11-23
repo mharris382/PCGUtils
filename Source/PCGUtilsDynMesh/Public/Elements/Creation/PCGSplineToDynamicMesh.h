@@ -62,7 +62,7 @@ public:
 	bool bUnionSegments = true;
 
 	/**
-	 * Converts world-space spline data into the PCG target actor's local space before generating the mesh.
+	 * Converts the generated world-space mesh into the PCG target actor's local space after spline deformation.
 	 * Enable this when the resulting Dynamic Mesh or baked Static Mesh will be attached to that actor.
 	 */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Output", meta = (PCG_Overridable))

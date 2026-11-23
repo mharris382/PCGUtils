@@ -1,6 +1,7 @@
 // Copyright Max Harris
 
 #include "Elements/Conversion/PCGUtilsDynMeshSurfacePathCommon.h"
+#include "Elements/PCGUtilsDynMeshSpaceHelpers.h"
 #include "Helpers/PCGUtilsParallelInputs.h"
 
 #include "Data/PCGBasePointData.h"
@@ -212,8 +213,8 @@ namespace PCGUtilsDynMeshSurfacePathCommon
 			// The frame is built in mesh-local space and carried into output space by the same transform as the
 			// position, so a rotated/scaled target actor cannot desynchronize the two.
 			const FVector Position = Options.MeshToOutput.TransformPosition(FVector(LocalPosition));
-			FVector Tangent = Options.MeshToOutput.TransformVectorNoScale(FVector(LocalTangent));
-			FVector Normal = Options.MeshToOutput.TransformVectorNoScale(FVector(LocalNormal));
+			FVector Tangent = Options.MeshToOutput.TransformVector(FVector(LocalTangent));
+			FVector Normal = PCGUtilsDynMeshSpaceHelpers::TransformNormalToWorld(Options.MeshToOutput, FVector(LocalNormal));
 			if (!Tangent.Normalize())
 			{
 				Tangent = FVector::ForwardVector;

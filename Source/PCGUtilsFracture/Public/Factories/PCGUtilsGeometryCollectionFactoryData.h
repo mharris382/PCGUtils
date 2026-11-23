@@ -4,8 +4,7 @@
 #pragma once
 
 #include "CoreMinimal.h"
-#include "Data/Registry/PCGDataType.h"
-#include "PCGData.h"
+#include "Factories/PCGUtilsFactoryData.h"
 
 #include "PCGUtilsGeometryCollectionFactoryData.generated.h"
 
@@ -25,45 +24,20 @@ struct FPCGUtilsGeometryCollectionFactoryDataTypeInfo : public FPCGDataTypeInfo
  * vertices/edges/faces, and keeping the two type hierarchies separate is what stops a GC provider from visually
  * plugging into a DynMesh provider pin.
  *
- * Factory instances are immutable once their provider emits them. Anything mutable belongs on per-execution
- * state, not here.
+ * The C++ base (UPCGUtilsFactoryData) is shared with every other domain; only the pin type root is separate.
  */
 UCLASS(Abstract, BlueprintType, ClassGroup=(Procedural), Category="PCGUtils|Fracture|Providers")
-class PCGUTILSFRACTURE_API UPCGUtilsGeometryCollectionFactoryData : public UPCGData
+class PCGUTILSFRACTURE_API UPCGUtilsGeometryCollectionFactoryData : public UPCGUtilsFactoryData
 {
 	GENERATED_BODY()
 
 public:
 	PCG_ASSIGN_TYPE_INFO(FPCGUtilsGeometryCollectionFactoryDataTypeInfo)
-
-	/** Execution order when several factories share one pin. Lower runs first; ties keep connection order. */
-	UPROPERTY()
-	int32 Priority = 0;
-
-	/** One-time setup while the authoring node is still executing. Return false (already logged) to abort. */
-	virtual bool Prepare(FPCGContext* InContext) { return true; }
-
-	virtual void AddDataDependency(const UPCGData* InData);
-	virtual bool CanBeSerialized() const override { return false; }
-
-protected:
-	virtual void AddToCrc(FArchiveCrc32& Ar, bool bFullDataCrc) const override;
-	virtual bool SupportsFullDataCrc() const override { return true; }
-
-	UPROPERTY()
-	TSet<TObjectPtr<UPCGData>> DataDependencies;
 };
 
 namespace PCGUtilsGeometryCollectionFactories
 {
-	PCGUTILSFRACTURE_API bool GetInputFactoriesInternal(
-		FPCGContext* InContext,
-		FName InPinLabel,
-		TArray<TObjectPtr<const UPCGUtilsGeometryCollectionFactoryData>>& OutFactories,
-		const TSet<FPCGDataTypeBaseId>& AcceptedTypes,
-		bool bRequired);
-
-	/** Resolves, de-duplicates, type-checks and priority-orders the factories connected to one pin. */
+	/** The fracture module's name for PCGUtilsFactories::GetInputFactories; the two are the same function. */
 	template<typename FactoryType>
 	bool GetInputFactories(
 		FPCGContext* InContext,
@@ -72,19 +46,6 @@ namespace PCGUtilsGeometryCollectionFactories
 		const TSet<FPCGDataTypeBaseId>& AcceptedTypes,
 		bool bRequired = true)
 	{
-		TArray<TObjectPtr<const UPCGUtilsGeometryCollectionFactoryData>> BaseFactories;
-		if (!GetInputFactoriesInternal(InContext, InPinLabel, BaseFactories, AcceptedTypes, bRequired))
-		{
-			return false;
-		}
-
-		for (const UPCGUtilsGeometryCollectionFactoryData* BaseFactory : BaseFactories)
-		{
-			if (const FactoryType* Factory = Cast<FactoryType>(BaseFactory))
-			{
-				OutFactories.Add(Factory);
-			}
-		}
-		return !OutFactories.IsEmpty();
+		return PCGUtilsFactories::GetInputFactories<FactoryType>(InContext, InPinLabel, OutFactories, AcceptedTypes, bRequired);
 	}
 }

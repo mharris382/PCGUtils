@@ -1,6 +1,7 @@
 // Copyright Max Harris
 
 #include "Elements/Creation/PCGGetStaticMeshBrushData.h"
+#include "Elements/PCGUtilsDynMeshSpaceHelpers.h"
 #include "Helpers/PCGUtilsParallelInputs.h"
 
 #include "Algo/Transform.h"
@@ -22,12 +23,9 @@ namespace PCGGetStaticMeshBrushData
 	void EmitBrushMesh(FPCGContext* Context, const FStaticMeshBrushCachedMesh& Cached, const FTransform& WorldPlacement,
 		const AActor* ReferenceActor, TSet<FString>&& Tags)
 	{
-		const FTransform OutputTransform = ReferenceActor
-			? WorldPlacement.GetRelativeTransform(ReferenceActor->GetActorTransform())
-			: WorldPlacement;
-
 		UE::Geometry::FDynamicMesh3 Mesh = Cached.Mesh;
-		MeshTransforms::ApplyTransform(Mesh, UE::Geometry::FTransformSRT3d(OutputTransform), true);
+		PCGUtilsDynMeshSpaceHelpers::TransformMeshBetweenSpaces(Mesh, WorldPlacement,
+			ReferenceActor ? ReferenceActor->GetActorTransform() : FTransform::Identity);
 
 		UPCGDynamicMeshData* OutputData = PCGUtilsAsyncObjects::NewObject<UPCGDynamicMeshData>(Context);
 		OutputData->Initialize(MoveTemp(Mesh), Cached.ResolveMaterials());

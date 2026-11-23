@@ -147,7 +147,6 @@ bool FPCGRoutePathOnDynMeshElement::ExecuteInternal(FPCGContext* Context) const
 
 		const FTransform MeshToOutput = PCGUtilsDynMeshSpaceHelpers::ResolveMeshActorTransform(
 			Context, Surface.MeshData, Settings->bWorldSpace);
-		const FTransform OutputToMesh = MeshToOutput.Inverse();
 
 		for (const FPCGTaggedData& PathInput : PathInputs)
 		{
@@ -169,7 +168,7 @@ bool FPCGRoutePathOnDynMeshElement::ExecuteInternal(FPCGContext* Context) const
 				for (int32 Index = 0; Index < NumGuides; ++Index)
 				{
 					MeshLocalGuides.Add(FVector3d(
-						OutputToMesh.TransformPosition(GuideTransforms[Index].GetLocation())));
+						MeshToOutput.InverseTransformPosition(GuideTransforms[Index].GetLocation())));
 				}
 			}
 

@@ -6,6 +6,7 @@
 #include "Elements/PCGVoxelPattern.h"
 #include "PCGContext.h"
 #include "PCGPin.h"
+#include "Selectors/PCGVoxelSelector.h"
 #include "Utils/PCGLogErrors.h"
 #include "Voxel/PCGVoxelGrid.h"
 #include "Voxel/PCGVoxelPatterns.h"
@@ -103,7 +104,14 @@ bool FPCGVoxelApplyPatternsElement::ExecuteInternal(FPCGContext* Context) const
 	{
 		return Fail(LOCTEXT("NoPatterns", "nothing is connected to the Patterns pin; connect at least one Voxel | Pattern node."));
 	}
-	PatternData.StableSort([](const UPCGVoxelPatternData& A, const UPCGVoxelPatternData& B) { return A.Order < B.Order; });
+	PatternData.StableSort([](const UPCGVoxelPatternData& A, const UPCGVoxelPatternData& B) { return A.Priority < B.Priority; });
+
+	// A pattern with no selector is applied everywhere. Selectors are prepared per input, against its grid.
+	bool bAnySelector = false;
+	for (const UPCGVoxelPatternData* Data : PatternData)
+	{
+		bAnySelector |= !Data->Selectors.IsEmpty();
+	}
 
 	TArray<const FPCGVoxelPattern*> Patterns;
 	for (int32 Index = 0; Index < PatternData.Num(); ++Index)
@@ -166,8 +174,45 @@ bool FPCGVoxelApplyPatternsElement::ExecuteInternal(FPCGContext* Context) const
 			continue;
 		}
 
+		// Selectors become the limits of the run. They answer for any cell, filled or empty (an Add pattern asks
+		// about the empty cells it would fill); a selector that is costly per cell keeps its own answers.
+		PCGVoxelPatterns::FLimits Limits;
+		TArray<PCGVoxelSelectors::FSet> SelectorSets;
+		if (bAnySelector)
+		{
+			SelectorSets.SetNum(PatternData.Num());
+			bool bPrepared = true;
+			for (int32 Index = 0; Index < PatternData.Num() && bPrepared; ++Index)
+			{
+				const UPCGVoxelSelectorData* Failed = nullptr;
+				if (!SelectorSets[Index].Prepare(Context, PatternData[Index]->Selectors, Grid, &Failed))
+				{
+					PCGLog::LogErrorOnGraph(PCGVoxel::FormatError(Title, InputIndex, FText::Format(
+						LOCTEXT("SelectorNotPrepared", "{0}: its selector of type {1} could not be evaluated against this input's grid (see the selector's own error)."),
+						PatternLabel(Index, PatternData[Index]->Pattern), FText::FromString(GetNameSafe(Failed ? Failed->GetClass() : nullptr)))), Context);
+					bPrepared = false;
+				}
+			}
+			if (!bPrepared)
+			{
+				continue;
+			}
+			auto IsSelected = [&SelectorSets](int32 Pattern, const FIntVector& Cell)
+			{
+				return SelectorSets[Pattern].Test(Cell);
+			};
+			Limits.CanStart = [&SelectorSets, &PatternData, IsSelected](int32 Pattern, const FIntVector& Cell)
+			{
+				return SelectorSets[Pattern].IsEmpty() || PatternData[Pattern]->SelectorScope == EPCGVoxelPatternSelectorScope::Cells || IsSelected(Pattern, Cell);
+			};
+			Limits.CanEdit = [&SelectorSets, &PatternData, IsSelected](int32 Pattern, const FIntVector& Cell)
+			{
+				return SelectorSets[Pattern].IsEmpty() || PatternData[Pattern]->SelectorScope == EPCGVoxelPatternSelectorScope::Origin || IsSelected(Pattern, Cell);
+			};
+		}
+
 		PCGVoxelPatterns::FResult Result;
-		PCGVoxelPatterns::Apply(Grid, Patterns, PCGVoxelPatterns::FLimits(), Result);
+		PCGVoxelPatterns::Apply(Grid, Patterns, Limits, Result);
 		const int32 NumChunks = Result.Chunks.Num();
 
 		TArray<FPCGVoxelCellOut> Rest;

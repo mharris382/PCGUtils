@@ -8,7 +8,7 @@
 #include "UDynamicMesh.h"
 #include "DynamicMesh/DynamicMesh3.h"
 #include "DynamicMesh/DynamicMeshAttributeSet.h"
-#include "GameFramework/Actor.h"
+#include "Elements/PCGUtilsDynMeshSpaceHelpers.h"
 
 #define LOCTEXT_NAMESPACE "PCGDynMeshToPointsElement"
 
@@ -121,20 +121,8 @@ bool FPCGDynMeshToPointsElement::ExecuteInternal(FPCGContext* InContext) const
 			continue;
 		}
 
-		FTransform MeshToOutput = FTransform::Identity;
-		if (Settings->bOutputToWorldSpace)
-		{
-			if (const AActor* TargetActor = InContext->GetTargetActor(InMeshData))
-			{
-				MeshToOutput = TargetActor->GetActorTransform();
-			}
-			else
-			{
-				PCGLog::LogWarningOnGraph(
-					LOCTEXT("MissingTargetActor", "DynMeshToPoints could not resolve a target actor; points remain in mesh-local space."),
-					InContext);
-			}
-		}
+		const FTransform MeshToOutput = PCGUtilsDynMeshSpaceHelpers::ResolveMeshActorTransform(
+			InContext, InMeshData, Settings->bOutputToWorldSpace);
 
 		const FDynamicMeshNormalOverlay* NormalOverlay = nullptr;
 		const FDynamicMeshNormalOverlay* TangentOverlay = nullptr;
@@ -193,32 +181,8 @@ bool FPCGDynMeshToPointsElement::ExecuteInternal(FPCGContext* InContext) const
 				: FVector4f(VertexColor.X, VertexColor.Y, VertexColor.Z, 1.0f);
 
 			FPCGPoint& Point = Points.Emplace_GetRef();
-			const FVector LocalNormal((double)Normal.X, (double)Normal.Y, (double)Normal.Z);
-			const FVector OutputNormal = Settings->bOutputToWorldSpace
-				? MeshToOutput.TransformVectorNoScale(LocalNormal).GetSafeNormal()
-				: LocalNormal;
-			const FVector OutputPosition = Settings->bOutputToWorldSpace
-				? MeshToOutput.TransformPosition(FVector(Position))
-				: FVector(Position);
-			FQuat Rotation = FRotationMatrix::MakeFromZ(OutputNormal).ToQuat();
-			if (!Tangent.ContainsNaN())
-			{
-				FVector OutputTangent(Tangent);
-				if (Settings->bOutputToWorldSpace)
-				{
-					OutputTangent = MeshToOutput.TransformVectorNoScale(OutputTangent);
-				}
-				// Preserve Z exactly and remove any normal component from the tangent before constructing X.
-				OutputTangent -= OutputNormal * FVector::DotProduct(OutputTangent, OutputNormal);
-				if (OutputTangent.Normalize())
-				{
-					Rotation = FRotationMatrix::MakeFromZX(OutputNormal, OutputTangent).ToQuat();
-				}
-			}
-			Point.Transform = FTransform(
-				Rotation,
-				OutputPosition,
-				FVector::OneVector);
+			Point.Transform = PCGUtilsDynMeshSpaceHelpers::TransformSurfaceFrameToWorld(
+				MeshToOutput, FVector(Position), FVector(Normal), FVector(Tangent));
 			Point.Color = FVector4(Color.X, Color.Y, Color.Z, Color.W);
 			Point.SetExtents(FVector::ZeroVector);
 			Point.Density = 1.0f;

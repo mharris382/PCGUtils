@@ -82,7 +82,7 @@ namespace PCGUtilsPaletteSearchContract
 	{
 		static const TSet<FString> Packages = {
 			TEXT("/Script/PCGUtilsDynMesh"), TEXT("/Script/PCGUtilsFracture"), TEXT("/Script/PCGUtilsPainter"),
-			TEXT("/Script/PCGUtilsVoxel")};
+			TEXT("/Script/PCGUtilsVoxel"), TEXT("/Script/PCGUtilsSelectors")};
 
 		TArray<FEntry> Entries;
 		for (TObjectIterator<UClass> It; It; ++It)
@@ -168,6 +168,10 @@ bool FPCGUtilsPaletteSearchContractTest::RunTest(const FString&)
 	bool bFoundGetMPCValues = false;
 	bool bFoundBitPack = false;
 	int32 VoxelCount = 0;
+	int32 SelectorEntryCount = 0;
+	int32 SelectorVoxelCount = 0;
+	int32 SelectorDynMeshCount = 0;
+	int32 SelectorGCCount = 0;
 
 	for (const FEntry& Entry : Entries)
 	{
@@ -215,6 +219,33 @@ bool FPCGUtilsPaletteSearchContractTest::RunTest(const FString&)
 			const FString Name = Entry.Label.RightChop(FString(TEXT("Voxel | ")).Len()).ToLower();
 			TestFalse(*FString::Printf(TEXT("%s name omits Voxel"), *Where), Name.Contains(TEXT("voxel")));
 			TestFalse(*FString::Printf(TEXT("%s subtitle is not a qualified enum value"), *Where), Entry.Subtitle.Contains(TEXT("::")));
+			continue;
+		}
+		// Selector | nodes make point selectors for any domain, so they have their own category and prefix. Each is in
+		// the palette once per domain, as "Selector | <Name> (Voxel)", "(DynMesh)" and "(GC)". They are not DynMesh
+		// selections (Select | ) or GC selections (GC | Select | ) and are checked here only.
+		if (Entry.Package == TEXT("/Script/PCGUtilsSelectors"))
+		{
+			++SelectorEntryCount;
+			TestEqual(*FString::Printf(TEXT("%s has the Selectors category"), *Where), Entry.Category, FString(TEXT("PCGUtils|Selectors")));
+			TestTrue(*FString::Printf(TEXT("%s carries the Selector | prefix"), *Where), Entry.Label.StartsWith(TEXT("Selector | ")));
+			TestTrue(*FString::Printf(TEXT("'Selector' finds %s"), *Where), Matches(Entry.SearchText, TEXT("Selector")));
+			TestFalse(*FString::Printf(TEXT("%s is not counted as a DynMesh or GC selection"), *Where), IsDynMeshSelect(Entry) || IsGCSelect(Entry));
+			const FString Name = Entry.Label.RightChop(FString(TEXT("Selector | ")).Len());
+			TestFalse(*FString::Printf(TEXT("%s name omits select/selection/selector"), *Where), Name.ToLower().Contains(TEXT("select")));
+			TestFalse(*FString::Printf(TEXT("%s subtitle is not a qualified enum value"), *Where), Entry.Subtitle.Contains(TEXT("::")));
+
+			// The domain is the last thing in the label, and typing a domain finds only that domain's entry.
+			const bool bVoxel = Name.EndsWith(TEXT(" (Voxel)"), ESearchCase::CaseSensitive);
+			const bool bDynMesh = Name.EndsWith(TEXT(" (DynMesh)"), ESearchCase::CaseSensitive);
+			const bool bGC = Name.EndsWith(TEXT(" (GC)"), ESearchCase::CaseSensitive);
+			TestTrue(*FString::Printf(TEXT("%s ends with its domain: (Voxel), (DynMesh) or (GC)"), *Where), bVoxel || bDynMesh || bGC);
+			SelectorVoxelCount += bVoxel ? 1 : 0;
+			SelectorDynMeshCount += bDynMesh ? 1 : 0;
+			SelectorGCCount += bGC ? 1 : 0;
+			TestEqual(*FString::Printf(TEXT("'Selector Voxel' finds %s only when it is the Voxel entry"), *Where), Matches(Entry.SearchText, TEXT("Selector Voxel")), bVoxel);
+			TestEqual(*FString::Printf(TEXT("'Selector DynMesh' finds %s only when it is the DynMesh entry"), *Where), Matches(Entry.SearchText, TEXT("Selector DynMesh")), bDynMesh);
+			TestEqual(*FString::Printf(TEXT("'Selector GC' finds %s only when it is the GC entry"), *Where), Matches(Entry.SearchText, TEXT("Selector (GC)")), bGC);
 			continue;
 		}
 		const bool bIsFracture = Entry.Package == TEXT("/Script/PCGUtilsFracture");
@@ -345,6 +376,10 @@ bool FPCGUtilsPaletteSearchContractTest::RunTest(const FString&)
 	TestTrue(TEXT("Get MPC Values is registered"), bFoundGetMPCValues);
 	TestTrue(TEXT("Bit Pack Attributes is registered"), bFoundBitPack);
 	TestEqual(TEXT("Every Voxel entry is present (To DynMesh, Compress, Compress Random, Expand, Pack Points, Cell Properties, Shift Seams, Transform Grid, Air Flow, Rasterize, Boolean, Offset Surface, Match Rules, Extrude, Fill Gaps, Build Nav Grid, Separate Islands, Slice, Apply Patterns, Pattern, Pattern Top Edge, Pattern Upright Corner, Pattern Inside Corner Fill, Pattern Upright Corner 2 x 2)"), VoxelCount, 24);
+	TestEqual(TEXT("Every Selector entry is present (In Bounds, once per domain)"), SelectorEntryCount, 3);
+	TestEqual(TEXT("Every Selector node has a Voxel entry"), SelectorVoxelCount, 1);
+	TestEqual(TEXT("Every Selector node has a DynMesh entry"), SelectorDynMeshCount, 1);
+	TestEqual(TEXT("Every Selector node has a GC entry"), SelectorGCCount, 1);
 	return true;
 }
 

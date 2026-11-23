@@ -21,6 +21,7 @@
 #include "Elements/PCGUtilsDynMeshProcessBase.h"
 #include "Factories/PCGUtilsDynMeshProcessBuilderFactory.h"
 #include "Metadata/PCGMetadata.h"
+#include "Metadata/PCGMetadataDomain.h"
 #include "PCGContext.h"
 #include "PCGPin.h"
 #include "UDynamicMesh.h"
@@ -176,7 +177,10 @@ bool FPCGUtilsDynMeshRealizeBuildersDataDomainTest::RunTest(const FString&)
 	{
 		return false;
 	}
-	DataAttribute->SetValue(PCGFirstEntryKey, ExpectedValue);
+	// Register the @Data entry before setting its value, as real PCG attribute writers do.
+	const PCGMetadataEntryKey Entry = Seeds->MutableMetadata()->GetMetadataDomain(PCGMetadataDomainID::Data)->AddEntry();
+	TestEqual(TEXT("Seed @Data entry"), Entry, PCGFirstEntryKey);
+	DataAttribute->SetValue(Entry, ExpectedValue);
 
 	FPCGContext Context;
 	FPCGTaggedData& SeedInput = Context.InputData.TaggedData.Emplace_GetRef();

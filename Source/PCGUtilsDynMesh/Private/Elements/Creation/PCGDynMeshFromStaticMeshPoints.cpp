@@ -443,8 +443,7 @@ bool FPCGDynMeshFromStaticMeshPointsElement::ExecuteInternal(FPCGContext* Contex
 			case EPCGDynMeshFromPointsVertexColorSource::None:       break;
 			}
 			// A mirrored point turns its mesh inside out; put the faces back the right way round.
-			MeshTransforms::ApplyTransform(Placed,
-				UE::Geometry::FTransformSRT3d(Transforms[PointIndex].GetRelativeTransform(ActorTransform)), /*bReverseOrientationIfNeeded=*/true);
+			PCGUtilsDynMeshSpaceHelpers::TransformMeshBetweenSpaces(Placed, Transforms[PointIndex], ActorTransform);
 
 			UE::Geometry::FMeshIndexMappings Mappings;
 			UE::Geometry::FDynamicMeshEditor(&Combined).AppendMesh(&Placed, Mappings);
@@ -459,7 +458,8 @@ bool FPCGDynMeshFromStaticMeshPointsElement::ExecuteInternal(FPCGContext* Contex
 		UPCGDynamicMeshData* OutputData = PCGUtilsAsyncObjects::NewObject<UPCGDynamicMeshData>(Context);
 		OutputData->Initialize(MoveTemp(Combined), Materials);
 		InheritDataDomain(OutputData, PointData);
-		OutputData->TargetActor = PointData->TargetActor;
+		// This mesh was built in the execution target frame, not the source point data's actor frame.
+		OutputData->TargetActor = Context->GetTargetActor(nullptr);
 
 		FPCGTaggedData& Output = Context->OutputData.TaggedData.Emplace_GetRef(Inputs[Index]);
 		Output.Data = OutputData;

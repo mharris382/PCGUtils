@@ -7,6 +7,7 @@
 #include "Data/Registry/PCGDataTypeRegistry.h"
 #include "Elements/PCGVoxelPattern.h"
 #include "Misc/CoreDelegates.h"
+#include "Selectors/PCGVoxelSelector.h"
 #endif
 
 IMPLEMENT_MODULE(FPCGUtilsVoxelModule, PCGUtilsVoxel)
@@ -52,6 +53,14 @@ void FPCGUtilsVoxelModule::RegisterPinColors()
 		FPCGVoxelPatternDataTypeInfo::AsId(),
 		[](const FPCGDataTypeIdentifier&) { return PatternPinColor; });
 
+	// A light tan: the same warm family as the pattern brown it plugs into, but much lighter, so the two pins of
+	// a Voxel | Pattern node are never mistaken for each other.
+	static const FLinearColor SelectorPinColor = FLinearColor::FromSRGBColor(FColor::FromHex(TEXT("D2B48CFF")));
+
+	FPCGModule::GetMutableDataTypeRegistry().RegisterPinColorFunction(
+		FPCGVoxelSelectorDataTypeInfo::AsId(),
+		[](const FPCGDataTypeIdentifier&) { return SelectorPinColor; });
+
 	bPinColorsRegistered = true;
 }
 
@@ -72,6 +81,7 @@ void FPCGUtilsVoxelModule::OnPreExit()
 	}
 
 	FPCGModule::GetMutableDataTypeRegistry().UnregisterPinColorFunction(FPCGVoxelPatternDataTypeInfo::AsId());
+	FPCGModule::GetMutableDataTypeRegistry().UnregisterPinColorFunction(FPCGVoxelSelectorDataTypeInfo::AsId());
 	bPinColorsRegistered = false;
 }
 #endif

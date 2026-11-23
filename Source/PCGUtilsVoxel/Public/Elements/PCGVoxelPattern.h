@@ -4,11 +4,12 @@
 
 #include "CoreMinimal.h"
 #include "Data/Registry/PCGDataType.h"
-#include "PCGData.h"
+#include "Factories/PCGUtilsFactoryData.h"
 #include "PCGElement.h"
 #include "PCGSettings.h"
 #include "PCGUtilsSettingsCategories.h"
 #include "PCGUtilsVoxel.h"
+#include "Selectors/PCGVoxelSelector.h"
 #include "Voxel/PCGVoxelPatterns.h"
 
 #include "PCGVoxelPattern.generated.h"
@@ -21,13 +22,25 @@ struct FPCGVoxelPatternDataTypeInfo : public FPCGDataTypeInfo
 	PCG_DECLARE_TYPE_INFO(PCGUTILSVOXEL_API);
 };
 
+/** What a pattern's selectors limit. */
+UENUM(BlueprintType)
+enum class EPCGVoxelPatternSelectorScope : uint8
+{
+	/** Every cell the pattern takes (or adds) must be selected. A pattern never reaches into unselected cells. */
+	Cells,
+	/** Only the cell the pattern starts on (its origin cell) must be selected; its boxes may reach outside. */
+	Origin,
+	/** Both: the origin cell and every cell taken. */
+	Both,
+};
+
 /**
  * One pattern on a wire, from a Voxel | Pattern node to Voxel | Apply Patterns. Never changed once emitted.
- * Its own data type, so a pattern pin only takes patterns. Other modules (the PCGEx interop) may derive from it to
- * add what they need; Apply Patterns reads only Pattern and Order.
+ * Its own data type, so a pattern pin only takes patterns. A PCGUtils factory like any other: Priority is the
+ * node's Order (lower runs first; ties keep the pin's connection order).
  */
 UCLASS(BlueprintType, ClassGroup=(Procedural))
-class PCGUTILSVOXEL_API UPCGVoxelPatternData : public UPCGData
+class PCGUTILSVOXEL_API UPCGVoxelPatternData : public UPCGUtilsFactoryData
 {
 	GENERATED_BODY()
 
@@ -37,15 +50,15 @@ public:
 	UPROPERTY()
 	FPCGVoxelPattern Pattern;
 
-	/** Lower runs first; ties keep the pin's connection order. */
+	/** Where the pattern may be applied. None: everywhere. Several: a cell is selected when any of them selects it. */
 	UPROPERTY()
-	int32 Order = 0;
+	TArray<TObjectPtr<const UPCGVoxelSelectorData>> Selectors;
 
-	virtual bool CanBeSerialized() const override { return false; }
+	UPROPERTY()
+	EPCGVoxelPatternSelectorScope SelectorScope = EPCGVoxelPatternSelectorScope::Cells;
 
 protected:
 	virtual void AddToCrc(FArchiveCrc32& Ar, bool bFullDataCrc) const override;
-	virtual bool SupportsFullDataCrc() const override { return true; }
 };
 
 /** Where Voxel | Pattern reads its pattern. */
@@ -107,8 +120,16 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Settings", meta=(PCG_Overridable))
 	int32 Order = 0;
 
+	/**
+	 * Only used when something is connected to the Selector pin. Cells (default): every cell the pattern takes or
+	 * adds must be selected. Origin: only the cell it starts on. Both: both. Selectors never change what probes
+	 * read: an unselected cell still counts as filled.
+	 */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Settings", meta=(PCG_Overridable))
+	EPCGVoxelPatternSelectorScope SelectorScope = EPCGVoxelPatternSelectorScope::Cells;
+
 protected:
-	virtual TArray<FPCGPinProperties> InputPinProperties() const override { return {}; }
+	virtual TArray<FPCGPinProperties> InputPinProperties() const override;
 	virtual TArray<FPCGPinProperties> OutputPinProperties() const override;
 	virtual FPCGElementPtr CreateElement() const override;
 };

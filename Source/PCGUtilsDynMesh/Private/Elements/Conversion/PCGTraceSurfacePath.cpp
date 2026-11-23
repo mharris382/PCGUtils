@@ -151,7 +151,6 @@ bool FPCGTraceSurfacePathElement::ExecuteInternal(FPCGContext* Context) const
 
 		const FTransform MeshToOutput = PCGUtilsDynMeshSpaceHelpers::ResolveMeshActorTransform(
 			Context, Surface.MeshData, Settings->bWorldSpace);
-		const FTransform OutputToMesh = MeshToOutput.Inverse();
 
 		for (const FPCGTaggedData& SeedInput : SeedInputs)
 		{
@@ -192,7 +191,7 @@ bool FPCGTraceSurfacePathElement::ExecuteInternal(FPCGContext* Context) const
 			for (int32 SeedIndex = 0; SeedIndex < NumSeeds; ++SeedIndex)
 			{
 				const FTransform& SeedTransform = SeedTransforms[SeedIndex];
-				MeshLocalSeeds.Add(FVector3d(OutputToMesh.TransformPosition(SeedTransform.GetLocation())));
+				MeshLocalSeeds.Add(FVector3d(MeshToOutput.InverseTransformPosition(SeedTransform.GetLocation())));
 
 				FVector Direction = FVector::ZeroVector;
 				if (DirectionAccessor)
@@ -209,7 +208,7 @@ bool FPCGTraceSurfacePathElement::ExecuteInternal(FPCGContext* Context) const
 					Direction = SeedTransform.GetRotation().RotateVector(AxisVector(Settings->DirectionAxis));
 				}
 
-				MeshLocalDirections.Add(FVector3d(OutputToMesh.TransformVectorNoScale(Direction)));
+				MeshLocalDirections.Add(FVector3d(MeshToOutput.InverseTransformVector(Direction)));
 			}
 
 			if (bAnyUnreadableDirection)

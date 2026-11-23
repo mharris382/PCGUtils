@@ -1,4 +1,5 @@
 #include "Elements/Conversion/PCGDynMeshSample.h"
+#include "Elements/PCGUtilsDynMeshSpaceHelpers.h"
 #include "Helpers/PCGUtilsParallelInputs.h"
 
 #include "Data/PCGDynamicMeshData.h"
@@ -78,10 +79,6 @@ namespace
 		Point.TangentX = FRotationMatrix::MakeFromZ(SafeNormal).GetUnitAxis(EAxis::X);
 	}
 
-	FTransform ToLocalTransform(const FSampledPoint& Point)
-	{
-		return FTransform(FRotationMatrix::MakeFromXZ(Point.TangentX, Point.Normal).ToQuat(), Point.Position);
-	}
 
 	FLinearColor InterpolateTriangleColor(const FDynamicMesh3& Mesh, int32 TriangleID, const FVector& Barycentric, const FLinearColor& DefaultColor)
 	{
@@ -441,18 +438,8 @@ bool FPCGDynMeshSampleElement::ExecuteInternal(FPCGContext* Context) const
 
 		// World-space conversion is a deliberate final pass over already-sampled local-space points, kept
 		// separate from the sampling stage above per bTransformToWorldSpace's contract.
-		FTransform ToWorld = FTransform::Identity;
-		if (Settings->bTransformToWorldSpace)
-		{
-			if (const AActor* TargetActor = Context->GetTargetActor(SourceData))
-			{
-				ToWorld = TargetActor->GetActorTransform();
-			}
-			else
-			{
-				PCGLog::LogWarningOnGraph(LOCTEXT("MissingTargetActor", "Sample DynMesh could not resolve a target actor; points remain in Dynamic Mesh local space."), Context);
-			}
-		}
+		const FTransform ToWorld = PCGUtilsDynMeshSpaceHelpers::ResolveMeshActorTransform(
+			Context, SourceData, Settings->bTransformToWorldSpace);
 
 		UPCGPointArrayData* OutputData = PCGUtilsAsyncObjects::NewObject<UPCGPointArrayData>(Context);
 		OutputData->SetNumPoints(SampledPoints.Num(), false);
@@ -478,8 +465,10 @@ bool FPCGDynMeshSampleElement::ExecuteInternal(FPCGContext* Context) const
 		for (int32 Index = 0; Index < SampledPoints.Num(); ++Index)
 		{
 			const FSampledPoint& Point = SampledPoints[Index];
-			const FTransform LocalTransform = ToLocalTransform(Point);
-			const FTransform FinalTransform = Settings->bTransformToWorldSpace ? LocalTransform * ToWorld : LocalTransform;
+			FTransform FinalTransform = PCGUtilsDynMeshSpaceHelpers::TransformSurfaceFrameToWorld(
+				ToWorld, Point.Position, Point.Normal, Point.TangentX);
+			// Keep the existing sample bounds scaling, while deriving orientation from the actual scaled surface.
+			FinalTransform.SetScale3D(ToWorld.GetScale3D());
 
 			// Construct a complete point so the vanilla defaults are retained for bounds and metadata entry.
 			FPCGPoint OutPoint{};

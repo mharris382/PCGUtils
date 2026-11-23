@@ -50,7 +50,7 @@ public:
 
 	/** Transform local mesh vertices, normals, and tangents into the PCG target actor's world space. */
 	UPROPERTY(BlueprintReadWrite, EditAnywhere, Category = "Settings", meta = (PCG_Overridable))
-	bool bOutputToWorldSpace = false;
+	bool bOutputToWorldSpace = true;
 
 	/** Add the source dynamic-mesh vertex ID to every generated point. */
 	UPROPERTY(BlueprintReadWrite, EditAnywhere, Category = "Settings", meta = (PCG_Overridable))

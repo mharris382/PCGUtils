@@ -2,6 +2,8 @@
 
 #include "CoreMinimal.h"
 
+namespace UE::Geometry { class FDynamicMesh3; }
+
 class UPCGDynamicMeshData;
 struct FPCGContext;
 
@@ -28,4 +30,17 @@ namespace PCGUtilsDynMeshSpaceHelpers
 	 */
 	PCGUTILSDYNMESH_API FTransform ResolveMeshActorTransform(
 		FPCGContext* Context, const UPCGDynamicMeshData* MeshData, bool bConvertToLocalSpace);
+	/** Exact source-local -> world -> destination-local conversion, including shear between rotated nonuniform frames.
+	 * Does not collapse the two frames into FTransform::GetRelativeTransform or FTransform::Inverse.
+	 * Transforms normals by inverse transpose, tangents as vectors, and corrects reflected triangle winding. */
+	PCGUTILSDYNMESH_API void TransformMeshBetweenSpaces(
+		UE::Geometry::FDynamicMesh3& Mesh, const FTransform& SourceToWorld, const FTransform& DestinationToWorld);
+
+	/** Transform a surface normal correctly under nonuniform scale (unlike TransformVectorNoScale). */
+	PCGUTILSDYNMESH_API FVector TransformNormalToWorld(const FTransform& MeshToWorld, const FVector& Normal);
+
+	/** Apply position and normal/tangent conversion, retaining a unit-scale orthonormal point frame. */
+	PCGUTILSDYNMESH_API FTransform TransformSurfaceFrameToWorld(
+		const FTransform& MeshToWorld, const FVector& Position, const FVector& Normal, const FVector& Tangent);
+
 }

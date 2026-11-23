@@ -11,6 +11,7 @@
 #include "Elements/PCGVoxelApplyPatterns.h"
 #include "Elements/PCGVoxelPattern.h"
 #include "PCGVoxelTestHelpers.h"
+#include "PCGVoxelTestSelector.h"
 #include "Voxel/PCGVoxelPatterns.h"
 
 namespace PCGVoxelPatternsTests
@@ -92,8 +93,17 @@ namespace PCGVoxelPatternsTests
 		bool bOutKeptTag = false;
 	};
 
+	/** A voxel selector answering with a function over the cell coordinate. */
+	UPCGVoxelTestCellSelectorData* MakeCellSelector(TFunction<bool(const FIntVector&)> Predicate, bool bInvert = false)
+	{
+		UPCGVoxelTestCellSelectorData* Selector = NewObject<UPCGVoxelTestCellSelectorData>();
+		Selector->Predicate = MoveTemp(Predicate);
+		Selector->bInvert = bInvert;
+		return Selector;
+	}
+
 	FNodeResult RunNode(const UPCGData* In, const TArray<TPair<FPCGVoxelPattern, int32>>& PatternsAndOrders,
-		TFunctionRef<void(UPCGVoxelApplyPatternsSettings&)> Edit)
+		TFunctionRef<void(UPCGVoxelApplyPatternsSettings&)> Edit, TFunction<void(int32, UPCGVoxelPatternData&)> EditPattern = nullptr)
 	{
 		UPCGVoxelApplyPatternsSettings* Settings = NewObject<UPCGVoxelApplyPatternsSettings>();
 		Edit(*Settings);
@@ -103,7 +113,11 @@ namespace PCGVoxelPatternsTests
 		{
 			UPCGVoxelPatternData* Data = NewObject<UPCGVoxelPatternData>();
 			Data->Pattern = Entry.Key;
-			Data->Order = Entry.Value;
+			Data->Priority = Entry.Value;
+			if (EditPattern)
+			{
+				EditPattern(Inputs.Num() - 1, *Data);
+			}
 			Inputs.Add({ PCGVoxelPatternPins::PatternsLabel, Data });
 		}
 		FNodeResult Result;
@@ -524,6 +538,56 @@ bool FPCGVoxelPatternsNodeTest::RunTest(const FString&)
 			TestEqual(TEXT("Second is the single"), ValueAt<int32>(Result.Out, TEXT("MeshIndex"), 1, -99), 2);
 			TestEqual(TEXT("Pattern Index follows run order"), ValueAt<int32>(Result.Out, TEXT("PatternIndex"), 1, -99), 1);
 		}
+	}
+
+	// Selectors: a pattern only takes the cells its selectors select. Four cells in a row, X 0 to 3. The selectors
+	// here answer by cell coordinate; the same checks with Selector | In Bounds are in PCGUtils.Selectors.Voxel.
+	{
+		const TArray<FIntVector> Row = Block(4, 1, 1);
+		const FPCGVoxelPattern Single = Strip(FIntVector(1));
+		auto CountWith = [&](const TArray<UPCGVoxelSelectorData*>& Selectors, EPCGVoxelPatternSelectorScope Scope, const FPCGVoxelPattern& Pattern,
+			const TArray<FIntVector>& Cells)
+		{
+			const FNodeResult Result = RunNode(MakeVoxels(Cells), { { Pattern, 0 } }, [](UPCGVoxelApplyPatternsSettings&) {},
+				[&](int32, UPCGVoxelPatternData& Data)
+				{
+					for (UPCGVoxelSelectorData* Selector : Selectors)
+					{
+						Data.Selectors.Add(Selector);
+					}
+					Data.SelectorScope = Scope;
+				});
+			return Result.Out ? Result.Out->GetNumPoints() : 0;
+		};
+		const EPCGVoxelPatternSelectorScope CellsScope = EPCGVoxelPatternSelectorScope::Cells;
+		auto FirstTwo = [](const FIntVector& Cell) { return Cell.X <= 1; };
+		TestEqual(TEXT("A selector over the first two cells: two cells taken"), CountWith({ MakeCellSelector(FirstTwo) }, CellsScope, Single, Row), 2);
+		TestEqual(TEXT("Invert: the other two cells"), CountWith({ MakeCellSelector(FirstTwo, true) }, CellsScope, Single, Row), 2);
+		TestEqual(TEXT("Several selectors on the pin: a cell any of them selects"),
+			CountWith({ MakeCellSelector([](const FIntVector& Cell) { return Cell.X == 0; }), MakeCellSelector([](const FIntVector& Cell) { return Cell.X == 3; }) }, CellsScope, Single, Row), 2);
+		TestEqual(TEXT("Several selectors, one inverted: each applies its own Invert before they are joined"),
+			CountWith({ MakeCellSelector([](const FIntVector& Cell) { return Cell.X == 0; }), MakeCellSelector([](const FIntVector& Cell) { return Cell.X <= 2; }, true) }, CellsScope, Single, Row), 2);
+
+		// Scope: a two-cell strip that starts on a selected cell but reaches outside the selection.
+		FPCGVoxelPattern Pair = Strip(FIntVector(2, 1, 1));
+		auto FirstCellOnly = [](const FIntVector& Cell) { return Cell == FIntVector::ZeroValue; };
+		TestEqual(TEXT("Cells: a strip reaching out of the selection is not made"), CountWith({ MakeCellSelector(FirstCellOnly) }, CellsScope, Pair, Row), 0);
+		TestEqual(TEXT("Origin: only the starting cell has to be selected"), CountWith({ MakeCellSelector(FirstCellOnly) }, EPCGVoxelPatternSelectorScope::Origin, Pair, Row), 1);
+
+		// An Add pattern asks about the EMPTY cells it would fill. An L of three cells, two layers: the inside corner is (1,1,*).
+		TArray<FIntVector> Corner;
+		for (int32 Z = 0; Z < 2; ++Z)
+		{
+			Corner.Append({ FIntVector(0, 0, Z), FIntVector(1, 0, Z), FIntVector(0, 1, Z) });
+		}
+		const FPCGVoxelPattern Fill = PCGVoxelPatterns::Presets::InsideCornerFill();
+		TSet<FIntVector> Asked;
+		auto Everything = [&Asked](const FIntVector& Cell) { Asked.Add(Cell); return true; };
+		TestEqual(TEXT("Add: a selector selecting everything lets the corner be filled"), CountWith({ MakeCellSelector(Everything) }, CellsScope, Fill, Corner), 1);
+		TestTrue(TEXT("Add: the selector was asked about the empty corner cell"), Asked.Contains(FIntVector(1, 1, 0)));
+		auto NotTheCorner = [](const FIntVector& Cell) { return !(Cell.X == 1 && Cell.Y == 1); };
+		TestEqual(TEXT("Add, Cells scope: an unselected empty cell is not filled"), CountWith({ MakeCellSelector(NotTheCorner) }, CellsScope, Fill, Corner), 0);
+		TestEqual(TEXT("Add, Origin scope: only the filled cell the pattern starts on has to be selected"), CountWith({ MakeCellSelector(NotTheCorner) }, EPCGVoxelPatternSelectorScope::Origin, Fill, Corner), 1);
 	}
 
 	// A chunked input: an untouched chunk stays a chunk on Unmatched; a chunk that lost cells gives the rest one by one.

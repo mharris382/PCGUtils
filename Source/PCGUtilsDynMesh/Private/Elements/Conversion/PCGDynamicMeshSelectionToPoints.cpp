@@ -1,4 +1,5 @@
 #include "Elements/Conversion/PCGDynamicMeshSelectionToPoints.h"
+#include "Elements/PCGUtilsDynMeshSpaceHelpers.h"
 #include "Helpers/PCGUtilsParallelInputs.h"
 
 #include "Data/PCGBasePointData.h"
@@ -142,18 +143,8 @@ bool FPCGDynamicMeshSelectionToPointsElement::ExecuteInternal(FPCGContext* Conte
 
 		TArray<int32> SelectedVertices = SelectedVertexSet.Array();
 		SelectedVertices.Sort();
-		FTransform MeshToOutput = FTransform::Identity;
-		if (Settings->bOutputToWorldSpace)
-		{
-			if (const AActor* TargetActor = Context->GetTargetActor(MeshData))
-			{
-				MeshToOutput = TargetActor->GetActorTransform();
-			}
-			else
-			{
-				PCGLog::LogWarningOnGraph(LOCTEXT("MissingTargetActor", "Dynamic Mesh Selection To Points could not resolve a target actor; points remain mesh-local."), Context);
-			}
-		}
+		const FTransform MeshToOutput = PCGUtilsDynMeshSpaceHelpers::ResolveMeshActorTransform(
+			Context, MeshData, Settings->bOutputToWorldSpace);
 
 		const UE::Geometry::FDynamicMeshNormalOverlay* Normals = Mesh->HasAttributes()
 			? Mesh->Attributes()->PrimaryNormals() : nullptr;
@@ -178,12 +169,8 @@ bool FPCGDynamicMeshSelectionToPointsElement::ExecuteInternal(FPCGContext* Conte
 			{
 				Normal = FVector3f::UnitZ();
 			}
-			const FVector LocalNormal(Normal);
-			const FVector Position = Settings->bOutputToWorldSpace
-				? MeshToOutput.TransformPosition(LocalPosition) : LocalPosition;
-			const FVector OutputNormal = Settings->bOutputToWorldSpace
-				? MeshToOutput.TransformVectorNoScale(LocalNormal).GetSafeNormal() : LocalNormal;
-			Transforms[Index] = FTransform(FRotationMatrix::MakeFromZ(OutputNormal).ToQuat(), Position);
+			Transforms[Index] = PCGUtilsDynMeshSpaceHelpers::TransformSurfaceFrameToWorld(
+				MeshToOutput, LocalPosition, FVector(Normal), FVector::ZeroVector);
 			const FVector3f NativeColor = Mesh->HasVertexColors() ? Mesh->GetVertexColor(VertexID) : FVector3f::One();
 			const FVector4f Color = Colors
 				? SelectionToPoints_GetFirstVertexOverlayElement(*Mesh, Colors, VertexID, FVector4f(1, 1, 1, 1))

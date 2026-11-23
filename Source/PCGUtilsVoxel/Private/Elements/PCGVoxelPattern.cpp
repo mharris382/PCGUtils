@@ -33,8 +33,9 @@ void UPCGVoxelPatternData::AddToCrc(FArchiveCrc32& Ar, bool bFullDataCrc) const
 	FString Text;
 	FPCGVoxelPattern::StaticStruct()->ExportText(Text, &Pattern, nullptr, nullptr, PPF_None, nullptr);
 	Ar << Text;
-	int32 LocalOrder = Order;
-	Ar << LocalOrder;
+	uint8 LocalScope = static_cast<uint8>(SelectorScope);
+	Ar << LocalScope;
+	// Order (Priority) and the selectors (data dependencies) are folded in by the factory base.
 }
 
 #if WITH_EDITOR
@@ -96,6 +97,16 @@ FString UPCGVoxelPatternSettings::GetAdditionalTitleInformation() const
 	return Pattern.Name.IsNone() ? FString() : Pattern.Name.ToString();
 }
 
+TArray<FPCGPinProperties> UPCGVoxelPatternSettings::InputPinProperties() const
+{
+	TArray<FPCGPinProperties> Pins;
+	FPCGPinProperties& Pin = Pins.Emplace_GetRef(PCGVoxelSelectorPins::SelectorLabel, FPCGVoxelSelectorDataTypeInfo::AsId(), true, true);
+#if WITH_EDITOR
+	Pin.Tooltip = LOCTEXT("SelectorTooltip", "Optional. Voxel selectors (Selector | In Bounds (Voxel) and the like) limiting where this pattern is applied; a cell is selected when any of them selects it. Nothing connected: everywhere.");
+#endif
+	return Pins;
+}
+
 TArray<FPCGPinProperties> UPCGVoxelPatternSettings::OutputPinProperties() const
 {
 	TArray<FPCGPinProperties> Pins;
@@ -154,7 +165,15 @@ bool FPCGVoxelPatternElement::ExecuteInternal(FPCGContext* Context) const
 
 	UPCGVoxelPatternData* Data = FPCGContext::NewObject_AnyThread<UPCGVoxelPatternData>(Context);
 	Data->Pattern = *Pattern;
-	Data->Order = Settings->Order;
+	Data->Priority = Settings->Order;
+	Data->SelectorScope = Settings->SelectorScope;
+	// Optional: an empty pin is no selector, not an error.
+	PCGUtilsFactories::GetInputFactories<UPCGVoxelSelectorData>(Context, PCGVoxelSelectorPins::SelectorLabel,
+		Data->Selectors, PCGVoxelSelectors::GetSelectorTypes(), /*bRequired=*/false);
+	for (const UPCGVoxelSelectorData* Selector : Data->Selectors)
+	{
+		Data->AddDataDependency(Selector);
+	}
 
 	FPCGTaggedData& Output = Context->OutputData.TaggedData.Emplace_GetRef();
 	Output.Data = Data;

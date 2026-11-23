@@ -3,7 +3,7 @@
 
 #include "Data/PCGDynamicMeshData.h"
 #include "DynamicMesh/DynamicMesh3.h"
-#include "DynamicMesh/MeshTransforms.h"
+#include "Elements/PCGUtilsDynMeshSpaceHelpers.h"
 #include "GameFramework/Actor.h"
 #include "PCGContext.h"
 #include "PCGPin.h"
@@ -89,23 +89,14 @@ bool FPCGDynMeshActorSpaceTransformElement::ExecuteInternal(FPCGContext* Context
 			continue;
 		}
 
-		const AActor* TargetActor = Context->GetTargetActor(InputData);
-		if (!TargetActor)
-		{
-			PCGLog::LogWarningOnGraph(LOCTEXT("MissingActor", "ToWorld/ToLocal could not resolve the PCG target actor; no output was produced for this input."), Context);
-			continue;
-		}
-
-		FTransform ActorTransform = TargetActor->GetActorTransform();
+		FTransform ActorTransform = PCGUtilsDynMeshSpaceHelpers::ResolveMeshActorTransform(Context, InputData, true);
 		if (Settings->bIgnoreRotation) ActorTransform.SetRotation(FQuat::Identity);
 		if (Settings->bIgnoreScale) ActorTransform.SetScale3D(FVector::OneVector);
-		if (Settings->GetDirection() == EPCGDynMeshActorSpaceTransformDirection::ToLocal)
-		{
-			ActorTransform = ActorTransform.Inverse();
-		}
 
 		UE::Geometry::FDynamicMesh3 OutputMesh(*SourceMesh);
-		MeshTransforms::ApplyTransform(OutputMesh, UE::Geometry::FTransformSRT3d(ActorTransform), true);
+		const bool bToLocal = Settings->GetDirection() == EPCGDynMeshActorSpaceTransformDirection::ToLocal;
+		PCGUtilsDynMeshSpaceHelpers::TransformMeshBetweenSpaces(OutputMesh,
+			bToLocal ? FTransform::Identity : ActorTransform, bToLocal ? ActorTransform : FTransform::Identity);
 
 		TArray<UMaterialInterface*> Materials;
 		Materials.Reserve(InputData->GetMaterials().Num());

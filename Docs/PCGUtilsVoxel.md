@@ -1236,8 +1236,9 @@ the box's `Mesh Forward` / `Mesh Up`: the upright corner stands the Edge mesh on
 
 ### 4p.3 The nodes
 
-`Voxel | Pattern`: no inputs; `Pattern Source` Inline or Asset; `Order` (lower runs first; ties run in connection
-order). Output pin `Pattern` (its own data type, so the pin takes nothing else). Palette presets:
+`Voxel | Pattern`: one optional input pin, `Selector` (below); `Pattern Source` Inline or Asset; `Order` (lower runs
+first; ties run in connection order); `Selector Scope`. Output pin `Pattern` (its own data type, so the pin takes
+nothing else). Palette presets:
 
 | Entry | Pattern |
 |---|---|
@@ -1251,6 +1252,38 @@ The wall probes are what stop a corner being made on a lone block, on the end of
 pattern made. Raise their `Count` to ask for more wall; delete them to get the old behaviour (any outside corner).
 The preset boxes set `Open Sides`: Top Edge +X and +Z; the upright corners and the fill +X and +Y.
 Nodes placed before 2026-11-21 keep their old probes and no Open Sides: place the presets again or set them by hand.
+
+**Where a pattern is applied** (added 2026-11-21, reworked 2026-11-22). The `Selector` pin of `Voxel | Pattern`
+takes **Voxel Selectors**, the voxel domain's own selector type (light tan pin, `UPCGVoxelSelectorData` in
+`Selectors/PCGVoxelSelector.h`). Nothing connected: the pattern is applied everywhere, as before. A voxel selector
+is prepared against the grid and then answers for single cells, filled or empty (an Add pattern asks about the
+empty cells it would fill). The nodes that make them today are the `Selector | ... (Voxel)` nodes
+(`Docs/PCGUtilsSelectors.md`).
+
+- Several selectors on the one pin: a cell is selected when **any of them** selects it. Each selector's Invert is
+  applied first.
+- `Selector Scope` says what must be selected. **Cells** (default): every cell the pattern takes or adds. **Origin**:
+  only the cell the pattern starts on; its boxes may reach outside the selection. **Both**: the origin cell and every
+  cell taken or added. Cells and Both differ when the origin cell is not in a box, as in an Add pattern.
+- **Selectors never change what probes read.** An unselected cell still counts as filled, and a cell an earlier
+  pattern claimed there is still claimed. Selectors only say where this pattern may start and which cells it may take.
+- Selectors belong to the pattern, so two patterns on one Apply Patterns node can have different selections.
+
+`Selector | In Bounds (Voxel)` (module `PCGUtilsSelectors`, palette category `PCGUtils|Selectors`): input pin
+`Bounds` (points, required), output pin `Selector` (a Voxel Selector). It is the `Selector | In Bounds` node with
+`Domain` set to Voxel. It selects the cells lying in the bounds of any point on the Bounds pin, each point's Bounds
+Min / Max placed by its transform (rotation and scale included).
+
+| Setting | Meaning |
+|---|---|
+| `Domain` | Voxel here. DynMesh or GC makes the same node put out that domain's selector instead. |
+| `Voxel Conversion` > `Cell Points` | What stands for a cell. **Center With Bounds** (default): its centre with the cell's box (the cell's size, turned with the grid). **Center**: its centre alone. |
+| `Containment` | How a cell with bounds is tested. **Center** (default): the cell's centre is inside a bound. **Any Part**: the cell overlaps or touches a bound. **Fully Inside**: the whole cell is inside one bound. With Cell Points on Center all three are the same. |
+| `Expand` | Grows every bound on all sides, in world units, before testing. Negative shrinks. A bound shrunk inside out is skipped with a warning. |
+| `Invert` | Selects every cell the test does not. |
+| `Priority` (advanced) | No effect on voxel selectors: several on one pin select what any of them selects. |
+
+No points on the Bounds pin is a selector that selects nothing (with Invert, everything).
 
 `Voxel | Apply Patterns`: pins `In` (voxel sets), `Patterns`; outputs `Out`, `Unmatched`.
 
@@ -1284,6 +1317,18 @@ The barrier (Voxel Grid 2), three patterns on one Apply Patterns node:
 
 Unmatched carries the straight barrier cells for the default mesh.
 
+**Keeping open entrances square.** Where the barrier stops for a course entrance, the wall ends beside it can get
+corners. To leave them square:
+
+1. Make one point per entrance, with bounds that cover the entrance and the wall ends beside it.
+2. Feed the points to `Selector | In Bounds (Voxel)` with **Invert on**: it selects every cell not at an entrance.
+3. Connect its `Selector` output to the `Selector` pin of the corner patterns (the 2 x 2 and the 1 x 1 Upright Corner,
+   and the Inside Corner Fill if it should stay out too). One selector node can feed all of them.
+
+Leave `Selector Scope` on Cells so a corner never reaches into an entrance. Use `Containment` Any Part to also keep
+out cells the bounds only touch, or `Expand` to widen every entrance by the same amount. Patterns with nothing on
+their Selector pin still run at the entrances.
+
 The centre patch (Voxel Grid 1) turned out not to be a pattern job as first set up (designer, 2026-11-20): a flat
 one-cell-thick patch has no +X / +Z corner to find, so it is either built separately or extruded down first to make a
 real corner, with the lower cells removed afterwards. Drawn by hand it still works: a pattern with Turns Exact, no probes, and the boxes drawn by hand: three
@@ -1295,11 +1340,11 @@ edge patterns.
 
 ### 4p.5 Not built yet
 
-1. **Selective application.** The designer ruled out a point-data selector and bool attributes. The seam is in:
-   `PCGVoxelPatterns::FLimits` has `CanStart(pattern, origin cell)` and `CanEdit(pattern, cell)`; neither changes
-   what probes read (a protected cell still counts as filled). A voxel selector (or a reused selector family) and a
-   PCGEx filter input in `PCGUtilsPCGExInterop` both plug in there; `UPCGVoxelPatternData` is meant to be derived
-   from for that. This is what will keep the open course entrances square.
+1. **The rest of selective application.** Voxel selectors on `Voxel | Pattern` are built (4p.3), fed by point
+   selectors (`PCGUtilsSelectors.md`). Next: the PCGEx filter selector in `PCGUtilsPCGExInterop` (any PCGEx point
+   filter as a point selector), then more point selectors (by distance, inside a mesh). All reach patterns through
+   the same seam: `PCGVoxelPatterns::FLimits` has `CanStart(pattern, origin cell)` and `CanEdit(pattern, cell)`,
+   and neither changes what probes read.
 2. Attribute equality when joining (today a joined chunk takes its first cell's values, as Compress `Listed` with
    nothing listed), and equal surface offsets.
 3. A slice-grid editor for probes and boxes, and a text form.

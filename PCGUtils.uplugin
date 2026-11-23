@@ -65,6 +65,11 @@
             "Name": "PCGUtilsVoxel",
             "Type": "Runtime",
             "LoadingPhase": "PreDefault"
+        },
+        {
+            "Name": "PCGUtilsSelectors",
+            "Type": "Runtime",
+            "LoadingPhase": "PreDefault"
         }
     ],
     "Plugins": [

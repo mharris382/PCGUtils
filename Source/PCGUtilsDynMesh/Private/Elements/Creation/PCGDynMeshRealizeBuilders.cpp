@@ -3,6 +3,7 @@
 #include "Elements/Creation/PCGDynMeshRealizeBuilders.h"
 #include "Helpers/PCGUtilsParallelInputs.h"
 
+#include "Helpers/PCGUtilsDataDomainHelpers.h"
 #include "Data/PCGBasePointData.h"
 #include "Data/PCGDynamicMeshData.h"
 #include "DynamicMesh/DynamicMesh3.h"
@@ -56,13 +57,9 @@ namespace
 			return;
 		}
 
-		const FPCGMetadataDomain* SourceDomain =
-			SeedData->ConstMetadata()->GetConstMetadataDomain(PCGMetadataDomainID::Data);
-		FPCGMetadataDomain* OutputDomain =
-			OutputData->MutableMetadata()->GetMetadataDomain(PCGMetadataDomainID::Data);
-		if (SourceDomain && OutputDomain)
+		if (FPCGMetadataDomain* OutputDomain = PCGUtilsDataDomain::GetMutableDataDomain(OutputData))
 		{
-			OutputDomain->Initialize(FPCGMetadataDomainInitializeParams(SourceDomain));
+			PCGUtilsDataDomain::CopyDataAttributes(SeedData, *OutputDomain);
 		}
 	}
 }

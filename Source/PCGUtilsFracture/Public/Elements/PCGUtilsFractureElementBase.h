@@ -3,6 +3,7 @@
 #pragma once
 
 #include "CoreMinimal.h"
+#include "Factories/PCGUtilsFactoryProvider.h"
 #include "PCGSettings.h"
 #include "PCGUtilsSettingsCategories.h"
 
@@ -33,38 +34,32 @@ public:
 };
 
 /**
- * Provider base for nodes that emit a fracture-domain factory (Fracture or GC Selection) on a single output
- * pin. Mirrors UPCGUtilsDynMeshFactoryProviderSettings: the derived class supplies the pin name, the type id
- * and a CreateFactory override, and the shared element handles emission and data-dependency capture.
+ * Provider base of the fracture domain (Fracture or GC Selection on a single output pin): the shared provider
+ * (UPCGUtilsFactoryProviderSettings) with the GC palette category and title colour, and a CreateFactory typed to
+ * the GC factory root. The category and colour repeat UPCGUtilsFractureElementBaseSettings because a provider
+ * derives from the shared provider base, not from that class.
  */
 UCLASS(Abstract, BlueprintType, ClassGroup=(Procedural), Category="PCGUtils|Fracture|Providers")
-class PCGUTILSFRACTURE_API UPCGUtilsGeometryCollectionFactoryProviderSettings : public UPCGUtilsFractureElementBaseSettings
+class PCGUTILSFRACTURE_API UPCGUtilsGeometryCollectionFactoryProviderSettings : public UPCGUtilsFactoryProviderSettings
 {
 	GENERATED_BODY()
 
-	friend class FPCGUtilsGeometryCollectionFactoryProviderElement;
-
 public:
-	virtual FName GetMainOutputPin() const;
+#if WITH_EDITOR
+	virtual EPCGSettingsType GetType() const override
+	{
+		return PCGUtilsSettingsCategories::GeometryCollectionCategoryForClass(GetClass());
+	}
+	virtual FLinearColor GetNodeTitleColor() const override;
+#endif
+
 	virtual UPCGUtilsGeometryCollectionFactoryData* CreateFactory(
 		FPCGContext* InContext, UPCGUtilsGeometryCollectionFactoryData* InFactory = nullptr) const;
 
-	/** Whether CreateFactory must run on the game thread - e.g. because it loads assets. Off by default. */
-	virtual bool RequiresMainThread(FPCGContext* InContext) const { return false; }
-
 protected:
-	virtual const FPCGDataTypeBaseId& GetFactoryTypeId() const;
-	virtual TArray<FPCGPinProperties> InputPinProperties() const override;
-	virtual TArray<FPCGPinProperties> OutputPinProperties() const override;
-	virtual FPCGElementPtr CreateElement() const override;
+	virtual UPCGUtilsFactoryData* CreateFactoryBase(FPCGContext* InContext) const override;
+	virtual const FPCGDataTypeBaseId& GetFactoryTypeId() const override;
 };
 
-class PCGUTILSFRACTURE_API FPCGUtilsGeometryCollectionFactoryProviderElement final : public IPCGElement
-{
-protected:
-	virtual bool ExecuteInternal(FPCGContext* Context) const override;
-
-public:
-	virtual bool CanExecuteOnlyOnMainThread(FPCGContext* Context) const override;
-	virtual void DisabledPassThroughData(FPCGContext* Context) const override;
-};
+/** The GC providers run the shared provider element. */
+using FPCGUtilsGeometryCollectionFactoryProviderElement = FPCGUtilsFactoryProviderElement;

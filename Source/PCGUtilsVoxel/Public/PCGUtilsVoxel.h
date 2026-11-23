@@ -9,7 +9,8 @@
 /**
  * Voxel operations on ordinary point data. A voxel set is point data whose points are occupied cells of a grid
  * described by @Data attributes; there is no voxel data type. See Docs/PCGUtilsVoxel.md for the contract.
- * The one data type the module owns is the voxel pattern (Elements/PCGVoxelPattern.h); its pin colour is registered here.
+ * The data types the module owns are the voxel pattern (Elements/PCGVoxelPattern.h) and the voxel selector
+ * (Selectors/PCGVoxelSelector.h); their pin colours are registered here.
  */
 class FPCGUtilsVoxelModule : public IModuleInterface
 {

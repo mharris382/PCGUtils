@@ -857,6 +857,14 @@ The ray tests live in `PCGUtilsDynMeshOcclusion::FOccluderSet` (`Geometry/PCGUti
 PCGEx point filter **Filter : Mesh Occlusion** in PCGUtilsPCGExInterop shares. Coverage:
 `PCGUtils.DynMesh.MeshOcclusion`.
 
+The `Selector | ...` nodes (`Selector | In Bounds (DynMesh)` and the like) also put out DynMesh Selectors when their
+Domain is DynMesh, so they plug into any DynMesh selector pin and mix with the selectors above. They select by
+points: the node's DynMesh Conversion says what stands for an edge or a triangle (its centre, its centre with the
+box round it, or its vertices with an Any / All / At Least Fraction rule), placed in the world by the mesh's target
+actor. `PCGUtilsDynMeshElementPoints::ElementsToPoints` is that conversion, public for anything else that wants
+mesh elements as points. See `PCGUtilsSelectors.md`. The existing `Select | In Bounds` and distance selectors are
+unchanged.
+
 Every reusable DynMesh selector exposes **Invert Selection**. Inversion is applied by the shared selector
 operation, so it works consistently inside Selection Logic and other nested selector graphs. Selectors with a
 native domain are automatically adapted to the consumer's vertex, edge, or face domain. **Select | By Normal**

@@ -648,6 +648,7 @@ Deeper written documentation lives in `Docs/`:
 | `Docs/PCGUtilsPainter.md` | Painter architecture, the canonical target model, Static Mesh painting and LOD transfer |
 | `Docs/PCGUtilsFracture.md` | The full fracture pipeline, node reference, cluster interop and troubleshooting |
 | `Docs/PCGUtilsVoxel.md` | The voxel contract, chunks, and the Voxel nodes |
+| `Docs/PCGUtilsSelectors.md` | Point selectors (`Selector \| In Bounds`), each domain's conversion to points, the per-domain wrappers, and how to add a selector or a domain |
 | `Docs/PCGUtilsDynMesh/PrimitiveBuilder.md` | Builder fitting, padding and alignment |
 | `Docs/PCGUtils/BitPackAttributes.md` | Packing small attributes into one value for Per Instance Custom Data; the Step node's Multi Step |
 

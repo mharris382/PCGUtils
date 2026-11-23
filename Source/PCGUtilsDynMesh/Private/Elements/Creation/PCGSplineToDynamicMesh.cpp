@@ -3,6 +3,8 @@
 
 #include "Data/PCGDynamicMeshData.h"
 #include "Data/PCGSplineData.h"
+#include "Elements/PCGUtilsSplineHelpers.h"
+#include "Elements/PCGUtilsDynMeshSpaceHelpers.h"
 #include "Engine/StaticMesh.h"
 #include "FunctionLibraries/PCGUtilsDynMeshHelpers.h"
 #include "GeometryScript/MeshBooleanFunctions.h"
@@ -154,26 +156,8 @@ bool FPCGSplineToDynamicMeshElement::ExecuteInternal(FPCGContext* Context) const
 		const TArray<UMaterialInterface*> Materials = GetStaticMeshMaterials(InputStaticMesh);
 
 		const int32 NumSegments = SplineData->GetNumSegments();
-		FTransform OutputActorTransform = FTransform::Identity;
-		FTransform WorldToOutput = FTransform::Identity;
-		if (Settings->bConvertWorldToActorLocal)
-		{
-			if (const AActor* TargetActor = Context->GetTargetActor(SplineData))
-			{
-				OutputActorTransform = TargetActor->GetActorTransform();
-				WorldToOutput = OutputActorTransform.Inverse();
-			}
-			else
-			{
-				PCGLog::LogWarningOnGraph(
-					LOCTEXT("MissingTargetActor", "Spline To Dynamic Mesh could not resolve a target actor; output remains in world space."),
-					Context);
-			}
-		}
-
-		const FVector OutputSplineUpDirection = Settings->bConvertWorldToActorLocal
-			? WorldToOutput.TransformVectorNoScale(Settings->SplineUpDirection)
-			: Settings->SplineUpDirection;
+		const FTransform OutputActorTransform = PCGUtilsSplineHelpers::ResolveActorTransformForSpline(
+			Context, SplineData, Settings->bConvertWorldToActorLocal);
 		UDynamicMesh* CombinedMesh = nullptr;
 		for (int32 SegmentIndex = 0; SegmentIndex < NumSegments; ++SegmentIndex)
 		{
@@ -188,17 +172,9 @@ bool FPCGSplineToDynamicMeshElement::ExecuteInternal(FPCGContext* Context) const
 			FVector EndTangent = SplineData->SplineStruct.GetTangentAtSplineInputKey(
 				EndKey, ESplineCoordinateSpace::World) * Settings->TangentScale;
 
-			if (Settings->bConvertWorldToActorLocal)
-			{
-				StartTransform = StartTransform.GetRelativeTransform(OutputActorTransform);
-				EndTransform = EndTransform.GetRelativeTransform(OutputActorTransform);
-				StartTangent = WorldToOutput.TransformVector(StartTangent);
-				EndTangent = WorldToOutput.TransformVector(EndTangent);
-			}
-
 			UDynamicMesh* SegmentMesh = UPCGUtilsDynMeshHelpers::CreateDynamicMeshFromSplineMesh(
 				InputStaticMesh, StartTransform, StartTangent, EndTransform, EndTangent,
-				Settings->ForwardAxis, OutputSplineUpDirection, Settings->bSmoothInterpRollScale,
+				Settings->ForwardAxis, Settings->SplineUpDirection, Settings->bSmoothInterpRollScale,
 				Settings->RenderLODIndex);
 			if (!SegmentMesh)
 			{
@@ -207,6 +183,12 @@ bool FPCGSplineToDynamicMeshElement::ExecuteInternal(FPCGContext* Context) const
 					FText::AsNumber(SegmentIndex)), Context);
 				continue;
 			}
+
+			// Deform in world space first, then convert complete vertices; endpoint SRTs cannot represent shear.
+			SegmentMesh->EditMesh([&](UE::Geometry::FDynamicMesh3& Mesh)
+			{
+				PCGUtilsDynMeshSpaceHelpers::TransformMeshBetweenSpaces(Mesh, FTransform::Identity, OutputActorTransform);
+			});
 
 			if (Settings->bUnionSegments)
 			{
@@ -225,6 +207,7 @@ bool FPCGSplineToDynamicMeshElement::ExecuteInternal(FPCGContext* Context) const
 			{
 				UPCGDynamicMeshData* OutputData = PCGUtilsAsyncObjects::NewObject<UPCGDynamicMeshData>(Context);
 				OutputData->Initialize(SegmentMesh, true, Materials);
+				OutputData->TargetActor = Context->GetTargetActor(SplineData);
 				FPCGTaggedData& Output = Context->OutputData.TaggedData.Emplace_GetRef(Input);
 				Output.Data = OutputData;
 				Output.Pin = PCGPinConstants::DefaultOutputLabel;
@@ -235,6 +218,7 @@ bool FPCGSplineToDynamicMeshElement::ExecuteInternal(FPCGContext* Context) const
 		{
 			UPCGDynamicMeshData* OutputData = PCGUtilsAsyncObjects::NewObject<UPCGDynamicMeshData>(Context);
 			OutputData->Initialize(CombinedMesh, true, Materials);
+			OutputData->TargetActor = Context->GetTargetActor(SplineData);
 			FPCGTaggedData& Output = Context->OutputData.TaggedData.Emplace_GetRef(Input);
 			Output.Data = OutputData;
 			Output.Pin = PCGPinConstants::DefaultOutputLabel;

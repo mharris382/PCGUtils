@@ -4,19 +4,21 @@
 #pragma once
 
 #include "CoreMinimal.h"
-#include "PCGSettings.h"
+#include "Factories/PCGUtilsFactoryProvider.h"
 #include "PCGUtilsDynMeshNodeColor.h"
 
 #include "PCGUtilsDynMeshFactoryProvider.generated.h"
 
 class UPCGUtilsDynMeshFactoryData;
 
+/**
+ * Provider base of the DynMesh domain (selectors, builders, painters): the shared provider with the DynMesh palette
+ * category and title colour, and a CreateFactory typed to the DynMesh factory root.
+ */
 UCLASS(Abstract, BlueprintType, ClassGroup=(Procedural), Category="PCGUtils|Core")
-class PCGUTILSCORE_API UPCGUtilsDynMeshFactoryProviderSettings : public UPCGSettings
+class PCGUTILSCORE_API UPCGUtilsDynMeshFactoryProviderSettings : public UPCGUtilsFactoryProviderSettings
 {
 	GENERATED_BODY()
-
-	friend class FPCGUtilsDynMeshFactoryProviderElement;
 
 public:
 #if WITH_EDITOR
@@ -24,25 +26,13 @@ public:
 	virtual FLinearColor GetNodeTitleColor() const override { return PCGUtilsDynMeshNodeColor::Title; }
 #endif
 
-	virtual FName GetMainOutputPin() const;
-
-	/** Decorators may preserve the primary input's tagged-data envelope while replacing its immutable recipe. */
-	virtual FName GetOutputSourcePin() const { return NAME_None; }
 	virtual UPCGUtilsDynMeshFactoryData* CreateFactory(
 		FPCGContext* InContext, UPCGUtilsDynMeshFactoryData* InFactory = nullptr) const;
 
 protected:
-	virtual const FPCGDataTypeBaseId& GetFactoryTypeId() const;
-	virtual TArray<FPCGPinProperties> InputPinProperties() const override;
-	virtual TArray<FPCGPinProperties> OutputPinProperties() const override;
-	virtual FPCGElementPtr CreateElement() const override;
+	virtual UPCGUtilsFactoryData* CreateFactoryBase(FPCGContext* InContext) const override;
+	virtual const FPCGDataTypeBaseId& GetFactoryTypeId() const override;
 };
 
-class PCGUTILSCORE_API FPCGUtilsDynMeshFactoryProviderElement final : public IPCGElement
-{
-protected:
-	virtual bool ExecuteInternal(FPCGContext* Context) const override;
-
-public:
-	virtual void DisabledPassThroughData(FPCGContext* Context) const override;
-};
+/** The DynMesh providers run the shared provider element. */
+using FPCGUtilsDynMeshFactoryProviderElement = FPCGUtilsFactoryProviderElement;

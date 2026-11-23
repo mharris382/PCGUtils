@@ -25,12 +25,33 @@ FText UPCGGetPCGCacheDataSettings::GetDefaultNodeTitle() const
 	return LOCTEXT("Title", "Get PCG Cache Data");
 }
 
-TArray<FText> UPCGGetPCGCacheDataSettings::GetNodeTitleAliases() const
+FString UPCGGetPCGCacheDataSettings::GetAdditionalTitleInformation() const
+{
+	return FText::Format(LOCTEXT("ActorAndCacheMode", "{0} ({1})"),
+		FText::FromString(Super::GetAdditionalTitleInformation()),
+		TargetCache == EPCGUtilsDataCache::Offline ? LOCTEXT("OfflineMode", "Offline") : LOCTEXT("RuntimeMode", "Runtime")).ToString();
+}
+
+TArray<FPCGPreConfiguredSettingsInfo> UPCGGetPCGCacheDataSettings::GetPreconfiguredInfo() const
 {
 	return {
-		LOCTEXT("GetRuntimeCacheDataAlias", "GetRuntimeCacheData"),
-		LOCTEXT("GetOfflineCacheDataAlias", "GetOfflineCacheData")
+		{0, LOCTEXT("GetOfflineCacheDataPreset", "Get PCG Cache Data (Offline)"),
+			LOCTEXT("GetOfflineCacheDataTooltip", "Get references to the selected actors' Offline PCG caches (editor only).")},
+		{1, LOCTEXT("GetRuntimeCacheDataPreset", "Get PCG Cache Data (Runtime)"),
+			LOCTEXT("GetRuntimeCacheDataTooltip", "Get references to the selected actors' Runtime PCG caches.")}
 	};
+}
+
+void UPCGGetPCGCacheDataSettings::ApplyPreconfiguredSettings(const FPCGPreConfiguredSettingsInfo& PreconfiguredInfo)
+{
+	if (PreconfiguredInfo.PreconfiguredIndex == 0)
+	{
+		TargetCache = EPCGUtilsDataCache::Offline;
+	}
+	else if (PreconfiguredInfo.PreconfiguredIndex == 1)
+	{
+		TargetCache = EPCGUtilsDataCache::Runtime;
+	}
 }
 
 FText UPCGGetPCGCacheDataSettings::GetNodeTooltipText() const

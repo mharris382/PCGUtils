@@ -5,19 +5,13 @@
 
 #include "CoreMinimal.h"
 #include "Data/Registry/PCGDataType.h"
+#include "Factories/PCGUtilsFactoryData.h"
 
-class UPCGUtilsDynMeshFactoryData;
 struct FPCGContext;
 
 namespace PCGUtilsDynMeshFactories
 {
-	PCGUTILSCORE_API bool GetInputFactoriesInternal(
-		FPCGContext* InContext,
-		FName InPinLabel,
-		TArray<TObjectPtr<const UPCGUtilsDynMeshFactoryData>>& OutFactories,
-		const TSet<FPCGDataTypeBaseId>& AcceptedTypes,
-		bool bRequired);
-
+	/** The DynMesh modules' name for PCGUtilsFactories::GetInputFactories; the two are the same function. */
 	template<typename FactoryType>
 	bool GetInputFactories(
 		FPCGContext* InContext,
@@ -26,19 +20,6 @@ namespace PCGUtilsDynMeshFactories
 		const TSet<FPCGDataTypeBaseId>& AcceptedTypes,
 		bool bRequired = true)
 	{
-		TArray<TObjectPtr<const UPCGUtilsDynMeshFactoryData>> BaseFactories;
-		if (!GetInputFactoriesInternal(InContext, InPinLabel, BaseFactories, AcceptedTypes, bRequired))
-		{
-			return false;
-		}
-
-		for (const UPCGUtilsDynMeshFactoryData* BaseFactory : BaseFactories)
-		{
-			if (const FactoryType* Factory = Cast<FactoryType>(BaseFactory))
-			{
-				OutFactories.Add(Factory);
-			}
-		}
-		return !OutFactories.IsEmpty();
+		return PCGUtilsFactories::GetInputFactories<FactoryType>(InContext, InPinLabel, OutFactories, AcceptedTypes, bRequired);
 	}
 }

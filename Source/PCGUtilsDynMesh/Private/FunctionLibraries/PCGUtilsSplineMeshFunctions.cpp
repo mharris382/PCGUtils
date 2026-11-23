@@ -1,5 +1,6 @@
 #include "FunctionLibraries/PCGUtilsSplineMeshFunctions.h"
 
+#include "Elements/PCGUtilsDynMeshSpaceHelpers.h"
 #include "Components/SplineMeshComponent.h"
 #include "Engine/StaticMesh.h"
 #include "FunctionLibraries/PCGUtilsDynMeshHelpers.h"
@@ -85,13 +86,11 @@ UDynamicMesh* UPCGUtilsSplineMeshFunctions::SplineMeshComponentToDynamicMesh(
 	// The baked mesh is expressed in TargetComponent's own component-local space (FSplineMeshParams positions
 	// are documented as "in component space"). Move it into world space, then optionally into
 	// ReferenceActorContext's local space.
-	FTransform OutputTransform = TargetComponent->GetComponentTransform();
-	if (bConvertToLocalSpace)
+	BakedMesh->EditMesh([&](UE::Geometry::FDynamicMesh3& Mesh)
 	{
-		OutputTransform = OutputTransform.GetRelativeTransform(ReferenceActorContext->GetActorTransform());
-	}
-
-	UGeometryScriptLibrary_MeshTransformFunctions::TransformMesh(BakedMesh, OutputTransform);
+		PCGUtilsDynMeshSpaceHelpers::TransformMeshBetweenSpaces(Mesh, TargetComponent->GetComponentTransform(),
+			bConvertToLocalSpace ? ReferenceActorContext->GetActorTransform() : FTransform::Identity);
+	});
 
 	return BakedMesh;
 }

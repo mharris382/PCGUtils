@@ -93,6 +93,13 @@ Select Pieces  ──>  Select Parent (All Children)  ──>  Select Children
     the pieces         the clusters they fill completely      back down again
 ```
 
+The `Selector | ...` nodes (`Selector | In Bounds (GC)` and the like) also put out GC Selections when their Domain
+is GC, so they plug into any `Selection` pin. They act as base selectors over pieces and select by points: the
+node's GC Conversion says what stands for a piece (the centre of its bounds, that centre with the bounds, the eight
+corners of the bounds, or every vertex, with an Any / All / At Least Fraction rule), in the world. Invert gives the
+other pieces, never clusters. `PCGUtilsGeometryCollectionElementPoints::BonesToPoints` is that conversion, public
+for anything else that wants pieces as points. See `PCGUtilsSelectors.md`.
+
 **Base selectors** take no input. Every GC selector also has **Invert Selection**; inversion happens in the
 selector's meaningful candidate domain, so a piece-only predicate does not unexpectedly select structural
 clusters. `Select Pieces` is the one to reach for: a *piece* is a rigid bone that owns

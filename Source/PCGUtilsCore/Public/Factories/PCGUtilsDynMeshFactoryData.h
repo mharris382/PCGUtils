@@ -4,8 +4,7 @@
 #pragma once
 
 #include "CoreMinimal.h"
-#include "PCGData.h"
-#include "Data/Registry/PCGDataType.h"
+#include "Factories/PCGUtilsFactoryData.h"
 
 #include "PCGUtilsDynMeshFactoryData.generated.h"
 
@@ -20,28 +19,15 @@ struct FPCGUtilsDynMeshFactoryDataTypeInfo : public FPCGDataTypeInfo
 };
 
 /**
- * Base UObject transported through PCG pins. Factory instances are immutable after their provider emits them;
- * mutable, mesh-specific state belongs on the non-UObject operation created by a derived factory.
+ * Root of the DynMesh domain's factory families (selectors, builders, painters). Everything a factory does is in
+ * UPCGUtilsFactoryData; this class only gives the domain its own pin type root, which is what keeps a factory of
+ * another domain from plugging into a DynMesh pin.
  */
 UCLASS(Abstract, BlueprintType, ClassGroup=(Procedural), Category="PCGUtils|Core")
-class PCGUTILSCORE_API UPCGUtilsDynMeshFactoryData : public UPCGData
+class PCGUTILSCORE_API UPCGUtilsDynMeshFactoryData : public UPCGUtilsFactoryData
 {
 	GENERATED_BODY()
 
 public:
 	PCG_ASSIGN_TYPE_INFO(FPCGUtilsDynMeshFactoryDataTypeInfo)
-
-	UPROPERTY()
-	int32 Priority = 0;
-
-	virtual bool Prepare(FPCGContext* InContext) { return true; }
-	virtual void AddDataDependency(const UPCGData* InData);
-	virtual bool CanBeSerialized() const override { return false; }
-
-protected:
-	virtual void AddToCrc(FArchiveCrc32& Ar, bool bFullDataCrc) const override;
-	virtual bool SupportsFullDataCrc() const override { return true; }
-
-	UPROPERTY()
-	TSet<TObjectPtr<UPCGData>> DataDependencies;
 };
