@@ -2,6 +2,7 @@
 #if WITH_EDITOR
 #include "HAL/IConsoleManager.h"
 #include "PCGModule.h"
+#include "PCGUtilsAutoRegen.h"
 #include "Settings/PCGUtilsSettings.h"
 #endif
 #define LOCTEXT_NAMESPACE "FPCGUtilsModule"
@@ -24,12 +25,23 @@ void FPCGUtils::ShutdownModule()
 {
 #if WITH_EDITOR
 	FModuleManager::Get().OnModulesChanged().RemoveAll(this);
+	if (bRegisteredAutoRegenTracker)
+	{
+		FPCGUtilsAutoRegen::UnregisterChangeTracker();
+		bRegisteredAutoRegenTracker = false;
+	}
 #endif
 }
 
 #if WITH_EDITOR
 void FPCGUtils::ApplyEditorSettings()
 {
+	if (!bRegisteredAutoRegenTracker)
+	{
+		FPCGUtilsAutoRegen::RegisterChangeTracker();
+		bRegisteredAutoRegenTracker = true;
+	}
+
 	const UPCGUtilsSettings* Settings = GetDefault<UPCGUtilsSettings>();
 
 	if (Settings && Settings->bAutoDisablePCGEditorCache)

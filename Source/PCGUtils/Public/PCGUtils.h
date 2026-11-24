@@ -12,5 +12,7 @@ private:
 #if WITH_EDITOR
     void ApplyEditorSettings();
     void OnModulesChanged(FName ModuleName, EModuleChangeReason ChangeReason);
+
+    bool bRegisteredAutoRegenTracker = false;
 #endif
 };

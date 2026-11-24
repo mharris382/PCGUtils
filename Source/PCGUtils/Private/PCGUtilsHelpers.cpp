@@ -3,6 +3,7 @@
 #include "PCGUtilsHelpers.h"
 
 #include "PCGActorBase.h"
+#include "PCGUtilsAutoRegen.h"
 #include "Components/PCGMarkerComponent.h"
 #include "Components/PCGVolumeComponent.h"
 #include "Components/StaticMeshComponent.h"
@@ -113,6 +114,16 @@ bool UPCGUtilsHelpers::TryRefreshPCGGeneration(UActorComponent* Component, bool 
 	UPCGComponent* PCGComponent = nullptr;
 	bool bFoundProvider = false;
 	APCGActorBase* PCGActorBaseOwner = Cast<APCGActorBase>(Owner);
+	if (FPCGUtilsAutoRegen::IsSuppressedFor(Owner))
+	{
+		// The edit stands and is remembered; only its regeneration waits for an explicit one.
+		if (PCGActorBaseOwner)
+		{
+			PCGActorBaseOwner->RefreshBounds();
+		}
+		FPCGUtilsAutoRegen::NoteSuppressedEdit(Owner);
+		return false;
+	}
 	if (PCGActorBaseOwner)
 	{
 		bFoundProvider = true;	

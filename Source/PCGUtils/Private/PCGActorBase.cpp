@@ -7,6 +7,7 @@
 
 #include "PCGGraph.h"
 #include "PCGComponent.h"
+#include "PCGUtilsAutoRegen.h"
 #include "PCGUtilsHelpers.h"
 
 #if WITH_EDITOR
@@ -98,15 +99,28 @@ FBox APCGActorBase::GetPCGBounds() const
 void APCGActorBase::TriggerRegeneratePCGOnComponentEdits(UActorComponent* TriggeringComponent)
 {
 #if WITH_EDITOR
-	UPCGUtilsHelpers::TryRefreshPCGGeneration(
-		TriggeringComponent ? TriggeringComponent : PCGComponent,
-		true);
+	if (!TriggeringComponent)
+	{
+		// No component edit behind it: an explicit request (a tool that finished changing the actor), so not gated.
+		RefreshBounds();
+		if (PCGComponent)
+		{
+			PCGComponent->GenerateLocal(true);
+		}
+		return;
+	}
+	UPCGUtilsHelpers::TryRefreshPCGGeneration(TriggeringComponent, true);
 #endif
 }
 
 void APCGActorBase::TriggerRegenerateOnActorEdits(AActor* OtherActor)
 {
 #if WITH_EDITOR
+	if (FPCGUtilsAutoRegen::IsSuppressedFor(this))
+	{
+		FPCGUtilsAutoRegen::NoteSuppressedEdit(this);
+		return;
+	}
     if (PCGComponent && bAllowComponentEditsToTriggerGeneration)
         PCGComponent->GenerateLocal(true);
 #endif

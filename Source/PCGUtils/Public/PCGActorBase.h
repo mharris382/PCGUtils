@@ -144,6 +144,10 @@ public:
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "PCG|Editor" ,AdvancedDisplay)
     bool bAllowComponentEditsToTriggerGeneration = true;
 
+    /** Stops edits of this actor and its components from regenerating any PCG; explicit Generate and regen buttons still work. */
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "PCG|Editor", AdvancedDisplay)
+    bool bForceDisableComponentPCGAutoRegen = false;
+
     //UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "PCG|Editor" ,AdvancedDisplay, meta = (EditCondition="bAllowComponentEditsToTriggerGeneration"))
     //bool bAllowSplineEditsToForceGenerate = true;
 #endif
