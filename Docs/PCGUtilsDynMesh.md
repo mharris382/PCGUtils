@@ -359,11 +359,16 @@ triangles, attributes and surface fill the overlap for Union and Intersection.
 **Space Projected.** The meshes need not be coplanar. Both are seen along **Projection Direction** (default
 straight down). With **Trim Mode** Remove Inside, the part of A inside B's footprint is removed; with Keep Inside,
 only that part is kept. The cut follows A's own surface: every new vertex is interpolated in the A triangle it
-lies in, so the result never leaves A's surface. **Stitch** (Remove Inside only) adds B whole and uncut and joins
-its open boundary to A's cut boundary as one mesh. Seam vertices within **Seam Tolerance** (height along the
+lies in, so the result never leaves A's surface. **Stitch** (Remove Inside only) adds B's top surface whole and
+uncut and joins its open boundary to A's cut boundary as one mesh. Walls or a skirt hanging from B's outline are
+left out, never refused: faces at least **Operand Wall Angle** steep (default 80 degrees from the plane) that reach
+B's outline through other such faces. A log note (no graph warning) says how many. Steep faces inside B, such as a
+step in a ramp, are kept, and 90 keeps every face. Seam vertices within **Seam Tolerance** (height along the
 projection) are welded and shared. A wider gap gets one message per gap run, giving where and how wide: a warning
-when **Fill Seam Gaps** fills it with vertical wall triangles, an error when it is left open. **Weld Position** (Keep B by
-default) picks which input's position a welded vertex takes. The vertex keeps A's id either way.
+when **Fill Seam Gaps** (on by default) fills it with vertical wall triangles, an error when it is left open.
+**Weld Position** (Keep B by default, so the ramp stays exactly as authored) picks which input's position a welded
+vertex takes. The vertex keeps A's id either way. When Keep B moves A's (the green's) seam vertices, one short
+warning per connected stretch of welded seam gives the largest move; it is never an error and never lists every vertex.
 
 **What is kept exactly.** Only triangles that touch the other mesh's outline (within **Snap Tolerance**) are
 rebuilt. Every other triangle is copied unchanged, with its vertices, attributes and orientation. **Triangulation**
@@ -389,9 +394,9 @@ Generic attached attributes, skin weights and morph targets are not carried; eac
 - A **fold**: a triangle facing the opposite way to the rest of the surface along the projection (an overhang, a fold or a flipped triangle).
   Names the input, the first such triangle, its centre and projected area, and the count. A is checked only near
   B's footprint in Projected mode; B is checked everywhere.
-- A walled stitch operand: names the first edge-on triangle on B's outline.
 - A zero normal or direction, a missing or mistyped `@Data` shorthand (the shorthand's own message).
 - A seam gap run: where, how wide, and how many vertices.
+- Warnings, not errors: a stretch of seam where green vertices moved to meet B (the largest move); attributes not carried.
 - A triangle that could not be added: names its source triangle and why, capped at ten.
 
 A failed input check drops that pairing's output. Seam gaps and triangulation failures keep the result.

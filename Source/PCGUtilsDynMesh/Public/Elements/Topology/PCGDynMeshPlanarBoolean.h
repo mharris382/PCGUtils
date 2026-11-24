@@ -179,7 +179,7 @@ public:
 	 * Projected, Remove Inside: add B, whole and uncut, and join its open boundary to A's cut boundary so the
 	 * result is one mesh with shared vertices on the seam. Where B's boundary lies on A within Seam Tolerance the
 	 * seam is a weld; elsewhere the gap is reported and, with Fill Seam Gaps, closed with a vertical wall.
-	 * B must be an open surface (no walls or skirts along its outline).
+	 * Walls or a skirt along B's outline are left out (see Operand Wall Angle) and B's top surface is stitched.
 	 */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category=Settings, meta=(PCG_Overridable,
 		EditCondition="Space == EPCGDynMeshPlanarBooleanSpace::Projected && TrimMode == EPCGDynMeshPlanarBooleanTrim::RemoveInside", EditConditionHides))
@@ -197,6 +197,15 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category=Settings, meta=(PCG_Overridable,
 		EditCondition="Space == EPCGDynMeshPlanarBooleanSpace::Projected && TrimMode == EPCGDynMeshPlanarBooleanTrim::RemoveInside && bStitch", EditConditionHides))
 	bool bFillSeamGaps = true;
+
+	/**
+	 * Stitch: B's faces at least this steep (degrees from the plane) that reach B's outline through other such faces
+	 * are treated as B's walls or skirt. They are left out and B's top surface is stitched; a note in the log says how
+	 * many. Steep faces inside B (a step in a ramp) are kept. 90 keeps every face.
+	 */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category=Settings, meta=(PCG_Overridable, ClampMin="0", ClampMax="90", UIMin="0", UIMax="90", Units="Degrees",
+		EditCondition="Space == EPCGDynMeshPlanarBooleanSpace::Projected && TrimMode == EPCGDynMeshPlanarBooleanTrim::RemoveInside && bStitch", EditConditionHides))
+	double OperandWallAngle = 80.0;
 
 	/** Which input's position a welded seam vertex takes (Coplanar Union and Exclusive welds too). */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category=Settings, meta=(PCG_Overridable))

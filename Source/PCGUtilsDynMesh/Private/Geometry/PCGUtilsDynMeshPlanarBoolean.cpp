@@ -322,7 +322,6 @@ namespace PlanarBooleanPrivate
 		void InitView(FPlanarView& V);
 		void CheckCoplanar(const FPlanarView& V);
 		void CheckFolds(const FPlanarView& V, const FPlanarBox* Restrict);
-		void CheckStitchOperandOutline();
 		void BuildBoundary(FPlanarView& V);
 		void FindCut(FPlanarView& S, const FPlanarView& O);
 		bool CanOwn(int32 SIndex) const;
@@ -437,34 +436,6 @@ namespace PlanarBooleanPrivate
 			const FIndex2i E = M.GetEdgeV(V.BoundaryEdges[I]);
 			FPlanarBox B; B.Add(V.P2[E.A]); B.Add(V.P2[E.B]);
 			V.SegGrid.Add(I, B);
-		}
-	}
-
-	void FPlanarBooleanSolver::CheckStitchOperandOutline()
-	{
-		// Stitch joins A to B's open boundary. An edge-on triangle (a wall or a skirt) beside B's outline means
-		// the outline is not B's mesh boundary, and welding A to it would give an edge three triangles.
-		const FPlanarView& B = Views[1];
-		const FDynamicMesh3& M = *B.Mesh;
-		int32 Count = 0, First = INDEX_NONE;
-		for (const int32 Eid : B.BoundaryEdges)
-		{
-			const FIndex2i T = M.GetEdgeT(Eid);
-			for (const int32 Tid : { T.A, T.B })
-			{
-				if (Tid != FDynamicMesh3::InvalidID && B.State[Tid] == ETriState::EdgeOn)
-				{
-					if (First == INDEX_NONE) { First = Tid; }
-					++Count;
-				}
-			}
-		}
-		if (Count > 0)
-		{
-			const FIndex3i T = M.GetTriangle(First);
-			const FVector3d C = (M.GetVertex(T.A) + M.GetVertex(T.B) + M.GetVertex(T.C)) / 3.0;
-			Fatal(FString::Printf(TEXT("%s has a wall or skirt along its outline: triangle %d (centre %s) is edge-on to the projection. Stitch joins A to B's open boundary, so B must be a surface without walls. Use B's surface-only output, or turn Stitch off. %d such triangles; the first is named."),
-				*B.Label, First, *PlanarFmt(C), Count));
 		}
 	}
 
@@ -866,6 +837,8 @@ namespace PlanarBooleanPrivate
 		AVerts.Sort();
 
 		const bool bStitch = Options.OperandMode == EOperandMode::Whole;
+		TMap<int32, double> Moved; // A seam vertices moved to meet B, and by how much
+		TSet<int32> WeldedA;   // every welded A seam vertex: runs are connected stretches of seam
 		TArray<int32> Remap; Remap.SetNumUninitialized(OutVerts.Num());
 		for (int32 I = 0; I < Remap.Num(); ++I) { Remap[I] = I; }
 		TSet<int32> UsedB;
@@ -889,8 +862,14 @@ namespace PlanarBooleanPrivate
 				continue;
 			}
 			// Keep A's vertex id (the output is A, mutated) and take the chosen position.
-			if (Options.WeldPosition == EWeldPosition::KeepB) { OutVerts[A].P3 = OutVerts[Best].P3; }
+			if (Options.WeldPosition == EWeldPosition::KeepB)
+			{
+				const double Move = (OutVerts[Best].P3 - OutVerts[A].P3).Length();
+				if (Move > 1.0e-4) { Moved.Add(A, Move); }
+				OutVerts[A].P3 = OutVerts[Best].P3;
+			}
 			Remap[Best] = A;
+			WeldedA.Add(A);
 			++Result.SeamWelds;
 		}
 		if (Result.SeamWelds == 0) { return; }
@@ -903,6 +882,50 @@ namespace PlanarBooleanPrivate
 			Kept.Add(R);
 		}
 		Records = MoveTemp(Kept);
+
+		// Keep B moved A's seam vertices to meet B: one short warning per connected stretch of welded seam, with the largest move.
+		if (Moved.IsEmpty()) { return; }
+		TMap<int32, int32> Parent;
+		auto FindRoot = [&Parent](int32 X) -> int32
+		{
+			int32 Root = X;
+			while (true) { const int32 P = Parent.FindOrAdd(Root, Root); if (P == Root) { break; } Root = P; }
+			while (X != Root) { const int32 Next = Parent[X]; Parent[X] = Root; X = Next; }
+			return Root;
+		};
+		for (const FPlanarRecord& R : Records)
+		{
+			for (int32 K = 0; K < 3; ++K)
+			{
+				const int32 U = R.V[K], W = R.V[(K + 1) % 3];
+				if (WeldedA.Contains(U) && WeldedA.Contains(W))
+				{
+					const int32 RU = FindRoot(U), RW = FindRoot(W);
+					if (RU != RW) { Parent[RU] = RW; }
+				}
+			}
+		}
+		struct FMoveRun { int32 Count = 0; double Max = 0.0; FVector3d Where = FVector3d::ZeroVector; };
+		TMap<int32, FMoveRun> Runs;
+		for (const TPair<int32, double>& M : Moved)
+		{
+			FMoveRun& Run = Runs.FindOrAdd(FindRoot(M.Key));
+			++Run.Count;
+			if (M.Value > Run.Max) { Run.Max = M.Value; Run.Where = OutVerts[M.Key].P3; }
+			Result.MaxSeamMove = FMath::Max(Result.MaxSeamMove, M.Value);
+		}
+		Result.MovedSeamVertices = Moved.Num();
+		int32 RunIndex = 0;
+		for (const TPair<int32, FMoveRun>& Run : Runs)
+		{
+			if (++RunIndex > 20)
+			{
+				Warn(FString::Printf(TEXT("Seam between %s and %s: %d more runs of moved %s vertices are not listed."), *Options.LabelA, *Options.LabelB, Runs.Num() - 20, *Options.LabelA));
+				break;
+			}
+			Warn(FString::Printf(TEXT("Seam between %s and %s: %d welded vertices of %s moved up to %.4f to meet %s (largest at %s)."),
+				*Options.LabelA, *Options.LabelB, Run.Value.Count, *Options.LabelA, Run.Value.Max, *Options.LabelB, *PlanarFmt(Run.Value.Where)));
+		}
 	}
 
 	void FPlanarBooleanSolver::BuildWalls()
@@ -1365,7 +1388,6 @@ namespace PlanarBooleanPrivate
 		}
 		BuildBoundary(Views[0]);
 		BuildBoundary(Views[1]);
-		if (bStitch) { CheckStitchOperandOutline(); }
 		if (bFatal) { return false; }
 
 		FindCut(Views[0], Views[1]);
@@ -1471,7 +1493,55 @@ bool Compute(const UE::Geometry::FDynamicMesh3& A, const UE::Geometry::FDynamicM
 	OutResult.Mesh = UE::Geometry::FDynamicMesh3();
 	OutResult.Messages.Reset();
 	OutResult.CutTrianglesA = OutResult.CutTrianglesB = OutResult.SeamWelds = OutResult.SeamGapVertices = OutResult.WallTriangles = 0;
-	PlanarBooleanPrivate::FPlanarBooleanSolver Solver(A, B, Frame, Options, OutResult);
+	OutResult.DroppedOperandWalls = OutResult.MovedSeamVertices = 0;
+	OutResult.MaxSeamMove = 0.0;
+
+	// Stitch joins A to B's open top surface. Walls or a skirt hanging from B's outline are left out (never
+	// refused): faces at least OperandWallAngle steep, reached from B's mesh boundary through other such faces.
+	// Steep faces inside B (a step in a ramp) are not reached that way and are kept.
+	UE::Geometry::FDynamicMesh3 OperandWithoutWalls;
+	const UE::Geometry::FDynamicMesh3* Operand = &B;
+	if (Options.OperandMode == EOperandMode::Whole && Options.OperandWallAngle < 90.0)
+	{
+		const double MaxCos = FMath::Cos(FMath::DegreesToRadians(FMath::Clamp(Options.OperandWallAngle, 0.0, 90.0)));
+		auto IsWall = [&B, &Frame, MaxCos](int32 Tid)
+		{
+			FVector3d N; double Area; FVector3d Centroid;
+			B.GetTriInfo(Tid, N, Area, Centroid);
+			return Area > UE_DOUBLE_SMALL_NUMBER && FMath::Abs(N.Dot(Frame.Normal)) <= MaxCos + 1.0e-9;
+		};
+		TArray<int32> Stack;
+		TSet<int32> Walls;
+		for (const int32 Eid : B.BoundaryEdgeIndicesItr())
+		{
+			const int32 Tid = B.GetEdgeT(Eid).A;
+			if (!Walls.Contains(Tid) && IsWall(Tid)) { Walls.Add(Tid); Stack.Add(Tid); }
+		}
+		while (!Stack.IsEmpty())
+		{
+			const int32 Tid = Stack.Pop(EAllowShrinking::No);
+			const UE::Geometry::FIndex3i Nbrs = B.GetTriNeighbourTris(Tid);
+			for (int32 K = 0; K < 3; ++K)
+			{
+				const int32 N = Nbrs[K];
+				if (N != UE::Geometry::FDynamicMesh3::InvalidID && !Walls.Contains(N) && IsWall(N)) { Walls.Add(N); Stack.Add(N); }
+			}
+		}
+		if (!Walls.IsEmpty())
+		{
+			OperandWithoutWalls = B;
+			for (const int32 Tid : Walls) { OperandWithoutWalls.RemoveTriangle(Tid, true, false); }
+			Operand = &OperandWithoutWalls;
+			OutResult.DroppedOperandWalls = Walls.Num();
+			FMessage Note;
+			Note.bNote = true;
+			Note.Text = FString::Printf(TEXT("%s: %d wall or skirt faces along its outline (at least %.1f degrees steep) were left out; its top surface is stitched."),
+				*Options.LabelB, Walls.Num(), Options.OperandWallAngle);
+			OutResult.Messages.Add(Note);
+		}
+	}
+
+	PlanarBooleanPrivate::FPlanarBooleanSolver Solver(A, *Operand, Frame, Options, OutResult);
 	const bool bOK = Solver.Run();
 	if (!bOK) { OutResult.Mesh = UE::Geometry::FDynamicMesh3(); }
 	return bOK;

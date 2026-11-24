@@ -7,6 +7,7 @@
 #include "Geometry/PCGUtilsDynMeshPlanarBoolean.h"
 #include "Materials/MaterialInterface.h"
 #include "PCGContext.h"
+#include "PCGModule.h"
 #include "UDynamicMesh.h"
 #include "Utils/PCGLogErrors.h"
 
@@ -43,6 +44,7 @@ namespace PCGDynMeshPlanarBooleanElement
 		bool bStitch = false;
 		FPCGUtilsInputShorthandDoubleAbs SeamTolerance;
 		bool bFillSeamGaps = true;
+		double OperandWallAngle = 80.0;
 		EPCGDynMeshPlanarBooleanWeld WeldPosition = EPCGDynMeshPlanarBooleanWeld::KeepB;
 		EPCGDynMeshPlanarBooleanTriangulation Triangulation = EPCGDynMeshPlanarBooleanTriangulation::Delaunay;
 		EPCGDynMeshPlanarBooleanInheritance Inheritance = EPCGDynMeshPlanarBooleanInheritance::Interpolate;
@@ -148,6 +150,7 @@ namespace PCGDynMeshPlanarBooleanElement
 			}
 			Options.bCheckFolds = true;
 			Options.bFillSeamGaps = bFillSeamGaps;
+			Options.OperandWallAngle = OperandWallAngle;
 			Options.WeldPosition = WeldPosition == EPCGDynMeshPlanarBooleanWeld::KeepB ? EWeldPosition::KeepB : EWeldPosition::KeepA;
 			Options.Triangulation = Triangulation == EPCGDynMeshPlanarBooleanTriangulation::Delaunay ? ETriangulation::Delaunay : ETriangulation::KeepSourceEdges;
 			Options.VertexInheritance = Inheritance == EPCGDynMeshPlanarBooleanInheritance::Interpolate ? EVertexInheritance::Interpolate
@@ -172,7 +175,8 @@ namespace PCGDynMeshPlanarBooleanElement
 			for (const FMessage& Message : Result.Messages)
 			{
 				const FText Text = FText::Format(LOCTEXT("Message", "DynMesh | Planar Boolean: {0}"), FText::FromString(Message.Text));
-				if (Message.bError) { PCGLog::LogErrorOnGraph(Text, Context); }
+				if (Message.bNote) { UE_LOG(LogPCG, Log, TEXT("%s"), *Text.ToString()); }
+				else if (Message.bError) { PCGLog::LogErrorOnGraph(Text, Context); }
 				else { PCGLog::LogWarningOnGraph(Text, Context); }
 			}
 			if (!bOK) { return false; }
@@ -202,7 +206,7 @@ FText UPCGDynMeshPlanarBooleanSettings::GetDefaultNodeTitle() const
 
 FText UPCGDynMeshPlanarBooleanSettings::GetNodeTooltipText() const
 {
-	return LOCTEXT("Tooltip", "Booleans surface meshes in 2D, without making solids first. Coplanar: union, intersection, difference or exclusive of two meshes on one plane (best fit of A, the XY plane, or an explicit plane). Projected: cuts A along B's outline seen along a direction, removing or keeping the part inside; the cut follows A's surface. Stitch adds B and welds it into the hole as one watertight mesh, filling gaps above Seam Tolerance with vertical walls. Only triangles crossing the other mesh's outline are rebuilt; the rest are kept exactly. The output is InA, mutated: its metadata, tags and material slots are kept, and rebuilt triangles inherit material, PolyGroups and vertex attributes from the triangle they lie in. Whole-mesh node: no Selection or Selector. Both meshes must share one coordinate space.");
+	return LOCTEXT("Tooltip", "Booleans surface meshes in 2D, without making solids first. Coplanar: union, intersection, difference or exclusive of two meshes on one plane (best fit of A, the XY plane, or an explicit plane). Projected: cuts A along B's outline seen along a direction, removing or keeping the part inside; the cut follows A's surface. Stitch adds B's top surface (walls or a skirt along its outline are left out) and welds it into the hole as one watertight mesh, filling gaps above Seam Tolerance with vertical walls; green vertices moved to meet B get one short warning per seam run. Only triangles crossing the other mesh's outline are rebuilt; the rest are kept exactly. The output is InA, mutated: its metadata, tags and material slots are kept, and rebuilt triangles inherit material, PolyGroups and vertex attributes from the triangle they lie in. Whole-mesh node: no Selection or Selector. Both meshes must share one coordinate space.");
 }
 
 EPCGChangeType UPCGDynMeshPlanarBooleanSettings::GetChangeTypeForProperty(FPropertyChangedEvent& PropertyChangedEvent) const
@@ -270,6 +274,7 @@ TSharedPtr<const FPCGUtilsDynMeshProcessOperation> UPCGDynMeshPlanarBooleanSetti
 	Op->bStitch = bStitch;
 	Op->SeamTolerance = SeamTolerance;
 	Op->bFillSeamGaps = bFillSeamGaps;
+	Op->OperandWallAngle = OperandWallAngle;
 	Op->WeldPosition = WeldPosition;
 	Op->Triangulation = Triangulation;
 	Op->Inheritance = VertexAttributeInheritance;

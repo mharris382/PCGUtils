@@ -460,7 +460,18 @@ bool FPCGDynMeshPlanarBooleanProjectedTest::RunTest(const FString&)
 		const int32 Open = PlanarTestInteriorBoundaryEdges(Result.Mesh, 0.0, 0.0, 200.0, 200.0, &First);
 		TestEqual(*FString::Printf(TEXT("Curved stitch leaves no open edge on the seam (first at %s)"), *First.ToString()), Open, 0);
 		TestTrue(TEXT("Curved stitch keeps all of B"), FMath::IsNearlyEqual(PCGUtilsPlanarBoolean::ProjectedArea(Result.Mesh, Frame), 40000.0, 1.0e-2));
-		for (const PCGUtilsPlanarBoolean::FMessage& Message : Result.Messages) { AddInfo(Message.Text); }
+		// Keep B moves A's seam vertices onto B's chords: reported briefly, per run, never as an error.
+		int32 MoveWarnings = 0, Errors = 0;
+		for (const PCGUtilsPlanarBoolean::FMessage& Message : Result.Messages)
+		{
+			MoveWarnings += !Message.bError && Message.Text.Contains(TEXT("moved up to"));
+			Errors += Message.bError;
+			AddInfo(Message.Text);
+		}
+		TestTrue(TEXT("Curved stitch moves some green vertices to meet B"), Result.MovedSeamVertices > 0 && Result.MaxSeamMove > 0.0 && Result.MaxSeamMove <= Options.SeamTolerance);
+		TestTrue(*FString::Printf(TEXT("Moves are reported per run, not per vertex (%d warnings for %d moved vertices)"), MoveWarnings, Result.MovedSeamVertices),
+			MoveWarnings >= 1 && MoveWarnings < Result.MovedSeamVertices);
+		TestEqual(TEXT("Moving green vertices is never an error"), Errors, 0);
 	}
 	return true;
 }
@@ -517,21 +528,6 @@ bool FPCGDynMeshPlanarBooleanErrorsTest::RunTest(const FString&)
 		PlanarTestRun(Settings, { PlanarTestTagged(PlanarTestData(PlanarTestSquare(FVector2d(50.0, 50.0), 10)), TEXT("A")) },
 			{ PlanarTestTagged(PlanarTestData(PlanarTestSquare(FVector2d(80.0, 50.0), 4)), TEXT("B")) });
 	}
-	// Stitch needs B without walls.
-	{
-		FDynamicMesh3 BMesh = PlanarTestSquare(FVector2d(50.0, 50.0), 4, 0, false, 10.0);
-		const int32 V0 = 0, V1 = 1;
-		const int32 W0 = BMesh.AppendVertex(BMesh.GetVertex(V0) - FVector3d(0, 0, 10.0));
-		const int32 W1 = BMesh.AppendVertex(BMesh.GetVertex(V1) - FVector3d(0, 0, 10.0));
-		BMesh.AppendTriangle(V0, V1, W1);
-		BMesh.AppendTriangle(V0, W1, W0);
-		auto* Settings = NewObject<UPCGDynMeshPlanarBooleanSettings>();
-		Settings->Space = EPCGDynMeshPlanarBooleanSpace::Projected;
-		Settings->bStitch = true;
-		AddExpectedError(TEXT("InB[0] has a wall or skirt along its outline"), EAutomationExpectedErrorFlags::Contains, 1, false);
-		PlanarTestRun(Settings, { PlanarTestTagged(PlanarTestData(PlanarTestSquare(FVector2d(50.0, 50.0), 10)), TEXT("A")) },
-			{ PlanarTestTagged(PlanarTestData(MoveTemp(BMesh)), TEXT("B")) });
-	}
 	return true;
 }
 
@@ -573,6 +569,89 @@ bool FPCGDynMeshPlanarBooleanGreenRampTest::RunTest(const FString&)
 			FMath::IsNearlyEqual(PCGUtilsPlanarBoolean::ProjectedArea(Result.Mesh, PlanarTestXY()), 120000.0, 1.0e-2));
 		// Ramp triangles are kept exactly.
 		TestTrue(*FString::Printf(TEXT("%s: the ramp is in the output"), *What), Result.Mesh.TriangleCount() > Ramp.TriangleCount());
+	}
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FPCGDynMeshPlanarBooleanSkirtedRampTest,
+	"PCGUtils.DynMesh.PlanarBoolean.SkirtedRampStitchIsWatertight", EAutomationTestFlags::EditorContext | EAutomationTestFlags::ProductFilter)
+
+bool FPCGDynMeshPlanarBooleanSkirtedRampTest::RunTest(const FString&)
+{
+	using namespace PCGUtilsDynMeshPlanarBooleanTests;
+	// The green-ramp case, but the ramp has a skirt all round its outline, flaring slightly outward (85 degrees
+	// steep) and hanging 5 cm below the green. Stitch must leave the skirt out, never refuse, and stitch the top.
+	const FDynamicMesh3 Green = PlanarTestGrid(0.0, 0.0, 10.0, 40, 30, PlanarTestFlat, PlanarTestAllCells, true);
+	auto RampZ = [](double X, double) { return X <= 130.0 ? 0.0 : (X - 130.0) / 120.0 * 30.0; };
+	FDynamicMesh3 Ramp = PlanarTestGrid(100.0, 104.0, 10.0, 15, 6, RampZ, PlanarTestAllCells, true);
+	const int32 SurfaceTriangles = Ramp.TriangleCount();
+	const FVector3d Centre(175.0, 134.0, 0.0);
+	TMap<int32, int32> Below;
+	TArray<UE::Geometry::FIndex2i> Outline;
+	for (const int32 Eid : Ramp.BoundaryEdgeIndicesItr())
+	{
+		const int32 Tid = Ramp.GetEdgeT(Eid).A;
+		const FIndex3i T = Ramp.GetTriangle(Tid);
+		const UE::Geometry::FIndex2i EV = Ramp.GetEdgeV(Eid);
+		// Boundary edge in the triangle's own direction (A -> B).
+		const int32 K = T.IndexOf(EV.A);
+		Outline.Add(T[(K + 1) % 3] == EV.B ? EV : UE::Geometry::FIndex2i(EV.B, EV.A));
+	}
+	for (const UE::Geometry::FIndex2i& E : Outline)
+	{
+		for (const int32 V : { E.A, E.B })
+		{
+			if (Below.Contains(V)) { continue; }
+			const FVector3d P = Ramp.GetVertex(V);
+			const FVector3d Out = FVector3d(P.X - Centre.X, P.Y - Centre.Y, 0.0).GetSafeNormal();
+			Below.Add(V, Ramp.AppendVertex(FVector3d(P.X, P.Y, -5.0) + Out * ((P.Z + 5.0) * 0.08)));
+		}
+	}
+	int32 SkirtTriangles = 0;
+	for (const UE::Geometry::FIndex2i& E : Outline)
+	{
+		SkirtTriangles += Ramp.AppendTriangle(E.B, E.A, Below[E.A]) >= 0;
+		SkirtTriangles += Ramp.AppendTriangle(E.B, Below[E.A], Below[E.B]) >= 0;
+	}
+	TestEqual(TEXT("Fixture: the skirt is closed all round"), SkirtTriangles, Outline.Num() * 2);
+
+	PCGUtilsPlanarBoolean::FOptions Options;
+	Options.Operation = PCGUtilsPlanarBoolean::EOperation::Difference;
+	Options.OperandMode = PCGUtilsPlanarBoolean::EOperandMode::Whole;
+	Options.bCheckCoplanar = false;
+	Options.SeamTolerance = 0.1;
+	PCGUtilsPlanarBoolean::FResult Result;
+	if (!TestTrue(TEXT("Skirted stitch succeeds (no refusal)"), PCGUtilsPlanarBoolean::Compute(Green, Ramp, PlanarTestXY(), Options, Result))) { return true; }
+	TestEqual(TEXT("Every skirt face is left out"), Result.DroppedOperandWalls, SkirtTriangles);
+	int32 Notes = 0, Errors = 0, Unadded = 0;
+	for (const PCGUtilsPlanarBoolean::FMessage& Message : Result.Messages)
+	{
+		Notes += Message.bNote;
+		Errors += Message.bError;
+		Unadded += Message.Text.Contains(TEXT("could not be added"));
+		AddInfo(Message.Text);
+	}
+	TestEqual(TEXT("One note says the skirt was left out"), Notes, 1);
+	TestEqual(TEXT("No errors"), Errors, 0);
+	TestEqual(TEXT("Every output triangle was added"), Unadded, 0);
+	TestTrue(TEXT("The ramp's foot is welded"), Result.SeamWelds > 0);
+	FVector3d First;
+	const int32 Open = PlanarTestInteriorBoundaryEdges(Result.Mesh, 0.0, 0.0, 400.0, 300.0, &First);
+	TestEqual(*FString::Printf(TEXT("No open edge left along the seam (first at %s)"), *First.ToString()), Open, 0);
+	TestTrue(TEXT("The result covers the green once"), FMath::IsNearlyEqual(PCGUtilsPlanarBoolean::ProjectedArea(Result.Mesh, PlanarTestXY()), 120000.0, 1.0e-2));
+	double MinZ = 0.0;
+	for (const int32 Vid : Result.Mesh.VertexIndicesItr()) { MinZ = FMath::Min(MinZ, Result.Mesh.GetVertex(Vid).Z); }
+	TestTrue(TEXT("Nothing of the skirt is left below the green"), MinZ > -1.0e-6);
+	TestTrue(TEXT("The ramp's top surface is in the output"), Result.Mesh.TriangleCount() > SurfaceTriangles);
+
+	// Through the node: Stitch with a skirted B logs no error and gives one output.
+	auto* Settings = NewObject<UPCGDynMeshPlanarBooleanSettings>();
+	Settings->Space = EPCGDynMeshPlanarBooleanSpace::Projected;
+	Settings->bStitch = true;
+	const auto Out = PlanarTestRun(Settings, { PlanarTestTagged(PlanarTestData(FDynamicMesh3(Green)), TEXT("A")) }, { PlanarTestTagged(PlanarTestData(MoveTemp(Ramp)), TEXT("B")) });
+	if (TestEqual(TEXT("The node stitches a skirted ramp"), Out.Num(), 1))
+	{
+		TestEqual(TEXT("The node's result has no open seam"), PlanarTestInteriorBoundaryEdges(PlanarTestMesh(Out[0]), 0.0, 0.0, 400.0, 300.0), 0);
 	}
 	return true;
 }

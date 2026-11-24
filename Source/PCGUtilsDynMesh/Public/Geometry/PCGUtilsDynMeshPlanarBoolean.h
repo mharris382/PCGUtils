@@ -104,6 +104,11 @@ namespace PCGUtilsPlanarBoolean
 		/** Stitch: fill a seam gap wider than SeamTolerance with vertical wall triangles. */
 		bool bFillSeamGaps = true;
 		EWeldPosition WeldPosition = EWeldPosition::KeepB;
+		/**
+		 * Stitch: B's faces at least this steep (degrees from the plane) that reach B's outline through other such
+		 * faces are B's walls or skirt. They are left out and B's top surface is stitched. 90 keeps every face.
+		 */
+		double OperandWallAngle = 80.0;
 
 		ETriangulation Triangulation = ETriangulation::Delaunay;
 		EVertexInheritance VertexInheritance = EVertexInheritance::Interpolate;
@@ -125,6 +130,8 @@ namespace PCGUtilsPlanarBoolean
 	{
 		bool bError = false;
 		FString Text;
+		/** Informational only (log, no graph badge). Never set together with bError. */
+		bool bNote = false;
 	};
 
 	struct PCGUTILSDYNMESH_API FResult
@@ -137,6 +144,11 @@ namespace PCGUtilsPlanarBoolean
 		int32 SeamWelds = 0;
 		int32 SeamGapVertices = 0;
 		int32 WallTriangles = 0;
+		/** Stitch: B faces left out as walls or skirt. */
+		int32 DroppedOperandWalls = 0;
+		/** Stitch with Weld Position Keep B: A seam vertices moved to meet B, and the largest move. */
+		int32 MovedSeamVertices = 0;
+		double MaxSeamMove = 0.0;
 
 		bool HasErrors() const;
 	};
@@ -151,8 +163,7 @@ namespace PCGUtilsPlanarBoolean
 	PCGUTILSDYNMESH_API double ProjectedArea(const UE::Geometry::FDynamicMesh3& Mesh, const FPlanarFrame& Frame);
 
 	/**
-	 * Runs the boolean. Returns false, with OutResult.Mesh empty, when an input check fails (off the plane, a fold,
-	 * a walled stitch operand); the messages say which. Otherwise returns true; OutResult.Messages may still hold
+	 * Runs the boolean. Returns false, with OutResult.Mesh empty, when an input check fails (off the plane, a fold); the messages say which. Otherwise returns true; OutResult.Messages may still hold
 	 * errors that did not stop the result (a triangulation failure, a seam gap left open) and warnings.
 	 */
 	PCGUTILSDYNMESH_API bool Compute(const UE::Geometry::FDynamicMesh3& A, const UE::Geometry::FDynamicMesh3& B,
