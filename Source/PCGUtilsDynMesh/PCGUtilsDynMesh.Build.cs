@@ -28,6 +28,9 @@ public class PCGUtilsDynMesh : ModuleRules
             }
         );
 
+        // Planar Boolean: FArrangement2d and constrained Delaunay (runtime module, GeometryProcessing plugin).
+        PrivateDependencyModuleNames.Add("GeometryAlgorithms");
+
         // Write DynMesh LODs authors Static Mesh assets: it needs the asset registry to announce a newly
         // created asset. The write itself goes through GeometryScriptingCore, which is already public above
         // and guards its own editor-only implementation.

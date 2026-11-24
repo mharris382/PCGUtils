@@ -341,6 +341,70 @@ For a hole-rim bevel: connect the Boolean's mesh output to **DynMesh | Bevel Edg
 Material handling follows the vanilla element: primary material slots are retained, and this node does not merge
 or remap separate operand material-slot tables. Operand material IDs should already use the primary's slot layout.
 
+### DynMesh Planar Boolean
+
+**DynMesh | Planar Boolean** (`UPCGDynMeshPlanarBooleanSettings`, RS-77) booleans *surface* meshes in 2D, without
+building solids. It uses the operand base above (InA, InB, the engine pairing **Mode**, tag inheritance, missing-InB
+passthrough) and runs on engine GeometryAlgorithms code: `FArrangement2d` to split the cut area along the other
+mesh's outline, then `TConstrainedDelaunay2` to triangulate it. It adds no library. The core is
+`PCGUtilsPlanarBoolean::Compute` in `Geometry/PCGUtilsDynMeshPlanarBoolean.h`, callable from C++ without PCG.
+
+**Space Coplanar.** Both meshes lie on one plane. **Plane Source** is Best Fit (A) (A's area centroid and mean
+normal), XY Plane through A's centroid, or Explicit (**Plane Origin** / **Plane Normal**, each a constant or a
+Vector read from InA's `@Data`, default names `PlaneOrigin` / `PlaneNormal`). A vertex of A or B farther than
+**Plane Tolerance** from the plane fails that pairing, with an error naming the input, the farthest vertex and its
+distance. **Operation** is Union, Intersection, Difference (A − B) or Exclusive. **Overlap Source** picks whose
+triangles, attributes and surface fill the overlap for Union and Intersection.
+
+**Space Projected.** The meshes need not be coplanar. Both are seen along **Projection Direction** (default
+straight down). With **Trim Mode** Remove Inside, the part of A inside B's footprint is removed; with Keep Inside,
+only that part is kept. The cut follows A's own surface: every new vertex is interpolated in the A triangle it
+lies in, so the result never leaves A's surface. **Stitch** (Remove Inside only) adds B whole and uncut and joins
+its open boundary to A's cut boundary as one mesh. Seam vertices within **Seam Tolerance** (height along the
+projection) are welded and shared. A wider gap gets one message per gap run, giving where and how wide: a warning
+when **Fill Seam Gaps** fills it with vertical wall triangles, an error when it is left open. **Weld Position** (Keep B by
+default) picks which input's position a welded vertex takes. The vertex keeps A's id either way.
+
+**What is kept exactly.** Only triangles that touch the other mesh's outline (within **Snap Tolerance**) are
+rebuilt. Every other triangle is copied unchanged, with its vertices, attributes and orientation. **Triangulation**
+Delaunay rebuilds the cut area keeping only edges that carry information: outlines, PolyGroup, material and
+group-layer boundaries, UV/normal/colour seams, and creases (a crease is never merged, so the surface keeps its
+shape). Interior source vertices of the cut area stay as points. Keep Source Edges keeps every cut triangle's
+edges, so each output triangle lies inside exactly one source triangle.
+
+**Data preservation.** The output is InA, mutated: PCG metadata on every domain, tags, and A's material slots are
+kept. Each output triangle takes its default PolyGroup, every PolyGroup layer and its material ID from the source
+triangle it lies in. **Offset Operand PolyGroups** moves B's IDs past A's. **Merge Operand Materials** appends
+B's slots (a material A already has is shared) and remaps B's IDs. UV layers, normal layers, vertex colours,
+per-vertex normals/colours/UVs and weight layers follow **Vertex Attribute Inheritance**:
+- **Interpolate** (the default) gives barycentric values in the source triangle. Overlay elements are shared where the
+  sources shared them, so continuous attributes stay continuous and seams stay split.
+- **Nearest** copies the nearest source corner.
+- **None** keeps the layers and inherits no values.
+
+Generic attached attributes, skin weights and morph targets are not carried; each one present produces a warning.
+
+**Errors.** Each check reports the exact invariant that failed, one message per failure:
+- Off the plane: names the input, the vertex, its distance and the tolerance.
+- A **fold**: a triangle facing the opposite way to the rest of the surface along the projection (an overhang, a fold or a flipped triangle).
+  Names the input, the first such triangle, its centre and projected area, and the count. A is checked only near
+  B's footprint in Projected mode; B is checked everywhere.
+- A walled stitch operand: names the first edge-on triangle on B's outline.
+- A zero normal or direction, a missing or mistyped `@Data` shorthand (the shorthand's own message).
+- A seam gap run: where, how wide, and how many vertices.
+- A triangle that could not be added: names its source triangle and why, capped at ten.
+
+A failed input check drops that pairing's output. Seam gaps and triangulation failures keep the result.
+
+**Builders and shorthands.** A Builder input works while every shorthand the current mode reads is Constant. In
+`@Data` mode the node refuses Builders, because a Builder has no `@Data` until it is realized. Shorthands read InA's
+`@Data` and are required there: a missing attribute is an error, never a fallback to the constant.
+
+A hole in B is not part of its footprint, so A stays inside it, and under Stitch the hole rim is a seam like
+the outer outline.
+
+**Not in scope.** Solid 3D booleans (use DynMesh Boolean) and Selection/Selector scoping (whole-mesh node).
+
 ## Mesh Target handles
 
 `FPCGUtilsMeshTargetHandle` separates selection resolution from working-mesh preparation and restoration.
