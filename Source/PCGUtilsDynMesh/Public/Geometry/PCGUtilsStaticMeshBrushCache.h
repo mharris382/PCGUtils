@@ -87,6 +87,17 @@ public:
 	static void FinalizeCombinedKey(FStaticMeshBrushCombinedKey& Key);
 
 	/**
+	 * A part placed at Relative's rotation and translation (its scale belongs in MeshKey). Relative placements are
+	 * recomputed from world transforms, so moving or rotating a whole group perturbs them in the last few bits:
+	 * they are snapped to a fine grid (0.001 cm, 1e-6 of a quaternion component) so the key stays stable. Place the
+	 * geometry with the part's snapped values, so the key always describes the cached mesh exactly.
+	 */
+	static FStaticMeshBrushCombinedPart MakeCombinedPart(const FStaticMeshBrushMeshKey& MeshKey, const FTransform& Relative);
+
+	/** Orders parts by content, then placement, so a key and its union do not depend on the order parts were found in. */
+	static bool CombinedPartLess(const FStaticMeshBrushCombinedPart& A, const FStaticMeshBrushCombinedPart& B);
+
+	/**
 	 * Returns the processed mesh for a brush: the Static Mesh read at the requested LOD, scaled by Scale, then
 	 * simplified when asked. Builds and stores it on a miss. Returns null and sets OutError when the mesh could
 	 * not be read.

@@ -2,6 +2,7 @@
 
 #include "PCGUtilsDynMesh.h"
 
+
 #if WITH_EDITOR
 #include "PCGModule.h"
 #include "Data/Registry/PCGDataTypeRegistry.h"
@@ -41,6 +42,7 @@ void FPCGUtilsDynMeshModule::StartupModule()
 
 void FPCGUtilsDynMeshModule::ShutdownModule()
 {
+
 #if WITH_EDITOR
 	FModuleManager::Get().OnModulesChanged().RemoveAll(this);
 	FCoreDelegates::OnPreExit.RemoveAll(this);

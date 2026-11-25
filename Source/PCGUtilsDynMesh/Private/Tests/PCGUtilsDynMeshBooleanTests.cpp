@@ -77,6 +77,14 @@ namespace PCGUtilsDynMeshBooleanTests
 		return *Data->GetDynamicMesh()->GetMeshPtr();
 	}
 
+	/** True when P is on the surface of an axis-aligned cube. */
+	bool OnBoxSurface(const FVector& P, const FVector& Center, double Size)
+	{
+		const FVector Local = (P - Center).GetAbs();
+		const double Half = Size * 0.5;
+		return Local.GetMax() <= Half + 1.e-3 && Local.GetMax() >= Half - 1.e-3;
+	}
+
 	bool SameMesh(const UPCGDynamicMeshData* A, const UPCGDynamicMeshData* B)
 	{
 		const auto& MA = Mesh(A);
@@ -483,7 +491,10 @@ bool FPCGDynMeshBooleanResultSelectorsTest::RunTest(const FString&)
 		const auto Output = Run(Settings, { Tagged(A, TEXT("A")) }, { Tagged(B, TEXT("B")) });
 		const auto Meshes = ByPin(Output, TEXT("Out"));
 		const auto Selectors = ByPin(Output, SelectorPin);
-		if (!TestEqual(TEXT("One result mesh"), Meshes.Num(), 1) || !TestEqual(TEXT("Two categories share one pin"), Selectors.Num(), 2)) { return false; }
+		// A Trim that fills nothing adds nothing: Effected would repeat Overlapping, so it is not output.
+		const bool bTrim = Settings->BooleanOperation == EGeometryScriptBooleanOperation::TrimInside || Settings->BooleanOperation == EGeometryScriptBooleanOperation::TrimOutside;
+		TestEqual(TEXT("Effected is offered only when the operation adds geometry"), Settings->ShowEffectedSelector(), !bTrim);
+		if (!TestEqual(TEXT("One result mesh"), Meshes.Num(), 1) || !TestEqual(TEXT("Relevant categories share one pin"), Selectors.Num(), bTrim ? 1 : 2)) { return false; }
 		const auto* Result = CastChecked<UPCGDynamicMeshData>(Meshes[0].Data);
 		UPCGDynamicMeshData* Expected = CastChecked<UPCGDynamicMeshData>(A->DuplicateData(nullptr));
 		UGeometryScriptLibrary_MeshBooleanFunctions::ApplyMeshBoolean(Expected->GetMutableDynamicMesh(), FTransform::Identity,
@@ -506,7 +517,42 @@ bool FPCGDynMeshBooleanResultSelectorsTest::RunTest(const FString&)
 			TestTrue(TEXT("An unrelated mesh is an empty match"), Evaluate(Selector, Box(FVector(1000, 0, 0)), EGeometryElementType::Vertex).IsEmpty());
 			TestTrue(TEXT("Selector CRC is available"), Selector->GetOrComputeCrc(true).IsValid());
 		}
-		for (int32 VID : RimVertices) { TestTrue(TEXT("Effected contains the complete rim"), EffectedVertices.Contains(VID)); }
+		if (!bTrim) { for (int32 VID : RimVertices) { TestTrue(TEXT("Effected contains the complete rim"), EffectedVertices.Contains(VID)); } }
+		// The rim is where the two boxes meet. The edges the Boolean inserts to re-triangulate a cut face run from
+		// the rim to that face's old corners, which are on one box only.
+		for (int32 VID : RimVertices)
+		{
+			const FVector P = Mesh(Result).GetVertex(VID);
+			TestTrue(*FString::Printf(TEXT("Operation %d: rim vertices lie on both operands' surfaces"), Op),
+				OnBoxSurface(P, FVector::ZeroVector, 100.0) && OnBoxSurface(P, FVector(40, 15, 10), 80.0));
+		}
+		const bool bMerges = Op == int32(EGeometryScriptBooleanOperation::Union) || Op == int32(EGeometryScriptBooleanOperation::Intersection) || Op == int32(EGeometryScriptBooleanOperation::Subtract);
+		if (bMerges)
+		{
+			for (int32 VID : EffectedVertices)
+			{
+				TestTrue(*FString::Printf(TEXT("Operation %d: effected geometry is what InB contributed"), Op),
+					OnBoxSurface(Mesh(Result).GetVertex(VID), FVector(40, 15, 10), 80.0));
+			}
+			// Opt back in to the faces of InA that were only re-triangulated.
+			Settings->bIncludeSplitFaces = true;
+			bool bFoundSplitFaceCorner = false;
+			for (const auto& D : ByPin(Run(Settings, { Tagged(A, TEXT("A")) }, { Tagged(B, TEXT("B")) }), SelectorPin))
+			{
+				const auto* S = CastChecked<UPCGDynMeshBooleanSelectionFactoryData>(D.Data);
+				for (int32 VID : S->VertexIDs)
+				{
+					const bool bOnB = OnBoxSurface(Mesh(S->ReferenceMesh).GetVertex(VID), FVector(40, 15, 10), 80.0);
+					if (S->bOverlapping) { TestTrue(TEXT("Include Split Faces never widens the rim"), bOnB); }
+					else { bFoundSplitFaceCorner |= !bOnB; }
+				}
+			}
+			// The intersection of these two boxes has no corner off InB's surface to find.
+			if (Op != int32(EGeometryScriptBooleanOperation::Intersection))
+			{
+				TestTrue(*FString::Printf(TEXT("Operation %d: Include Split Faces adds InA's re-triangulated faces"), Op), bFoundSplitFaceCorner);
+			}
+		}
 	}
 	// A contained cutter creates cavity faces without an intersection rim. Effected AND NOT Overlapping
 	// must still select those cavity vertices, while excluding the untouched exterior.

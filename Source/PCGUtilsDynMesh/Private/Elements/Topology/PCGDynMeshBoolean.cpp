@@ -57,8 +57,9 @@ namespace
 		const FGeometryScriptMeshBooleanOptions& Options,
 		FDynamicMesh3& OutResult,
 		TArray<int8>& OutTriangleSource,
-		TSet<int32>* OutCutEdges = nullptr,
-		TSet<int32>* OutFillTriangles = nullptr)
+		TSet<int32>* OutNewEdges = nullptr,
+		TSet<int32>* OutFillTriangles = nullptr,
+		TSet<int32>* OutOpenCutEdges = nullptr)
 	{
 		using namespace UE::Geometry;
 
@@ -69,10 +70,11 @@ namespace
 			MeshBoolean.bPutResultInInputSpace = true;
 			MeshBoolean.bSimplifyAlongNewEdges = Options.bSimplifyOutput;
 			MeshBoolean.TrackPerTriangleSourceMesh.Emplace();
-			MeshBoolean.bTrackAllNewEdges = OutCutEdges != nullptr;
+			MeshBoolean.bTrackAllNewEdges = OutNewEdges != nullptr;
 			MeshBoolean.Compute(); // bSuccess is intentionally ignored, matching Geometry Script.
 			NewBoundaryEdges = MoveTemp(MeshBoolean.CreatedBoundaryEdges);
-			if (OutCutEdges) { *OutCutEdges = MoveTemp(MeshBoolean.AllNewEdges); }
+			if (OutNewEdges) { *OutNewEdges = MoveTemp(MeshBoolean.AllNewEdges); }
+			if (OutOpenCutEdges) { OutOpenCutEdges->Append(NewBoundaryEdges); }
 			OutTriangleSource = MoveTemp(MeshBoolean.TrackPerTriangleSourceMesh.GetValue());
 		}
 
@@ -187,6 +189,37 @@ namespace
 		TSet<int32> RimEdges;
 		TSet<int32> EffectedTriangles;
 	};
+
+	/**
+	 * The intersection rim of a Boolean result: the edges where the two operands meet. FMeshBoolean's AllNewEdges
+	 * cannot be used for this. It lists every edge the Boolean created, which includes the edges it only inserted to
+	 * re-triangulate each cut face (from a new rim vertex back to the face's old corners). Those lie flat inside an
+	 * unchanged surface and mean nothing to whoever processes the result.
+	 *
+	 * An edge is on the rim when the faces either side of it come from different places (InA, InB, or a hole fill),
+	 * or when it is a cut boundary the Boolean left open (not welded, not filled).
+	 */
+	void BooleanFindRim(const FDynamicMesh3& Result, const TArray<int8>& TriangleSource, const TSet<int32>& FillTriangles,
+		const TSet<int32>& OpenCutEdges, bool bSingleMesh, TSet<int32>& OutRim)
+	{
+		auto Origin = [&](int32 TID)
+		{
+			if (FillTriangles.Contains(TID)) { return 2; }
+			return (!bSingleMesh && TriangleSource.IsValidIndex(TID) && TriangleSource[TID] != 0) ? 1 : 0;
+		};
+		for (const int32 EID : Result.EdgeIndicesItr())
+		{
+			const UE::Geometry::FIndex2i T = Result.GetEdgeT(EID);
+			if (T.B == FDynamicMesh3::InvalidID)
+			{
+				if (OpenCutEdges.Contains(EID)) { OutRim.Add(EID); }
+			}
+			else if (Origin(T.A) != Origin(T.B))
+			{
+				OutRim.Add(EID);
+			}
+		}
+	}
 
 	bool BooleanSourceTriangleUnchanged(const FDynamicMesh3& Before, const FDynamicMesh3& After, int32 TID)
 	{
@@ -334,6 +367,7 @@ namespace
 		bool bOverlap = true;
 		bool bEffected = true;
 		bool bIncludeAdjacentVertices = false;
+		bool bIncludeSplitFaces = false;
 		FName OverlapTag;
 		FName EffectedTag;
 
@@ -399,9 +433,10 @@ namespace
 			TArray<int8> TriangleSource;
 			FBooleanResultRegions Regions;
 			TSet<int32> FillTriangles;
+			TSet<int32> OpenCutEdges;
 			if (!ComputeTrackedBoolean(*MeshAPtr, *MeshBPtr, ToBooleanOp(BooleanOperation),
-				BooleanOptions, ResultMesh, TriangleSource, bOutputSelectors ? &Regions.RimEdges : nullptr,
-				bOutputSelectors ? &FillTriangles : nullptr))
+				BooleanOptions, ResultMesh, TriangleSource, /*OutNewEdges=*/nullptr,
+				bOutputSelectors ? &FillTriangles : nullptr, bOutputSelectors ? &OpenCutEdges : nullptr))
 			{
 				// Engine parity: an empty result with Allow Empty Result disabled leaves the primary untouched.
 				PCGLog::LogWarningOnGraph(LOCTEXT("EmptyResult",
@@ -420,8 +455,9 @@ namespace
 			{
 				const bool bNewGroups = BooleanOperation == EGeometryScriptBooleanOperation::NewPolyGroupInside ||
 					BooleanOperation == EGeometryScriptBooleanOperation::NewPolyGroupOutside;
-				// NewGroup operations do not populate AllNewEdges. Their rim is the interface of the new
-				// groups and the retained groups; pre-existing group boundaries are never selected.
+				BooleanFindRim(ResultMesh, TriangleSource, FillTriangles, OpenCutEdges, bSingleMesh, Regions.RimEdges);
+				// NewGroup operations cut the mesh without removing or adding faces. Their rim is the interface
+				// of the new groups and the retained groups; pre-existing group boundaries are never selected.
 				if (bNewGroups)
 				{
 					for (int32 EID : ResultMesh.EdgeIndicesItr())
@@ -450,7 +486,7 @@ namespace
 				{
 					if ((!bSingleMesh && TriangleSource.IsValidIndex(TID) && TriangleSource[TID] == 1) ||
 						FillTriangles.Contains(TID) || PreviousTriangles.Contains(TID) ||
-						!BooleanSourceTriangleUnchanged(*MeshAPtr, ResultMesh, TID) ||
+						(bIncludeSplitFaces && !BooleanSourceTriangleUnchanged(*MeshAPtr, ResultMesh, TID)) ||
 						(bNewGroups && ResultMesh.GetTriangleGroup(TID) >= MeshAPtr->MaxGroupID()))
 					{ Regions.EffectedTriangles.Add(TID); }
 				}
@@ -507,7 +543,7 @@ FText UPCGDynMeshBooleanSettings::GetDefaultNodeTitle() const
 
 FText UPCGDynMeshBooleanSettings::GetNodeTooltipText() const
 {
-	return LOCTEXT("Tooltip", "Boolean operation on whole DynMeshes or deferred Builders. InA passes through unchanged when InB provides no data. Partial input selections are unsupported. Output Selectors adds one pin carrying tagged intersection-rim and effected-geometry selectors for downstream beveling, painting, and Selection Logic. Selectors require concrete DynMeshes and describe the matching Boolean result or unchanged copies retaining PCG metadata inheritance. Union and Subtract can place operand faces in a fresh PolyGroup. Separate Operand Contributions splits the result into Out A and Out B by triangle provenance and also requires concrete meshes. Both meshes must already share the same coordinate space.");
+	return LOCTEXT("Tooltip", "Boolean operation on whole DynMeshes or deferred Builders. InA passes through unchanged when InB provides no data. Partial input selections are unsupported. Output Selectors adds one pin carrying tagged selectors for downstream beveling, painting, and Selection Logic: Overlapping is the intersection rim itself, Effected is the geometry the operation added (operand faces, cavity walls, hole fills) plus the rim. Edges and vertices the Boolean only inserted to re-triangulate cut faces are in neither unless Include Split Faces is on. Selectors require concrete DynMeshes and describe the matching Boolean result or unchanged copies retaining PCG metadata inheritance. Union and Subtract can place operand faces in a fresh PolyGroup. Separate Operand Contributions splits the result into Out A and Out B by triangle provenance and also requires concrete meshes. Both meshes must already share the same coordinate space.");
 }
 #endif
 
@@ -517,7 +553,8 @@ TSharedPtr<const FPCGUtilsDynMeshProcessOperation> UPCGDynMeshBooleanSettings::C
 	Operation->bOutputSelectors = bOutputSelectors;
 	Operation->bOverlap = bOverlappingSelector;
 	Operation->bIncludeAdjacentVertices = bIncludeAdjacentVertices;
-	Operation->bEffected = bEffectedSelector;
+	Operation->bEffected = bEffectedSelector && IsEffectedSelectorRelevant();
+	Operation->bIncludeSplitFaces = bIncludeSplitFaces;
 	Operation->OverlapTag = OverlappingSelectorTag;
 	Operation->EffectedTag = EffectedSelectorTag;
 	Operation->BooleanOperation = BooleanOperation;
@@ -571,7 +608,7 @@ void UPCGDynMeshBooleanSettings::EmitAdditionalOutputs(FPCGContext* Context) con
 			const auto* MeshData = Cast<UPCGDynamicMeshData>(MeshOutput.Data);
 			if (!MeshData) { continue; }
 			FPCGUtilsDynMeshProcessOutcome Outcome;
-			BooleanEmitSelectors(MeshData, {}, bOverlappingSelector, bEffectedSelector, bIncludeAdjacentVertices, OverlappingSelectorTag, EffectedSelectorTag, Context, Outcome);
+			BooleanEmitSelectors(MeshData, {}, bOverlappingSelector, bEffectedSelector && IsEffectedSelectorRelevant(), bIncludeAdjacentVertices, OverlappingSelectorTag, EffectedSelectorTag, Context, Outcome);
 			for (const auto& Aux : Outcome.AuxiliaryDataOutputs)
 			{
 				auto& Output = Context->OutputData.TaggedData.Emplace_GetRef(MeshOutput);
@@ -579,6 +616,11 @@ void UPCGDynMeshBooleanSettings::EmitAdditionalOutputs(FPCGContext* Context) con
 			}
 		}
 	}
+	UPCGDynMeshBooleanSelectionFactoryData::BundleByCategory(Context);
+}
+
+void UPCGDynMeshBooleanSelectionFactoryData::BundleByCategory(FPCGContext* Context)
+{
 	// Bundle by category, not by inherited tags or output order. Each route retains its own result identity.
 	// Leave a single result's selector as-is; multi-mesh output is one datum per enabled category.
 	for (bool bRim : { true, false })
@@ -604,6 +646,14 @@ void UPCGDynMeshBooleanSettings::EmitAdditionalOutputs(FPCGContext* Context) con
 		auto& Output = Context->OutputData.TaggedData[Indices[0]]; Output.Data = Routed; Output.Tags = MoveTemp(Tags);
 		for (int32 I = Indices.Num() - 1; I > 0; --I) { Context->OutputData.TaggedData.RemoveAt(Indices[I], 1, EAllowShrinking::No); }
 	}
+}
+
+bool UPCGDynMeshBooleanSettings::IsEffectedSelectorRelevant() const
+{
+	// A Trim only removes faces. Unless it fills the holes it leaves, it adds nothing, and Effected would be the
+	// Overlapping selector again.
+	const bool bTrim = BooleanOperation == EGeometryScriptBooleanOperation::TrimInside || BooleanOperation == EGeometryScriptBooleanOperation::TrimOutside;
+	return !bTrim || BooleanOperationOptions.bFillHoles;
 }
 
 bool UPCGDynMeshBooleanSelectionFactoryData::SupportsDomain(const FPCGUtilsDynMeshSelectionDomain& Domain) const

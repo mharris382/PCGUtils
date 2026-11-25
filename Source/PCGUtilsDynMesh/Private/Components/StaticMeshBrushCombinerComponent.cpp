@@ -28,15 +28,7 @@ namespace StaticMeshBrushCombine
 	/** Brushes sorted by content and placement, so the key and the union do not depend on component order. */
 	bool GatheredBrushLess(const FGatheredBrush& A, const FGatheredBrush& B)
 	{
-		if (A.Part.MeshKey.Hash != B.Part.MeshKey.Hash) { return A.Part.MeshKey.Hash < B.Part.MeshKey.Hash; }
-		for (int32 Axis = 0; Axis < 3; ++Axis)
-		{
-			if (A.Part.Translation[Axis] != B.Part.Translation[Axis]) { return A.Part.Translation[Axis] < B.Part.Translation[Axis]; }
-		}
-		if (A.Part.Rotation.X != B.Part.Rotation.X) { return A.Part.Rotation.X < B.Part.Rotation.X; }
-		if (A.Part.Rotation.Y != B.Part.Rotation.Y) { return A.Part.Rotation.Y < B.Part.Rotation.Y; }
-		if (A.Part.Rotation.Z != B.Part.Rotation.Z) { return A.Part.Rotation.Z < B.Part.Rotation.Z; }
-		return A.Part.Rotation.W < B.Part.Rotation.W;
+		return FStaticMeshBrushCache::CombinedPartLess(A.Part, B.Part);
 	}
 
 	/** Rewrites each triangle's material ID through Remap (brush slot -> combined slot). */
@@ -57,37 +49,6 @@ namespace StaticMeshBrushCombine
 			const int32 OldID = MaterialIDs->GetValue(TriangleID);
 			MaterialIDs->SetValue(TriangleID, Remap.IsValidIndex(OldID) ? Remap[OldID] : 0);
 		}
-	}
-
-	/**
-	 * Relative placements are recomputed from world transforms, so moving or rotating the whole actor perturbs them
-	 * in the last few bits. Snapping to a fine grid keeps the key stable; the geometry is placed with the snapped
-	 * values too, so the key always describes the cached mesh exactly.
-	 */
-	constexpr double BrushPlacementTranslationStep = 0.001;
-	constexpr double BrushPlacementRotationStep = 1.0e-6;
-
-	FVector3d QuantizeTranslation(const FVector3d& Translation)
-	{
-		auto Snap = [](double Value)
-		{
-			const double Snapped = FMath::GridSnap(Value, BrushPlacementTranslationStep);
-			return Snapped == 0.0 ? 0.0 : Snapped; // -0.0 must hash like 0.0
-		};
-		return FVector3d(Snap(Translation.X), Snap(Translation.Y), Snap(Translation.Z));
-	}
-
-	FQuat4d QuantizeRotation(FQuat4d Rotation)
-	{
-		Rotation.Normalize();
-		// q and -q are the same rotation; pick one so they key identically.
-		const double Sign = Rotation.W < 0.0 ? -1.0 : 1.0;
-		auto Snap = [Sign](double Value)
-		{
-			const double Snapped = FMath::GridSnap(Sign * Value, BrushPlacementRotationStep);
-			return Snapped == 0.0 ? 0.0 : Snapped; // -0.0 must hash like 0.0
-		};
-		return FQuat4d(Snap(Rotation.X), Snap(Rotation.Y), Snap(Rotation.Z), Snap(Rotation.W));
 	}
 
 	FText BrushLabel(const UStaticMeshBrushComponent* Brush)
@@ -201,10 +162,8 @@ TSharedPtr<const FStaticMeshBrushCachedMesh> UStaticMeshBrushCombinerComponent::
 
 		FGatheredBrush& Entry = Gathered.AddDefaulted_GetRef();
 		Entry.Brush = Brush;
-		Entry.Part.MeshKey = Brush->MakeProcessedMeshKey();
-		const FTransform Relative = Brush->GetBrushPlacement().GetRelativeTransform(Frame);
-		Entry.Part.Rotation = QuantizeRotation(Relative.GetRotation());
-		Entry.Part.Translation = QuantizeTranslation(Relative.GetTranslation());
+		Entry.Part = FStaticMeshBrushCache::MakeCombinedPart(
+			Brush->MakeProcessedMeshKey(), Brush->GetBrushPlacement().GetRelativeTransform(Frame));
 	}
 
 	if (Gathered.IsEmpty())

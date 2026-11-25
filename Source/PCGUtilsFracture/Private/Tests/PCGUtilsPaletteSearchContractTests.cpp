@@ -75,7 +75,9 @@ namespace PCGUtilsPaletteSearchContract
 	 *  Names are as UClass::GetName() reports them, i.e. without the U prefix. */
 	bool IsDynMeshFamilyExempt(const FString& ClassName)
 	{
-		return ClassName == TEXT("PCGPaintStaticMeshVertexColorSettings");
+		// Get Static Mesh Data is an actor-data node (points by default) that moved here from PCGUtils for its
+		// DynMesh output mode; it keeps its engine-style title and category.
+		return ClassName == TEXT("PCGPaintStaticMeshVertexColorSettings") || ClassName == TEXT("PCGGetStaticMeshDataSettings");
 	}
 
 	TArray<FEntry> CollectEntries()

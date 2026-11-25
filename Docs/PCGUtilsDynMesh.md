@@ -296,21 +296,31 @@ Both meshes must already be in the same coordinate space (normally target-actor-
 realize Builders before enabling it. The Boolean still operates on whole solids. This output does not add a
 Selector input or enable partial Boolean operations.
 
-- **Overlapping Selector** (on by default when output is enabled) selects the intersection rim: its exact
-  edges, the vertices on those edges, or incident faces, according to the consuming node's domain. Internal
-  triangulation diagonals are excluded from the edge domain. For `Trim*`, this is the new cut boundary; for
-  `New PolyGroup*`, it is the interface between newly assigned groups and retained groups. Existing mesh/group
-  boundaries are excluded. All seven Boolean operations support both categories.
+- **Overlapping Selector** (on by default when output is enabled) selects the intersection rim: the edges where
+  the two operands meet, the vertices on those edges, or incident faces, according to the consuming node's domain.
+  An edge is on the rim when the faces either side of it come from different places (InA, InB, or a hole fill), or
+  when it is a cut boundary the Boolean left open. The edges the Boolean inserts only to re-triangulate a cut face
+  (from a new rim vertex back to the face's old corners) are **not** on the rim: they lie flat inside an unchanged
+  surface. Until 2026-11-24 they were selected, because the rim was taken from the engine's list of every edge the
+  Boolean created. For `Trim*`, the rim is the new cut boundary; for `New PolyGroup*`, it is the interface between
+  newly assigned groups and retained groups. Existing mesh/group boundaries are excluded.
 - **Include Adjacent Vertices** (off by default) also selects off-rim corner vertices of triangles touching the
   intersection rim. Enable it when the surrounding triangulation should participate in smoothing or painting.
   It changes only the Overlapping selector's vertex domain: exact rim edges used by beveling and the Effected
   category are unchanged. For a point preview, set **Realize Selection > Element Type** to **Vertex** before
   **Selection To Points**. Realizing as triangles selects whole faces; converting those faces to vertices
   includes their other corners regardless of this Boolean option.
-- **Effected Selector** (on by default) selects surviving source faces that were split or modified, added
-  operand/cavity faces, repair faces, and the intersection rim. The vertex and edge domains include the vertices
-  and edges of those faces. Deleted geometry has no membership in the result. Use `Effected AND NOT Overlapping`
-  in vertex-domain Selection Logic to exclude the rim from a cavity-coloring selection.
+- **Effected Selector** (on by default) selects the geometry the operation added: faces that came from InB (for
+  Subtract, the cavity walls), hole-fill faces, the faces of a `New PolyGroup*` operation's new groups, and the
+  intersection rim. The vertex and edge domains include the vertices and edges of those faces. Deleted geometry
+  has no membership in the result. Use `Effected AND NOT Overlapping` in vertex-domain Selection Logic to exclude
+  the rim from a cavity-coloring selection.
+- **Include Split Faces** (off by default) also puts InA's faces that were cut and re-triangulated in the
+  Effected selector, which was the behaviour until 2026-11-24. Their surface is unchanged, only their triangles
+  are, so they are left out unless asked for.
+- **Only relevant categories are offered.** Effected is hidden, and not output, when the operation adds no
+  geometry: a `Trim*` with Fill Holes off, where it would only repeat Overlapping. With Fill Holes on, a Trim's
+  Effected is the fill. Overlapping applies to all seven operations.
 - **Overlapping Selector Tag** and **Effected Selector Tag** are editable (defaults `Overlapping` and `Effected`).
   Each enabled category emits **one selector datum across the complete result batch**. For multiple meshes,
   that selector contains an internal switchboard selecting the matching result's membership. Filter the output
@@ -334,6 +344,17 @@ Selectors are intended for immediate downstream postprocessing. After
 changing topology or positions, regenerate the selectors from a Boolean result. Membership tracking does not
 write PCG attributes, recolor the mesh, or replace existing PolyGroups. With output disabled, the ordinary
 Geometry Script execution and deferred Builder support are unchanged.
+
+**DynMesh | Planar Cut** has the same **Output Selectors** option, with the same pin, tagging, bundling and
+concrete-mesh requirement. Its categories are **Cut** (tag `Cut`): the edges the plane left on the mesh, which is
+the outline of the cross section, with their vertices and the faces touching them; and **Fill** (tag `Fill`): the
+faces capping the cut, offered and output only while Fill Holes is on. For a cross-section path, filter `Selector`
+by `Cut`, realize it in the Edge domain and feed **Selection To Paths**. Geometry Script's plane cut reports
+nothing about what it made, so the regions are read back from the result: a cap face has all three corners on the
+plane, and a cut edge has both ends on the plane and is either open or has a cap face on exactly one side. A mesh
+face that already lay in the cut plane before the cut is therefore counted as cap. When the cut is applied to a
+selected region, the selectors describe the finished mesh after the region is put back.
+
 
 For a hole-rim bevel: connect the Boolean's mesh output to **DynMesh | Bevel Edges**, filter `Selector` by
 `Overlapping`, and connect the filtered selector to the bevel's `Selector` input.
@@ -864,6 +885,49 @@ PCGUtils category types, which the PCG editor has no color for, so a node withou
 process base and the Selector/Builder/Painter provider base return the color; other nodes return it directly.
 `PCGUtils.DynMesh.NodeColor` checks every node class in the DynMesh and Painter modules.
 
+## Get Static Mesh Data as DynMesh
+
+**Get Static Mesh Data** has an `Output Mode`: `Points` (default, unchanged) or `DynMesh`. DynMesh
+mode gives the found meshes themselves, placed where they are in the level, which is what wiring the points into
+**DynMesh | From Points** gave, in one node. A "mesh" here is one static mesh component, or one instance of an
+instanced component.
+
+| Setting | Effect |
+| --- | --- |
+| `Merge Behavior` | `None`: one DynMesh per mesh. `All`: one DynMesh holding every mesh. `By Overlapping`: one DynMesh per island of meshes that overlap, directly or through a chain of others. |
+| `Overlap Padding` | By Overlapping only. Grows every box by this many cm per side before the test (negative asks for a deeper overlap). |
+| `Self Union` | Unions each output DynMesh with itself (`Self Union Options` are Geometry Script's). |
+| `Convert To Local Space` | On (default) puts the DynMeshes in the PCG target actor's local space, the DynMesh convention. |
+
+Overlap is tested on **oriented bounding boxes** (the asset's box carried by the placement's transform), not on
+triangles, so two meshes whose boxes intersect but whose surfaces do not still share an island. With Self Union on
+that is harmless: parts that do not touch stay separate inside the one DynMesh.
+
+Each DynMesh carries the tags of every component in it and of their actors. `Mesh Output Attribute Name` is written
+to `@Data` when every mesh in the DynMesh is the same asset, and the component settings (actor reference, component
+reference, relative transform) when it holds a single component. Material attributes are for points only. Materials
+are the asset's, as with From Points; a component's override materials are not read.
+
+**Caching.** The work is done through the brush cache described below, without any brush components: each Static
+Mesh is read once per scale, and each self-unioned group is stored as a combined entry keyed by its meshes, their
+scales, their placement relative to each other (in the frame of one of its own meshes) and the union options. A run
+where none of that changed copies the stored mesh; moving the whole group, or the PCG actor, keeps the entry;
+moving, scaling, adding or removing one mesh rebuilds only the group it is in. A reimport or edit of a Static Mesh
+drops the entries built from it (`OnMeshChanged`), so only the groups that use that asset are rebuilt. Groups that
+are not self-unioned are not stored: appending is cheap and is redone from the per-asset entries. Set
+`LogPCGUtilsDynMesh` to Verbose to see how many unions a run reused.
+
+PCG's own graph cache cannot do this job. Every DynMesh element is declared non-cacheable by the engine
+(`IPCGDynamicMeshBaseElement::IsCacheable` returns false, "to benefit from stealing data"), and an actor-data node
+with `Always Requery Actors` on (this node's default, so level edits are picked up) is never cached either. So the
+node keeps its own content-keyed results instead. Nodes downstream of it still run every time.
+
+The node moved from PCGUtils to PCGUtilsDynMesh on 2026-11-24 (`Elements/Conversion/PCGGetStaticMeshData.h`), so
+it calls the mesh code (`Geometry/PCGUtilsStaticMeshDynMeshOutput.h`) directly. Class and enum redirects in
+`Config/DefaultPCGUtils.ini` keep saved graphs loading. It keeps its plain title and is exempt from the DynMesh
+palette naming contract, because it is an actor-data node whose default output is points.
+Tests: `PCGUtils.DynMesh.GetStaticMeshData.*`.
+
 ## Static Mesh Brushes and the brush cache
 
 Hand-placed `UStaticMeshBrushComponent`s are editor-only Static Meshes that feed PCG as DynMesh data. Processing
@@ -1070,6 +1134,14 @@ orthogonalization against the normal; missing, unset, zero, or parallel tangents
 normal-only rotation. At split overlays, the normal and tangent come from the same face corner.
 World-space output rotates both directions by the target actor rotation. Vertex colors and
 the optional source vertex ID are preserved.
+
+`Mode` picks the element: `Vertices` (default, as above) or `Triangles`. Triangles mode emits one point per
+triangle in triangle-ID order, at the centroid. Point Z is the triangle's own face normal (not its corner
+normals, which belong to the vertices), point X follows the sum of the triangle's corner tangents when it has
+them, and the color is the average of its three corners (white where the triangle has none). `Output Triangle Id`
+writes the triangle ID to `Triangle Id Attribute` (default `TriangleId`, the attribute `Select | From Triangle IDs`
+reads), so points filtered or edited in the graph can select their triangles again. Each mode shows only its own
+ID settings.
 
 `Selector From Points` uses the same compact conversion icon as `DynMesh | To Points`.
 

@@ -11,6 +11,8 @@
 #include "DynamicMesh/DynamicMeshAttributeSet.h"
 #include "Elements/Conversion/PCGDynMeshToPoints.h"
 #include "GameFramework/Actor.h"
+#include "Metadata/PCGMetadata.h"
+#include "Metadata/PCGMetadataAttributeTpl.h"
 #include "Misc/ScopeExit.h"
 #include "Tests/AutomationCommon.h"
 #include "UDynamicMesh.h"
@@ -189,6 +191,103 @@ bool FPCGUtilsDynMeshToPointsWorldTest::RunTest(const FString&)
 	{
 		TestTrue(TEXT("Actor transform places the vertex"), Points[0].GetLocation().Equals(Placement.TransformPosition(FVector(2, 3, 4)), 1e-6));
 	}
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FPCGUtilsDynMeshToPointsTriangleTest, "PCGUtils.DynMesh.ToPoints.TriangleMode",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::ProductFilter)
+bool FPCGUtilsDynMeshToPointsTriangleTest::RunTest(const FString&)
+{
+	using namespace PCGUtilsDynMeshToPointsTests;
+
+	// Two triangles sharing an edge, the second folded up so the two face different ways. Only the second has colors.
+	const FVector3f Tangent = FVector3f::UnitX();
+	UPCGDynamicMeshData* Input = Triangle(&Tangent);
+	int32 FoldedID = INDEX_NONE;
+	Input->GetMutableDynamicMesh()->EditMesh([&FoldedID](FDynamicMesh3& Mesh)
+	{
+		Mesh.AppendVertex(FVector3d(12, 13, 24));
+		FoldedID = Mesh.AppendTriangle(1, 3, 2);
+		Mesh.Attributes()->EnablePrimaryColors();
+		FDynamicMeshColorOverlay* Colors = Mesh.Attributes()->PrimaryColors();
+		// An overlay element belongs to one vertex, so each corner gets its own.
+		const int32 Red = Colors->AppendElement(FVector4f(1, 0, 0, 1));
+		const int32 Red2 = Colors->AppendElement(FVector4f(1, 0, 0, 1));
+		const int32 Blue = Colors->AppendElement(FVector4f(0, 0, 1, 1));
+		Colors->SetTriangle(FoldedID, FIndex3i(Red, Red2, Blue));
+	});
+	const FDynamicMesh3& Mesh = Input->GetDynamicMesh()->GetMeshRef();
+
+	UPCGDynMeshToPointsSettings* Settings = NewObject<UPCGDynMeshToPointsSettings>();
+	Settings->Mode = EPCGDynMeshToPointsMode::Triangles;
+	Settings->bOutputToWorldSpace = false;
+	Settings->bOutputTriangleId = true;
+	// Vertices-mode settings must not leak into Triangles mode.
+	Settings->bOutputVertexIndex = true;
+
+	FPCGDataCollection Collection;
+	FPCGTaggedData& Main = Collection.TaggedData.Emplace_GetRef();
+	Main.Pin = PCGDynMeshToPointsConstants::InDynamicMeshLabel;
+	Main.Data = Input;
+	Main.Tags.Add(TEXT("Kept"));
+	Collection.TaggedData.Emplace_GetRef().Data = Settings;
+	FPCGElementPtr Element = Settings->GetElement();
+	TUniquePtr<FPCGContext> Context(Element->Initialize(FPCGInitializeElementParams(&Collection, nullptr, nullptr)));
+	Context->AsyncState.bIsRunningOnMainThread = true;
+	Context->AsyncState.NumAvailableTasks = 1;
+	bool bDone = false;
+	for (int32 Iteration = 0; Iteration < 10 && !bDone; ++Iteration)
+	{
+		bDone = Element->Execute(Context.Get());
+	}
+	if (!TestTrue(TEXT("The element finishes"), bDone) || !TestEqual(TEXT("One output"), Context->OutputData.TaggedData.Num(), 1))
+	{
+		return false;
+	}
+
+	const FPCGTaggedData& Output = Context->OutputData.TaggedData[0];
+	const UPCGBasePointData* Points = Cast<UPCGBasePointData>(Output.Data);
+	if (!TestNotNull(TEXT("The output is point data"), Points) || !TestEqual(TEXT("One point per triangle"), Points->GetNumPoints(), Mesh.TriangleCount()))
+	{
+		return false;
+	}
+	TestTrue(TEXT("The input's tags are kept"), Output.Tags.Contains(TEXT("Kept")));
+
+	const FPCGMetadataAttribute<int32>* TriangleIds = Points->ConstMetadata()->GetConstTypedAttribute<int32>(
+		FPCGAttributeIdentifier(Settings->TriangleIdAttribute, PCGMetadataDomainID::Elements));
+	if (!TestNotNull(TEXT("The Triangle Id attribute is written"), TriangleIds))
+	{
+		return false;
+	}
+	TestNull(TEXT("The Vertex Index attribute is not written in Triangles mode"),
+		Points->ConstMetadata()->GetConstTypedAttribute<int32>(FPCGAttributeIdentifier(Settings->VertexIndexAttribute, PCGMetadataDomainID::Elements)));
+
+	const auto Transforms = Points->GetConstTransformValueRange();
+	const auto Colors = Points->GetConstColorValueRange();
+	const auto Entries = Points->GetConstMetadataEntryValueRange();
+	int32 PointIndex = 0;
+	for (const int32 TID : Mesh.TriangleIndicesItr())
+	{
+		TestEqual(TEXT("Points come out in triangle ID order, each naming its triangle"), TriangleIds->GetValueFromItemKey(Entries[PointIndex]), TID);
+		TestTrue(TEXT("The point sits on the triangle's centroid"), Transforms[PointIndex].GetLocation().Equals(FVector(Mesh.GetTriCentroid(TID)), 1e-4));
+		TestTrue(TEXT("Point Z is the triangle's own normal"), Transforms[PointIndex].GetUnitAxis(EAxis::Z).Equals(FVector(Mesh.GetTriNormal(TID)), 1e-4));
+		TestTrue(TEXT("Rotation is normalized"), Transforms[PointIndex].GetRotation().IsNormalized());
+		if (TID == FoldedID)
+		{
+			TestTrue(TEXT("Color is the average of the triangle's corners"), FVector4(Colors[PointIndex]).Equals(FVector4(2.0 / 3.0, 0.0, 1.0 / 3.0, 1.0), 1e-4));
+		}
+		else
+		{
+			TestTrue(TEXT("A triangle without colors is white"), FVector4(Colors[PointIndex]).Equals(FVector4(1.0, 1.0, 1.0, 1.0), 1e-4));
+			TestTrue(TEXT("Point X follows the triangle's tangent"), Transforms[PointIndex].GetUnitAxis(EAxis::X).Equals(FVector::XAxisVector, 1e-4));
+		}
+		++PointIndex;
+	}
+	TestTrue(TEXT("The two triangles face different ways"),
+		!Transforms[0].GetUnitAxis(EAxis::Z).Equals(Transforms[1].GetUnitAxis(EAxis::Z), 1e-3));
+
+	// Vertices mode is the default and is unchanged.
+	TestEqual(TEXT("Default mode is one point per vertex"), Run(Input).Num(), Mesh.VertexCount());
 	return true;
 }
 

@@ -136,89 +136,144 @@ bool FPCGDynMeshToPointsElement::ExecuteInternal(FPCGContext* InContext) const
 			ColorOverlay = Attributes ? Attributes->PrimaryColors() : nullptr;
 		}
 
+		const bool bTriangles = Settings->Mode == EPCGDynMeshToPointsMode::Triangles;
+		const int32 NumElements = bTriangles ? Mesh->TriangleCount() : Mesh->VertexCount();
+
 		UPCGPointData* PointData = NewObject<UPCGPointData>();
 		TArray<FPCGPoint>& Points = PointData->GetMutablePoints();
-		Points.Reserve(Mesh->VertexCount());
+		Points.Reserve(NumElements);
+		// The mesh element each point was made from, for the ID attribute.
+		TArray<int32> ElementIDs;
+		ElementIDs.Reserve(NumElements);
 		UPCGPointArrayData* PointArrayData = NewObject<UPCGPointArrayData>();
-		PointArrayData->SetNumPoints(Mesh->VertexCount());
-		
-		for (const int32 VID : Mesh->VertexIndicesItr())
+		PointArrayData->SetNumPoints(NumElements);
+
+		auto AddPoint = [&Points, &ElementIDs, &MeshToOutput](int32 ElementID, const FVector3d& Position, FVector3f Normal, const FVector3f& Tangent, const FVector4f& Color)
 		{
-			const FVector3d Position = Mesh->GetVertex(VID);
-			FIndex2i NormalCorner(INDEX_NONE, INDEX_NONE);
-			FVector3f Normal = NormalOverlay
-				? DynMeshToPointsGetFirstVertexOverlayElement(Mesh, NormalOverlay, VID, FVector3f::UnitZ(), &NormalCorner)
-				: (Mesh->HasVertexNormals() ? Mesh->GetVertexNormal(VID) : FVector3f::UnitZ());
 			if (Normal.ContainsNaN() || !Normal.Normalize())
 			{
 				Normal = FVector3f::UnitZ();
 			}
-
-			FVector3f Tangent = FVector3f::ZeroVector;
-			if (TangentOverlay)
-			{
-				// One point represents a vertex, including at seams. Keep its frame on the same face corner.
-				if (NormalCorner.A != INDEX_NONE)
-				{
-					if (TangentOverlay->IsSetTriangle(NormalCorner.A))
-					{
-						const int32 ElementID = TangentOverlay->GetTriangle(NormalCorner.A)[NormalCorner.B];
-						if (TangentOverlay->IsElement(ElementID))
-						{
-							Tangent = TangentOverlay->GetElement(ElementID);
-						}
-					}
-				}
-				else
-				{
-					Tangent = DynMeshToPointsGetFirstVertexOverlayElement(Mesh, TangentOverlay, VID, FVector3f::ZeroVector);
-				}
-			}
-
-			const FVector3f VertexColor = Mesh->HasVertexColors() ? Mesh->GetVertexColor(VID) : FVector3f::One();
-			const FVector4f Color = ColorOverlay
-				? DynMeshToPointsGetFirstVertexOverlayElement(Mesh, ColorOverlay, VID, FVector4f(1.0f, 1.0f, 1.0f, 1.0f))
-				: FVector4f(VertexColor.X, VertexColor.Y, VertexColor.Z, 1.0f);
-
 			FPCGPoint& Point = Points.Emplace_GetRef();
 			Point.Transform = PCGUtilsDynMeshSpaceHelpers::TransformSurfaceFrameToWorld(
 				MeshToOutput, FVector(Position), FVector(Normal), FVector(Tangent));
 			Point.Color = FVector4(Color.X, Color.Y, Color.Z, Color.W);
 			Point.SetExtents(FVector::ZeroVector);
 			Point.Density = 1.0f;
+			ElementIDs.Add(ElementID);
+		};
+
+		if (bTriangles)
+		{
+			for (const int32 TID : Mesh->TriangleIndicesItr())
+			{
+				// The face's own normal: corner normals belong to the vertices and differ across a smooth face.
+				const FVector3f Normal = FVector3f(Mesh->GetTriNormal(TID));
+
+				FVector3f Tangent = FVector3f::ZeroVector;
+				if (TangentOverlay && TangentOverlay->IsSetTriangle(TID))
+				{
+					const FIndex3i Elements = TangentOverlay->GetTriangle(TID);
+					for (int32 Corner = 0; Corner < 3; ++Corner)
+					{
+						if (TangentOverlay->IsElement(Elements[Corner]))
+						{
+							Tangent += TangentOverlay->GetElement(Elements[Corner]);
+						}
+					}
+				}
+
+				FVector4f Color(1.0f, 1.0f, 1.0f, 1.0f);
+				if (ColorOverlay && ColorOverlay->IsSetTriangle(TID))
+				{
+					const FIndex3i Elements = ColorOverlay->GetTriangle(TID);
+					Color = (ColorOverlay->GetElement(Elements.A) + ColorOverlay->GetElement(Elements.B) + ColorOverlay->GetElement(Elements.C)) / 3.0f;
+				}
+				else if (!ColorOverlay && Mesh->HasVertexColors())
+				{
+					const FIndex3i Vertices = Mesh->GetTriangle(TID);
+					const FVector3f Average = (Mesh->GetVertexColor(Vertices.A) + Mesh->GetVertexColor(Vertices.B) + Mesh->GetVertexColor(Vertices.C)) / 3.0f;
+					Color = FVector4f(Average.X, Average.Y, Average.Z, 1.0f);
+				}
+
+				AddPoint(TID, Mesh->GetTriCentroid(TID), Normal, Tangent, Color);
+			}
 		}
+		else
+		{
+			for (const int32 VID : Mesh->VertexIndicesItr())
+			{
+				FIndex2i NormalCorner(INDEX_NONE, INDEX_NONE);
+				const FVector3f Normal = NormalOverlay
+					? DynMeshToPointsGetFirstVertexOverlayElement(Mesh, NormalOverlay, VID, FVector3f::UnitZ(), &NormalCorner)
+					: (Mesh->HasVertexNormals() ? Mesh->GetVertexNormal(VID) : FVector3f::UnitZ());
+
+				FVector3f Tangent = FVector3f::ZeroVector;
+				if (TangentOverlay)
+				{
+					// One point represents a vertex, including at seams. Keep its frame on the same face corner.
+					if (NormalCorner.A != INDEX_NONE)
+					{
+						if (TangentOverlay->IsSetTriangle(NormalCorner.A))
+						{
+							const int32 ElementID = TangentOverlay->GetTriangle(NormalCorner.A)[NormalCorner.B];
+							if (TangentOverlay->IsElement(ElementID))
+							{
+								Tangent = TangentOverlay->GetElement(ElementID);
+							}
+						}
+					}
+					else
+					{
+						Tangent = DynMeshToPointsGetFirstVertexOverlayElement(Mesh, TangentOverlay, VID, FVector3f::ZeroVector);
+					}
+				}
+
+				const FVector3f VertexColor = Mesh->HasVertexColors() ? Mesh->GetVertexColor(VID) : FVector3f::One();
+				const FVector4f Color = ColorOverlay
+					? DynMeshToPointsGetFirstVertexOverlayElement(Mesh, ColorOverlay, VID, FVector4f(1.0f, 1.0f, 1.0f, 1.0f))
+					: FVector4f(VertexColor.X, VertexColor.Y, VertexColor.Z, 1.0f);
+
+				AddPoint(VID, Mesh->GetVertex(VID), Normal, Tangent, Color);
+			}
+		}
+
 		TArray<int> PointIndices;
+		PointIndices.Reserve(Points.Num());
 		for (int i = 0; i < Points.Num(); ++i)
 		{
 			PointIndices.Add(i);
 		}
 		PointArrayData->SetPointsFrom(PointData, PointIndices);
 
-		if (Settings->bOutputVertexIndex)
+		const bool bOutputElementID = bTriangles ? Settings->bOutputTriangleId : Settings->bOutputVertexIndex;
+		const FName ElementIDAttributeName = bTriangles ? Settings->TriangleIdAttribute : Settings->VertexIndexAttribute;
+		if (bOutputElementID)
 		{
-			if (Settings->VertexIndexAttribute.IsNone())
+			if (ElementIDAttributeName.IsNone())
 			{
-				PCGLog::LogWarningOnGraph(LOCTEXT("EmptyVertexIndexAttribute", "DynMeshToPoints cannot output an unnamed Vertex Index attribute."), InContext);
+				PCGLog::LogWarningOnGraph(bTriangles
+					? LOCTEXT("EmptyTriangleIdAttribute", "DynMesh | To Points: Output Triangle Id is on, but Triangle Id Attribute is None; no triangle ID attribute was written.")
+					: LOCTEXT("EmptyVertexIndexAttribute", "DynMeshToPoints cannot output an unnamed Vertex Index attribute."), InContext);
 			}
 			else if (UPCGMetadata* Metadata = PointArrayData->MutableMetadata())
 			{
 				FPCGMetadataDomain* ElementsDomain = Metadata->GetMetadataDomain(PCGMetadataDomainID::Elements);
-				FPCGMetadataAttribute<int32>* VertexIndexAttribute = ElementsDomain
-					? ElementsDomain->FindOrCreateAttribute<int32>(Settings->VertexIndexAttribute, INDEX_NONE, false, true)
+				FPCGMetadataAttribute<int32>* ElementIDAttribute = ElementsDomain
+					? ElementsDomain->FindOrCreateAttribute<int32>(ElementIDAttributeName, INDEX_NONE, false, true)
 					: nullptr;
-				if (VertexIndexAttribute)
+				if (ElementIDAttribute)
 				{
 					auto MetadataEntries = PointArrayData->GetMetadataEntryValueRange();
-					int32 PointIndex = 0;
-					for (const int32 VID : Mesh->VertexIndicesItr())
+					for (int32 PointIndex = 0; PointIndex < ElementIDs.Num(); ++PointIndex)
 					{
 						ElementsDomain->InitializeOnSet(MetadataEntries[PointIndex]);
-						VertexIndexAttribute->SetValue(MetadataEntries[PointIndex], VID);
-						++PointIndex;
+						ElementIDAttribute->SetValue(MetadataEntries[PointIndex], ElementIDs[PointIndex]);
 					}
 				}
 			}
 		}
+
 
 		FPCGTaggedData& Output = InContext->OutputData.TaggedData.Emplace_GetRef(Input);
 		Output.Data = PointArrayData;

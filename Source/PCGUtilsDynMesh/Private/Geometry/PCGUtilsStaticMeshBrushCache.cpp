@@ -83,6 +83,44 @@ void FStaticMeshBrushCache::FinalizeCombinedKey(FStaticMeshBrushCombinedKey& Key
 	Key.Hash = Hash;
 }
 
+FStaticMeshBrushCombinedPart FStaticMeshBrushCache::MakeCombinedPart(const FStaticMeshBrushMeshKey& MeshKey, const FTransform& Relative)
+{
+	constexpr double TranslationStep = 0.001;
+	constexpr double RotationStep = 1.0e-6;
+	auto Snap = [](double Value, double Step)
+	{
+		const double Snapped = FMath::GridSnap(Value, Step);
+		return Snapped == 0.0 ? 0.0 : Snapped; // -0.0 must hash like 0.0
+	};
+
+	FStaticMeshBrushCombinedPart Part;
+	Part.MeshKey = MeshKey;
+
+	const FVector3d Translation = Relative.GetTranslation();
+	Part.Translation = FVector3d(Snap(Translation.X, TranslationStep), Snap(Translation.Y, TranslationStep), Snap(Translation.Z, TranslationStep));
+
+	FQuat4d Rotation = Relative.GetRotation();
+	Rotation.Normalize();
+	// q and -q are the same rotation; pick one so they key identically.
+	const double Sign = Rotation.W < 0.0 ? -1.0 : 1.0;
+	Part.Rotation = FQuat4d(Snap(Sign * Rotation.X, RotationStep), Snap(Sign * Rotation.Y, RotationStep),
+		Snap(Sign * Rotation.Z, RotationStep), Snap(Sign * Rotation.W, RotationStep));
+	return Part;
+}
+
+bool FStaticMeshBrushCache::CombinedPartLess(const FStaticMeshBrushCombinedPart& A, const FStaticMeshBrushCombinedPart& B)
+{
+	if (A.MeshKey.Hash != B.MeshKey.Hash) { return A.MeshKey.Hash < B.MeshKey.Hash; }
+	for (int32 Axis = 0; Axis < 3; ++Axis)
+	{
+		if (A.Translation[Axis] != B.Translation[Axis]) { return A.Translation[Axis] < B.Translation[Axis]; }
+	}
+	if (A.Rotation.X != B.Rotation.X) { return A.Rotation.X < B.Rotation.X; }
+	if (A.Rotation.Y != B.Rotation.Y) { return A.Rotation.Y < B.Rotation.Y; }
+	if (A.Rotation.Z != B.Rotation.Z) { return A.Rotation.Z < B.Rotation.Z; }
+	return A.Rotation.W < B.Rotation.W;
+}
+
 TSharedPtr<const FStaticMeshBrushCachedMesh> FStaticMeshBrushCache::FindOrBuildBrushMesh(UStaticMesh* StaticMesh,
 	const FVector& Scale, const FStaticMeshBrushProcessing& Processing, FText& OutError)
 {

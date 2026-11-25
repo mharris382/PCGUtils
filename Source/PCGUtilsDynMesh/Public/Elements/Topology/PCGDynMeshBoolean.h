@@ -38,6 +38,13 @@ public:
 	UPROPERTY()
 	bool bOverlapping = false;
 	virtual bool SupportsDomain(const FPCGUtilsDynMeshSelectionDomain& Domain) const override;
+
+	/**
+	 * When a node's output holds two or more of these selectors of one category (one per result mesh), replaces them
+	 * with a single routed selector per category, so the Selector pin carries one datum per category whatever the
+	 * number of meshes. A single result's selector is left as it is.
+	 */
+	static void BundleByCategory(FPCGContext* Context);
 protected:
 	virtual TSharedPtr<FPCGUtilsDynMeshSelectionOperation> CreateOperationInternal() const override;
 	virtual void AddToCrc(FArchiveCrc32& Ar, bool bFullDataCrc) const override;
@@ -70,7 +77,10 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Output Selectors")
 	bool bOutputSelectors = false;
 
-	/** Select the intersection rim: exact cut edges, their vertices, and incident faces. */
+	/**
+	 * Select the intersection rim: the edges where the two operands meet, their vertices, and incident faces.
+	 * Edges the Boolean only inserted to re-triangulate the cut faces are not part of it.
+	 */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Output Selectors", meta=(PCG_Overridable, EditCondition="bOutputSelectors", EditConditionHides))
 	bool bOverlappingSelector = true;
 
@@ -86,13 +96,35 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Output Selectors", meta=(PCG_Overridable, EditCondition="bOutputSelectors && bOverlappingSelector", EditConditionHides))
 	FName OverlappingSelectorTag = TEXT("Overlapping");
 
-	/** Select added faces, split/modified source faces, and the rim. Deleted geometry cannot be selected. */
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Output Selectors", meta=(PCG_Overridable, EditCondition="bOutputSelectors", EditConditionHides))
+	/**
+	 * Select the geometry the operation added: faces that came from InB (for Subtract, the cavity walls), hole-fill
+	 * faces, the faces of a New PolyGroup operation's new groups, and the rim. Deleted geometry cannot be selected.
+	 * Hidden, and not output, when the operation adds nothing: a Trim that does not fill holes, where it would only
+	 * repeat the Overlapping selector.
+	 */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Output Selectors", meta=(PCG_Overridable, EditCondition="ShowEffectedSelector()", EditConditionHides))
 	bool bEffectedSelector = true;
 
+	/**
+	 * Also put InA's faces that were cut and re-triangulated in the Effected selector. Their surface is unchanged;
+	 * only their triangles are. Off by default, because the extra vertices and edges get in the way of processing
+	 * what the Boolean actually made.
+	 */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Output Selectors", meta=(PCG_Overridable, EditCondition="ShowEffectedSelectorOptions()", EditConditionHides))
+	bool bIncludeSplitFaces = false;
+
 	/** Tag added to each effected selector. None omits the category tag. */
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Output Selectors", meta=(PCG_Overridable, EditCondition="bOutputSelectors && bEffectedSelector", EditConditionHides))
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Output Selectors", meta=(PCG_Overridable, EditCondition="ShowEffectedSelectorOptions()", EditConditionHides))
 	FName EffectedSelectorTag = TEXT("Effected");
+
+	/** False when the current operation and options add no geometry for the Effected selector to hold. */
+	bool IsEffectedSelectorRelevant() const;
+
+	UFUNCTION()
+	bool ShowEffectedSelector() const { return bOutputSelectors && IsEffectedSelectorRelevant(); }
+
+	UFUNCTION()
+	bool ShowEffectedSelectorOptions() const { return ShowEffectedSelector() && bEffectedSelector; }
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category=Settings, meta=(PCG_Overridable))
 	EGeometryScriptBooleanOperation BooleanOperation = EGeometryScriptBooleanOperation::Intersection;
