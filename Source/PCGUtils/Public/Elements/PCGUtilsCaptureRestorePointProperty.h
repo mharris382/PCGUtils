@@ -17,10 +17,11 @@ enum class EPCGUtilsCapturedPointProperty : uint8
 {
 	Density,
 	PositionZ,
-	Bounds
+	Bounds,
+	Position
 };
 
-/** Shared implementation for the six Capture/Restore native point-property aliases. */
+/** Shared implementation for the native Capture/Restore point-property aliases. */
 UCLASS(BlueprintType, ClassGroup=(Procedural), Category="PCGUtils|Point Attributes")
 class PCGUTILS_API UPCGUtilsCaptureRestorePointPropertySettings : public UPCGSettings
 {
@@ -41,12 +42,37 @@ public:
 	virtual void ApplyPreconfiguredSettings(const FPCGPreConfiguredSettingsInfo& PreconfiguredInfo) override;
 #endif
 
+	/** Required float point attribute shared by Capture Density and Restore Density. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Attributes",
+		meta=(EditCondition="Property == EPCGUtilsCapturedPointProperty::Density", EditConditionHides))
+	FName DensityAttributeName = TEXT("PrevDensity");
+
+	/** Required float point attribute shared by Capture Z and Restore Z. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Attributes",
+		meta=(EditCondition="Property == EPCGUtilsCapturedPointProperty::PositionZ", EditConditionHides, DisplayName="Z Attribute Name"))
+	FName ZAttributeName = TEXT("PrevZ");
+
+	/** Required vector point attribute shared by Capture Position and Restore Position. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Attributes",
+		meta=(EditCondition="Property == EPCGUtilsCapturedPointProperty::Position", EditConditionHides))
+	FName PositionAttributeName = TEXT("PrevPosition");
+
+	/** Required vector point attribute for the lower bounds, shared by Capture Bounds and Restore Bounds. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Attributes",
+		meta=(EditCondition="Property == EPCGUtilsCapturedPointProperty::Bounds", EditConditionHides))
+	FName BoundsMinAttributeName = TEXT("PrevBoundsMin");
+
+	/** Required vector point attribute for the upper bounds, shared by Capture Bounds and Restore Bounds. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Attributes",
+		meta=(EditCondition="Property == EPCGUtilsCapturedPointProperty::Bounds", EditConditionHides))
+	FName BoundsMaxAttributeName = TEXT("PrevBoundsMax");
+
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Set Value After Capture",
-		meta=(EditCondition="Operation == EPCGUtilsPointPropertyOperation::Capture", EditConditionHides))
+		meta=(EditCondition="Operation == EPCGUtilsPointPropertyOperation::Capture && Property != EPCGUtilsCapturedPointProperty::Position", EditConditionHides))
 	bool bSetValue = false;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Set Value After Capture",
-		meta=(EditCondition="Operation == EPCGUtilsPointPropertyOperation::Capture && bSetValue", EditConditionHides, DisplayName="Value"))
+		meta=(EditCondition="Operation == EPCGUtilsPointPropertyOperation::Capture && Property != EPCGUtilsCapturedPointProperty::Position && bSetValue", EditConditionHides, DisplayName="Value"))
 	float SetValue = 0.0f;
 
 	EPCGUtilsPointPropertyOperation GetOperation() const { return Operation; }
