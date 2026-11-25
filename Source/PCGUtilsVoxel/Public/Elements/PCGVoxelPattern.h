@@ -131,6 +131,12 @@ public:
 protected:
 	virtual TArray<FPCGPinProperties> InputPinProperties() const override;
 	virtual TArray<FPCGPinProperties> OutputPinProperties() const override;
+	/**
+	 * The Selector pin is the only input and it is optional. The graph compiler culls a node that has non-advanced
+	 * input pins and nothing active wired to any of them, unless this returns false; with it, an unwired pattern
+	 * still runs (and one wired only to a culled selector is still culled).
+	 */
+	virtual bool CanCullTaskIfUnwired() const override { return false; }
 	virtual FPCGElementPtr CreateElement() const override;
 };
 
