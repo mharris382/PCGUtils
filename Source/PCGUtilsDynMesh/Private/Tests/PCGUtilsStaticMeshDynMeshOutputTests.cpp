@@ -3,6 +3,7 @@
 // Get Static Mesh Data, Output Mode DynMesh: grouping, the cached self union, and what each output carries.
 
 #include "Misc/AutomationTest.h"
+#include "UObject/CoreRedirects.h"
 
 #if WITH_AUTOMATION_TESTS
 
@@ -234,6 +235,16 @@ bool FPCGUtilsStaticMeshDynMeshEmitTest::RunTest(const FString&)
 	if (!TestNotNull(TEXT("Engine cube loads"), Cube) || !TestNotNull(TEXT("Engine sphere loads"), Sphere))
 	{
 		return false;
+	}
+
+	// The node moved here from PCGUtils: graphs saved before the move name the old module.
+	{
+		const FCoreRedirectObjectName Old(TEXT("/Script/PCGUtils.PCGGetStaticMeshDataSettings"));
+		const FCoreRedirectObjectName New = FCoreRedirects::GetRedirectedName(ECoreRedirectFlags::Type_Class, Old);
+		TestEqual(TEXT("The old class path redirects to this module"), New.ToString(), UPCGGetStaticMeshDataSettings::StaticClass()->GetPathName());
+		const FCoreRedirectObjectName OldEnum(TEXT("/Script/PCGUtils.EPCGUtilsStaticMeshSource"));
+		TestEqual(TEXT("The old enum path redirects to this module"), FCoreRedirects::GetRedirectedName(ECoreRedirectFlags::Type_Enum, OldEnum).ToString(),
+			StaticEnum<EPCGUtilsStaticMeshSource>()->GetPathName());
 	}
 
 	FTestWorldWrapper WorldWrapper;
