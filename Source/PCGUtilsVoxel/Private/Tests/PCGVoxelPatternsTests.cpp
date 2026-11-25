@@ -615,4 +615,209 @@ bool FPCGVoxelPatternsNodeTest::RunTest(const FString&)
 	return true;
 }
 
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FPCGVoxelPatternsChamferTest,
+	"PCGUtils.Voxel.Patterns.ChamferPresets",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+
+bool FPCGVoxelPatternsChamferTest::RunTest(const FString&)
+{
+	using namespace PCGVoxelPatternsTests;
+	using namespace PCGVoxelPatterns;
+
+	FText Error;
+	TestTrue(TEXT("Chamfer presets are valid"), Validate(Presets::TopOutsideCorner(), Error) && Validate(Presets::TopInsideCorner(), Error)
+		&& Validate(Presets::SkirtEdge(), Error) && Validate(Presets::SkirtOutsideCorner(), Error) && Validate(Presets::SkirtInsideCorner(), Error));
+
+	// On the shape. A 4 x 4 slab with the (2..3, 2..3) quarter missing: one inside corner, five outside corners
+	// (the two arm ends are two cells wide), and six edge cells that join into four chunks. Every cell is taken.
+	{
+		TArray<FIntVector> Notched;
+		for (const FIntVector& Cell : Block(4, 4, 1))
+		{
+			if (Cell.X < 2 || Cell.Y < 2)
+			{
+				Notched.Add(Cell);
+			}
+		}
+		const FResult Result = ApplyTo(MakeGrid(Notched), { Presets::TopInsideCorner(), Presets::TopOutsideCorner(), Presets::TopEdge() });
+		TestEqual(TEXT("On: one inside corner"), CountOf(Result, 0), 1);
+		TestEqual(TEXT("On: five outside corners"), CountOf(Result, 1), 5);
+		TestEqual(TEXT("On: four joined edges"), CountOf(Result, 2), 4);
+		TestEqual(TEXT("On: six edge cells before joining"), Result.NumFits[2], 6);
+		bool bNoOverlap = true;
+		TestEqual(TEXT("On: every cell of the slab is taken"), Covered(Result, bNoOverlap).Num(), Notched.Num());
+		TestTrue(TEXT("On: no cell taken twice"), bNoOverlap);
+		TestTrue(TEXT("On: nothing added"), Result.Added.IsEmpty());
+		for (const FChunk& Chunk : Result.Chunks)
+		{
+			if (Chunk.Pattern == 0)
+			{
+				TestTrue(TEXT("On: the inside corner is the cell in the bend"), Chunk.First == FIntVector(1, 1, 0));
+				TestEqual(TEXT("On: it writes the inside corner mesh"), Chunk.MeshIndex, Presets::InsideCornerMesh);
+			}
+		}
+	}
+
+	// Around the shape. An L of three cells: the ring of twelve cells round it is one valley cell in the bend, six
+	// edge cells (four chunks once joined) and five corner cells, one of them beside the valley at the arm's end.
+	{
+		const TArray<FIntVector> Ell = { FIntVector(0, 0, 0), FIntVector(1, 0, 0), FIntVector(0, 1, 0) };
+		const FResult Result = ApplyTo(MakeGrid(Ell), { Presets::SkirtInsideCorner(), Presets::SkirtEdge(), Presets::SkirtOutsideCorner() });
+		TestEqual(TEXT("Around: one valley"), CountOf(Result, 0), 1);
+		TestEqual(TEXT("Around: four joined edges"), CountOf(Result, 1), 4);
+		TestEqual(TEXT("Around: six edge cells before joining"), Result.NumFits[1], 6);
+		TestEqual(TEXT("Around: five outside corners"), CountOf(Result, 2), 5);
+		TestEqual(TEXT("Around: twelve cells added, the whole ring"), Result.Added.Num(), 12);
+		TestTrue(TEXT("Around: the valley is in the bend"), Result.Added.Contains(FIntVector(1, 1, 0)));
+		TestTrue(TEXT("Around: a corner sits beside the valley at the arm's end"), Result.Added.Contains(FIntVector(2, 1, 0)));
+		TestFalse(TEXT("Around: the cell touching nothing but the valley stays empty"), Result.Added.Contains(FIntVector(2, 2, 0)));
+		TestEqual(TEXT("Around: the shape itself is untouched"), Result.Claimed.CountSetBits(), 0);
+
+		// Edges before the valley: an edge takes the bend's empty cell first and the valley has nowhere to go.
+		const FResult Wrong = ApplyTo(MakeGrid(Ell), { Presets::SkirtEdge(), Presets::SkirtInsideCorner(), Presets::SkirtOutsideCorner() });
+		TestEqual(TEXT("Around, edges first: no valley"), CountOf(Wrong, 1), 0);
+	}
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FPCGVoxelPatternsAttributesTest,
+	"PCGUtils.Voxel.Patterns.SettingsAsAttributes",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+
+bool FPCGVoxelPatternsAttributesTest::RunTest(const FString&)
+{
+	using namespace PCGVoxelPatternsTests;
+	using namespace PCGVoxelPatterns;
+
+	auto SortedBoxes = [](const FResult& Result)
+	{
+		TArray<TPair<FIntVector, FIntVector>> Boxes;
+		for (const FChunk& Chunk : Result.Chunks)
+		{
+			Boxes.Add({ Chunk.First, Chunk.Span });
+		}
+		auto Less = [](const FIntVector& A, const FIntVector& B) { return A.X != B.X ? A.X < B.X : (A.Y != B.Y ? A.Y < B.Y : A.Z < B.Z); };
+		Boxes.Sort([&Less](const TPair<FIntVector, FIntVector>& A, const TPair<FIntVector, FIntVector>& B) { return Less(A.Key, B.Key); });
+		return Boxes;
+	};
+
+	// Scale. The one-cell upright corner at 2 x 2 x 1 makes the same chunks as the 2 x 2 corner written by hand.
+	{
+		const FPCGVoxelPattern Scaled2 = Scaled(Presets::UprightCorner(1), FIntVector(2, 2, 1));
+		FText Error;
+		TestTrue(TEXT("The scaled corner is valid"), Validate(Scaled2, Error));
+		TestTrue(TEXT("Its box covers 2 x 2 x 1"), Scaled2.Boxes[0].Span == FIntVector(2, 2, 1));
+		const FPCGVoxelGrid Slab = MakeGrid(Block(6, 6, 1));
+		const FResult ByHand = ApplyTo(Slab, { Presets::UprightCorner(2) });
+		const FResult ByScale = ApplyTo(Slab, { Scaled2 });
+		TestEqual(TEXT("Four corners by hand"), ByHand.Chunks.Num(), 4);
+		TestTrue(TEXT("The scaled pattern makes the same chunks"), SortedBoxes(ByHand) == SortedBoxes(ByScale));
+		TestEqual(TEXT("A lone 2 x 2 block is still not a corner at scale 2"), ApplyTo(MakeGrid(Block(2, 2, 1)), { Scaled2 }).Chunks.Num(), 0);
+		TestTrue(TEXT("Scale 1 changes nothing"), Scaled(Presets::TopEdge(), FIntVector(1)).Probes.Num() == Presets::TopEdge().Probes.Num());
+		// An Add pattern: the skirt edge at 2 x 1 x 1 wants a wall two cells thick and adds a slope two cells deep.
+		const FPCGVoxelPattern DeepEdge = Scaled(Presets::SkirtEdge(), FIntVector(2, 1, 1));
+		TestEqual(TEXT("A 2 x 2 block gets a skirt two deep on each of its four sides"), ApplyTo(MakeGrid(Block(2, 2, 1)), { DeepEdge }).Added.Num(), 16);
+		TestEqual(TEXT("A wall one cell thick is too thin for it"), ApplyTo(MakeGrid(Block(1, 1, 1)), { DeepEdge }).Added.Num(), 0);
+	}
+
+	// The Voxel | Pattern node writes Order and Scale to @Data, and its output survives being duplicated (what an
+	// attribute node does to edit it).
+	UPCGVoxelPatternSettings* PatternSettings = NewObject<UPCGVoxelPatternSettings>();
+	PatternSettings->Pattern = Presets::UprightCorner(1);
+	PatternSettings->Order = 3;
+	PatternSettings->Scale = FIntVector(2, 2, 1);
+	const TArray<FPCGTaggedData> PatternOut = Run<FPCGVoxelPatternElement>(PatternSettings, {});
+	const UPCGVoxelPatternData* Emitted = PatternOut.Num() == 1 ? Cast<UPCGVoxelPatternData>(PatternOut[0].Data) : nullptr;
+	if (!TestNotNull(TEXT("Voxel | Pattern emits a pattern with nothing connected"), Emitted))
+	{
+		return false;
+	}
+	TestTrue(TEXT("A pattern is an attribute set"), Emitted->IsA<UPCGParamData>());
+	{
+		const FPCGVoxelPatternAttributeNames Names;
+		int32 Order = 0;
+		FIntVector Scale(1);
+		FText Error;
+		TestTrue(TEXT("Settings resolve"), Emitted->ResolveSettings(Names, Order, Scale, Error));
+		TestEqual(TEXT("Order as set"), Order, 3);
+		TestTrue(TEXT("Scale as set"), Scale == FIntVector(2, 2, 1));
+		const FPCGMetadataDomain* Data = Emitted->ConstMetadata()->GetConstMetadataDomain(PCGMetadataDomainID::Data);
+		TestTrue(TEXT("Order is a @Data attribute"), Data && Data->GetConstAttribute(TEXT("Order")) != nullptr);
+		TestTrue(TEXT("Scale is a @Data attribute"), Data && Data->GetConstAttribute(TEXT("Scale")) != nullptr);
+
+		UPCGVoxelPatternData* Copy = Cast<UPCGVoxelPatternData>(Emitted->DuplicateData(nullptr));
+		if (TestNotNull(TEXT("A duplicate is still a pattern"), Copy))
+		{
+			TestEqual(TEXT("The duplicate keeps the pattern"), Copy->Pattern.Probes.Num(), Emitted->Pattern.Probes.Num());
+			TestTrue(TEXT("The duplicate keeps its pin type"), Copy->GetDataTypeId() == Emitted->GetDataTypeId());
+			// Changed downstream, as an attribute node would: a Double for Order, one number for Scale.
+			FPCGMetadataDomain* CopyData = PCGUtilsDataDomain::GetMutableDataDomain(Copy);
+			PCGUtilsDataDomain::WriteValue<double>(*CopyData, TEXT("Order"), -2.0);
+			PCGUtilsDataDomain::WriteValue<int32>(*CopyData, TEXT("Scale"), 3);
+			TestTrue(TEXT("Changed settings resolve"), Copy->ResolveSettings(Names, Order, Scale, Error));
+			TestEqual(TEXT("Order from the changed attribute"), Order, -2);
+			TestTrue(TEXT("One number is the same scale on every axis"), Scale == FIntVector(3));
+			TestTrue(TEXT("The original is untouched"), Emitted->ResolveSettings(Names, Order, Scale, Error) && Order == 3 && Scale == FIntVector(2, 2, 1));
+
+			PCGUtilsDataDomain::WriteValue<FVector>(*CopyData, TEXT("Scale"), FVector(2.0, 0.0, 1.0));
+			TestFalse(TEXT("A zero scale is rejected"), Copy->ResolveSettings(Names, Order, Scale, Error));
+			TestTrue(*FString::Printf(TEXT("The error names the attribute and the axis (got '%s')"), *Error.ToString()),
+				Error.ToString().Contains(TEXT("'Scale'")) && Error.ToString().Contains(TEXT("on Y")));
+			PCGUtilsDataDomain::WriteValue<FString>(*CopyData, TEXT("Scale"), TEXT("big"));
+			TestFalse(TEXT("A text scale is rejected"), Copy->ResolveSettings(Names, Order, Scale, Error));
+			TestTrue(*FString::Printf(TEXT("The error names the type (got '%s')"), *Error.ToString()), Error.ToString().Contains(TEXT("is of type")));
+
+			FPCGVoxelPatternAttributeNames NoNames;
+			NoNames.OrderAttribute = NAME_None;
+			NoNames.ScaleAttribute = NAME_None;
+			TestTrue(TEXT("With no names the node's own values apply"), Copy->ResolveSettings(NoNames, Order, Scale, Error) && Order == 3 && Scale == FIntVector(2, 2, 1));
+		}
+	}
+
+	// Apply Patterns reads them. The emitted corner (Scale 2 x 2 x 1) on a 6 x 6 slab: four 2 x 2 chunks.
+	{
+		UPCGVoxelApplyPatternsSettings* Settings = NewObject<UPCGVoxelApplyPatternsSettings>();
+		const UPCGData* Slab = MakeVoxels(Block(6, 6, 1));
+		auto OutOf = [&](const UPCGVoxelPatternData* A, const UPCGVoxelPatternData* B) -> const UPCGBasePointData*
+		{
+			TArray<TPair<FName, const UPCGData*>> Inputs;
+			Inputs.Add({ PCGPinConstants::DefaultInputLabel, Slab });
+			Inputs.Add({ PCGVoxelPatternPins::PatternsLabel, A });
+			if (B)
+			{
+				Inputs.Add({ PCGVoxelPatternPins::PatternsLabel, B });
+			}
+			for (const FPCGTaggedData& Output : Run<FPCGVoxelApplyPatternsElement>(Settings, Inputs))
+			{
+				if (Output.Pin != TEXT("Unmatched"))
+				{
+					return Cast<UPCGBasePointData>(Output.Data);
+				}
+			}
+			return nullptr;
+		};
+		const UPCGBasePointData* Out = OutOf(Emitted, nullptr);
+		if (TestNotNull(TEXT("Out (scaled by attribute)"), Out))
+		{
+			TestEqual(TEXT("Four corners"), Out->GetNumPoints(), 4);
+			TestTrue(TEXT("Each 2 x 2 x 1"), Out->GetNumPoints() > 0 && ValueAt<FVector>(Out, TEXT("VoxelSpan"), 0, FVector::ZeroVector).Equals(FVector(2.0, 2.0, 1.0)));
+		}
+
+		// Order from the attribute beats connection order: a single-cell pattern set to run first takes the corners'
+		// cells, so the scaled corner (Order 3) finds none left.
+		UPCGVoxelPatternData* Singles = NewObject<UPCGVoxelPatternData>();
+		Singles->Pattern = Strip(FIntVector(1));
+		Singles->Priority = 9;
+		Out = OutOf(Emitted, Singles);
+		TestTrue(TEXT("Corners first when the singles run last"), Out && ValueAt<FVector>(Out, TEXT("VoxelSpan"), 0, FVector::ZeroVector).Equals(FVector(2.0, 2.0, 1.0)));
+		PCGUtilsDataDomain::WriteValue<int32>(*PCGUtilsDataDomain::GetMutableDataDomain(Singles), TEXT("Order"), 0);
+		Out = OutOf(Emitted, Singles);
+		if (TestNotNull(TEXT("Out (singles first)"), Out))
+		{
+			TestEqual(TEXT("The singles took every cell"), Out->GetNumPoints(), 36);
+		}
+	}
+	return true;
+}
+
 #endif

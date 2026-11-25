@@ -14,12 +14,42 @@
 
 #include "PCGVoxelPattern.generated.h"
 
+/**
+ * A kind of attribute set (experiment, 2026-11-24): a pattern wire fits the attribute set pins of ordinary attribute
+ * nodes, so a pattern's @Data attributes can be changed between Voxel | Pattern and Voxel | Apply Patterns.
+ */
 USTRUCT(meta=(PCG_DataTypeDisplayName="Voxel Pattern"))
-struct FPCGVoxelPatternDataTypeInfo : public FPCGDataTypeInfo
+struct FPCGVoxelPatternDataTypeInfo : public FPCGDataTypeInfoParam
 {
 	GENERATED_BODY()
 
 	PCG_DECLARE_TYPE_INFO(PCGUTILSVOXEL_API);
+};
+
+/**
+ * The names of the @Data attributes a pattern carries. Voxel | Pattern writes them; Voxel | Apply Patterns reads them
+ * back, so a node between the two can change them. The same names must be set on both nodes.
+ */
+USTRUCT(BlueprintType)
+struct PCGUTILSVOXEL_API FPCGVoxelPatternAttributeNames
+{
+	GENERATED_BODY()
+
+	/**
+	 * @Data attribute on the pattern, Integer32 (Integer64, Float and Double are also read, as a whole number).
+	 * When the pattern runs among the others: lower first. Optional: None, or an attribute that is not on the
+	 * pattern, leaves the Order set on the Voxel | Pattern node.
+	 */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Pattern Attributes")
+	FName OrderAttribute = TEXT("Order");
+
+	/**
+	 * @Data attribute on the pattern, Vector (a single number is also read, as the same scale on every axis). How
+	 * many cells each cell of the pattern stands for along the pattern's X, Y and Z: whole numbers from 1 to 256.
+	 * Optional: None, or an attribute that is not on the pattern, leaves the Scale set on the Voxel | Pattern node.
+	 */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Pattern Attributes")
+	FName ScaleAttribute = TEXT("Scale");
 };
 
 /** What a pattern's selectors limit. */
@@ -36,8 +66,12 @@ enum class EPCGVoxelPatternSelectorScope : uint8
 
 /**
  * One pattern on a wire, from a Voxel | Pattern node to Voxel | Apply Patterns. Never changed once emitted.
- * Its own data type, so a pattern pin only takes patterns. A PCGUtils factory like any other: Priority is the
- * node's Order (lower runs first; ties keep the pin's connection order).
+ * A PCGUtils factory like any other: Priority is the node's Order (lower runs first; ties keep the pin's
+ * connection order).
+ *
+ * It is also an attribute set. Its @Data domain carries the settings that may be changed on the way to Apply
+ * Patterns (Order and Scale, under the names in FPCGVoxelPatternAttributeNames); the fields here are what applies
+ * when an attribute is absent. An attribute node edits a duplicate, which DuplicateData keeps a pattern.
  */
 UCLASS(BlueprintType, ClassGroup=(Procedural))
 class PCGUTILSVOXEL_API UPCGVoxelPatternData : public UPCGUtilsFactoryData
@@ -56,6 +90,22 @@ public:
 
 	UPROPERTY()
 	EPCGVoxelPatternSelectorScope SelectorScope = EPCGVoxelPatternSelectorScope::Cells;
+
+	/** How many cells each cell of the pattern stands for, per pattern axis. Used when the Scale attribute is absent. */
+	UPROPERTY()
+	FIntVector Scale = FIntVector(1);
+
+	/** A pattern again, with every field and (when asked) the metadata copied: what an attribute node edits. */
+	virtual UPCGParamData* DuplicateData(FPCGContext* Context, bool bInitializeMetadata = true) const override;
+
+	/**
+	 * Reads Order and Scale: the @Data attribute when Names gives one and the pattern has it, this object's field
+	 * otherwise. False with OutError naming the attribute, its value or type and what is allowed.
+	 */
+	bool ResolveSettings(const FPCGVoxelPatternAttributeNames& Names, int32& OutOrder, FIntVector& OutScale, FText& OutError) const;
+
+	/** Writes Order (Priority) and Scale to @Data under Names; a None name is not written. */
+	void WriteSettingsAttributes(const FPCGVoxelPatternAttributeNames& Names);
 
 protected:
 	virtual void AddToCrc(FArchiveCrc32& Ar, bool bFullDataCrc) const override;
@@ -119,6 +169,22 @@ public:
 	 */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Settings", meta=(PCG_Overridable))
 	int32 Order = 0;
+
+	/**
+	 * How many cells each cell of the pattern stands for, along the pattern's X, Y and Z (each 1 to 256). 2, 2, 1
+	 * turns a one-cell corner into a 2 x 2 x 1 corner: boxes grow, and a probe on one cell asks the same of the
+	 * whole block that cell became. Written to the pattern as the Scale attribute, so it can be changed downstream.
+	 */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Settings", meta=(PCG_Overridable))
+	FIntVector Scale = FIntVector(1);
+
+	/**
+	 * The @Data attributes written on the pattern: Order and Scale as set above. A node between this one and
+	 * Voxel | Apply Patterns may change them (Apply Patterns reads them under the names set there). A name set to
+	 * None is not written.
+	 */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Settings|Attributes", meta=(ShowOnlyInnerProperties))
+	FPCGVoxelPatternAttributeNames Attributes;
 
 	/**
 	 * Only used when something is connected to the Selector pin. Cells (default): every cell the pattern takes or

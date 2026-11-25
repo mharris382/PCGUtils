@@ -650,4 +650,193 @@ FPCGVoxelPattern PCGVoxelPatterns::Presets::InsideCornerFill(int32 WallCells)
 	return Pattern;
 }
 
+namespace PCGVoxelPatternsPrivate
+{
+	int32 Sides(std::initializer_list<EPCGVoxelPatternDirection> Directions)
+	{
+		int32 Bits = 0;
+		for (const EPCGVoxelPatternDirection Direction : Directions)
+		{
+			Bits |= 1 << static_cast<int32>(Direction);
+		}
+		return Bits;
+	}
+
+	// The colours of the designer's sketch: slopes green, outside corners pink, inside corners light grey.
+	const FLinearColor ChamferEdgeColor(0.35f, 0.75f, 0.3f);
+	const FLinearColor ChamferOutsideColor(0.85f, 0.4f, 0.8f);
+	const FLinearColor ChamferInsideColor(0.8f, 0.8f, 0.8f);
+}
+
+FPCGVoxelPattern PCGVoxelPatterns::Presets::TopOutsideCorner()
+{
+	using namespace PCGVoxelPatternsPrivate;
+	FPCGVoxelPattern Pattern;
+	Pattern.Name = TEXT("TopOutsideCorner");
+	Pattern.DebugColor = ChamferOutsideColor;
+	Pattern.Probes.Add({ FIntVector(1, 0, 0), EPCGVoxelProbeState::Empty });
+	Pattern.Probes.Add({ FIntVector(0, 1, 0), EPCGVoxelProbeState::Empty });
+	Pattern.Probes.Add({ FIntVector(0, 0, 1), EPCGVoxelProbeState::Empty });
+	Pattern.Boxes[0].MeshIndex = OutsideCornerMesh;
+	Pattern.Boxes[0].OpenSides = Sides({ EPCGVoxelPatternDirection::PosX, EPCGVoxelPatternDirection::PosY, EPCGVoxelPatternDirection::PosZ });
+	Pattern.Turns = EPCGVoxelRuleTurns::AboutUp;
+	return Pattern;
+}
+
+FPCGVoxelPattern PCGVoxelPatterns::Presets::TopInsideCorner()
+{
+	using namespace PCGVoxelPatternsPrivate;
+	FPCGVoxelPattern Pattern;
+	Pattern.Name = TEXT("TopInsideCorner");
+	Pattern.DebugColor = ChamferInsideColor;
+	// The two neighbours are the edge cells whose slopes meet here; the cell on their diagonal is the open corner.
+	Pattern.Probes.Add({ FIntVector(1, 0, 0), EPCGVoxelProbeState::Filled });
+	Pattern.Probes.Add({ FIntVector(0, 1, 0), EPCGVoxelProbeState::Filled });
+	Pattern.Probes.Add({ FIntVector(1, 1, 0), EPCGVoxelProbeState::Empty });
+	Pattern.Probes.Add({ FIntVector(0, 0, 1), EPCGVoxelProbeState::Empty });
+	Pattern.Boxes[0].MeshIndex = InsideCornerMesh;
+	Pattern.Boxes[0].OpenSides = Sides({ EPCGVoxelPatternDirection::PosZ });
+	Pattern.Turns = EPCGVoxelRuleTurns::AboutUp;
+	return Pattern;
+}
+
+FPCGVoxelPattern PCGVoxelPatterns::Presets::SkirtEdge()
+{
+	using namespace PCGVoxelPatternsPrivate;
+	FPCGVoxelPattern Pattern;
+	Pattern.Name = TEXT("SkirtEdge");
+	Pattern.DebugColor = ChamferEdgeColor;
+	Pattern.Operation = EPCGVoxelPatternOperation::Add;
+	// The origin is the wall cell. The new cell is beside it, the Edge mesh as authored: whole against the wall (-X)
+	// and on the ground (-Z), sloping away. An Add box only fits empty cells, so no probe is needed.
+	FPCGVoxelPatternBox& Box = Pattern.Boxes[0];
+	Box.First = FIntVector(1, 0, 0);
+	Box.MeshIndex = EdgeMesh;
+	Box.OpenSides = Sides({ EPCGVoxelPatternDirection::PosX, EPCGVoxelPatternDirection::PosZ });
+	Pattern.Turns = EPCGVoxelRuleTurns::AboutUp;
+	Pattern.JoinAlong = static_cast<int32>(EPCGVoxelAxes::Y);
+	return Pattern;
+}
+
+FPCGVoxelPattern PCGVoxelPatterns::Presets::SkirtOutsideCorner()
+{
+	using namespace PCGVoxelPatternsPrivate;
+	FPCGVoxelPattern Pattern;
+	Pattern.Name = TEXT("SkirtOutsideCorner");
+	Pattern.DebugColor = ChamferOutsideColor;
+	Pattern.Operation = EPCGVoxelPatternOperation::Add;
+	// The origin is the corner cell of the shape; the new cell is on its diagonal, between the two skirt edges.
+	// Probes read the input set, so the edge cells an earlier pattern added there still read as empty.
+	Pattern.Probes.Add({ FIntVector(1, 0, 0), EPCGVoxelProbeState::Empty });
+	Pattern.Probes.Add({ FIntVector(0, 1, 0), EPCGVoxelProbeState::Empty });
+	FPCGVoxelPatternBox& Box = Pattern.Boxes[0];
+	Box.First = FIntVector(1, 1, 0);
+	Box.MeshIndex = OutsideCornerMesh;
+	Box.OpenSides = Sides({ EPCGVoxelPatternDirection::PosX, EPCGVoxelPatternDirection::PosY, EPCGVoxelPatternDirection::PosZ });
+	Pattern.Turns = EPCGVoxelRuleTurns::AboutUp;
+	return Pattern;
+}
+
+FPCGVoxelPattern PCGVoxelPatterns::Presets::SkirtInsideCorner()
+{
+	using namespace PCGVoxelPatternsPrivate;
+	FPCGVoxelPattern Pattern;
+	Pattern.Name = TEXT("SkirtInsideCorner");
+	Pattern.DebugColor = ChamferInsideColor;
+	Pattern.Operation = EPCGVoxelPatternOperation::Add;
+	// The origin is the cell in the bend; the new cell is the empty one between the two walls.
+	Pattern.Probes.Add({ FIntVector(1, 0, 0), EPCGVoxelProbeState::Filled });
+	Pattern.Probes.Add({ FIntVector(0, 1, 0), EPCGVoxelProbeState::Filled });
+	FPCGVoxelPatternBox& Box = Pattern.Boxes[0];
+	Box.First = FIntVector(1, 1, 0);
+	Box.MeshIndex = InsideCornerMesh;
+	Box.OpenSides = Sides({ EPCGVoxelPatternDirection::PosZ });
+	Pattern.Turns = EPCGVoxelRuleTurns::AboutUp;
+	return Pattern;
+}
+
+FPCGVoxelPattern PCGVoxelPatterns::Scaled(const FPCGVoxelPattern& Pattern, const FIntVector& InScale)
+{
+	using namespace PCGVoxelPatternsPrivate;
+	const FIntVector Scale(FMath::Max(InScale.X, 1), FMath::Max(InScale.Y, 1), FMath::Max(InScale.Z, 1));
+	if (Scale == FIntVector(1))
+	{
+		return Pattern;
+	}
+
+	FPCGVoxelPattern Out = Pattern;
+	for (FPCGVoxelPatternBox& Box : Out.Boxes)
+	{
+		Box.First = FIntVector(Box.First.X * Scale.X, Box.First.Y * Scale.Y, Box.First.Z * Scale.Z);
+		Box.Span = FIntVector(Box.Span.X * Scale.X, Box.Span.Y * Scale.Y, Box.Span.Z * Scale.Z);
+	}
+
+	// A probe row of Count cells becomes Count x Scale cells along its step, repeated across the block's other two axes.
+	Out.Probes.Reset();
+	for (const FPCGVoxelPatternProbe& Probe : Pattern.Probes)
+	{
+		const FIntVector Step = DirectionVector(Probe.Step);
+		const int32 Along = AxisOf(Step);
+		const int32 B = (Along + 1) % 3;
+		const int32 C = (Along + 2) % 3;
+		FIntVector Start(Probe.Offset.X * Scale.X, Probe.Offset.Y * Scale.Y, Probe.Offset.Z * Scale.Z);
+		if (Step[Along] < 0)
+		{
+			// The row runs toward minus: it starts at the far end of its first block.
+			Start[Along] += Scale[Along] - 1;
+		}
+		for (int32 J = 0; J < Scale[B]; ++J)
+		{
+			for (int32 K = 0; K < Scale[C]; ++K)
+			{
+				FPCGVoxelPatternProbe& Row = Out.Probes.Add_GetRef(Probe);
+				Row.Offset = Start;
+				Row.Offset[B] += J;
+				Row.Offset[C] += K;
+				Row.Count = Probe.Count * Scale[Along];
+			}
+		}
+	}
+
+	// The rest of the origin block is filled, as the origin cell is, where nothing else says what it is.
+	auto IsCovered = [&Out](const FIntVector& Cell)
+	{
+		for (const FPCGVoxelPatternBox& Box : Out.Boxes)
+		{
+			if (BoxContains(Box, Cell))
+			{
+				return true;
+			}
+		}
+		for (const FPCGVoxelPatternProbe& Probe : Out.Probes)
+		{
+			for (int32 I = 0; I < FMath::Min(Probe.Count, MaxBoxSpan); ++I)
+			{
+				if (ProbeCell(Probe, I) == Cell)
+				{
+					return true;
+				}
+			}
+		}
+		return false;
+	};
+	TArray<FPCGVoxelPatternProbe> OriginBlock;
+	for (int32 Z = 0; Z < Scale.Z; ++Z)
+	{
+		for (int32 Y = 0; Y < Scale.Y; ++Y)
+		{
+			for (int32 X = 0; X < Scale.X; ++X)
+			{
+				const FIntVector Cell(X, Y, Z);
+				if (Cell != FIntVector::ZeroValue && !IsCovered(Cell))
+				{
+					OriginBlock.Add({ Cell, EPCGVoxelProbeState::Filled });
+				}
+			}
+		}
+	}
+	Out.Probes.Append(OriginBlock);
+	return Out;
+}
+
 #undef LOCTEXT_NAMESPACE

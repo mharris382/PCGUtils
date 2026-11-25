@@ -104,7 +104,37 @@ bool FPCGVoxelApplyPatternsElement::ExecuteInternal(FPCGContext* Context) const
 	{
 		return Fail(LOCTEXT("NoPatterns", "nothing is connected to the Patterns pin; connect at least one Voxel | Pattern node."));
 	}
-	PatternData.StableSort([](const UPCGVoxelPatternData& A, const UPCGVoxelPatternData& B) { return A.Priority < B.Priority; });
+	if (!Settings->PatternAttributes.OrderAttribute.IsNone() && Settings->PatternAttributes.OrderAttribute == Settings->PatternAttributes.ScaleAttribute)
+	{
+		return Fail(FText::Format(LOCTEXT("SamePatternAttributeName", "Pattern Attributes: Order Attribute and Scale Attribute are both '{0}'; each needs its own name (or None to not read it)."),
+			FText::FromName(Settings->PatternAttributes.OrderAttribute)));
+	}
+
+	// Order and Scale: each pattern's @Data attribute when it has one (a node upstream may have changed it), else
+	// what its Voxel | Pattern node set. Read before sorting, so the pattern is named by its place on the pin.
+	struct FResolved
+	{
+		const UPCGVoxelPatternData* Data = nullptr;
+		int32 Order = 0;
+		FIntVector Scale = FIntVector(1);
+	};
+	TArray<FResolved> Resolved;
+	for (int32 Index = 0; Index < PatternData.Num(); ++Index)
+	{
+		FResolved& Entry = Resolved.AddDefaulted_GetRef();
+		Entry.Data = PatternData[Index];
+		FText Error;
+		if (!Entry.Data->ResolveSettings(Settings->PatternAttributes, Entry.Order, Entry.Scale, Error))
+		{
+			return Fail(FText::Format(LOCTEXT("PatternSettingError", "the pattern connected at place {0} on the Patterns pin{1}: {2}"), Index,
+				Entry.Data->Pattern.Name.IsNone() ? FText::GetEmpty() : FText::Format(LOCTEXT("PatternSettingName", " ('{0}')"), FText::FromName(Entry.Data->Pattern.Name)), Error));
+		}
+	}
+	Resolved.StableSort([](const FResolved& A, const FResolved& B) { return A.Order < B.Order; });
+	for (int32 Index = 0; Index < Resolved.Num(); ++Index)
+	{
+		PatternData[Index] = Resolved[Index].Data;
+	}
 
 	// A pattern with no selector is applied everywhere. Selectors are prepared per input, against its grid.
 	bool bAnySelector = false;
@@ -113,15 +143,32 @@ bool FPCGVoxelApplyPatternsElement::ExecuteInternal(FPCGContext* Context) const
 		bAnySelector |= !Data->Selectors.IsEmpty();
 	}
 
+	// The patterns as run: each at its scale. The authored pattern is checked first, so an error in it is not
+	// reported in scaled cells.
+	TArray<FPCGVoxelPattern> ScaledPatterns;
+	ScaledPatterns.Reserve(PatternData.Num());
 	TArray<const FPCGVoxelPattern*> Patterns;
 	for (int32 Index = 0; Index < PatternData.Num(); ++Index)
 	{
+		const FPCGVoxelPattern& Authored = PatternData[Index]->Pattern;
 		FText Error;
-		if (!PCGVoxelPatterns::Validate(PatternData[Index]->Pattern, Error))
+		if (!PCGVoxelPatterns::Validate(Authored, Error))
 		{
-			return Fail(FText::Format(LOCTEXT("PatternError", "{0}: {1}"), PatternLabel(Index, PatternData[Index]->Pattern), Error));
+			return Fail(FText::Format(LOCTEXT("PatternError", "{0}: {1}"), PatternLabel(Index, Authored), Error));
 		}
-		Patterns.Add(&PatternData[Index]->Pattern);
+		const FIntVector& Scale = Resolved[Index].Scale;
+		if (Scale == FIntVector(1))
+		{
+			Patterns.Add(&Authored);
+			continue;
+		}
+		const FPCGVoxelPattern& Scaled = ScaledPatterns.Add_GetRef(PCGVoxelPatterns::Scaled(Authored, Scale));
+		if (!PCGVoxelPatterns::Validate(Scaled, Error))
+		{
+			return Fail(FText::Format(LOCTEXT("ScaledPatternError", "{0}, at Scale ({1}, {2}, {3}), with boxes and probes numbered as scaled: {4}"),
+				PatternLabel(Index, Authored), Scale.X, Scale.Y, Scale.Z, Error));
+		}
+		Patterns.Add(&Scaled);
 	}
 
 	// Attribute names, each checked on its own.

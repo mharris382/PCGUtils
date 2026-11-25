@@ -1247,6 +1247,32 @@ nothing else). Palette presets:
 | `Voxel \| Pattern Upright Corner` | The origin is the corner cell; +X and +Y open; Edge mesh on end; joined along Z. Two `Unclaimed` probes, (-1,0,0) stepping -X and (0,-1,0) stepping -Y, Count 1: both walls must run on from the corner as plain cells. `Presets::UprightCorner(Size, WallCells)` in C++ makes the Size x Size version. |
 | `Voxel \| Pattern Upright Corner 2 x 2` | The same with a 2 x 2 x 1 box behind the corner cell, four Empty probes, and four Unclaimed wall probes (each wall, both rows of the corner's width). |
 | `Voxel \| Pattern Inside Corner Fill` | Add. The origin is the cell in the bend, diagonal to the empty corner; (1,0,0) `Solid Face` +Y and (0,1,0) `Solid Face` +X (the sides facing the fill), (1,1,0) empty, the bend cell free; adds (1,1,0); Edge mesh on end; joined along Z. |
+| `Voxel \| Pattern Top Outside Corner` | Chamfer set, on the shape. Claim. +X, +Y and +Z empty; mesh index 1; Order 0. |
+| `Voxel \| Pattern Top Inside Corner` | Chamfer set, on the shape. Claim. (1,0,0) and (0,1,0) filled, (1,1,0) and (0,0,1) empty; mesh index 2; Order 0. |
+| `Voxel \| Pattern Skirt Inside Corner` | Chamfer set, around the shape. Add. (1,0,0) and (0,1,0) filled; adds (1,1,0); mesh index 2; Order 0. |
+| `Voxel \| Pattern Skirt Edge` | Chamfer set, around the shape. Add. No probes; adds (1,0,0), the empty cell beside a wall cell; mesh index 0; joined along Y; Order 1. |
+| `Voxel \| Pattern Skirt Outside Corner` | Chamfer set, around the shape. Add. (1,0,0) and (0,1,0) empty; adds (1,1,0); mesh index 1; Order 2. |
+
+**The chamfer set** (added 2026-11-24 from the designer's sketch in the vault note `Excalidraw/Voxel Pattern Updates`):
+a slope all the way round a shape, with its corners, from three meshes used as authored.
+
+| Mesh index | Mesh | Where |
+|---|---|---|
+| 0 | `SM_Voxel_Edge` | Straight runs. |
+| 1 | `SM_Voxel_Corner_Ex_3Sides` (one flat cut), or `SM_Voxel_Corner_Ex_2Sides` for a hip | Outside corners. |
+| 2 | `SM_Voxel_Corner_In_2Sides` (a valley) | Inside corners. |
+
+It is used one of two ways, each three patterns on one Apply Patterns node. The presets carry their `Order`, so
+they work as placed:
+
+- **On the shape** (Claim: the top layer of cells becomes the slope): Top Inside Corner and Top Outside Corner
+  (Order 0), then Top Edge (Order 1 since 2026-11-24; a Top Edge node placed before that has Order 0).
+- **Around the shape** (Add: a ring of new cells beside it, the shape untouched): Skirt Inside Corner (0), Skirt
+  Edge (1), Skirt Outside Corner (2). The order is the rule: an edge takes any empty cell beside a wall, so the valley
+  must claim the bend first, and a corner only gets the diagonal cells no edge wanted.
+
+The skirt patterns have no probe above or below, so on a shape several cells tall they add a slope at every level.
+Add an `Empty` probe at (0,0,-1) to keep the skirt to the bottom layer.
 
 The wall probes are what stop a corner being made on a lone block, on the end of a wall, or beside a chunk an earlier
 pattern made. Raise their `Count` to ask for more wall; delete them to get the old behaviour (any outside corner).
@@ -1338,7 +1364,38 @@ how the hip and ridge layouts in the sketches are made from the one Edge mesh.
 Order matters at corners: a corner cell also fits an edge pattern (as drawn first), so put corner patterns before
 edge patterns.
 
-### 4p.5 Not built yet
+### 4p.5 Pattern settings as attributes (experiment, 2026-11-24)
+
+A pattern on a wire is an attribute set as well as a pattern: `UPCGUtilsFactoryData` now derives from
+`UPCGParamData`, and the pattern's pin type derives from the attribute set type. So a pattern wire can pass through
+ordinary attribute nodes (Add Attribute, attribute maths, Copy Attributes) between `Voxel | Pattern` and
+`Voxel | Apply Patterns`, and the settings carried as `@Data` attributes can be changed there without rebuilding the
+pattern. Attribute nodes edit a duplicate; `UPCGVoxelPatternData::DuplicateData` keeps the duplicate a pattern.
+
+| `@Data` attribute | Type | Meaning |
+|---|---|---|
+| `Order` | Integer32 (Integer64, Float, Double also read, as a whole number) | When the pattern runs: lower first. |
+| `Scale` | Vector (one number also read, as the same scale on every axis) | How many cells each cell of the pattern stands for, per pattern axis: whole numbers from 1 to 256. |
+
+Both names are settings on both nodes (`Voxel | Pattern` > `Attributes`, `Voxel | Apply Patterns` >
+`Pattern Attributes`) and must match. Both are optional: None, or an attribute the pattern does not have, leaves
+what was set on the `Voxel | Pattern` node. A bad value is an error naming the pattern, the attribute and the axis.
+
+**Scale** (`PCGVoxelPatterns::Scaled`). Every cell of the pattern's frame becomes a block: a box of span S covers
+S x Scale cells, and a probe on one cell asks the same of every cell of that cell's block. The origin cell becomes
+the block from (0,0,0) to Scale - 1, whose other cells must be filled unless a box or probe already covers them. So
+the one-cell Upright Corner at Scale 2, 2, 1 makes the chunks of the hand-written 2 x 2 corner, and it asks for two
+cells of wall where the hand-written one asks for one. An Add pattern scales the same way: Skirt Edge at 2, 1, 1
+wants a wall two cells thick and adds a slope two cells deep. `Max Joined Span` stays in cells.
+
+Other factory families (selectors, builders, painters, GC) inherit the new base but are not opted in: their pin
+types do not derive from the attribute set type, so nothing reaches them through an attribute node.
+
+Not seen in the editor yet. To check there: whether an attribute node's output pin keeps the Voxel Pattern type (a
+node with a fixed Attribute Set output needs a filter before the Patterns pin), and that a plain attribute set
+wired to Patterns is refused with the existing "takes only the output of Voxel | Pattern nodes" error.
+
+### 4p.6 Not built yet
 
 1. **The rest of selective application.** Voxel selectors on `Voxel | Pattern` are built (4p.3), fed by point
    selectors (`PCGUtilsSelectors.md`). Next: the PCGEx filter selector in `PCGUtilsPCGExInterop` (any PCGEx point
@@ -1352,6 +1409,17 @@ edge patterns.
 5. Mirrored turns.
 6. Choosing which way a corner faces when two turns fit (a wall end three wide): today, Turns Exact and one pattern
    per direction. The designer expects this to wait for the editor layer (item 3).
+7. From the designer's note `Excalidraw/Voxel Pattern Updates` (2026-11-24), now that a pattern is an attribute set:
+   - **Per-mesh attributes forwarded to the points.** An optional attribute set pin on `Voxel | Pattern`, one entry
+     per mesh index the pattern writes, kept in the pattern's Elements domain and copied by Apply Patterns onto each
+     chunk's point (a mesh path, a material, anything). One pattern could then place several meshes without a
+     collection lookup downstream.
+   - **Named tile types and corner styles.** Edge, flat-cut corner, hip corner, valley as an enum with fixed
+     orientations, so "use this corner style" is one setting, and the style says what the piece shows its
+     neighbours (today `Open Sides` is per whole side; the flat cut and the hip both list +X, +Y, +Z but meet the
+     cell below them differently). A way to break the constraint on purpose is wanted too.
+   - More settings as attributes (Join Along, Max Joined Span, Debug Color, a mesh index offset) once Order and
+     Scale have been tried.
 
 ## 4d. Shared voxel grid (design, not built)
 

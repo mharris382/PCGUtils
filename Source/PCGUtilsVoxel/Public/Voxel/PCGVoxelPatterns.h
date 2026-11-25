@@ -299,5 +299,41 @@ namespace PCGVoxelPatterns
 		 * (plain cells, or the solid back of an earlier chunk; never a chunk's cut side). The cell in the bend is free.
 		 */
 		PCGUTILSVOXEL_API FPCGVoxelPattern InsideCornerFill(int32 WallCells = 1);
+
+		/*
+		 * The chamfer set: a slope all the way round a shape, with its corners. Three meshes, all used as authored
+		 * (cut sides toward +X, +Y and +Z), picked by these mesh indices:
+		 *   EdgeMesh           SM_Voxel_Edge
+		 *   OutsideCornerMesh  SM_Voxel_Corner_Ex_3Sides (one flat cut), or SM_Voxel_Corner_Ex_2Sides for a hip
+		 *   InsideCornerMesh   SM_Voxel_Corner_In_2Sides (a valley)
+		 *
+		 * Two ways to use it. On the shape (Claim; the top layer of cells becomes the slope): Top Inside Corner and
+		 * Top Outside Corner first, then Top Edge. Around the shape (Add; a ring of new cells beside it, the shape
+		 * itself untouched): Skirt Inside Corner, then Skirt Edge, then Skirt Outside Corner.
+		 */
+		inline constexpr int32 EdgeMesh = 0;
+		inline constexpr int32 OutsideCornerMesh = 1;
+		inline constexpr int32 InsideCornerMesh = 2;
+
+		/** On the shape: the top cell of an outside corner (+X, +Y and +Z open). Run before Top Edge. */
+		PCGUTILSVOXEL_API FPCGVoxelPattern TopOutsideCorner();
+		/** On the shape: the top cell in an inside corner (filled toward +X and +Y, empty on their diagonal and above). */
+		PCGUTILSVOXEL_API FPCGVoxelPattern TopInsideCorner();
+		/** Around the shape: adds a slope in the empty cell beside a wall cell (toward +X). Joined along Y. Run after Skirt Inside Corner. */
+		PCGUTILSVOXEL_API FPCGVoxelPattern SkirtEdge();
+		/** Around the shape: adds a corner piece in the empty cell diagonal to an outside corner. Run after Skirt Edge. */
+		PCGUTILSVOXEL_API FPCGVoxelPattern SkirtOutsideCorner();
+		/** Around the shape: adds a valley piece in the empty cell of an inside corner, between two walls. Run before Skirt Edge. */
+		PCGUTILSVOXEL_API FPCGVoxelPattern SkirtInsideCorner();
 	}
+
+	/**
+	 * The pattern with every cell of its frame grown into a block of Scale cells (each axis at least 1): a box of span
+	 * S covers S x Scale cells, and a probe on one cell asks the same of every cell of that cell's block. The origin
+	 * cell becomes the block from (0,0,0) to Scale - 1; its other cells must be filled too, unless a box or a probe
+	 * already says what they are. Mesh indices, mesh turns, open sides, Turns and Join Along are unchanged, and Max
+	 * Joined Span stays in cells. A scale of 1 on every axis returns the pattern as it is. Validate the result: a
+	 * scaled box or probe row can pass the size limit.
+	 */
+	PCGUTILSVOXEL_API FPCGVoxelPattern Scaled(const FPCGVoxelPattern& Pattern, const FIntVector& Scale);
 }

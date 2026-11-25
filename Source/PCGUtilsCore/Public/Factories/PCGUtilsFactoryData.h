@@ -5,6 +5,7 @@
 
 #include "CoreMinimal.h"
 #include "PCGData.h"
+#include "PCGParamData.h"
 #include "Data/Registry/PCGDataType.h"
 
 #include "PCGUtilsFactoryData.generated.h"
@@ -24,9 +25,17 @@ struct FPCGContext;
  *
  * Factory instances are immutable once their provider emits them. Anything mutable belongs on the per-execution
  * operation a derived factory creates (FPCGUtilsDynMeshOperation and the like), never here.
+ *
+ * A factory is an attribute set (experiment, 2026-11-24): it derives from UPCGParamData, so it has metadata of its
+ * own (@Data and Elements) and its Crc folds that metadata in. That alone changes nothing for a factory family.
+ * A family opts in to being edited by ordinary attribute nodes with two more steps, as UPCGVoxelPatternData does:
+ * derive its type info from FPCGDataTypeInfoParam (so its wire fits attribute set pins), and override DuplicateData
+ * to return its own class with its own fields copied (attribute nodes edit a duplicate, never the instance they
+ * were given, so "immutable once emitted" still holds). A family that does neither is as closed as before; the
+ * inherited DuplicateData would give a plain attribute set, but nothing can reach it through a pin.
  */
 UCLASS(Abstract, BlueprintType, ClassGroup=(Procedural), Category="PCGUtils|Core")
-class PCGUTILSCORE_API UPCGUtilsFactoryData : public UPCGData
+class PCGUTILSCORE_API UPCGUtilsFactoryData : public UPCGParamData
 {
 	GENERATED_BODY()
 

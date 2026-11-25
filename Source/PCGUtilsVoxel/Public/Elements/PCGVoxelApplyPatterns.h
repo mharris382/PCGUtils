@@ -4,6 +4,7 @@
 
 #include "CoreMinimal.h"
 #include "Elements/PCGVoxelMatchRules.h"
+#include "Elements/PCGVoxelPattern.h"
 #include "Elements/PCGVoxelSettingsBase.h"
 #include "PCGElement.h"
 
@@ -39,6 +40,14 @@ public:
 	/** On (default): each pattern's Debug Color is written to the $Color of the points it makes, to see which pattern made what. */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Settings", meta=(PCG_Overridable))
 	bool bSetPointColor = true;
+
+	/**
+	 * The @Data attributes read from each pattern on the Patterns pin: Order and Scale. They are written by
+	 * Voxel | Pattern and may be changed by attribute nodes on the way here. Both are optional: a name set to None,
+	 * or an attribute a pattern does not have, leaves what was set on that pattern's Voxel | Pattern node.
+	 */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Inputs", meta=(ShowOnlyInnerProperties))
+	FPCGVoxelPatternAttributeNames PatternAttributes;
 
 	/**
 	 * Written (int32) on every output point: the Mesh Index of the pattern box that made it, -1 for a cell no pattern
